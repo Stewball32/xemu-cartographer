@@ -1,13 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { APP_NAME } from '$lib/config/app';
-	import {
-		ServerIcon,
-		PaletteIcon,
-		MessageSquareIcon,
-		ArrowRightIcon,
-		LayoutDashboardIcon
-	} from '@lucide/svelte';
+	import { ServerIcon, PaletteIcon, MessageSquareIcon, ArrowRightIcon } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
 	interface Feature {
@@ -49,10 +43,6 @@
 			<a href={resolve('/login/')} class="btn preset-filled">
 				Get Started
 				<ArrowRightIcon class="size-4" />
-			</a>
-			<a href={resolve('/examples/dashboard/')} class="btn preset-tonal">
-				<LayoutDashboardIcon class="size-4" />
-				View Dashboard Example
 			</a>
 		</div>
 	</section>
