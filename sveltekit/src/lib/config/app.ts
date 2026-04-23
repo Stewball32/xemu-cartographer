@@ -1,4 +1,4 @@
-export const APP_NAME = 'App Template';
+export const APP_NAME = 'Xemu Cartographer';
 
 export type OAuthProviderMeta = {
 	label: string;
