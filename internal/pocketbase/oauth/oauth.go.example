@@ -1,0 +1,46 @@
+package oauth
+
+// Template for adding a new OAuth2 provider.
+// Copy this file, rename it to your provider (e.g., github.go), and
+// add an init() function to self-register — no other files need editing.
+
+import (
+	"os"
+
+	"github.com/pocketbase/pocketbase/core"
+)
+
+func init() {
+	register(exampleProvider)
+}
+
+func exampleProvider() (core.OAuth2ProviderConfig, bool) {
+	clientId := os.Getenv("EXAMPLE_CLIENT_ID")
+	clientSecret := os.Getenv("EXAMPLE_CLIENT_SECRET")
+
+	if clientId == "" || clientSecret == "" {
+		return core.OAuth2ProviderConfig{Name: "example"}, false
+	}
+
+	// Supported built-in provider names (PocketBase v0.36):
+	//   apple, bitbucket, discord, facebook, gitea, gitee, github,
+	//   gitlab, google, instagram, kakao, livechat, mailcow, microsoft,
+	//   monday, notion, oidc, oidc2, oidc3, patreon, planningcenter,
+	//   spotify, strava, twitch, twitter, vk, yandex
+	//
+	// For built-in providers, only Name, ClientId, and ClientSecret are needed.
+	// The auth/token/userinfo URLs auto-populate from PocketBase defaults.
+	//
+	// Optional fields (for custom OAuth2 servers):
+	//   AuthURL      — custom authorization endpoint
+	//   TokenURL     — custom token endpoint
+	//   UserInfoURL  — custom user info endpoint
+	//   DisplayName  — label shown in the PocketBase admin UI
+	//   PKCE         — override default PKCE behavior (*bool)
+	//   Extra        — provider-specific key-value pairs (map[string]any)
+	return core.OAuth2ProviderConfig{
+		Name:         "example",
+		ClientId:     clientId,
+		ClientSecret: clientSecret,
+	}, true
+}

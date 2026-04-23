@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="cerberus">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<script>
+			(function () {
+				try {
+					var saved = localStorage.getItem('mode');
+					var isDark = saved
+						? saved === 'dark'
+						: window.matchMedia('(prefers-color-scheme: dark)').matches;
+					if (isDark) document.documentElement.classList.add('dark');
+				} catch (e) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<!--data-sveltekit-preload-data="false" data-sveltekit-reload-->
+	<body>
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

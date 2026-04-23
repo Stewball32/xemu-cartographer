@@ -1,0 +1,34 @@
+package admin
+
+// Template for adding a new route to the admin group.
+// Copy this file, rename it to your route (e.g., users.go), and
+// add an init() function to self-register — no other files need editing.
+//
+// All routes in this package automatically get the group's middleware
+// (RequireAuth + RequireAdmin). The route path is relative to the
+// group prefix /api/admin.
+
+import (
+	"net/http"
+
+	"github.com/pocketbase/pocketbase/core"
+)
+
+func init() {
+	register(func() {
+		Group.GET("/example", func(e *core.RequestEvent) error {
+			return e.JSON(http.StatusOK, map[string]string{
+				"message": "admin endpoint",
+			})
+		})
+
+		// Route path is relative to the group prefix:
+		//   "/example" → /api/admin/example
+		//
+		// Available HTTP methods:
+		//   Group.GET, Group.POST, Group.PUT, Group.PATCH, Group.DELETE
+		//
+		// Add per-route middleware on top of the group's middleware:
+		//   Group.GET("/special", handler).BindFunc(middleware.RequireRole("superadmin"))
+	})
+}

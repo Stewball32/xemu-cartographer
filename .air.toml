@@ -1,0 +1,18 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -tags dev -o ./tmp/server.exe ./cmd/server"
+  entrypoint = "./tmp/server.exe"
+  args_bin = ["serve"]
+  delay = 1000
+  include_ext = ["go"]
+  include_dir = ["cmd", "internal"]
+  exclude_dir = ["tmp", "sveltekit", "pb_data", "pb_public", "vendor"]
+  exclude_regex = ["_test\\.go$"]
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

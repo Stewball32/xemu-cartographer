@@ -1,0 +1,99 @@
+package guards
+
+// Template for adding a new guard.
+// Copy this file, rename it (e.g., require_team_member.go), and export
+// your guard function. Guards are called from WebSocket handlers,
+// room type definitions, Discord command handlers, or PocketBase routes.
+//
+// Guards have access to all three systems via the Services struct:
+//   svc.App     — PocketBase (DB queries, user records)
+//   svc.Discord — Discord bot (guild membership, roles)
+//   svc.WS      — WebSocket Hub (room membership, connection status)
+//
+// Simple guards that need no extra parameters match GuardFunc directly.
+// Parameterized guards return a GuardFunc closure.
+
+import (
+	"errors"
+	"time"
+
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+// --- Simple guard (direct GuardFunc) ---
+
+// RequireVerified checks that the user's account is verified.
+//
+// Usage in a room type:
+//
+//	Guards: []guards.GuardFunc{guards.RequireVerified}
+//
+// Usage in a handler:
+//
+//	if err := guards.RequireVerified(e.Services, e.User); err != nil {
+//	    e.SendError("forbidden", err.Error())
+//	    return
+//	}
+func RequireVerified(svc *Services, user *core.Record) error {
+	if user == nil {
+		return ErrAuthRequired
+	}
+	if user.GetDateTime("verified").IsZero() {
+		return errors.New("account not verified")
+	}
+	return nil
+}
+
+// --- Parameterized guard (returns GuardFunc) ---
+
+// RequireVerifiedFor checks that the user has been verified for at least
+// the given duration.
+//
+// Usage in a room type:
+//
+//	Guards: []guards.GuardFunc{guards.RequireVerifiedFor(24 * time.Hour)}
+func RequireVerifiedFor(d time.Duration) GuardFunc {
+	return func(svc *Services, user *core.Record) error {
+		if user == nil {
+			return ErrAuthRequired
+		}
+		verified := user.GetDateTime("verified")
+		if verified.IsZero() {
+			return errors.New("account not verified")
+		}
+		if time.Since(verified.Time()) < d {
+			return errors.New("account verified too recently")
+		}
+		return nil
+	}
+}
+
+// --- Cross-system guard (uses Services) ---
+
+// RequireTeamMember checks that the user belongs to the named team
+// by querying PocketBase.
+//
+// Usage in a room type:
+//
+//	Guards: []guards.GuardFunc{guards.RequireTeamMember("engineering")}
+//
+// Usage with composition:
+//
+//	guards.Any(guards.RequireAdmin, guards.RequireTeamMember("engineering"))
+func RequireTeamMember(team string) GuardFunc {
+	return func(svc *Services, user *core.Record) error {
+		if user == nil {
+			return ErrAuthRequired
+		}
+		_, err := svc.App.FindFirstRecordByFilter(
+			"team_members",
+			"user = {:user} && team = {:team}",
+			dbx.Params{"user": user.Id, "team": team},
+		)
+		if err != nil {
+			return ErrForbidden
+		}
+		return nil
+	}
+}

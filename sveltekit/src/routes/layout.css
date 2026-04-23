@@ -1,0 +1,27 @@
+@import 'tailwindcss';
+@import '@skeletonlabs/skeleton';
+@import '@skeletonlabs/skeleton-svelte';
+@import '@skeletonlabs/skeleton/themes/cerberus';
+
+@plugin '@tailwindcss/forms';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+	body {
+		@variant dark {
+			background:
+				radial-gradient(
+					ellipse at 0% 0%,
+					color-mix(in oklch, var(--color-primary-500) 15%, transparent) 0%,
+					transparent 50%
+				),
+				radial-gradient(
+					ellipse at 100% 100%,
+					color-mix(in oklch, var(--color-tertiary-500) 10%, transparent) 0%,
+					transparent 50%
+				),
+				var(--body-background-color-dark);
+		}
+	}
+}

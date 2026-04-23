@@ -1,0 +1,82 @@
+package handlers
+
+// Template for adding a new WebSocket message handler.
+// Copy this file, rename it to your message type (e.g., chat.go), and
+// add an init() function to self-register — no other files need editing.
+//
+// When a client sends {"type":"example","payload":{...}}, the Hub
+// dispatches it to the handler registered for "example".
+
+import (
+	"encoding/json"
+
+	"github.com/youruser/yourproject/internal/guards"
+)
+
+func init() {
+	register("example", handleExample)
+}
+
+func handleExample(e *Event) {
+	// Guards — import the guards package and call at the top:
+	//
+	//   if err := guards.RequireAuth(e.Services, e.User); err != nil {
+	//       e.SendError("unauthorized", "must be logged in")
+	//       return
+	//   }
+	//
+	//   if err := guards.RequireRole("moderator")(e.Services, e.User); err != nil {
+	//       e.SendError("forbidden", "moderator role required")
+	//       return
+	//   }
+	//
+	//   if err := guards.RequireAdmin(e.Services, e.User); err != nil {
+	//       e.SendError("forbidden", "admin access required")
+	//       return
+	//   }
+	//
+	// Cross-system guards:
+	//
+	//   if err := guards.RequireConnected(e.Services, e.User); err != nil { ... }
+	//   if err := guards.RequireInRoom("admin:chat")(e.Services, e.User); err != nil { ... }
+	//   if err := guards.RequireGuildMember(guildID)(e.Services, e.User); err != nil { ... }
+
+	// Broadcast to all connected clients:
+	e.Broadcast(e.Payload)
+
+	// Send to a specific room:
+	// e.SendToRoom("general", e.Payload)
+
+	// Send to a specific user (all their connections):
+	// e.SendToUser(e.UserID, e.Payload)
+
+	// Join/leave rooms (for the client that sent this message):
+	// e.JoinRoom("general")
+	// e.LeaveRoom("general")
+
+	// Send an error back to the sender:
+	// e.SendError("bad_request", "missing required field")
+
+	// Build a typed response:
+	// resp, _ := json.Marshal(map[string]string{"echo": "hello"})
+	// e.Broadcast(resp)
+
+	// Cross-system actions — call through e.Services:
+	//
+	// Discord: send a notification to a channel
+	//   if e.Services.Discord != nil {
+	//       e.Services.Discord.SendNotification(channelID, "Hello from WS!")
+	//   }
+	//
+	// PocketBase: look up a user by Discord ID
+	//   if e.Services.PB != nil {
+	//       user, err := e.Services.PB.FindUserByDiscordID("123456")
+	//   }
+	//
+	// Or use resolvers from any package:
+	//   import pbresolvers "github.com/youruser/yourproject/internal/pocketbase/resolvers"
+	//   user, err := pbresolvers.FindUserByDiscordID(e.App, discordID)
+
+	_ = json.Marshal      // silence unused import
+	_ = guards.RequireAuth // silence unused import
+}

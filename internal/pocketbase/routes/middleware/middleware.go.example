@@ -1,0 +1,55 @@
+package middleware
+
+// Template for adding custom middleware.
+// Add new middleware functions to an existing file or create a new file
+// in this directory.
+
+import (
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+// Custom middleware returns a closure with this signature, used with .BindFunc():
+//   func(*core.RequestEvent) error
+//
+// For hook-style middleware used with .Bind(), return *hook.Handler[*core.RequestEvent]
+// (see RequireAuth() in auth.go which wraps apis.RequireAuth()).
+
+// RequireExample demonstrates a custom middleware that checks a condition
+// on the request before allowing the handler to run.
+func RequireExample() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		// Access the authenticated user (populated by auth middleware):
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+
+		// Check record fields:
+		// e.Auth.GetString("role")
+		// e.Auth.GetBool("isAdmin")
+		// e.Auth.GetInt("level")
+
+		// Check request data:
+		// e.Request.Header.Get("X-Custom-Header")
+		// e.Request.URL.Query().Get("param")
+
+		// Reject with 403:
+		// return apis.NewForbiddenError("reason", nil)
+
+		// Continue to the next handler in the chain:
+		return e.Next()
+	}
+}
+
+// Binding examples (in routes):
+//
+//   // Hook-style handler — use .Bind()
+//   se.Router.GET("/path", handler).Bind(apis.RequireAuth())
+//
+//   // Function-style middleware — use .BindFunc()
+//   se.Router.GET("/path", handler).BindFunc(middleware.RequireExample())
+//
+//   // Chain multiple middleware (runs left to right):
+//   se.Router.GET("/path", handler).
+//       Bind(apis.RequireAuth()).
+//       BindFunc(middleware.RequireRole("editor"))

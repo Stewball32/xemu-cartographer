@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "${PUBLIC_PB_PORT:-8090}:8090"
+    volumes:
+      - pb_data:/app/pb_data:z
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  pb_data:

@@ -1,0 +1,69 @@
+package schema
+
+// Template for adding a new collection.
+// Copy this file, rename it to your domain (e.g., comments.go), and
+// add an init() function to self-register — no other files need editing.
+
+import (
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+func init() {
+	register(registerExampleCollection)
+}
+
+func registerExampleCollection(app *pocketbase.PocketBase) error {
+	// Idempotent: skip if collection already exists (safe across restarts).
+	if collectionExists(app, "example") {
+		return nil
+	}
+
+	// Look up a related collection's ID at runtime (don't hardcode IDs).
+	// users, err := requireCollection(app, "users")
+	// if err != nil { return err }
+
+	collection := core.NewBaseCollection("example")
+
+	// Available field types:
+	//   core.TextField       — short text (Min, Max length)
+	//   core.EditorField     — rich text / HTML
+	//   core.NumberField      — integer or float
+	//   core.BoolField       — true/false
+	//   core.EmailField      — validated email
+	//   core.URLField        — validated URL
+	//   core.DateField       — ISO datetime
+	//   core.SelectField     — single/multi select (Values, MaxSelect)
+	//   core.FileField       — file upload (MaxSelect, MaxSize, MimeTypes)
+	//   core.RelationField   — relation to another collection (CollectionId, MaxSelect)
+	//   core.JSONField       — arbitrary JSON
+	collection.Fields.Add(
+		&core.TextField{
+			Name:     "title",
+			Required: true,
+			Min:      1,
+			Max:      200,
+		},
+		&core.EditorField{
+			Name: "body",
+		},
+		// &core.RelationField{
+		//     Name:         "author",
+		//     CollectionId: users.Id,
+		//     Required:     true,
+		//     MaxSelect:    1,
+		// },
+	)
+
+	// API rules control access via PocketBase's REST API.
+	//   nil        — no API access (admin only)
+	//   strPtr("") — any authenticated user
+	//   strPtr("author = @request.auth.id") — filter expression
+	collection.ListRule = strPtr("")
+	collection.ViewRule = strPtr("")
+	collection.CreateRule = strPtr("")
+	collection.UpdateRule = nil
+	collection.DeleteRule = nil
+
+	return app.Save(collection)
+}

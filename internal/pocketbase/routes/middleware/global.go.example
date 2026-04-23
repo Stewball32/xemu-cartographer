@@ -1,0 +1,24 @@
+package middleware
+
+// Template for adding global middleware.
+// Copy this file, rename it (e.g., cors.go), and add an init() function
+// to self-register — no other files need editing.
+
+// Global middleware runs on EVERY request, before groups and routes.
+// Use sparingly — most middleware should be per-route or per-group.
+
+import (
+	"github.com/pocketbase/pocketbase/core"
+)
+
+func init() {
+	registerGlobal(func(se *core.ServeEvent) {
+		se.Router.BindFunc(func(e *core.RequestEvent) error {
+			// Example: add a custom header to all responses.
+			e.Response.Header().Set("X-Custom-Header", "value")
+
+			// Always call e.Next() to continue the middleware chain.
+			return e.Next()
+		})
+	})
+}

@@ -1,0 +1,43 @@
+package hooks
+
+// Template for adding hooks for a new domain.
+// Copy this file, rename it to your domain (e.g., comments.go), and
+// add an init() function to self-register — no other files need editing.
+
+import (
+	"log"
+
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
+	// "github.com/pocketbase/pocketbase/tools/routine"
+)
+
+func init() {
+	register(registerExampleHooks)
+}
+
+func registerExampleHooks(app *pocketbase.PocketBase) {
+	// Available hook methods (all take collection name as argument):
+	//   app.OnRecordCreate("name")
+	//   app.OnRecordUpdate("name")
+	//   app.OnRecordDelete("name")
+	//
+	// Every handler MUST call e.Next() to continue the chain.
+	// Omitting e.Next() silently cancels the operation.
+
+	app.OnRecordCreate("example").BindFunc(func(e *core.RecordEvent) error {
+		log.Printf("Example created: %s", e.Record.GetString("title"))
+
+		// For async work (Discord notifications, external API calls, etc.),
+		// clone record data into local variables BEFORE the goroutine.
+		// Event objects are not concurrent-safe.
+		//
+		// title := e.Record.GetString("title")
+		// authorId := e.Record.GetString("author")
+		// routine.FireAndForget(func() {
+		//     sendDiscordNotification(title, authorId)
+		// })
+
+		return e.Next()
+	})
+}

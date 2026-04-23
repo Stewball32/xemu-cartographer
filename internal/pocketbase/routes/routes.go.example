@@ -1,0 +1,56 @@
+package routes
+
+// Template for adding a new ungrouped route.
+// Copy this file, rename it to your route (e.g., comments.go), and
+// add an init() function to self-register — no other files need editing.
+//
+// For routes that belong to a group (e.g., admin), add them to the
+// group's folder instead (see admin/routes.go.example).
+
+import (
+	"net/http"
+
+	"github.com/pocketbase/pocketbase/apis"
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/youruser/yourproject/internal/pocketbase/routes/middleware"
+)
+
+func init() {
+	register(registerExampleRoutes)
+}
+
+func registerExampleRoutes(se *core.ServeEvent) {
+	// Public route — no auth required.
+	se.Router.GET("/api/example", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, map[string]string{"message": "hello"})
+	})
+
+	// Protected route — any authenticated user.
+	// e.Auth is populated by RequireAuth and contains the auth record.
+	se.Router.GET("/api/example/me", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, map[string]any{
+			"id":    e.Auth.Id,
+			"email": e.Auth.Email(),
+		})
+	}).Bind(apis.RequireAuth())
+
+	// Role-gated route — auth middleware runs first, then role check.
+	se.Router.GET("/api/example/editor", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, map[string]string{"status": "editor area"})
+	}).Bind(apis.RequireAuth()).BindFunc(middleware.RequireRole("editor"))
+
+	// Middleware binding:
+	//   .Bind(handler)    — for *hook.Handler (e.g., apis.RequireAuth())
+	//   .BindFunc(fn)     — for func(*core.RequestEvent) error
+	//
+	// Built-in middleware:
+	//   apis.RequireAuth()          — rejects unauthenticated requests
+	//   apis.RequireGuestOnly()     — rejects authenticated requests
+	//   apis.RequireSuperuserAuth() — restricts to superusers
+	//
+	// Custom middleware (from routes/middleware):
+	//   middleware.RequireAuth()       — wrapper around apis.RequireAuth()
+	//   middleware.RequireCustomAuth() — manual e.Auth check
+	//   middleware.RequireRole(role)   — checks user's "role" field
+	//   middleware.RequireAdmin()      — checks user's "isAdmin" field
+}

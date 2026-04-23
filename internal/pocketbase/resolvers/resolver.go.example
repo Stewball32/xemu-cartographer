@@ -1,0 +1,28 @@
+package resolvers
+
+// Template for adding a new PocketBase resolver.
+// Copy this file, rename it (e.g., find_team.go), and export a function
+// that resolves PocketBase data. Resolvers answer "what/who" questions
+// and return data rather than pass/fail like guards.
+//
+// PocketBase resolvers take core.App as first param for DB access.
+// They can be called from any system (WebSocket handlers, Discord
+// commands, PocketBase routes).
+
+import (
+	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
+)
+
+// FindTeamByName looks up a team record by name.
+//
+// Usage:
+//
+//	team, err := resolvers.FindTeamByName(app, "engineering")
+func FindTeamByName(app core.App, name string) (*core.Record, error) {
+	return app.FindFirstRecordByFilter(
+		"teams",
+		"name = {:name}",
+		dbx.Params{"name": name},
+	)
+}

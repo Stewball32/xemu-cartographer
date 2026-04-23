@@ -1,0 +1,32 @@
+package resolvers
+
+// Template for adding a new Discord resolver.
+// Copy this file, rename it (e.g., channel_info.go), and export a function
+// that resolves Discord data via the guards.DiscordService interface.
+//
+// Discord resolvers take *guards.Services and use svc.Discord for API calls.
+// They can be called from any system (WebSocket handlers, PocketBase routes,
+// other Discord commands).
+
+import (
+	"github.com/disgoorg/snowflake/v2"
+	"github.com/youruser/yourproject/internal/guards"
+)
+
+// HasRole checks if a Discord user has a specific role in a guild.
+//
+// Usage:
+//
+//	ok, err := resolvers.HasRole(svc, guildID, userID, roleID)
+func HasRole(svc *guards.Services, guildID, userID, roleID snowflake.ID) (bool, error) {
+	roles, err := GetUserRoles(svc, guildID, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range roles {
+		if r == roleID {
+			return true, nil
+		}
+	}
+	return false, nil
+}

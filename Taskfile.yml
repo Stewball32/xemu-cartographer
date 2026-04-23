@@ -1,0 +1,61 @@
+version: "3"
+dotenv: [".env"]
+
+tasks:
+  dev:
+    desc: Run Go backend (Air) and SvelteKit dev server in parallel
+    deps: [dev:backend, dev:frontend]
+
+  dev:backend:
+    desc: Run Go backend with hot reload
+    cmds: ["air -c .air.toml"]
+
+  dev:frontend:
+    desc: Run SvelteKit dev server (typegen retries in background until backend ready)
+    dir: sveltekit
+    cmds:
+      - cmd: "for i in $(seq 1 15); do pnpm typegen 2>/dev/null && break; sleep 2; done &"
+      - cmd: "pnpm dev"
+
+  typegen:
+    desc: Generate TypeScript types from running PocketBase instance (requires task dev:backend)
+    dir: sveltekit
+    cmds: ["pnpm typegen"]
+
+  build:
+    desc: Build production binary with static frontend
+    cmds:
+      - task: build:frontend
+      - task: build:backend
+
+  build:frontend:
+    desc: Build SvelteKit static output
+    dir: sveltekit
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm build
+    sources: ["src/**/*", "package.json", "svelte.config.js", "vite.config.ts"]
+    generates: ["../pb_public/**/*"]
+
+  build:backend:
+    desc: Build Go binary
+    cmds:
+      - CGO_ENABLED=0 go build -o ./bin/server ./cmd/server
+    sources: ["cmd/**/*.go", "internal/**/*.go", "go.mod", "go.sum"]
+    generates: ["bin/server"]
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf bin/ tmp/ pb_public/
+
+  container:build:
+    desc: Build container image with Podman
+    cmds: ["podman build -t yourproject -f Containerfile ."]
+
+  container:run:
+    desc: Run container with Podman
+    cmds:
+      [
+        "podman run -p ${PUBLIC_PB_PORT:-8090}:8090 -v pb_data:/app/pb_data:z yourproject",
+      ]

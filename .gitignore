@@ -1,0 +1,28 @@
+# Go
+bin/
+tmp/
+vendor/
+
+# PocketBase
+pb_data/
+pb_public/
+
+# Node / SvelteKit
+sveltekit/node_modules/
+sveltekit/.svelte-kit/
+
+# Environment
+.env
+!.env.example
+!sveltekit/.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo

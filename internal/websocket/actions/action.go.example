@@ -1,0 +1,41 @@
+package actions
+
+// Template for adding a reusable WebSocket action.
+// Copy this file, rename it to your action (e.g., broadcast_new_post.go),
+// and export a single function — no registry needed.
+//
+// Actions are called from PocketBase hooks, Disgo handlers, or anywhere
+// that needs to push messages to connected WebSocket clients.
+
+import (
+	"encoding/json"
+	"log"
+
+	ws "github.com/youruser/yourproject/internal/websocket"
+)
+
+// BroadcastExample sends an example event to all connected clients.
+// Call from a hook or command: actions.BroadcastExample("some-id")
+func BroadcastExample(recordID string) {
+	hub := ws.Instance()
+	if hub == nil {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{
+		"recordId": recordID,
+	})
+	if err != nil {
+		log.Printf("ws action: marshal error: %v", err)
+		return
+	}
+
+	hub.Broadcast(ws.Message{
+		Type:    "example_event",
+		Payload: payload,
+	})
+
+	// Other Hub methods:
+	//   hub.SendToUser(userID, msg)  — target a specific user
+	//   hub.SendToRoom(room, msg)    — target a room
+}

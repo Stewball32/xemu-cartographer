@@ -1,0 +1,51 @@
+package rooms
+
+// Template for adding a new WebSocket room type.
+// Copy this file, rename it to your room type (e.g., moderated.go), and
+// add an init() function to self-register — no other files need editing.
+//
+// Clients join rooms using a "type:name" prefix (e.g. "moderated:general").
+// Only registered types are joinable; unknown prefixes are rejected.
+
+import "github.com/youruser/yourproject/internal/guards"
+
+func init() {
+	register(&RoomType{
+		Name: "example",
+
+		// Guards run in order. Use guards.Any() for OR logic, guards.All() for explicit AND.
+		Guards: []GuardFunc{
+			// Require authentication:
+			guards.RequireAuth,
+
+			// Require admin:
+			// guards.RequireAdmin,
+
+			// Role check:
+			// guards.RequireRole("moderator"),
+
+			// OR logic — admin OR guild member:
+			// guards.Any(
+			// 	guards.RequireAdmin,
+			// 	guards.RequireGuildMember(guildID),
+			// ),
+
+			// Cross-system — require active WS connection:
+			// guards.RequireConnected,
+
+			// Cross-system — require user is in a specific room:
+			// guards.RequireInRoom("lobby"),
+
+			// Cross-system — require Discord guild membership:
+			// guards.RequireGuildMember(guildID),
+
+			// Cross-system — require specific Discord role:
+			// guards.RequireDiscordRole(guildID, roleID),
+		},
+
+		// Optional configuration:
+		Config: Config{
+			MaxMembers: 0, // 0 = unlimited
+		},
+	})
+}

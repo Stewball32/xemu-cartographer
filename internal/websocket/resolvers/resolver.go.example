@@ -1,0 +1,25 @@
+package resolvers
+
+// Template for adding a new WebSocket resolver.
+// Copy this file, rename it (e.g., room_members.go), and export a function
+// that resolves WebSocket state via the guards.WebSocketService interface.
+//
+// WebSocket resolvers take *guards.Services and use svc.WS for state queries.
+// They can be called from any system (PocketBase routes, Discord commands,
+// other WebSocket handlers).
+
+import (
+	"github.com/youruser/yourproject/internal/guards"
+)
+
+// IsInRoom checks if a user is in a specific WebSocket room.
+//
+// Usage from a Discord command handler:
+//
+//	inRoom, err := resolvers.IsInRoom(svc, userID, "admin:dashboard")
+func IsInRoom(svc *guards.Services, userID string, room string) (bool, error) {
+	if svc.WS == nil {
+		return false, nil
+	}
+	return svc.WS.IsInRoom(userID, room), nil
+}
