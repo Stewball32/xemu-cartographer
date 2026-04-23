@@ -1,6 +1,6 @@
 package rooms
 
-import "github.com/youruser/yourproject/internal/guards"
+import "github.com/Stewball32/xemu-cartographer/internal/guards"
 
 func init() {
 	register(&RoomType{

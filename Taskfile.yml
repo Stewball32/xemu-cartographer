@@ -51,11 +51,11 @@ tasks:
 
   container:build:
     desc: Build container image with Podman
-    cmds: ["podman build -t yourproject -f Containerfile ."]
+    cmds: ["podman build -t xemu-cartographer -f Containerfile ."]
 
   container:run:
     desc: Run container with Podman
     cmds:
       [
-        "podman run -p ${PUBLIC_PB_PORT:-8090}:8090 -v pb_data:/app/pb_data:z yourproject",
+        "podman run -p ${PUBLIC_PB_PORT:-8090}:8090 -v pb_data:/app/pb_data:z xemu-cartographer",
       ]

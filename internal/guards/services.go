@@ -2,9 +2,9 @@ package guards
 
 import (
 	"github.com/pocketbase/pocketbase/core"
-	discordiface "github.com/youruser/yourproject/internal/guards/interfaces/discord"
-	pbiface "github.com/youruser/yourproject/internal/guards/interfaces/pocketbase"
-	wsiface "github.com/youruser/yourproject/internal/guards/interfaces/websocket"
+	discordiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/discord"
+	pbiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/pocketbase"
+	wsiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/websocket"
 )
 
 // Services bundles all system access a guard or resolver may need.

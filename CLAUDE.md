@@ -57,6 +57,12 @@ pnpm check          # svelte-check + TypeScript
 pnpm lint           # prettier + eslint
 pnpm format         # prettier --write
 
+# Frontend tests (run from sveltekit/)
+
+pnpm test           # vitest run — unit tests
+pnpm test:watch     # vitest watch
+pnpm test:e2e       # playwright — e2e tests in sveltekit/e2e/
+
 # Generate PocketBase TypeScript types (requires running dev server)
 
 task typegen
@@ -105,20 +111,19 @@ Protected pages can be served through custom PocketBase routes that validate JWT
 | `internal/pocketbase/routes`            | Custom endpoints + protected page serving via auth-gated routes     |
 | `internal/pocketbase/routes/middleware` | Auth middleware, role checks, global middleware registry            |
 | `internal/pocketbase/routes/admin`      | Route group for `/api/admin` — auth + admin middleware              |
-| `internal/pocketbase/seed`              | In-process dev seeder — `data.go` defines seed vars, compiled only with `-tags dev` |
-| `internal/pocketbase/actions`           | Reusable PB data operations — one exported function per file        |
+| `internal/pocketbase/seed`              | In-process dev seeder — `seed.go` (`//go:build dev`) + `stub.go` (`//go:build !dev`) + `data.go` defines seed vars |
 | `internal/pocketbase/resolvers`         | PB data lookups — one exported function per file                    |
 | `internal/websocket`                    | WebSocket Hub, client management, message routing, JWT auth upgrade |
 | `internal/websocket/handlers`           | Self-registering WS message handlers — one per file                 |
 | `internal/websocket/rooms`              | Room type definitions with guard lists — one per file               |
 | `internal/websocket/resolvers`          | WS state lookups via Services — one exported function per file      |
+| `internal/websocket/actions`            | Reserved for WS outbound action helpers (currently only `.go.example` stub) |
 | `internal/disgo`                        | Bot client setup: NewBot(), OpenGateway(), Close(), action methods  |
 | `internal/disgo/commands`               | Slash command definitions and handler functions                     |
 | `internal/disgo/events`                 | Discord gateway event listeners for non-interaction events          |
 | `internal/disgo/actions`                | Reusable Discord API calls — one exported function per file         |
 | `internal/disgo/resolvers`              | Discord data lookups via Services — one exported function per file  |
 | `internal/disgo/components`             | UI builder factories (buttons, embeds, rows, selects, modals)       |
-| `internal/disgo/guards`                 | Bot-side permission checks bridging Discord ↔ PocketBase            |
 
 ## Frontend Structure
 
@@ -165,7 +170,6 @@ Handlers orchestrate by calling resolvers/guards/actions from multiple systems �
 
 ## Conventions
 
-- **Go module path** is `github.com/youruser/yourproject` — rename it when starting a new project (see README Quick Start).
 - **Adding new routes/hooks/commands/WS handlers:** create a new file in the relevant package, define a function, and call `register(fn)` from `init()`. No other file needs to change — the package-level `init()` runs automatically on import.
 - PocketBase v0.36.7 — uses `net/http.ServeMux`, NOT Echo. Hooks use `OnServe` not `OnBeforeServe`.
 - PocketBase extensions follow a registration pattern: hooks register before OnServe, schema/routes register inside OnServe via `RegisterAll()`
@@ -176,10 +180,8 @@ Handlers orchestrate by calling resolvers/guards/actions from multiple systems �
 - WebSocket Hub supports: Broadcast (all clients), SendToUser (by user ID), SendToRoom (room members), plus `*Raw` variants taking `[]byte` for cross-system use via interfaces
 - Disgo uses `discord.SlashCommandCreate` for slash commands, raw event listeners for gateway events
 - Disgo actions take `*bot.Client` as first param — also exposed as methods on `Bot` for interface compliance
-- PB actions take `*pocketbase.PocketBase` as first param — callable from routes, hooks, or Discord commands
 - Disgo components are pure builder functions (no registry, no init) — one file per button/embed/row
-- Disgo guards are explicit checks called at the top of command handlers, not middleware
-- Cross-system guards in `internal/guards/` take `*Services` + `*core.Record`, usable from any system
+- Cross-system guards in `internal/guards/` take `*Services` + `*core.Record`, usable from any system — one `require_*.go` file per guard (see `require_admin.go`, `require_auth.go`, `require_connected.go`, etc.); compose them with `compose.go`
 - Interface files use one-interface-per-file convention for merge-safe parallel development
 - Custom routes registered in OnServe take priority over pb_public/ static file serving
 - `PUBLIC_PB_PORT` in root `.env` — single port variable used by Taskfile, compose, Containerfile, and SvelteKit (via `$env/static/public`). The `PUBLIC_` prefix is required by SvelteKit for client-side access
@@ -187,3 +189,4 @@ Handlers orchestrate by calling resolvers/guards/actions from multiple systems �
 - **Seeding:** Air (`task dev`) builds with `-tags dev`, causing `seed.Run(app)` to execute automatically at server startup using `internal/pocketbase/seed/data.go`. Edit `data.go` to change seed data.
 - **Dev vs prod builds:** `air` (dev) compiles with `-tags dev`; `task build:backend` compiles without it. The `//go:build dev` constraint in `internal/pocketbase/seed/` means the seeder is a no-op in production binaries.
 - **Dev DB is ephemeral:** Air compiles the server to `tmp/server.exe` and `clean_on_exit = true` wipes `tmp/` on exit — including `tmp/pb_data/` where PocketBase stores its dev database. This is intentional: each `task dev` session starts with a clean slate. TypeScript type generation (`task typegen`) therefore uses `--url` mode against the live server rather than reading the DB file directly.
+- **`.reference/` directory:** Contains snapshots of sibling projects (`HaloCaster`, `xemu-cartographer`) kept for cross-project reference only. Ignore it when searching/editing — it is not part of this build.

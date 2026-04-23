@@ -13,10 +13,10 @@ import (
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/snowflake/v2"
 
-	"github.com/youruser/yourproject/internal/disgo/actions"
-	"github.com/youruser/yourproject/internal/disgo/commands"
-	"github.com/youruser/yourproject/internal/disgo/events"
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/actions"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/events"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // Bot wraps the disgo client and exposes lifecycle methods.

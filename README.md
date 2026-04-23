@@ -1,8 +1,10 @@
-# stew-site-template
+# xemu-cartographer
 
-> **For AI assistants:** See [CLAUDE.md](CLAUDE.md) for development commands, conventions, and implementation details.
+> **For AI assistants:** See [CLAUDE.md](CLAUDE.md) for development commands, conventions, and implementation details, and [ROADMAP.md](ROADMAP.md) for the migration plan.
 
-A reusable project template combining a Go backend with a SvelteKit frontend.
+Real-time game-state scraper for Xbox titles running in [xemu](https://xemu.app/). Orchestrates containerized xemu+browser pairs, reads memory via QMP + `/proc/<pid>/mem`, broadcasts live state over WebSocket, and persists match records to PocketBase. Halo: CE support comes first, Halo 2 follows.
+
+Built on a prior Go+SvelteKit implementation preserved at [.reference/xemu-cartographer-legacy/](.reference/xemu-cartographer-legacy/), with HaloCaster's Python/C# memory work at [.reference/HaloCaster/](.reference/HaloCaster/) as the offset source of truth.
 
 ## Tech Stack
 
@@ -109,12 +111,11 @@ A reusable project template combining a Go backend with a SvelteKit frontend.
 
 ## Quick Start
 
-1. **Clone and rename the module:**
+1. **Clone:**
 
    ```bash
-   git clone https://github.com/Stewball32/stew-site-template.git my-project
-   cd my-project
-   grep -rl 'github.com/youruser/yourproject' . | xargs sed -i 's|github.com/youruser/yourproject|github.com/you/yourapp|g'
+   git clone https://github.com/Stewball32/xemu-cartographer.git
+   cd xemu-cartographer
    ```
 
 2. **Configure environment:**

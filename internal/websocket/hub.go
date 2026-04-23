@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/youruser/yourproject/internal/guards"
-	"github.com/youruser/yourproject/internal/websocket/handlers"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"
 )
 
 // Hub manages all connected WebSocket clients and rooms.

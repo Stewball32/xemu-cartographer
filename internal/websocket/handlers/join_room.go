@@ -1,6 +1,6 @@
 package handlers
 
-import "github.com/youruser/yourproject/internal/websocket/rooms"
+import "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 
 func init() {
 	register("join_room", handleJoinRoom)

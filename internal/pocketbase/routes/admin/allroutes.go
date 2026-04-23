@@ -4,7 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/youruser/yourproject/internal/pocketbase/routes/middleware"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
 )
 
 // Group is the router group for /api/admin endpoints.

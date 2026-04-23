@@ -3,7 +3,7 @@ package commands
 import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // Command pairs a slash command definition with its handler.

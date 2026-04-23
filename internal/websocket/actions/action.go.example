@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"log"
 
-	ws "github.com/youruser/yourproject/internal/websocket"
+	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
 // BroadcastExample sends an example event to all connected clients.

@@ -9,7 +9,7 @@ package resolvers
 // other WebSocket handlers).
 
 import (
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // IsInRoom checks if a user is in a specific WebSocket room.

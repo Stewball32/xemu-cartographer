@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/disgoorg/snowflake/v2"
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // GetGuildMember checks whether a Discord user is a member of a guild.

@@ -6,19 +6,19 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/youruser/yourproject/internal/guards"
-	"github.com/youruser/yourproject/internal/pocketbase/hooks"
-	"github.com/youruser/yourproject/internal/pocketbase/oauth"
-	"github.com/youruser/yourproject/internal/pocketbase/routes"
-	"github.com/youruser/yourproject/internal/pocketbase/schema"
-	"github.com/youruser/yourproject/internal/pocketbase/seed"
-	ws "github.com/youruser/yourproject/internal/websocket"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
+	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 
-	discordbot "github.com/youruser/yourproject/internal/disgo"
-	"github.com/youruser/yourproject/internal/disgo/commands"
-	pb "github.com/youruser/yourproject/internal/pocketbase"
-	_ "github.com/youruser/yourproject/internal/websocket/handlers" // self-registering WS handlers
-	_ "github.com/youruser/yourproject/internal/websocket/rooms"    // self-registering WS room types
+	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
+	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 )
 
 func main() {

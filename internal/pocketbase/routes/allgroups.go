@@ -2,7 +2,7 @@ package routes
 
 import (
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/youruser/yourproject/internal/pocketbase/routes/admin"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/admin"
 )
 
 // registerAllGroups creates all route groups and their routes.

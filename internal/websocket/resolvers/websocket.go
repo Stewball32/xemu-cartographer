@@ -3,7 +3,7 @@ package resolvers
 import (
 	"errors"
 
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // GetUserRooms returns the WebSocket rooms a user is currently in.

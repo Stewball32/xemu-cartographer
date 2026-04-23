@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // Event is passed to handlers when a WebSocket message arrives.

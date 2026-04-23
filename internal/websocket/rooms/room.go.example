@@ -7,7 +7,7 @@ package rooms
 // Clients join rooms using a "type:name" prefix (e.g. "moderated:general").
 // Only registered types are joinable; unknown prefixes are rejected.
 
-import "github.com/youruser/yourproject/internal/guards"
+import "github.com/Stewball32/xemu-cartographer/internal/guards"
 
 func init() {
 	register(&RoomType{

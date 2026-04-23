@@ -2,7 +2,7 @@ package rows
 
 import (
 	"github.com/disgoorg/disgo/discord"
-	"github.com/youruser/yourproject/internal/disgo/components/buttons"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/components/buttons"
 )
 
 // ConfirmRow returns an action row with a green "Yes" and red "No" button.

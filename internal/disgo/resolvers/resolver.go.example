@@ -10,7 +10,7 @@ package resolvers
 
 import (
 	"github.com/disgoorg/snowflake/v2"
-	"github.com/youruser/yourproject/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // HasRole checks if a Discord user has a specific role in a guild.
