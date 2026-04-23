@@ -4,7 +4,7 @@
 
 Real-time game-state scraper for Xbox titles running in [xemu](https://xemu.app/). Orchestrates containerized xemu+browser pairs, reads memory via QMP + `/proc/<pid>/mem`, broadcasts live state over WebSocket, and persists match records to PocketBase. Halo: CE support comes first, Halo 2 follows.
 
-Built on a prior Go+SvelteKit implementation preserved at [.reference/xemu-cartographer-legacy/](.reference/xemu-cartographer-legacy/), with HaloCaster's Python/C# memory work at [.reference/HaloCaster/](.reference/HaloCaster/) as the offset source of truth.
+Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartographer-legacy/](atlas/xemu-cartographer-legacy/), with HaloCaster's Python/C# memory work at [atlas/HaloCaster/](atlas/HaloCaster/) as the richest source of Halo: CE offsets. Everything under `atlas/` is reference-only and must be re-verified before porting into the live tree.
 
 ## Tech Stack
 

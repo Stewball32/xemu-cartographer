@@ -2,7 +2,7 @@
 
 Migration plan for xemu-cartographer: a real-time game-state scraper for Xbox titles running in [xemu](https://xemu.app/), rebuilt on top of a clean Go + PocketBase + Disgo + SvelteKit template.
 
-Prior implementation is preserved read-only at [.reference/xemu-cartographer-legacy/](.reference/xemu-cartographer-legacy/). HaloCaster (the older Halo-specific Python/C# sibling) is at [.reference/HaloCaster/](.reference/HaloCaster/) and remains the **authoritative source** for Halo: CE memory offsets.
+Prior implementation is preserved at [atlas/xemu-cartographer-legacy/](atlas/xemu-cartographer-legacy/). HaloCaster (the older Halo-specific Python/C# sibling) is at [atlas/HaloCaster/](atlas/HaloCaster/) and holds the richest set of Halo: CE memory offsets. Everything under `atlas/` is **reference-only and must be re-verified before porting** — offsets, patterns, and APIs may have drifted or been wrong to begin with.
 
 Milestones, not dates. Each blocks the next — nothing ports in parallel.
 
@@ -13,7 +13,7 @@ Milestones, not dates. Each blocks the next — nothing ports in parallel.
 Bring the fresh template to a clean starting point.
 
 - [x] Rename `stew-site-template` / `github.com/youruser/yourproject` → `xemu-cartographer` / `github.com/Stewball32/xemu-cartographer`.
-- [x] Document `.reference/` contents for future Claude sessions.
+- [x] Document `atlas/` contents for future Claude sessions.
 - [ ] **Follow-up turn** — strip template demo content:
   - Delete `sveltekit/src/routes/examples/`.
   - Drop the `posts` collection + hooks.
@@ -36,8 +36,8 @@ Foundation. Gets the server able to read memory from any xemu-running Xbox game.
 
 The legacy Go offset table has 128 hex constants; HaloCaster's `HaloCE/halocaster.py` has 515 scattered across 2587 lines. Before trusting the legacy table as complete:
 
-1. Read `.reference/HaloCaster/HaloCE/halocaster.py` end-to-end, extracting every memory-offset-like constant with surrounding context (what struct, what field, what read type).
-2. Diff the extracted set against `.reference/xemu-cartographer-legacy/internal/scraper/haloce/offsets.go`.
+1. Read `atlas/HaloCaster/HaloCE/halocaster.py` end-to-end, extracting every memory-offset-like constant with surrounding context (what struct, what field, what read type).
+2. Diff the extracted set against `atlas/xemu-cartographer-legacy/internal/scraper/haloce/offsets.go`.
 3. Categorize the deltas:
    - Genuinely missing offsets the legacy reader never used → port them.
    - Non-offsets (struct sizes, magic values, indexing math) → document in comments, don't port.
