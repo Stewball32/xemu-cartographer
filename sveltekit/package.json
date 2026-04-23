@@ -55,6 +55,7 @@
 	},
 	"pnpm": {
 		"onlyBuiltDependencies": [
+			"esbuild",
 			"sqlite3"
 		]
 	}
