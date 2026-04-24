@@ -1,0 +1,7 @@
+*
+!.gitignore
+!*/
+browser/*
+xemu/configs/*
+!xemu/init/*
+

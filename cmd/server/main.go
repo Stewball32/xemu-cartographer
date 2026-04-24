@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
+	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
@@ -26,6 +30,7 @@ func main() {
 
 	var bot *discordbot.Bot
 	var hub *ws.Hub
+	var watcherCancel context.CancelFunc
 
 	// Register record lifecycle hooks (callback registration, fires later).
 	hooks.RegisterAll(app)
@@ -42,6 +47,32 @@ func main() {
 
 		if err := seed.Run(app); err != nil {
 			return err
+		}
+
+		// Containers (optional): start podman manager + socket watcher when
+		// CONTAINERS_ENABLED=true. The route group registers itself as a
+		// no-op when Manager is nil, so a fresh checkout boots cleanly.
+		podmanCfg := podman.LoadFromEnv()
+		if podmanCfg.Enabled {
+			mgr, err := podman.NewManager(podmanCfg)
+			if err != nil {
+				return err
+			}
+			containers.SetManager(mgr)
+
+			if podmanCfg.SocketDir != "" {
+				ctx, cancel := context.WithCancel(context.Background())
+				watcherCancel = cancel
+				w := discovery.NewWatcher(podmanCfg.SocketDir, 2*time.Second,
+					func(name, sock string) {
+						log.Printf("discovery: socket up name=%s path=%s", name, sock)
+					},
+					func(name string) {
+						log.Printf("discovery: socket down name=%s", name)
+					},
+				)
+				go w.Run(ctx)
+			}
 		}
 
 		routes.RegisterAll(se)
@@ -85,6 +116,10 @@ func main() {
 
 	// OnTerminate: cleanup.
 	app.OnTerminate().BindFunc(func(te *core.TerminateEvent) error {
+		if watcherCancel != nil {
+			watcherCancel()
+		}
+
 		if hub != nil {
 			hub.Stop()
 		}

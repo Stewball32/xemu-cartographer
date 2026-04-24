@@ -72,6 +72,11 @@ This is load-bearing — the product has no real UX without it.
 - Extend `xemu-cartographer.toml.example` or fold container config into the root `.env` / a new `config.toml`; decide during porting.
 - **Smoke test:** POST `/api/containers` creates an instance → POST `/start` boots xemu + browser containers → scraper auto-connects → live data flows → POST `/stop` + DELETE tears down cleanly.
 
+### M3 follow-ups (deferred)
+
+- **Browser kiosk Firefox crashes inside `jlesage/firefox` container.** xemu container, Selkies stream (port `XemuHTTPS`), and QMP socket discovery all work end-to-end as of the early-M3 port. The `jlesage/firefox` browser container starts but Firefox + xcompmgr fail with `Authorization required, but no authorization protocol specified` / `Cannot open X display!`, leaving the noVNC view at port `BrowserWeb` blank. The kiosk's purpose is to keep an xemu viewer attached at all times (otherwise Selkies idles when no one is watching) — important for the production deployment story but not for memory-bridge testing. Likely fixes to investigate: pin a known-good `jlesage/firefox` tag, pass `USER_ID`/`GROUP_ID` env vars, or replace jlesage with a different always-on viewer (lightweight headless Chromium pointed at the Selkies URL). Revisit during M4 when the frontend overlay is built — may render the kiosk container unnecessary.
+- **Discovery → scraper auto-start wiring.** Watcher currently logs `discovery: socket up/down`; the `onAdd` callback needs to spawn a scraper once M1+M2 land.
+
 ## Milestone 4 — SvelteKit overlay + container management UI
 
 - New route `sveltekit/src/routes/containers/` — list / create / start / stop / remove containers via the M3 endpoints.
