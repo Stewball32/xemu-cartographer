@@ -99,6 +99,7 @@ export type UsersRecord = {
 	email: string
 	emailVisibility?: boolean
 	id: string
+	isAdmin?: boolean
 	location?: string
 	name?: string
 	password: string

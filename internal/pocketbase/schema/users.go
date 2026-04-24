@@ -50,6 +50,13 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		})
 	}
 
+	if users.Fields.GetByName("isAdmin") == nil {
+		users.Fields.Add(&core.BoolField{
+			Name:   "isAdmin",
+			Hidden: true,
+		})
+	}
+
 	// Unique index — idempotent by name
 	const idxName = "idx_users_username_unique"
 	if users.GetIndex(idxName) == "" {
