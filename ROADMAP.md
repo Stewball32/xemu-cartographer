@@ -4,7 +4,7 @@ Migration plan for xemu-cartographer: a real-time game-state scraper for Xbox ti
 
 Prior implementation is preserved at [atlas/xemu-cartographer-legacy/](atlas/xemu-cartographer-legacy/). HaloCaster (the older Halo-specific Python/C# sibling) is at [atlas/HaloCaster/](atlas/HaloCaster/) and holds the richest set of Halo: CE memory offsets. Everything under `atlas/` is **reference-only and must be re-verified before porting** — offsets, patterns, and APIs may have drifted or been wrong to begin with.
 
-Milestones, not dates. Each blocks the next — nothing ports in parallel.
+Milestones, not dates. Generally each blocks the next, though M3 was ported early (out of sequence) to provide a test substrate for M1+M2 — see [M3 status](#milestone-3--container-lifecycle-podman).
 
 ---
 
@@ -64,6 +64,8 @@ Halo: CE match in manually-started xemu → snapshots + ticks + events flow to `
 ## Milestone 3 — Container lifecycle (Podman)
 
 This is load-bearing — the product has no real UX without it.
+
+**Status:** Ported early. `internal/podman/`, `internal/discovery/`, the six `/api/admin/containers/*` HTTP handlers, env-driven config, and the `CONTAINERS_PODMAN_CMD` rooted-podman escalation are all in. End-to-end create + start + stop + delete + QMP-socket discovery has been smoke-tested against real containers. Two items remain (see follow-ups below): the discovery → scraper auto-start callback (depends on M1+M2) and the `jlesage/firefox` kiosk container's X11 init issue.
 
 - Copy `containers/xemu/init/{01-setup-toml.sh,02-patch-toml.sh,03-setup-hdd.sh,.env}` verbatim into the new repo's `containers/xemu/init/`.
 - Port `internal/podman/{podman.go,ports.go,state.go,ports_test.go}` as-is (clean, no known bugs).
