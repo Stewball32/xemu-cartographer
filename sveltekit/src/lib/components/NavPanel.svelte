@@ -3,6 +3,7 @@
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import NavToggleButton from '$lib/components/NavToggle.svelte';
 	import { mainGroups, footerLinks } from '$lib/config/navigation';
+	import { isAdmin } from '$lib/utils/guards';
 
 	let {
 		open = $bindable(false),
@@ -22,6 +23,16 @@
 
 	let navLayout = $derived<'rail' | 'sidebar'>(
 		isDesktop || isTablet ? (open ? 'sidebar' : 'rail') : 'sidebar'
+	);
+
+	let visibleGroups = $derived(
+		mainGroups
+			.filter((g) => !g.adminOnly || isAdmin())
+			.map((g) => ({
+				...g,
+				links: g.links.filter((l) => !l.adminOnly || isAdmin())
+			}))
+			.filter((g) => g.links.length > 0)
 	);
 </script>
 
@@ -59,7 +70,7 @@
 			</Navigation.Header>
 		{/if}
 		<Navigation.Content class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-			{#each mainGroups as group (group.label)}
+			{#each visibleGroups as group (group.label)}
 				<Navigation.Group>
 					{#if navLayout === 'sidebar'}
 						<Navigation.Label>{group.label}</Navigation.Label>

@@ -48,7 +48,7 @@ What landed:
 
 ### M2 follow-ups (deferred)
 
-- **Snapshot replay for late joiners.** Snapshots only fire on game-state transitions, so a WebSocket client that subscribes mid-game never receives one (and overlay UIs that need map / players / power-item-spawns to render get stuck). Two clean fixes: (a) cache the latest snapshot in `runner` and re-send it when a client `join_room`s the overlay (needs handler integration) or (b) re-emit on a coarse interval (~30s). Pick during M4 when the overlay client is being built.
+- ~~**Snapshot replay for late joiners.**~~ Resolved during M4 with option (a): each `runner` caches the most-recent `websocket.Message` bytes for its snapshot envelope; the `join_room` handler replays them via the new `SendRaw` event capability when a client subscribes to `overlay`. See `internal/scraper/manager/{runner.go,loop.go,manager.go}`, `internal/guards/interfaces/scraper/snapshot.go`, `internal/websocket/handlers/join_room.go`.
 - **Investigate `power_items: null` in tick payloads.** During the smoke test the initial snapshot's `PowerItemSpawns` came back empty (likely the scenario wasn't fully loaded when the scraper started, since power-item resolution depends on world-object scanning). Worth re-running the smoke test with start-after-match-ready and confirming spawns populate; if they still don't, that's a Halo offset divergence to chase during M7.
 
 ### 2a. Offset audit (prerequisite)
@@ -96,14 +96,17 @@ This is load-bearing — the product has no real UX without it.
 ### M3 follow-ups (deferred)
 
 - **Browser kiosk Firefox crashes inside `jlesage/firefox` container.** xemu container, Selkies stream (port `XemuHTTPS`), and QMP socket discovery all work end-to-end as of the early-M3 port. The `jlesage/firefox` browser container starts but Firefox + xcompmgr fail with `Authorization required, but no authorization protocol specified` / `Cannot open X display!`, leaving the noVNC view at port `BrowserWeb` blank. The kiosk's purpose is to keep an xemu viewer attached at all times (otherwise Selkies idles when no one is watching) — important for the production deployment story but not for memory-bridge testing. Likely fixes to investigate: pin a known-good `jlesage/firefox` tag, pass `USER_ID`/`GROUP_ID` env vars, or replace jlesage with a different always-on viewer (lightweight headless Chromium pointed at the Selkies URL). Revisit during M4 when the frontend overlay is built — may render the kiosk container unnecessary.
-- **Discovery → scraper auto-start wiring.** Watcher currently logs `discovery: socket up/down`; the `onAdd` callback needs to spawn a scraper once M1+M2 land.
+- ~~**Discovery → scraper auto-start wiring.**~~ Done — `cmd/server/main.go` wires `discovery.NewWatcher` `onAdd`/`onRemove` directly to `scrMgr.Start`/`Stop`, swallowing already-running errors so manual + watcher paths coexist.
 
 ## Milestone 4 — SvelteKit overlay + container management UI
 
-- New route `sveltekit/src/routes/containers/` — list / create / start / stop / remove containers via the M3 endpoints.
-- First real overlay route under `sveltekit/src/routes/overlays/` (likely a players/scoreboard view mirroring legacy `frontend/src/routes/overlays/players/`). Subscribes to the M2 WebSocket stream.
-- Skeleton UI components + the template's existing auth store; **do not copy legacy `.svelte` files wholesale**.
-- Validate overlay in OBS Browser Source.
+**Status:** Ported. Containers admin UI at [sveltekit/src/routes/containers/](sveltekit/src/routes/containers/) — list/create/start/stop/delete table backed by the M3 admin endpoints, 3s status polling (paused when the tab is hidden), modal create form gated by a name regex, delete confirmation modal, external links to the per-instance xemu HTTPS port and browser kiosk port. Players overlay at [sveltekit/src/routes/overlays/players/](sveltekit/src/routes/overlays/players/) subscribes to the M2 scraper WebSocket via [sveltekit/src/lib/stores/scraper-ws.svelte.ts](sveltekit/src/lib/stores/scraper-ws.svelte.ts) and renders up to 4 local players with team-color stripes, K/D/A, health/shield bars, weapon + ammo (or energy charge), camo/overshield toggles, on a transparent background sized for OBS Browser Source. Layout config in [sveltekit/src/lib/config/layout.ts](sveltekit/src/lib/config/layout.ts) suppresses header/nav/toaster on `/overlays/*` so the overlay composites cleanly.
+
+Admin-gating gotcha worth recording: the `isAdmin` field on `users` is declared `Hidden:true` in [internal/pocketbase/schema/users.go:53-58](internal/pocketbase/schema/users.go#L53-L58), so PocketBase strips it from the auth record returned to the client — meaning the SvelteKit guards saw `record.isAdmin === undefined` and admins were silently treated as non-admins (no Admin nav group, direct nav to `/containers/` bounced to home). Fix: extended [internal/pocketbase/routes/me.go](internal/pocketbase/routes/me.go) to expose `{isAdmin, isSuperuser}` for the authenticated caller, and [sveltekit/src/lib/stores/auth.svelte.ts](sveltekit/src/lib/stores/auth.svelte.ts) hydrates an `isAdmin` boolean (plus a `ready` promise) from `/api/me` on every token change. [sveltekit/src/lib/utils/guards.ts](sveltekit/src/lib/utils/guards.ts) now reads from the store. Field stays hidden — clients never see other users' admin status, and PB still blocks self-promotion via the standard collection PATCH path.
+
+### M4 follow-ups (deferred)
+
+- **Validate overlay in OBS Browser Source.** Smoke-tested in a normal browser tab; not yet pointed at OBS specifically. Should be a sanity check (transparent background, no scrollbars, font rendering at 1080p) once a Halo: CE match is set up.
 
 ## Milestone 5 — PocketBase persistence (with the legacy drop-on-overload bug fixed)
 

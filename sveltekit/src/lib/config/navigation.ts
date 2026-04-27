@@ -1,4 +1,4 @@
-import { SettingsIcon } from '@lucide/svelte';
+import { BoxIcon, SettingsIcon, UsersIcon } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
 export interface NavLink {
@@ -6,14 +6,26 @@ export interface NavLink {
 	href: string;
 	icon: Component;
 	showInBar?: boolean;
+	adminOnly?: boolean;
 }
 
 export interface NavGroup {
 	label: string;
 	links: NavLink[];
+	adminOnly?: boolean;
 }
 
-export const mainGroups: NavGroup[] = [];
+export const mainGroups: NavGroup[] = [
+	{
+		label: 'Overlays',
+		links: [{ label: 'Players', href: '/overlays/players/', icon: UsersIcon }]
+	},
+	{
+		label: 'Admin',
+		adminOnly: true,
+		links: [{ label: 'Containers', href: '/containers/', icon: BoxIcon, adminOnly: true }]
+	}
+];
 
 export const mainLinks: NavLink[] = mainGroups.flatMap((g) => g.links);
 

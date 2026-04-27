@@ -1,0 +1,153 @@
+import { browser, dev } from '$app/environment';
+import { PUBLIC_PB_PORT } from '$env/static/public';
+import type {
+	Envelope,
+	SnapshotPayload,
+	TickPayload,
+	WSMessage
+} from '$lib/types/scraper';
+import { isSnapshot, isTick } from '$lib/types/scraper';
+
+const reconnectDelays = [1000, 2000, 4000, 8000, 15000, 30000];
+
+function buildURL(token: string): string {
+	if (dev) {
+		return `ws://localhost:${PUBLIC_PB_PORT}/api/ws?token=${encodeURIComponent(token)}`;
+	}
+	const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+	return `${proto}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`;
+}
+
+function createScraperWS() {
+	let ws: WebSocket | null = null;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let attempt = 0;
+	let manuallyClosed = false;
+	let currentToken = '';
+
+	let connected = $state(false);
+	// Per-instance latest snapshot/tick. Single-instance is the common case;
+	// the map keys lets a future multi-instance overlay disambiguate.
+	let snapshots = $state<Record<string, SnapshotPayload>>({});
+	let ticks = $state<Record<string, TickPayload>>({});
+	let lastError = $state<string | null>(null);
+
+	function clearReconnect() {
+		if (reconnectTimer !== null) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+	}
+
+	function scheduleReconnect() {
+		if (manuallyClosed) return;
+		const delay = reconnectDelays[Math.min(attempt, reconnectDelays.length - 1)];
+		attempt++;
+		clearReconnect();
+		reconnectTimer = setTimeout(() => {
+			reconnectTimer = null;
+			open(currentToken);
+		}, delay);
+	}
+
+	function handleEnvelope(env: Envelope) {
+		if (isSnapshot(env)) {
+			snapshots = { ...snapshots, [env.instance]: env.payload };
+		} else if (isTick(env)) {
+			ticks = { ...ticks, [env.instance]: env.payload };
+		}
+		// Events ignored for v1; future kill-feed route handles them.
+	}
+
+	function open(token: string) {
+		if (!browser) return;
+		currentToken = token;
+		manuallyClosed = false;
+		try {
+			ws = new WebSocket(buildURL(token));
+		} catch (err) {
+			lastError = err instanceof Error ? err.message : String(err);
+			scheduleReconnect();
+			return;
+		}
+
+		ws.onopen = () => {
+			connected = true;
+			attempt = 0;
+			lastError = null;
+			ws?.send(JSON.stringify({ type: 'join_room', room: 'overlay' }));
+		};
+
+		ws.onmessage = (e) => {
+			try {
+				const msg = JSON.parse(e.data) as WSMessage;
+				if (msg.type === 'scraper' && msg.payload) {
+					// Outer payload may arrive as parsed object (server-side json.RawMessage
+					// is a JSON value; SvelteKit's JSON.parse already lifts it).
+					const env = msg.payload as Envelope;
+					handleEnvelope(env);
+				} else if (msg.type === 'error') {
+					const errPayload = msg.payload as { code?: string; message?: string } | undefined;
+					lastError = errPayload?.message ?? 'websocket error';
+				}
+			} catch (err) {
+				lastError = err instanceof Error ? err.message : String(err);
+			}
+		};
+
+		ws.onerror = () => {
+			lastError = 'websocket error';
+		};
+
+		ws.onclose = () => {
+			connected = false;
+			ws = null;
+			if (!manuallyClosed) {
+				scheduleReconnect();
+			}
+		};
+	}
+
+	function connect(token: string) {
+		if (ws) return;
+		open(token);
+	}
+
+	function disconnect() {
+		manuallyClosed = true;
+		clearReconnect();
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+		connected = false;
+	}
+
+	return {
+		get connected() {
+			return connected;
+		},
+		get snapshots() {
+			return snapshots;
+		},
+		get ticks() {
+			return ticks;
+		},
+		get lastError() {
+			return lastError;
+		},
+		// First-instance convenience accessors for single-instance overlay v1.
+		get snapshot(): SnapshotPayload | null {
+			const keys = Object.keys(snapshots);
+			return keys.length > 0 ? snapshots[keys[0]] : null;
+		},
+		get tick(): TickPayload | null {
+			const keys = Object.keys(ticks);
+			return keys.length > 0 ? ticks[keys[0]] : null;
+		},
+		connect,
+		disconnect
+	};
+}
+
+export const scraperWS = createScraperWS();

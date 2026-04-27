@@ -1,17 +1,58 @@
+import { dev } from '$app/environment';
+import { PUBLIC_PB_PORT } from '$env/static/public';
 import pb from '$lib/pocketbase';
 import type { UsersResponse } from '$lib/types/pocketbase-types';
+
+const baseURL = dev ? `http://localhost:${PUBLIC_PB_PORT}` : '';
+
+interface MeResponse {
+	isAdmin: boolean;
+	isSuperuser: boolean;
+}
 
 function createAuthStore() {
 	let user = $state<UsersResponse | null>(pb.authStore.record as UsersResponse | null);
 	let token = $state(pb.authStore.token);
 	let isValid = $state(pb.authStore.isValid);
+	let isAdmin = $state(false);
 	const isLoggedIn = $derived(isValid && user !== null);
+
+	let ready: Promise<void> = Promise.resolve();
+
+	async function fetchAdmin(authToken: string): Promise<boolean> {
+		try {
+			const res = await fetch(`${baseURL}/api/me`, {
+				headers: { Authorization: authToken }
+			});
+			if (!res.ok) return false;
+			const data = (await res.json()) as MeResponse;
+			return data.isAdmin === true || data.isSuperuser === true;
+		} catch {
+			return false;
+		}
+	}
+
+	function refreshAdmin() {
+		if (!token) {
+			isAdmin = false;
+			ready = Promise.resolve();
+			return;
+		}
+		const authToken = token;
+		ready = fetchAdmin(authToken).then((result) => {
+			// Drop the result if the token rotated while we were in flight.
+			if (token === authToken) isAdmin = result;
+		});
+	}
 
 	pb.authStore.onChange((newToken, record) => {
 		user = (record as UsersResponse | null) ?? null;
 		token = newToken;
 		isValid = !!newToken;
+		refreshAdmin();
 	});
+
+	if (isValid) refreshAdmin();
 
 	return {
 		get user() {
@@ -22,6 +63,12 @@ function createAuthStore() {
 		},
 		get isLoggedIn() {
 			return isLoggedIn;
+		},
+		get isAdmin() {
+			return isAdmin;
+		},
+		get ready() {
+			return ready;
 		},
 		async register(email: string, password: string, passwordConfirm: string) {
 			await pb.collection('users').create({ email, password, passwordConfirm });
