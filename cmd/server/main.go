@@ -13,16 +13,19 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
+	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
+	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"      // self-registering Halo: CE GameReader
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"  // self-registering WS handlers
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"     // self-registering WS room types
 )
 
 func main() {
@@ -31,6 +34,7 @@ func main() {
 	var bot *discordbot.Bot
 	var hub *ws.Hub
 	var watcherCancel context.CancelFunc
+	var scrMgr *scrapermgr.Manager
 
 	// Register record lifecycle hooks (callback registration, fires later).
 	hooks.RegisterAll(app)
@@ -47,6 +51,17 @@ func main() {
 
 		if err := seed.Run(app); err != nil {
 			return err
+		}
+
+		// Build the Services skeleton early so subsystems that need to broadcast
+		// (the scraper manager) can hold a stable pointer to it. Per-system
+		// fields (svc.WS, svc.Discord) are populated as those subsystems come up
+		// later in this OnServe block — Go's pointer semantics mean the scraper
+		// sees the live values without needing a SetServices callback.
+		pbSvc := pb.NewService(app)
+		svc := &guards.Services{
+			App: app,
+			PB:  pbSvc,
 		}
 
 		// Containers (optional): start podman manager + socket watcher when
@@ -75,12 +90,22 @@ func main() {
 			}
 		}
 
+		// Scraper manager: always available. Holds a *Services pointer; broadcasts
+		// safely no-op until svc.WS is populated below. The blank import of
+		// internal/scraper/haloce above triggers haloce.init(), which registers
+		// Halo: CE's title ID with scraper.Lookup so manager.Start() can detect it.
+		scrMgr = scrapermgr.New(svc)
+		svc.Scraper = scrMgr
+		scraperroutes.SetManager(scrMgr)
+
 		routes.RegisterAll(se)
 
 		hub = ws.NewHub(app)
 		go hub.Run()
 		ws.SetInstance(hub)
 		se.Router.GET("/api/ws", ws.NewHandler(hub, app))
+		svc.WS = hub
+		hub.SetServices(svc)
 
 		// Start Disgo bot (non-blocking)
 		var err error
@@ -93,21 +118,11 @@ func main() {
 				bot = nil
 			} else {
 				discordbot.SetInstance(bot)
+				svc.Discord = bot
+				bot.SetServices(svc)
 			}
 		}
 
-		// Wire up cross-system Services for guards, resolvers, and actions.
-		pbSvc := pb.NewService(app)
-		svc := &guards.Services{
-			App: app,
-			WS:  hub,
-			PB:  pbSvc,
-		}
-		if bot != nil {
-			svc.Discord = bot
-			bot.SetServices(svc)
-		}
-		hub.SetServices(svc)
 		hooks.SetServices(svc)
 		commands.SetServices(svc)
 
@@ -118,6 +133,17 @@ func main() {
 	app.OnTerminate().BindFunc(func(te *core.TerminateEvent) error {
 		if watcherCancel != nil {
 			watcherCancel()
+		}
+
+		// Stop scrapers BEFORE the hub so in-flight tick broadcasts don't try to
+		// write to a closing channel. Manager.Stop blocks until each runner's
+		// tick goroutine exits.
+		if scrMgr != nil {
+			for _, info := range scrMgr.List() {
+				if err := scrMgr.Stop(info.Name); err != nil {
+					log.Printf("scraper: stop %s on shutdown: %v", info.Name, err)
+				}
+			}
 		}
 
 		if hub != nil {

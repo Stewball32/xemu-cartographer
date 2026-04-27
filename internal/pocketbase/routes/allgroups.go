@@ -4,6 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/admin"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/xemu"
 )
 
@@ -12,5 +13,6 @@ import (
 func registerAllGroups(se *core.ServeEvent) {
 	admin.RegisterAll(se)
 	containers.RegisterAll(se)
+	scraper.RegisterAll(se)
 	xemu.RegisterAll(se)
 }
