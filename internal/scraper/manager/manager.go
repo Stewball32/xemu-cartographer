@@ -127,3 +127,31 @@ func (m *Manager) List() []scraperiface.Info {
 	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
 	return infos
 }
+
+// LatestSnapshotMessages returns the most recent wrapped websocket.Message
+// bytes for every runner that has emitted at least one snapshot. Used by the
+// join_room handler to replay snapshots to clients joining the overlay room
+// mid-match — without this, late joiners only see ticks/events going forward
+// and the overlay UI never gets map/players/power-item-spawn data to render.
+//
+// Each returned []byte is a copy; callers can hold or send it without locking.
+func (m *Manager) LatestSnapshotMessages() [][]byte {
+	m.mu.Lock()
+	runners := make([]*runner, 0, len(m.runners))
+	for _, r := range m.runners {
+		runners = append(runners, r)
+	}
+	m.mu.Unlock()
+
+	out := make([][]byte, 0, len(runners))
+	for _, r := range runners {
+		r.snapshotMu.Lock()
+		if len(r.latestSnapshotMsg) > 0 {
+			buf := make([]byte, len(r.latestSnapshotMsg))
+			copy(buf, r.latestSnapshotMsg)
+			out = append(out, buf)
+		}
+		r.snapshotMu.Unlock()
+	}
+	return out
+}

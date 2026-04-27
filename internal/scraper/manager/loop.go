@@ -125,6 +125,9 @@ func (r *runner) sleepOrCancel(d time.Duration) {
 //
 // Wrap-not-extend (M2c decision in ROADMAP.md): keeps the wire schema uniform
 // across all WebSocket rooms — every payload arrives wrapped in Message.
+//
+// Snapshot envelopes are also cached on the runner so the join_room handler
+// can replay them to mid-match joiners.
 func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 	if svc == nil || svc.WS == nil {
 		return
@@ -144,5 +147,12 @@ func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 		log.Printf("scraper[%s]: marshal message: %v", r.name, err)
 		return
 	}
+
+	if env.Type == "snapshot" {
+		r.snapshotMu.Lock()
+		r.latestSnapshotMsg = msgBytes
+		r.snapshotMu.Unlock()
+	}
+
 	svc.WS.SendToRoomRaw(OverlayRoom, msgBytes)
 }

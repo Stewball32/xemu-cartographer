@@ -6,4 +6,5 @@ package scraper
 type Service interface {
 	Lifecycle
 	Inspect
+	Snapshot
 }

@@ -23,4 +23,13 @@ func handleJoinRoom(e *Event) {
 	}
 
 	e.JoinRoom(e.Room)
+
+	// Mid-match overlay subscribers don't otherwise receive a snapshot until
+	// the next game-state transition; replay the latest cached snapshot for
+	// each running scraper so the UI can render immediately.
+	if rt.Name == "overlay" && e.Services != nil && e.Services.Scraper != nil {
+		for _, snap := range e.Services.Scraper.LatestSnapshotMessages() {
+			e.SendRaw(snap)
+		}
+	}
 }

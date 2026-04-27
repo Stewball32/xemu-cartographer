@@ -158,6 +158,9 @@ func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 		SendToUser: func(userID string, payload json.RawMessage) {
 			h.sendToUser(userID, Message{Type: im.msg.Type, Target: userID, Payload: payload})
 		},
+		SendRaw: func(data []byte) {
+			h.trySend(im.sender, data)
+		},
 		SendError: func(code string, message string) {
 			errPayload, _ := json.Marshal(map[string]string{"code": code, "message": message})
 			errMsg, _ := json.Marshal(Message{

@@ -21,12 +21,13 @@ type Event struct {
 	Payload json.RawMessage // Opaque project-specific data.
 
 	// Response capabilities (set by Hub before dispatch).
-	Broadcast  func(msg json.RawMessage)
-	SendToRoom func(room string, msg json.RawMessage)
-	SendToUser func(userID string, msg json.RawMessage)
-	SendError  func(code string, message string) // Send error back to sender.
-	JoinRoom   func(room string)
-	LeaveRoom  func(room string)
+	Broadcast    func(msg json.RawMessage)
+	SendToRoom   func(room string, msg json.RawMessage)
+	SendToUser   func(userID string, msg json.RawMessage)
+	SendRaw      func(data []byte)                  // Send pre-marshaled bytes back to the sender.
+	SendError    func(code string, message string)  // Send error back to sender.
+	JoinRoom     func(room string)
+	LeaveRoom    func(room string)
 }
 
 // HandlerFunc processes a WebSocket event.

@@ -32,6 +32,14 @@ type runner struct {
 	progressMu sync.Mutex
 	tick       uint32 // most recent observed game tick
 	ticks      uint64 // total loop iterations since Start
+
+	// snapshotMu guards latestSnapshotMsg, the wrapped websocket.Message bytes
+	// for the most recent snapshot broadcast. Replayed to clients that join the
+	// overlay room mid-match so the UI can render without waiting for the next
+	// game-state transition (M2 follow-up: ROADMAP.md "Snapshot replay for late
+	// joiners").
+	snapshotMu        sync.Mutex
+	latestSnapshotMsg []byte
 }
 
 func newRunner(name, sock string, titleID uint32, inst *xemu.Instance, reader scraper.GameReader) *runner {

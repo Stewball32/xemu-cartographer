@@ -64,6 +64,14 @@ func main() {
 			PB:  pbSvc,
 		}
 
+		// Scraper manager: always available. Holds a *Services pointer; broadcasts
+		// safely no-op until svc.WS is populated below. The blank import of
+		// internal/scraper/haloce above triggers haloce.init(), which registers
+		// Halo: CE's title ID with scraper.Lookup so manager.Start() can detect it.
+		scrMgr = scrapermgr.New(svc)
+		svc.Scraper = scrMgr
+		scraperroutes.SetManager(scrMgr)
+
 		// Containers (optional): start podman manager + socket watcher when
 		// CONTAINERS_ENABLED=true. The route group registers itself as a
 		// no-op when Manager is nil, so a fresh checkout boots cleanly.
@@ -80,23 +88,21 @@ func main() {
 				watcherCancel = cancel
 				w := discovery.NewWatcher(podmanCfg.SocketDir, 2*time.Second,
 					func(name, sock string) {
-						log.Printf("discovery: socket up name=%s path=%s", name, sock)
+						go func() {
+							if err := scrMgr.Start(name, sock); err != nil {
+								log.Printf("discovery: auto-start scraper %s: %v", name, err)
+							}
+						}()
 					},
 					func(name string) {
-						log.Printf("discovery: socket down name=%s", name)
+						if err := scrMgr.Stop(name); err != nil {
+							log.Printf("discovery: auto-stop scraper %s: %v", name, err)
+						}
 					},
 				)
 				go w.Run(ctx)
 			}
 		}
-
-		// Scraper manager: always available. Holds a *Services pointer; broadcasts
-		// safely no-op until svc.WS is populated below. The blank import of
-		// internal/scraper/haloce above triggers haloce.init(), which registers
-		// Halo: CE's title ID with scraper.Lookup so manager.Start() can detect it.
-		scrMgr = scrapermgr.New(svc)
-		svc.Scraper = scrMgr
-		scraperroutes.SetManager(scrMgr)
 
 		routes.RegisterAll(se)
 
