@@ -219,17 +219,28 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	if height == 0 {
 		height = 720
 	}
-	// The browser container is on the default bridge network so its
-	// HTTP/VNC ports can be published bound to 127.0.0.1 only — those
-	// channels are reverse-proxied through PocketBase, not exposed direct.
-	// xemu stays on `--network host` for pcap netplay (NET_ADMIN/NET_RAW),
-	// so its HTTPS port lives on the host. The kiosk Firefox reaches it via
-	// `host.containers.internal`, the standard Podman gateway hostname.
-	xemuTargetHost := "host.containers.internal"
+	// Both containers run on `--network host`. xemu requires it for pcap
+	// netplay (binds to wlan0); the browser piggybacks so the kiosk Firefox
+	// can reach xemu via `localhost` without crossing podman's bridge →
+	// host firewall (which silently drops SYNs to host ports even with no
+	// firewalld running, courtesy of netavark's default rules).
+	//
+	// X auth caveat: with `--network host`, podman does NOT populate
+	// /etc/hosts with the container's own hostname. jlesage's Xvnc init
+	// uses gethostname() when writing the auth cookie, and a missing
+	// mapping causes xrdb/Firefox to die with "Authorization required,
+	// but no authorization protocol specified". The `--add-host` below
+	// supplies that entry so xauth completes cleanly.
+	//
+	// Trade-off: the kiosk's WEB_LISTENING_PORT and VNC_LISTENING_PORT
+	// listen on 0.0.0.0 on the host. Single-public-port goal is preserved
+	// at the host firewall layer for prod deploys; the JWT-gated reverse-
+	// proxy + WS relay (proxy.go, vnc.go) remain the only intended public
+	// path through PocketBase :8090.
+	xemuTargetHost := "localhost"
 
 	// Build the insecure-fallback list — Firefox accepts xemu's self-signed
-	// cert for the bridge gateway hostname plus the configured HostIP (for
-	// any client-facing URLs, though those now go through the proxy).
+	// cert for localhost plus the configured HostIP.
 	hostIP := m.cfg.HostIP
 	if hostIP == "" {
 		hostIP = "localhost"
@@ -243,9 +254,8 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 		"create",
 		"--name", browserName,
 		"--hostname", browserName,
-		"--network", "bridge",
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", ports.BrowserWeb, ports.BrowserWeb),
-		"-p", fmt.Sprintf("127.0.0.1:%d:%d", ports.BrowserVNC, ports.BrowserVNC),
+		"--network", "host",
+		"--add-host", fmt.Sprintf("%s:127.0.0.1", browserName),
 		"--shm-size", shmSize,
 		"--restart", "unless-stopped",
 		// Environment
