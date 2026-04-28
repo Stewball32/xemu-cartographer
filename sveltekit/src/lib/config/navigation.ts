@@ -5,12 +5,15 @@ export interface NavLink {
 	label: string;
 	href: string;
 	icon: Component;
+	showInDrawer?: boolean;
+	showInRail?: boolean;
 	showInBar?: boolean;
 	adminOnly?: boolean;
 }
 
 export interface NavGroup {
 	label: string;
+	href?: string;
 	links: NavLink[];
 	adminOnly?: boolean;
 }

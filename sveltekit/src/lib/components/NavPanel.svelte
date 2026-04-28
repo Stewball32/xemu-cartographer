@@ -2,7 +2,7 @@
 	import { fade } from 'svelte/transition';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import NavToggleButton from '$lib/components/NavToggle.svelte';
-	import { mainGroups, footerLinks } from '$lib/config/navigation';
+	import { mainGroups, footerLinks, type NavLink } from '$lib/config/navigation';
 	import { isAdmin } from '$lib/utils/guards';
 
 	let {
@@ -25,15 +25,23 @@
 		isDesktop || isTablet ? (open ? 'sidebar' : 'rail') : 'sidebar'
 	);
 
+	function isVisible(link: NavLink, layout: 'rail' | 'sidebar'): boolean {
+		return layout === 'sidebar' ? (link.showInDrawer ?? true) : (link.showInRail ?? true);
+	}
+
 	let visibleGroups = $derived(
 		mainGroups
 			.filter((g) => !g.adminOnly || isAdmin())
 			.map((g) => ({
 				...g,
-				links: g.links.filter((l) => !l.adminOnly || isAdmin())
+				links: g.links
+					.filter((l) => !l.adminOnly || isAdmin())
+					.filter((l) => isVisible(l, navLayout))
 			}))
 			.filter((g) => g.links.length > 0)
 	);
+
+	let visibleFooterLinks = $derived(footerLinks.filter((l) => isVisible(l, navLayout)));
 </script>
 
 <!-- Mobile backdrop -->
@@ -73,7 +81,22 @@
 			{#each visibleGroups as group (group.label)}
 				<Navigation.Group>
 					{#if navLayout === 'sidebar'}
-						<Navigation.Label>{group.label}</Navigation.Label>
+						<Navigation.Label>
+							{#if group.href}
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
+								<a
+									href={group.href}
+									aria-current={currentPath === group.href ? 'page' : undefined}
+									class="hover:underline aria-[current=page]:underline"
+									onclick={!isDesktop ? close : undefined}
+								>
+									{group.label}
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{:else}
+								{group.label}
+							{/if}
+						</Navigation.Label>
 					{/if}
 					<Navigation.Menu>
 						{#each group.links as link (link.href)}
@@ -93,7 +116,7 @@
 		</Navigation.Content>
 		<Navigation.Footer>
 			<Navigation.Menu>
-				{#each footerLinks as link (link.href)}
+				{#each visibleFooterLinks as link (link.href)}
 					<Navigation.TriggerAnchor
 						href={link.href}
 						aria-current={currentPath === link.href ? 'page' : undefined}
