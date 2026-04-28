@@ -21,7 +21,39 @@ func Run(app *pocketbase.PocketBase) error {
 		}
 	}
 
+	for _, u := range users {
+		if err := ensureUser(app, u); err != nil {
+			return fmt.Errorf("seed user %s: %w", u.Email, err)
+		}
+	}
+
 	log.Println("Seeding complete.")
+	return nil
+}
+
+func ensureUser(app *pocketbase.PocketBase, u seedUser) error {
+	existing, _ := app.FindAuthRecordByEmail("users", u.Email)
+	if existing != nil {
+		log.Printf("  user %s: exists, skipping", u.Email)
+		return nil
+	}
+
+	collection, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		return err
+	}
+
+	record := core.NewRecord(collection)
+	record.Set("email", u.Email)
+	record.Set("password", u.Password)
+	record.Set("username", u.Username)
+	record.Set("isAdmin", u.IsAdmin)
+
+	if err := app.Save(record); err != nil {
+		return err
+	}
+
+	log.Printf("  user %s: created", u.Email)
 	return nil
 }
 
