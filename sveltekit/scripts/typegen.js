@@ -28,6 +28,40 @@ if (!EMAIL || !PASSWORD) {
 }
 const OUT = resolve(__dirname, '../src/lib/types/pocketbase-types.ts');
 
+const TIMEOUT_MS = Number(process.env.PB_TYPEGEN_TIMEOUT_MS ?? 60_000);
+const POLL_INTERVAL_MS = 1000;
+const PROBE_TIMEOUT_MS = 1000;
+
+async function waitForServer(url) {
+	const deadline = Date.now() + TIMEOUT_MS;
+	let announced = false;
+	while (Date.now() < deadline) {
+		const ctrl = new AbortController();
+		const t = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
+		try {
+			const res = await fetch(url, { signal: ctrl.signal });
+			if (res.ok) return true;
+		} catch {
+			// not up yet
+		} finally {
+			clearTimeout(t);
+		}
+		if (!announced) {
+			console.log('typegen: waiting for PocketBase…');
+			announced = true;
+		}
+		await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+	}
+	return false;
+}
+
+const ready = await waitForServer(`http://localhost:${PORT}/api/health`);
+if (!ready) {
+	console.error(`typegen: PocketBase did not respond within ${TIMEOUT_MS}ms — aborting`);
+	process.exit(1);
+}
+console.log('typegen: server ready, generating types…');
+
 // Resolve the binary from node_modules.
 // On Windows, .cmd wrappers must be invoked via cmd.exe (shell: true).
 const isWindows = process.platform === 'win32';

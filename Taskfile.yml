@@ -11,10 +11,10 @@ tasks:
     cmds: ["air -c .air.toml"]
 
   dev:frontend:
-    desc: Run SvelteKit dev server (typegen retries in background until backend ready)
+    desc: Run SvelteKit dev server (typegen waits for backend, then generates types)
     dir: sveltekit
     cmds:
-      - cmd: "for i in $(seq 1 15); do pnpm typegen 2>/dev/null && break; sleep 2; done &"
+      - cmd: "pnpm --silent typegen &"
       - cmd: "pnpm dev"
 
   typegen:
