@@ -1,11 +1,14 @@
 package containers
 
-// WebSocket relay for the kiosk's keyboard-only VNC port.
+// WebSocket relay for the kiosk's keyboard-only VNC sidecar.
 //
-// Why a relay instead of direct: same reason as the kiosk HTTP proxy — the
-// browser_vnc port binds to 127.0.0.1 only when CONTAINERS_BIND_LOOPBACK is
-// in effect. The relay enforces PocketBase JWT auth (via ?token=) and pipes
-// bytes both ways without inspecting the RFB protocol.
+// Targets the same /websockify endpoint as the kiosk HTTP proxy (nginx on
+// browser_web → /tmp/vnc.sock). NOT the raw RFB TCP port (browser_vnc):
+// that listener speaks RFB only and rejects HTTP Upgrade requests, which
+// trips Xvnc's brute-force blacklist after a handful of reconnect attempts.
+// The relay enforces PocketBase JWT auth (via ?token=) and pipes bytes
+// both ways without inspecting the RFB protocol. Coexists with the iframe's
+// display connection via RFB shared-flag=1.
 
 import (
 	"context"
@@ -51,7 +54,7 @@ func handleVNCRelay(e *core.RequestEvent) error {
 	ctx, cancel := context.WithCancel(e.Request.Context())
 	defer cancel()
 
-	upstreamURL := "ws://127.0.0.1:" + strconv.Itoa(info.Ports.BrowserVNC) + "/websockify"
+	upstreamURL := "ws://127.0.0.1:" + strconv.Itoa(info.Ports.BrowserWeb) + "/websockify"
 	upstreamConn, _, err := websocket.Dial(ctx, upstreamURL, &websocket.DialOptions{
 		Subprotocols: []string{"binary"},
 	})
