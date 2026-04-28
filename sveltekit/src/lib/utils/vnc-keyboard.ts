@@ -138,11 +138,23 @@ export class VNCKeyboard {
 				this.state = State.ServerInit;
 				break;
 
-			case State.ServerInit:
-				// Server sends framebuffer info + name. We don't care — just mark ready.
+			case State.ServerInit: {
+				// Advertise DesktopSize so Xvnc doesn't kick us when the iframe's
+				// noVNC client renegotiates the framebuffer size.
+				const encs = [-223, -308, -224]; // DesktopSize, ExtendedDesktopSize, LastRect
+				const buf = new ArrayBuffer(4 + 4 * encs.length);
+				const v = new DataView(buf);
+				v.setUint8(0, 2); // SetEncodings
+				v.setUint8(1, 0); // padding
+				v.setUint16(2, encs.length);
+				for (let i = 0; i < encs.length; i++) {
+					v.setInt32(4 + i * 4, encs[i]);
+				}
+				this.ws!.send(buf);
 				this.state = State.Ready;
 				this.onStatus?.(true);
 				break;
+			}
 
 			case State.Ready:
 				// Ignore any unsolicited messages (Bell, ServerCutText, etc.)
