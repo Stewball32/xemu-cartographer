@@ -197,7 +197,7 @@ The `internal/podman/` package shells out to the `podman` CLI to provision xemu 
 
 ### Prerequisites
 
-- **Rooted Podman.** `/dev/kvm` + `/dev/dri` device passthrough and `NET_ADMIN`/`NET_RAW` caps don't work rootless. On CachyOS: `sudo pacman -S podman`, then `sudo systemctl enable --now podman.socket`. The Go binary itself doesn't need to run as root — `podman` does (sudo or rootful service).
+- **Rooted Podman + crun.** `/dev/kvm` + `/dev/dri` device passthrough and `NET_ADMIN`/`NET_RAW` caps don't work rootless. On CachyOS: `sudo pacman -S podman crun`, then `sudo systemctl enable --now podman.socket`. The Go binary itself doesn't need to run as root — `podman` does (sudo or rootful service). The `crun` runtime is non-optional: with the default `runc` (1.4.x) on some hosts, the jlesage/firefox kiosk's Xvnc rejects all X clients ("Authorization required, but no authorization protocol specified") and the noVNC view stays black. [.env.example](.env.example) defaults `CONTAINERS_PODMAN_CMD=sudo -n podman --runtime=crun` to select it.
 - **Pre-pull images** (auto-pulls on first start, but pre-pulling avoids surprises):
   ```sh
   sudo podman pull lscr.io/linuxserver/xemu:latest
