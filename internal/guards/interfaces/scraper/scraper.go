@@ -7,4 +7,5 @@ type Service interface {
 	Lifecycle
 	Inspect
 	Snapshot
+	State
 }

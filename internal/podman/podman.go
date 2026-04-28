@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,6 @@ type Config struct {
 	BrowserInitDir string
 	PortBase       int
 	PortStride     int
-	StateFile      string
 	HostIP         string // IP/hostname for remote access; defaults to "localhost"
 
 	// PodmanCmd is the command (with optional leading args) used to invoke
@@ -52,18 +52,22 @@ const (
 
 // Manager creates and controls podman containers.
 type Manager struct {
-	cfg   Config
-	state *State
-	mu    sync.Mutex
+	cfg        Config
+	store      Store
+	containers map[string]*ContainerInfo
+	mu         sync.Mutex
 }
 
-// NewManager loads persisted state and returns a ready Manager.
-func NewManager(cfg Config) (*Manager, error) {
-	state, err := LoadState(cfg.StateFile)
+// NewManager loads persisted state via store and returns a ready Manager.
+func NewManager(cfg Config, store Store) (*Manager, error) {
+	containers, err := store.LoadAll()
 	if err != nil {
 		return nil, fmt.Errorf("podman: load state: %w", err)
 	}
-	return &Manager{cfg: cfg, state: state}, nil
+	if containers == nil {
+		containers = make(map[string]*ContainerInfo)
+	}
+	return &Manager{cfg: cfg, store: store, containers: containers}, nil
 }
 
 // Create provisions a new xemu + browser container pair without starting them.
@@ -71,11 +75,11 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.state.Containers[name]; exists {
+	if _, exists := m.containers[name]; exists {
 		return nil, fmt.Errorf("container %q already exists", name)
 	}
 
-	idx := m.state.NextIndex()
+	idx := nextIndex(m.containers)
 	ports := AllocatePorts(m.cfg.PortBase, m.cfg.PortStride, idx)
 	info := &ContainerInfo{
 		Name:    name,
@@ -119,8 +123,8 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		return nil, fmt.Errorf("create browser container: %w", err)
 	}
 
-	m.state.Containers[name] = info
-	if err := m.state.Save(); err != nil {
+	m.containers[name] = info
+	if err := m.store.Upsert(info); err != nil {
 		log.Printf("podman: warning: failed to save state: %v", err)
 	}
 	return info, nil
@@ -215,28 +219,39 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	if height == 0 {
 		height = 720
 	}
+	// The browser container is on the default bridge network so its
+	// HTTP/VNC ports can be published bound to 127.0.0.1 only — those
+	// channels are reverse-proxied through PocketBase, not exposed direct.
+	// xemu stays on `--network host` for pcap netplay (NET_ADMIN/NET_RAW),
+	// so its HTTPS port lives on the host. The kiosk Firefox reaches it via
+	// `host.containers.internal`, the standard Podman gateway hostname.
+	xemuTargetHost := "host.containers.internal"
+
+	// Build the insecure-fallback list — Firefox accepts xemu's self-signed
+	// cert for the bridge gateway hostname plus the configured HostIP (for
+	// any client-facing URLs, though those now go through the proxy).
 	hostIP := m.cfg.HostIP
 	if hostIP == "" {
 		hostIP = "localhost"
 	}
-
-	// Build the insecure-fallback list: always include localhost, add hostIP if different.
-	certFallbackHosts := "localhost"
-	if hostIP != "localhost" {
-		certFallbackHosts = "localhost," + hostIP
+	certFallbackHosts := xemuTargetHost
+	if hostIP != "" && hostIP != xemuTargetHost {
+		certFallbackHosts += "," + hostIP
 	}
 
 	args := []string{
 		"create",
 		"--name", browserName,
 		"--hostname", browserName,
-		"--network", "host",
+		"--network", "bridge",
+		"-p", fmt.Sprintf("127.0.0.1:%d:%d", ports.BrowserWeb, ports.BrowserWeb),
+		"-p", fmt.Sprintf("127.0.0.1:%d:%d", ports.BrowserVNC, ports.BrowserVNC),
 		"--shm-size", shmSize,
 		"--restart", "unless-stopped",
 		// Environment
 		"-e", fmt.Sprintf("WEB_LISTENING_PORT=%d", ports.BrowserWeb),
 		"-e", fmt.Sprintf("VNC_LISTENING_PORT=%d", ports.BrowserVNC),
-		"-e", fmt.Sprintf("FF_OPEN_URL=https://%s:%d", hostIP, ports.XemuHTTPS),
+		"-e", fmt.Sprintf("FF_OPEN_URL=https://%s:%d", xemuTargetHost, ports.XemuHTTPS),
 		"-e", "FF_KIOSK=1",
 		"-e", "FF_CUSTOM_ARGS=",
 		"-e", "FF_PREF_AUTOPLAY=media.autoplay.default=0",
@@ -276,7 +291,7 @@ func (m *Manager) Start(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.state.Containers[name]; !ok {
+	if _, ok := m.containers[name]; !ok {
 		return fmt.Errorf("container %q not found", name)
 	}
 	if out, err := m.run("start", name); err != nil {
@@ -293,7 +308,7 @@ func (m *Manager) Stop(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.state.Containers[name]; !ok {
+	if _, ok := m.containers[name]; !ok {
 		return fmt.Errorf("container %q not found", name)
 	}
 	// Stop browser first (depends on xemu).
@@ -311,7 +326,7 @@ func (m *Manager) Remove(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.state.Containers[name]; !ok {
+	if _, ok := m.containers[name]; !ok {
 		return fmt.Errorf("container %q not found", name)
 	}
 
@@ -326,9 +341,9 @@ func (m *Manager) Remove(name string) error {
 		log.Printf("podman: rm %s: %s: %s", name, err, out)
 	}
 
-	delete(m.state.Containers, name)
-	if err := m.state.Save(); err != nil {
-		log.Printf("podman: warning: failed to save state: %v", err)
+	delete(m.containers, name)
+	if err := m.store.Delete(name); err != nil {
+		log.Printf("podman: warning: failed to delete state: %v", err)
 	}
 	return nil
 }
@@ -338,8 +353,8 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	out := make([]ContainerInfo, 0, len(m.state.Containers))
-	for _, info := range m.state.Containers {
+	out := make([]ContainerInfo, 0, len(m.containers))
+	for _, info := range m.containers {
 		out = append(out, *info)
 	}
 	return out, nil
@@ -349,7 +364,7 @@ func (m *Manager) List() ([]ContainerInfo, error) {
 // "exited", "created").
 func (m *Manager) Status(name string) (string, error) {
 	m.mu.Lock()
-	if _, ok := m.state.Containers[name]; !ok {
+	if _, ok := m.containers[name]; !ok {
 		m.mu.Unlock()
 		return "", fmt.Errorf("container %q not found", name)
 	}
@@ -371,6 +386,47 @@ func (m *Manager) Status(name string) (string, error) {
 		s = s[:len(s)-1]
 	}
 	return s, nil
+}
+
+// Logs shells `podman logs --tail N` against either the xemu (which="xemu") or
+// browser (which="browser") container of the named pair. tail is clamped to
+// [1, 1000]. The returned string is the combined stdout+stderr of podman.
+func (m *Manager) Logs(name string, tail int, which string) (string, error) {
+	m.mu.Lock()
+	if _, ok := m.containers[name]; !ok {
+		m.mu.Unlock()
+		return "", fmt.Errorf("container %q not found", name)
+	}
+	m.mu.Unlock()
+
+	if tail <= 0 {
+		tail = 200
+	}
+	if tail > 1000 {
+		tail = 1000
+	}
+
+	target := name
+	if which == "browser" {
+		target = name + "-browser"
+	}
+
+	out, err := m.run("logs", "--tail", strconv.Itoa(tail), target)
+	if err != nil {
+		return string(out), fmt.Errorf("podman logs %s: %w", target, err)
+	}
+	return string(out), nil
+}
+
+// Get returns the ContainerInfo for name, or false if unknown.
+func (m *Manager) Get(name string) (ContainerInfo, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	info, ok := m.containers[name]
+	if !ok {
+		return ContainerInfo{}, false
+	}
+	return *info, true
 }
 
 // run executes the configured podman command with the given arguments.

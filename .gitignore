@@ -8,6 +8,10 @@ vendor/
 pb_data/
 pb_public/
 
+# Containers — dev-only PB seed snapshot, plus legacy JSON state file
+containers/dev-seed.json
+containers/state.json
+
 # Node / SvelteKit
 sveltekit/node_modules/
 sveltekit/.svelte-kit/

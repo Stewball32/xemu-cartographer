@@ -11,6 +11,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
@@ -53,6 +54,10 @@ func main() {
 			return err
 		}
 
+		// Register snapshot hooks AFTER seeding so the seeder's own writes don't
+		// overwrite the snapshot mid-run.
+		seed.RegisterContainerSnapshotHooks(app)
+
 		// Build the Services skeleton early so subsystems that need to broadcast
 		// (the scraper manager) can hold a stable pointer to it. Per-system
 		// fields (svc.WS, svc.Discord) are populated as those subsystems come up
@@ -77,11 +82,13 @@ func main() {
 		// no-op when Manager is nil, so a fresh checkout boots cleanly.
 		podmanCfg := podman.LoadFromEnv()
 		if podmanCfg.Enabled {
-			mgr, err := podman.NewManager(podmanCfg)
+			containersStore := resolvers.NewContainersStore(app)
+			mgr, err := podman.NewManager(podmanCfg, containersStore)
 			if err != nil {
 				return err
 			}
 			containers.SetManager(mgr)
+			containers.SetServices(svc)
 
 			if podmanCfg.SocketDir != "" {
 				ctx, cancel := context.WithCancel(context.Background())

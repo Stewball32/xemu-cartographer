@@ -153,7 +153,10 @@
 		align-items: flex-start;
 		justify-content: flex-start;
 		padding: 1.5rem;
-		font-family: system-ui, -apple-system, sans-serif;
+		font-family:
+			system-ui,
+			-apple-system,
+			sans-serif;
 		color: #fff;
 		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 		pointer-events: none;

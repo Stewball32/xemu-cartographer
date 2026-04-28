@@ -65,6 +65,9 @@ func (g *Game) NewTickState() *scraper.TickState {
 	return scraper.NewTickState()
 }
 
+// Title returns the human-readable game title.
+func (g *Game) Title() string { return "Halo: Combat Evolved" }
+
 // XboxName returns the local xbox console name, scanning memory on first call
 // and caching the result. The name doesn't change within a session.
 func (g *Game) XboxName() string {

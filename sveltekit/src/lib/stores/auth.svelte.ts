@@ -1,9 +1,8 @@
-import { dev } from '$app/environment';
-import { PUBLIC_PB_PORT } from '$env/static/public';
 import pb from '$lib/pocketbase';
+import { apiBaseURL } from '$lib/utils/api-base';
 import type { UsersResponse } from '$lib/types/pocketbase-types';
 
-const baseURL = dev ? `http://localhost:${PUBLIC_PB_PORT}` : '';
+const baseURL = apiBaseURL();
 
 interface MeResponse {
 	isAdmin: boolean;

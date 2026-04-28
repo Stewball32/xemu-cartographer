@@ -27,6 +27,10 @@ func Run(app *pocketbase.PocketBase) error {
 		}
 	}
 
+	if err := ensureContainersFromSnapshot(app); err != nil {
+		return fmt.Errorf("seed containers: %w", err)
+	}
+
 	log.Println("Seeding complete.")
 	return nil
 }

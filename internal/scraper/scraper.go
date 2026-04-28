@@ -37,6 +37,9 @@ type GameReader interface {
 	// XboxName returns the console name of the xbox running this game, or ""
 	// when the plugin can't resolve it (e.g. Halo 2 has no known offset).
 	XboxName() string
+
+	// Title is the human-readable game title (e.g. "Halo: Combat Evolved").
+	Title() string
 }
 
 // ---------------------------------------------------------------------------
