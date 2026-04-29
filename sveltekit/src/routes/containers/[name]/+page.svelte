@@ -169,6 +169,22 @@
 		setTimeout(() => vnc?.sendKey(sym, false), 60);
 	}
 
+	// Press all keys down in order, then release in reverse — for modifier chords
+	// like Ctrl+R (xemu's reset).
+	function sendVNCChord(keys: string[]) {
+		if (!vnc) return;
+		const syms: number[] = [];
+		for (const k of keys) {
+			const sym = KEYSYM[k];
+			if (sym == null) return;
+			syms.push(sym);
+		}
+		for (const sym of syms) vnc.sendKey(sym, true);
+		setTimeout(() => {
+			for (let i = syms.length - 1; i >= 0; i--) vnc?.sendKey(syms[i], false);
+		}, 60);
+	}
+
 	function askConfirm(title: string, body: string, run: () => void) {
 		confirmAction = { title, body, run };
 	}
@@ -258,11 +274,11 @@
 		vnc = null;
 	});
 
-	// Reset uses F11 (xemu hotkey); S1-S4 send F5-F8 to invoke xemu's quick
-	// save/load shortcuts. The exact in-game effect depends on whether xemu's
-	// current build binds those keys — see TODO at sendVNCTap for QMP-backed
-	// alternatives.
-	const resetAction = { label: 'Reset', key: 'F11', body: 'Reset the running VM?' } as const;
+	// Reset sends Ctrl+R (xemu's hotkey for system reset); S1-S4 tap F5-F8 to
+	// invoke xemu's quick save/load shortcuts. The exact in-game effect depends
+	// on whether xemu's current build binds those keys — see TODO at sendVNCTap
+	// for QMP-backed alternatives.
+	const resetAction = { label: 'Reset', body: 'Reset the running VM?' } as const;
 	const snapshotActions = [
 		{ label: 'S1', key: 'F5', body: 'Trigger snapshot slot 1 (F5)?' },
 		{ label: 'S2', key: 'F6', body: 'Trigger snapshot slot 2 (F6)?' },
@@ -409,7 +425,9 @@
 						title="Reset"
 						disabled={!vncConnected}
 						onclick={() =>
-							askConfirm(resetAction.label, resetAction.body, () => sendVNCTap(resetAction.key))}
+							askConfirm(resetAction.label, resetAction.body, () =>
+								sendVNCChord(['Control_L', 'r'])
+							)}
 					>
 						<RotateCcwIcon class="size-4" />
 					</button>

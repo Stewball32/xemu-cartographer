@@ -36,6 +36,9 @@ export const KEYSYM: Record<string, number> = {
 	j: 0x006a,
 	k: 0x006b,
 	l: 0x006c,
+	// Modifier + letter for xemu's Ctrl+R reset chord
+	Control_L: 0xffe3,
+	r: 0x0072,
 	// Function keys (snapshot save/load and reset shortcuts)
 	F1: 0xffbe,
 	F2: 0xffbf,
