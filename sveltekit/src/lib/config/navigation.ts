@@ -21,12 +21,12 @@ export interface NavGroup {
 export const mainGroups: NavGroup[] = [
 	{
 		label: 'Overlays',
-		links: [{ label: 'Players', href: '/overlays/players/', icon: UsersIcon }]
+		links: [{ label: 'Players', href: '/overlays/players/', icon: UsersIcon, showInBar: true }]
 	},
 	{
 		label: 'Admin',
 		adminOnly: true,
-		links: [{ label: 'Containers', href: '/containers/', icon: BoxIcon, adminOnly: true }]
+		links: [{ label: 'Containers', href: '/containers/', icon: BoxIcon, showInBar: true }]
 	}
 ];
 
