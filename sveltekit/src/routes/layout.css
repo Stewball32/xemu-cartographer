@@ -24,4 +24,13 @@
 				var(--body-background-color-dark);
 		}
 	}
+
+	/* Skeleton's `card` is layout-only (transparent by default). Modal cards
+	   over a backdrop need a real fill to be readable. */
+	[role='dialog'] .card {
+		background-color: var(--color-surface-100);
+		@variant dark {
+			background-color: var(--color-surface-900);
+		}
+	}
 }

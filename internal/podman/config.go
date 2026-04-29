@@ -18,7 +18,6 @@ func LoadFromEnv() Config {
 		BrowserInitDir:   envStr("CONTAINERS_BROWSER_INIT_DIR", "./containers/browser/init"),
 		PortBase:         envInt("CONTAINERS_PORT_BASE", 3100),
 		PortStride:       envInt("CONTAINERS_PORT_STRIDE", 10),
-		StateFile:        envStr("CONTAINERS_STATE_FILE", "./containers/state.json"),
 		HostIP:           envStr("CONTAINERS_HOST_IP", "localhost"),
 		PodmanCmd:        envStr("CONTAINERS_PODMAN_CMD", "podman"),
 		Encoder:          envStr("CONTAINERS_ENCODER", "x264enc"),

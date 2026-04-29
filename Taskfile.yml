@@ -17,6 +17,21 @@ tasks:
       - cmd: "pnpm --silent typegen &"
       - cmd: "pnpm dev"
 
+  dev:lan:
+    desc: Run dev servers bound to all interfaces — reachable from other devices on the LAN
+    deps: [dev:backend:lan, dev:frontend:lan]
+
+  dev:backend:lan:
+    desc: Run Go backend with hot reload, bound to 0.0.0.0
+    cmds: ["air -c .air.toml -- --http=0.0.0.0:${PUBLIC_PB_PORT}"]
+
+  dev:frontend:lan:
+    desc: Run SvelteKit dev server bound to 0.0.0.0
+    dir: sveltekit
+    cmds:
+      - cmd: "pnpm --silent typegen &"
+      - cmd: "pnpm dev --host 0.0.0.0"
+
   typegen:
     desc: Generate TypeScript types from running PocketBase instance (requires task dev:backend)
     dir: sveltekit

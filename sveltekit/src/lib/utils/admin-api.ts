@@ -1,8 +1,5 @@
-import { dev } from '$app/environment';
-import { PUBLIC_PB_PORT } from '$env/static/public';
 import { auth } from '$lib/stores/auth.svelte';
-
-const baseURL = dev ? `http://localhost:${PUBLIC_PB_PORT}` : '';
+import { apiBaseURL } from '$lib/utils/api-base';
 
 export class AdminFetchError extends Error {
 	status: number;
@@ -23,7 +20,7 @@ async function request(method: string, path: string, body?: unknown): Promise<Re
 	if (body !== undefined) {
 		headers['Content-Type'] = 'application/json';
 	}
-	const res = await fetch(`${baseURL}/api/admin/${path}`, {
+	const res = await fetch(`${apiBaseURL()}/api/admin/${path}`, {
 		method,
 		headers,
 		body: body !== undefined ? JSON.stringify(body) : undefined

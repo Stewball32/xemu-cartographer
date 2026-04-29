@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
 
 // TestManagerSatisfiesInterface verifies that *Manager structurally implements
@@ -39,5 +40,45 @@ func TestStartRequiresNameAndSock(t *testing.T) {
 	}
 	if err := m.Start("name", ""); err == nil {
 		t.Fatal("Start with empty sock: want error, got nil")
+	}
+}
+
+// fakeReader is a no-op GameReader used to inject a runner without standing up
+// a real xemu instance. Only Title() and XboxName() are exercised by InstanceState.
+type fakeReader struct{ title, xbox string }
+
+func (f *fakeReader) LowGVAs() []uint32                                                { return nil }
+func (f *fakeReader) ReadGameState() (scraper.GameState, uint32, error)                { return "", 0, nil }
+func (f *fakeReader) ReadSnapshot() (scraper.SnapshotPayload, error)                   { return scraper.SnapshotPayload{}, nil }
+func (f *fakeReader) ReadTick([]scraper.PowerItemSpawn, *scraper.TickState) (scraper.TickResult, error) { return scraper.TickResult{}, nil }
+func (f *fakeReader) DetectEvents(uint32, string, scraper.SnapshotPayload, scraper.TickResult, *scraper.TickState) []scraper.Envelope { return nil }
+func (f *fakeReader) NewTickState() *scraper.TickState                                 { return scraper.NewTickState() }
+func (f *fakeReader) XboxName() string                                                 { return f.xbox }
+func (f *fakeReader) Title() string                                                    { return f.title }
+
+func TestInstanceState(t *testing.T) {
+	m := New(nil)
+
+	// Missing name: zeroed InstanceState (with name echoed back) and ok=false.
+	got, ok := m.InstanceState("nope")
+	if ok {
+		t.Fatalf("InstanceState(missing): want ok=false, got true")
+	}
+	if got.Name != "nope" || got.GameTitle != "" || got.XboxName != "" || got.Running {
+		t.Fatalf("InstanceState(missing): unexpected payload %+v", got)
+	}
+
+	// With a runner injected, fields propagate from the GameReader.
+	reader := &fakeReader{title: "Halo: Combat Evolved", xbox: "MyXbox"}
+	r := newRunner("alpha", "/tmp/sock", 0x4D530004, nil, reader)
+	defer r.cancel()
+	m.runners["alpha"] = r
+
+	got, ok = m.InstanceState("alpha")
+	if !ok {
+		t.Fatalf("InstanceState(present): want ok=true, got false")
+	}
+	if got.Name != "alpha" || got.TitleID != 0x4D530004 || got.GameTitle != "Halo: Combat Evolved" || got.XboxName != "MyXbox" || !got.Running {
+		t.Fatalf("InstanceState(present): unexpected payload %+v", got)
 	}
 }

@@ -23,21 +23,21 @@ func TestAllocatePorts(t *testing.T) {
 	}
 }
 
-func TestStateNextIndex(t *testing.T) {
-	s := &State{Containers: map[string]*ContainerInfo{
+func TestNextIndex(t *testing.T) {
+	containers := map[string]*ContainerInfo{
 		"a": {Index: 0},
 		"b": {Index: 2},
 		"c": {Index: 3},
-	}}
+	}
 
 	// Index 1 is the first gap.
-	if got := s.NextIndex(); got != 1 {
-		t.Errorf("NextIndex() = %d, want 1", got)
+	if got := nextIndex(containers); got != 1 {
+		t.Errorf("nextIndex() = %d, want 1", got)
 	}
 
 	// Fill the gap.
-	s.Containers["d"] = &ContainerInfo{Index: 1}
-	if got := s.NextIndex(); got != 4 {
-		t.Errorf("NextIndex() = %d, want 4", got)
+	containers["d"] = &ContainerInfo{Index: 1}
+	if got := nextIndex(containers); got != 4 {
+		t.Errorf("nextIndex() = %d, want 4", got)
 	}
 }

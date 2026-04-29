@@ -128,6 +128,24 @@ func (m *Manager) List() []scraperiface.Info {
 	return infos
 }
 
+// InstanceState returns a per-runner view (game title, Xbox name) for the
+// container detail page. Returns (zero, false) when no runner is attached.
+func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return scraperiface.InstanceState{Name: name}, false
+	}
+	return scraperiface.InstanceState{
+		Name:      name,
+		TitleID:   r.titleID,
+		GameTitle: r.reader.Title(),
+		XboxName:  r.reader.XboxName(),
+		Running:   true,
+	}, true
+}
+
 // LatestSnapshotMessages returns the most recent wrapped websocket.Message
 // bytes for every runner that has emitted at least one snapshot. Used by the
 // join_room handler to replay snapshots to clients joining the overlay room

@@ -1,21 +1,12 @@
-import { browser, dev } from '$app/environment';
-import { PUBLIC_PB_PORT } from '$env/static/public';
-import type {
-	Envelope,
-	SnapshotPayload,
-	TickPayload,
-	WSMessage
-} from '$lib/types/scraper';
+import { browser } from '$app/environment';
+import type { Envelope, SnapshotPayload, TickPayload, WSMessage } from '$lib/types/scraper';
 import { isSnapshot, isTick } from '$lib/types/scraper';
+import { wsBaseURL } from '$lib/utils/api-base';
 
 const reconnectDelays = [1000, 2000, 4000, 8000, 15000, 30000];
 
 function buildURL(token: string): string {
-	if (dev) {
-		return `ws://localhost:${PUBLIC_PB_PORT}/api/ws?token=${encodeURIComponent(token)}`;
-	}
-	const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-	return `${proto}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`;
+	return `${wsBaseURL()}/api/ws?token=${encodeURIComponent(token)}`;
 }
 
 function createScraperWS() {

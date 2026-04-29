@@ -1,18 +1,21 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { PlayIcon, SquareIcon, Trash2Icon, ExternalLinkIcon, RefreshCwIcon } from '@lucide/svelte';
+	import { resolve } from '$app/paths';
+	import { PlayIcon, SquareIcon, Trash2Icon, RefreshCwIcon, EyeIcon } from '@lucide/svelte';
 	import { adminGet, adminPost, adminDelete, AdminFetchError } from '$lib/utils/admin-api';
 	import { toaster } from '$lib/stores/toaster';
 	import type {
 		ContainerInfo,
 		ContainerStatus,
-		ContainerStatusResponse
+		ContainerDetail,
+		InstanceState
 	} from '$lib/types/containers';
 
 	type RowStatus = ContainerStatus | 'loading' | string;
 
 	let containers = $state<ContainerInfo[]>([]);
 	let statuses = $state<Record<string, RowStatus>>({});
+	let scrapers = $state<Record<string, InstanceState | null>>({});
 	let loading = $state(true);
 	let createOpen = $state(false);
 	let createName = $state('');
@@ -49,10 +52,9 @@
 
 	async function refreshStatus(name: string) {
 		try {
-			const res = await adminGet<ContainerStatusResponse>(
-				`containers/${encodeURIComponent(name)}`
-			);
+			const res = await adminGet<ContainerDetail>(`containers/${encodeURIComponent(name)}/detail`);
 			statuses = { ...statuses, [name]: res.status };
+			scrapers = { ...scrapers, [name]: res.scraper };
 		} catch (err) {
 			statuses = { ...statuses, [name]: 'unknown' };
 			// Status polling is best-effort; don't toast every failure.
@@ -84,7 +86,8 @@
 		if (!NAME_PATTERN.test(name)) {
 			toaster.error({
 				title: 'Invalid name',
-				description: 'Use lowercase letters, digits, hyphens, or underscores. Must start with a letter or digit.'
+				description:
+					'Use lowercase letters, digits, hyphens, or underscores. Must start with a letter or digit.'
 			});
 			return;
 		}
@@ -131,9 +134,12 @@
 		try {
 			await adminDelete(`containers/${encodeURIComponent(c.name)}`);
 			containers = containers.filter((x) => x.name !== c.name);
-			const next = { ...statuses };
-			delete next[c.name];
-			statuses = next;
+			const nextS = { ...statuses };
+			delete nextS[c.name];
+			statuses = nextS;
+			const nextG = { ...scrapers };
+			delete nextG[c.name];
+			scrapers = nextG;
 			confirmDelete = null;
 			toaster.success({ title: 'Deleted', description: c.name });
 		} catch (err) {
@@ -159,16 +165,6 @@
 		}
 	}
 
-	function browserURL(c: ContainerInfo): string {
-		const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-		return `http://${host}:${c.ports.browser_web}`;
-	}
-
-	function xemuURL(c: ContainerInfo): string {
-		const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-		return `https://${host}:${c.ports.xemu_https}`;
-	}
-
 	onMount(() => {
 		loadContainers();
 		startPolling();
@@ -183,7 +179,7 @@
 	<header class="flex flex-wrap items-center justify-between gap-4">
 		<div>
 			<h1 class="h2">Containers</h1>
-			<p class="text-surface-600-400 text-sm">
+			<p class="text-sm text-surface-600-400">
 				Manage xemu + browser container pairs. Start one to auto-launch its scraper.
 			</p>
 		</div>
@@ -204,14 +200,13 @@
 		</div>
 	</header>
 
-	<div class="card overflow-x-auto p-0">
+	<div class="overflow-x-auto card p-0">
 		<table class="table-hover table w-full">
 			<thead>
 				<tr>
 					<th>Name</th>
 					<th>Status</th>
-					<th>xemu (HTTPS)</th>
-					<th>Browser kiosk</th>
+					<th>Game / Xbox</th>
 					<th>Created</th>
 					<th class="text-right">Actions</th>
 				</tr>
@@ -219,11 +214,11 @@
 			<tbody>
 				{#if loading && containers.length === 0}
 					<tr>
-						<td colspan="6" class="text-surface-600-400 text-center">Loading…</td>
+						<td colspan="5" class="text-center text-surface-600-400">Loading…</td>
 					</tr>
 				{:else if containers.length === 0}
 					<tr>
-						<td colspan="6" class="text-surface-600-400 text-center">
+						<td colspan="5" class="text-center text-surface-600-400">
 							No containers yet. Create one to get started.
 						</td>
 					</tr>
@@ -231,43 +226,37 @@
 					{#each containers as c (c.name)}
 						{@const status = statuses[c.name] ?? 'loading'}
 						{@const isRunning = status === 'running'}
+						{@const scraper = scrapers[c.name]}
 						<tr>
 							<td class="font-medium">{c.name}</td>
 							<td>
 								<span class={statusClass(status)}>{status}</span>
 							</td>
-							<td>
-								<a
-									href={xemuURL(c)}
-									target="_blank"
-									rel="noopener"
-									class="anchor inline-flex items-center gap-1"
-								>
-									:{c.ports.xemu_https}
-									<ExternalLinkIcon class="size-3" />
-								</a>
+							<td class="text-xs">
+								{#if scraper}
+									<div class="font-medium">{scraper.game_title || '—'}</div>
+									<div class="text-surface-600-400">{scraper.xbox_name || '—'}</div>
+								{:else}
+									<span class="text-surface-600-400">—</span>
+								{/if}
 							</td>
-							<td>
-								<a
-									href={browserURL(c)}
-									target="_blank"
-									rel="noopener"
-									class="anchor inline-flex items-center gap-1"
-									title="Kiosk container has a known X11 issue (ROADMAP.md M3 follow-up)"
-								>
-									:{c.ports.browser_web}
-									<ExternalLinkIcon class="size-3" />
-								</a>
-							</td>
-							<td class="text-surface-600-400 text-xs">
+							<td class="text-xs text-surface-600-400">
 								{new Date(c.created).toLocaleString()}
 							</td>
 							<td class="text-right">
 								<div class="inline-flex gap-1">
+									<a
+										href={resolve('/containers/[name]', { name: c.name })}
+										class="btn-icon preset-tonal btn-sm"
+										aria-label="View"
+										title="View"
+									>
+										<EyeIcon class="size-4" />
+									</a>
 									{#if isRunning}
 										<button
 											type="button"
-											class="btn-icon btn-sm preset-tonal-warning"
+											class="btn-icon preset-tonal-warning btn-sm"
 											aria-label="Stop"
 											title="Stop"
 											onclick={() => handleStop(c)}
@@ -277,7 +266,7 @@
 									{:else}
 										<button
 											type="button"
-											class="btn-icon btn-sm preset-tonal-success"
+											class="btn-icon preset-tonal-success btn-sm"
 											aria-label="Start"
 											title="Start"
 											onclick={() => handleStart(c)}
@@ -287,7 +276,7 @@
 									{/if}
 									<button
 										type="button"
-										class="btn-icon btn-sm preset-tonal-error"
+										class="btn-icon preset-tonal-error btn-sm"
 										aria-label="Delete"
 										title="Delete"
 										onclick={() => (confirmDelete = c)}
@@ -305,7 +294,6 @@
 </div>
 
 {#if createOpen}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
 		role="dialog"
@@ -318,8 +306,8 @@
 			if (e.key === 'Escape' && !createBusy) createOpen = false;
 		}}
 	>
-		<div class="card w-full max-w-md p-6">
-			<h2 class="h3 mb-4">New container</h2>
+		<div class="w-full max-w-md card p-6">
+			<h2 class="mb-4 h3">New container</h2>
 			<form
 				onsubmit={(e) => {
 					e.preventDefault();
@@ -339,8 +327,9 @@
 						autofocus
 						disabled={createBusy}
 					/>
-					<span class="text-surface-600-400 text-xs">
-						Lowercase letters, digits, <code>-</code>, <code>_</code>. Must start with a letter or digit.
+					<span class="text-xs text-surface-600-400">
+						Lowercase letters, digits, <code>-</code>, <code>_</code>. Must start with a letter or
+						digit.
 					</span>
 				</label>
 				<div class="flex justify-end gap-2">
@@ -364,7 +353,6 @@
 {#if confirmDelete}
 	{@const target = confirmDelete}
 	{@const targetStatus = statuses[target.name] ?? 'unknown'}
-	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
 		role="dialog"
@@ -377,22 +365,18 @@
 			if (e.key === 'Escape') confirmDelete = null;
 		}}
 	>
-		<div class="card w-full max-w-md p-6">
-			<h2 class="h3 mb-2">Delete container</h2>
-			<p class="text-surface-600-400 mb-4 text-sm">
+		<div class="w-full max-w-md card p-6">
+			<h2 class="mb-2 h3">Delete container</h2>
+			<p class="mb-4 text-sm text-surface-600-400">
 				Permanently remove <strong>{target.name}</strong>?
 				{#if targetStatus === 'running'}
-					<span class="text-error-500 mt-2 block">
+					<span class="mt-2 block text-error-500">
 						This container is currently running. It will be force-stopped before deletion.
 					</span>
 				{/if}
 			</p>
 			<div class="flex justify-end gap-2">
-				<button
-					type="button"
-					class="btn preset-tonal"
-					onclick={() => (confirmDelete = null)}
-				>
+				<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = null)}>
 					Cancel
 				</button>
 				<button
