@@ -64,7 +64,7 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 	}
 
 	users.OAuth2.MappedFields = core.OAuth2KnownFields{
-		Name:      "username", // OAuth2 full name  → users.username (user.name adds '#0' behind the username)
+		Name:      "",         // OAuth2 full name  → (unmapped) (full name adds '#0' behind the username)
 		AvatarURL: "avatar",   // OAuth2 avatar URL → users.avatar
 		Username:  "username", // OAuth2 username   → users.username
 		Id:        "",         // OAuth2 id         → (unmapped)
