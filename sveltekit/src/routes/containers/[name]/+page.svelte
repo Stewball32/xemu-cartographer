@@ -39,8 +39,6 @@
 	let confirmDelete = $state(false);
 	let confirmAction = $state<ConfirmAction | null>(null);
 
-	let view = $state<'controller' | 'logs'>('controller');
-
 	let logsWhich = $state<LogsWhich>('xemu');
 	let logsTail = $state(200);
 	let logsText = $state('');
@@ -365,7 +363,7 @@
 					</span>
 				</span>
 				{#if detail}
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={kioskURL()}
 						target="_blank"
@@ -376,6 +374,7 @@
 					>
 						<ExternalLinkIcon class="size-4" />
 					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{/if}
 				<span class="flex"> </span>
 				<div class="ms-auto flex items-center gap-1">

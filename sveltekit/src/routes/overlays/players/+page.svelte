@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
 	import type { SnapshotPlayer, TickPlayer, WeaponInfo } from '$lib/types/scraper';
@@ -45,7 +46,7 @@
 		const snap = scraperWS.snapshot;
 		const tick = scraperWS.tick;
 		if (!snap || !snap.players) return [];
-		const tickByIdx = new Map<number, TickPlayer>();
+		const tickByIdx = new SvelteMap<number, TickPlayer>();
 		if (tick && tick.players) {
 			for (const tp of tick.players) tickByIdx.set(tp.index, tp);
 		}
