@@ -4,6 +4,7 @@ import { isSnapshot, isTick } from '$lib/types/scraper';
 import { wsBaseURL } from '$lib/utils/api-base';
 
 const reconnectDelays = [1000, 2000, 4000, 8000, 15000, 30000];
+const MAX_EVENTS_PER_INSTANCE = 100;
 
 function buildURL(token: string): string {
 	return `${wsBaseURL()}/api/ws?token=${encodeURIComponent(token)}`;
@@ -21,6 +22,12 @@ function createScraperWS() {
 	// the map keys lets a future multi-instance overlay disambiguate.
 	let snapshots = $state<Record<string, SnapshotPayload>>({});
 	let ticks = $state<Record<string, TickPayload>>({});
+	// Receive-timestamps (epoch ms) — used by debug page to surface staleness.
+	let snapshotsAt = $state<Record<string, number>>({});
+	let ticksAt = $state<Record<string, number>>({});
+	// Rolling per-instance event log; newest first, capped at
+	// MAX_EVENTS_PER_INSTANCE. Consumed by the debug page only.
+	let events = $state<Record<string, Envelope[]>>({});
 	let lastError = $state<string | null>(null);
 
 	function clearReconnect() {
@@ -42,12 +49,18 @@ function createScraperWS() {
 	}
 
 	function handleEnvelope(env: Envelope) {
+		const now = Date.now();
 		if (isSnapshot(env)) {
 			snapshots = { ...snapshots, [env.instance]: env.payload };
+			snapshotsAt = { ...snapshotsAt, [env.instance]: now };
 		} else if (isTick(env)) {
 			ticks = { ...ticks, [env.instance]: env.payload };
+			ticksAt = { ...ticksAt, [env.instance]: now };
+		} else if (env.type === 'event') {
+			const prev = events[env.instance] ?? [];
+			const next = [env, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
+			events = { ...events, [env.instance]: next };
 		}
-		// Events ignored for v1; future kill-feed route handles them.
 	}
 
 	function open(token: string) {
@@ -123,6 +136,15 @@ function createScraperWS() {
 		},
 		get ticks() {
 			return ticks;
+		},
+		get snapshotsAt() {
+			return snapshotsAt;
+		},
+		get ticksAt() {
+			return ticksAt;
+		},
+		get events() {
+			return events;
 		},
 		get lastError() {
 			return lastError;
