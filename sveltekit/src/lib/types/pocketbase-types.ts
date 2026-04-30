@@ -93,13 +93,17 @@ export type SuperusersRecord = {
 	verified?: boolean
 }
 
-export type ContainersRecord<Tports = unknown> = {
+export type ContainersRecord = {
+	browser_vnc: number
+	browser_web: number
 	created?: IsoDateString
 	id: string
 	index?: number
 	name: string
-	ports: null | Tports
 	vnc_password?: string
+	xemu_http: number
+	xemu_https: number
+	xemu_ws: number
 }
 
 export type UsersRecord = {
@@ -125,7 +129,7 @@ export type ExternalauthsResponse<Texpand = unknown> = Required<ExternalauthsRec
 export type MfasResponse<Texpand = unknown> = Required<MfasRecord> & BaseSystemFields<Texpand>
 export type OtpsResponse<Texpand = unknown> = Required<OtpsRecord> & BaseSystemFields<Texpand>
 export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> & AuthSystemFields<Texpand>
-export type ContainersResponse<Tports = unknown, Texpand = unknown> = Required<ContainersRecord<Tports>> & BaseSystemFields<Texpand>
+export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
 
 // Types containing all Records and Responses, useful for creating typing helper functions
