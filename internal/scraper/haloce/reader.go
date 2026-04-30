@@ -16,15 +16,24 @@ type Reader struct {
 	tagNameCache map[int16]string
 	tagInstBase  uint32 // cached; 0 = not yet read
 	ohdBase      uint32 // cached; 0 = not yet read
+
+	// Static weapon-tag-data cache. Populated on first read for each tag index;
+	// reused for the lifetime of the reader since tag-data is map-static.
+	weaponTagDataCache map[int16]*scraper.StaticWeaponTagData
+
+	// Static biped-tag-data cache. Same lifetime as weaponTagDataCache.
+	bipedTagCache map[int16]*scraper.StaticBipedTagData
 }
 
 // NewReader creates a Reader for the given instance.
 // inst.Init(AllLowGVAs) must have been called before use.
 func NewReader(inst *xemu.Instance, instanceName string) *Reader {
 	return &Reader{
-		inst:         inst,
-		name:         instanceName,
-		tagNameCache: make(map[int16]string),
+		inst:               inst,
+		name:               instanceName,
+		tagNameCache:       make(map[int16]string),
+		weaponTagDataCache: make(map[int16]*scraper.StaticWeaponTagData),
+		bipedTagCache:      make(map[int16]*scraper.StaticBipedTagData),
 	}
 }
 
@@ -128,6 +137,11 @@ func (r *Reader) ReadSnapshot() (scraper.SnapshotPayload, error) {
 		TeamScores:      teamScores,
 		Players:         players,
 		PowerItemSpawns: spawns,
+		GameDifficulty:  r.readGameDifficulty(),
+		PlayerSpawns:    r.readPlayerSpawns(),
+		Fog:             r.readFog(),
+		ObjectTypes:     r.readObjectTypes(),
+		TagCache:        r.readCachePtrs(),
 	}, nil
 }
 
@@ -333,10 +347,25 @@ func (r *Reader) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickSt
 
 	powerItems := r.readPowerItemStatus(spawns, state, playerSlots, objHeaderFirst, objElemSize, objAllocCount)
 
+	isTeamGameHVA, _ := inst.LowHVA(AddrIsTeamGame)
+	isTeamGameV, _ := mem.ReadU8At(isTeamGameHVA)
+	teamScores, _ := r.readTeamScores(isTeamGameV != 0)
+
+	localCount := r.readLocalPlayerCount()
 	result := scraper.TickResult{
 		Payload: scraper.TickPayload{
-			Players:    tickPlayers,
-			PowerItems: powerItems,
+			TeamScores:  teamScores,
+			Players:     tickPlayers,
+			PowerItems:  powerItems,
+			GameGlobals: r.readGameGlobals(),
+			PlayerCount: int16(currentCount),
+			LocalCount:  localCount,
+			Locals:      r.readLocals(localCount),
+			Objects:     r.readObjects(),
+			Network:     r.readNetwork(),
+			DataQueue:   r.readDataQueue(),
+			CTFFlags:    r.readCTFFlags(),
+			Projectiles: r.readProjectiles(),
 		},
 		InternalPlayers: internalPlayers,
 	}
@@ -351,8 +380,10 @@ func (r *Reader) readTickPlayer(
 ) (scraper.TickPlayer, scraper.InternalPlayerState, bool, error) {
 	mem := r.inst.Mem
 
-	// Active slot check: name's first UTF-16 char must be non-zero.
-	nameBytes, err := mem.ReadBytes(playerBase+OffPlrName, 2)
+	// Active slot check: name's first UTF-16 char must be non-zero. Read the
+	// full 24-byte name buffer up-front so it can also be decoded into the
+	// broadcast roster field below.
+	nameBytes, err := mem.ReadBytes(playerBase+OffPlrName, 24)
 	if err != nil {
 		return scraper.TickPlayer{}, scraper.InternalPlayerState{}, false, err
 	}
@@ -378,14 +409,38 @@ func (r *Reader) readTickPlayer(
 	respawnRaw, _ := mem.ReadU32(playerBase + OffPlrRespawnTimer)
 	ip.RespawnTimer = respawnRaw
 
+	team, _ := mem.ReadU32(playerBase + OffPlrTeam)
+	ctfScore, _ := mem.ReadS16(playerBase + OffPlrCTFScore)
+	li, _ := mem.ReadS16(playerBase + OffPlrLocalIndex)
+	isLocal := li >= 0
+	var localIdx *int
+	if isLocal {
+		v := int(li)
+		localIdx = &v
+	}
+
 	handle, _ := mem.ReadS32(playerBase + OffPlrObjectHandle)
 	prevHandle, _ := mem.ReadS32(playerBase + OffPlrPrevObjHandle)
 
 	alive := handle != -1
 
 	tp := scraper.TickPlayer{
-		Index: index,
-		Alive: alive,
+		Index:      index,
+		Name:       decodeUTF16LE(nameBytes),
+		Team:       team,
+		IsLocal:    &isLocal,
+		LocalIndex: localIdx,
+		Kills:      ip.Kills,
+		Deaths:     ip.Deaths,
+		Assists:    ip.Assists,
+		TeamKills:  ip.TeamKills,
+		Suicides:   ip.Suicides,
+		CTFScore:   ctfScore,
+		KillStreak: ip.KillStreak,
+		Multikill:  ip.Multikill,
+		ShotsFired: ip.ShotsFired,
+		ShotsHit:   ip.ShotsHit,
+		Alive:      alive,
 	}
 
 	if !alive && respawnRaw > 0 {
@@ -401,8 +456,16 @@ func (r *Reader) readTickPlayer(
 		if objDataAddr >= HighGVAThreshold {
 			ip.ObjDataAddr = objDataAddr
 			r.readDynPlayerFull(&tp, &ip, objDataAddr)
+			tp.Extended = r.readDynPlayerExtended(objDataAddr)
+			tp.Bones = r.readBones(objDataAddr)
+			bipedTagIdx, _ := mem.ReadS16(objDataAddr + OffObjTagIndex)
+			tp.BipedTag = r.readBipedTagData(bipedTagIdx)
 		}
 	}
+
+	// Update-queue slot (input replication state). Available for both alive
+	// and dead players, and for both locals and remotes.
+	tp.UpdateQueue = r.readPlayerUpdateQueue(index)
 
 	// Previous biped for damage table reads when dead.
 	if !alive && prevHandle != -1 && objHeaderFirst >= HighGVAThreshold && objElemSize > 0 {
@@ -540,6 +603,9 @@ func (r *Reader) readWeaponInfo(slot int, handle uint32) (scraper.WeaponInfo, bo
 		wi.AmmoMag = &mag
 		wi.AmmoPack = &pack
 	}
+
+	wi.Extended = r.readWeaponObjectExtended(objDataAddr)
+	wi.TagData = r.readWeaponTagData(tagIdx)
 
 	return wi, true, nil
 }
