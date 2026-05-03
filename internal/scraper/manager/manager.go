@@ -146,6 +146,62 @@ func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) 
 	}, true
 }
 
+// Inspect returns the runner's deep-dive cached state for the debug page.
+// Reads only the cached snapshot/tick/state/events fields — never touches
+// r.reader or r.inst, which the loop accesses without synchronisation.
+// Returns (zero, false) when no runner is attached for name.
+func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return scraperiface.InspectState{Info: scraperiface.Info{Name: name}}, false
+	}
+
+	info := r.info()
+
+	r.cacheMu.Lock()
+	state := r.cachedState
+	var stateInputs scraper.StateInputs
+	if r.cachedStateInputs != nil {
+		stateInputs = make(scraper.StateInputs, len(r.cachedStateInputs))
+		for k, v := range r.cachedStateInputs {
+			stateInputs[k] = v
+		}
+	}
+	var scoreProbe scraper.ScoreProbe
+	if r.cachedScoreProbe != nil {
+		scoreProbe = make(scraper.ScoreProbe, len(r.cachedScoreProbe))
+		for k, v := range r.cachedScoreProbe {
+			scoreProbe[k] = v
+		}
+	}
+	var snap *scraper.SnapshotPayload
+	if r.cachedSnapshot != nil {
+		cp := *r.cachedSnapshot
+		snap = &cp
+	}
+	var tick *scraper.TickPayload
+	if r.cachedTick != nil {
+		cp := *r.cachedTick
+		tick = &cp
+	}
+	events := make([]scraper.Envelope, len(r.recentEvents))
+	copy(events, r.recentEvents)
+	r.cacheMu.Unlock()
+
+	return scraperiface.InspectState{
+		Info:           info,
+		Running:        true,
+		CurrentState:   state,
+		StateInputs:    stateInputs,
+		ScoreProbe:     scoreProbe,
+		LatestSnapshot: snap,
+		LatestTick:     tick,
+		RecentEvents:   events,
+	}, true
+}
+
 // LatestSnapshotMessages returns the most recent wrapped websocket.Message
 // bytes for every runner that has emitted at least one snapshot. Used by the
 // join_room handler to replay snapshots to clients joining the overlay room
@@ -163,13 +219,13 @@ func (m *Manager) LatestSnapshotMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners))
 	for _, r := range runners {
-		r.snapshotMu.Lock()
+		r.cacheMu.Lock()
 		if len(r.latestSnapshotMsg) > 0 {
 			buf := make([]byte, len(r.latestSnapshotMsg))
 			copy(buf, r.latestSnapshotMsg)
 			out = append(out, buf)
 		}
-		r.snapshotMu.Unlock()
+		r.cacheMu.Unlock()
 	}
 	return out
 }

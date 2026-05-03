@@ -2,7 +2,48 @@
 // scraper does not back a PocketBase collection — task typegen does not cover
 // these.
 
-export type GameState = 'menu' | 'pregame' | 'in_game' | 'postgame';
+// Mirrors internal/guards/interfaces/scraper.Info — one row per running runner
+// returned by GET /api/admin/scraper. Includes orphan instances (sockets that
+// auto-attached via the discovery watcher without a backing container record).
+export interface ScraperInfo {
+	name: string;
+	sock: string;
+	title_id: number;
+	game_title: string;
+	xbox_name: string;
+	tick: number;
+	ticks: number;
+	started_at: string;
+}
+
+// Mirrors internal/guards/interfaces/scraper.InspectState — returned by
+// GET /api/admin/scraper/{name}/inspect. Embeds ScraperInfo plus the runner's
+// cached snapshot/tick/state/events for the debug page. Values are nullable
+// when the runner has been alive but never observed an in-game tick or
+// snapshot-eligible state transition.
+export interface ScraperInspect extends ScraperInfo {
+	running: boolean;
+	current_state: GameState | '';
+	state_inputs: StateInputs | null;
+	score_probe: ScoreProbe | null;
+	latest_snapshot: SnapshotPayload | null;
+	latest_tick: TickPayload | null;
+	recent_events: Envelope[] | null;
+}
+
+// StateInputs is a free-form bag of plugin-specific raw values that drive
+// state classification — keys depend on which game plugin is active. For
+// Halo: CE: main_menu, initialized, active, paused, engine_running,
+// game_can_score, game_engine_globals_ptr, game_time_globals_ptr.
+export type StateInputs = Record<string, number | boolean | string | null>;
+
+// ScoreProbe is a free-form bag of every candidate address the active plugin
+// reads for gametype / team-score / per-player-score detection. Surfaced via
+// the inspect endpoint and rendered as the debug page's Probe tab so a human
+// can spot which raw value matches what they see in-game.
+export type ScoreProbe = Record<string, unknown>;
+
+export type GameState = 'menu' | 'lobby' | 'pregame' | 'in_game' | 'postgame';
 
 export type EnvelopeType = 'snapshot' | 'tick' | 'event';
 
@@ -32,6 +73,7 @@ export interface SnapshotPlayer {
 	index: number;
 	name: string;
 	team: number;
+	score: number;
 	kills: number;
 	deaths: number;
 	assists: number;
@@ -164,26 +206,13 @@ export interface StaticBipedTagData {
 	autoaim_pill_radius: number;
 }
 
+// TickPlayer carries only high-frequency volatile data per game tick.
+// Roster identity (name, team, splitscreen index) and cumulative counters
+// (kills, deaths, assists, etc.) live on SnapshotPlayer. Counter changes
+// are emitted via per-event payloads (kill / death / score / etc.) rather
+// than streamed every tick.
 export interface TickPlayer {
 	index: number;
-
-	// Roster (volatile if seat is reassigned mid-match).
-	name: string;
-	team: number;
-	is_local: boolean | null;
-	local_index: number | null;
-
-	// Counters (volatile every kill / death / shot).
-	kills: number;
-	deaths: number;
-	assists: number;
-	team_kills: number;
-	suicides: number;
-	ctf_score: number;
-	kill_streak: number;
-	multikill: number;
-	shots_fired: number;
-	shots_hit: number;
 
 	// Dynamic per-tick state.
 	alive: boolean;
@@ -318,7 +347,6 @@ export interface PowerItemStatus {
 }
 
 export interface TickPayload {
-	team_scores: TeamScore[] | null;
 	players: TickPlayer[] | null;
 	power_items: PowerItemStatus[] | null;
 

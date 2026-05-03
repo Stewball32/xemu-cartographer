@@ -47,14 +47,26 @@ func TestStartRequiresNameAndSock(t *testing.T) {
 // a real xemu instance. Only Title() and XboxName() are exercised by InstanceState.
 type fakeReader struct{ title, xbox string }
 
-func (f *fakeReader) LowGVAs() []uint32                                                { return nil }
-func (f *fakeReader) ReadGameState() (scraper.GameState, uint32, error)                { return "", 0, nil }
-func (f *fakeReader) ReadSnapshot() (scraper.SnapshotPayload, error)                   { return scraper.SnapshotPayload{}, nil }
-func (f *fakeReader) ReadTick([]scraper.PowerItemSpawn, *scraper.TickState) (scraper.TickResult, error) { return scraper.TickResult{}, nil }
-func (f *fakeReader) DetectEvents(uint32, string, scraper.SnapshotPayload, scraper.TickResult, *scraper.TickState) []scraper.Envelope { return nil }
-func (f *fakeReader) NewTickState() *scraper.TickState                                 { return scraper.NewTickState() }
-func (f *fakeReader) XboxName() string                                                 { return f.xbox }
-func (f *fakeReader) Title() string                                                    { return f.title }
+func (f *fakeReader) LowGVAs() []uint32                                 { return nil }
+func (f *fakeReader) ReadGameState() (scraper.GameState, uint32, error) { return "", 0, nil }
+func (f *fakeReader) LastStateInputs() scraper.StateInputs              { return nil }
+func (f *fakeReader) BuildScoreProbe() scraper.ScoreProbe                { return nil }
+func (f *fakeReader) ReadSnapshot() (scraper.SnapshotPayload, error) {
+	return scraper.SnapshotPayload{}, nil
+}
+func (f *fakeReader) ReadLobby() (scraper.SnapshotPayload, error) {
+	return scraper.SnapshotPayload{}, nil
+}
+func (f *fakeReader) ReadTick([]scraper.PowerItemSpawn, *scraper.TickState) (scraper.TickResult, error) {
+	return scraper.TickResult{}, nil
+}
+func (f *fakeReader) DetectEvents(uint32, string, scraper.SnapshotPayload, scraper.TickResult, *scraper.TickState) []scraper.Envelope {
+	return nil
+}
+func (f *fakeReader) OnStateChange(prev, next scraper.GameState) error { return nil }
+func (f *fakeReader) NewTickState() *scraper.TickState                 { return scraper.NewTickState() }
+func (f *fakeReader) XboxName() string                                 { return f.xbox }
+func (f *fakeReader) Title() string                                    { return f.title }
 
 func TestInstanceState(t *testing.T) {
 	m := New(nil)

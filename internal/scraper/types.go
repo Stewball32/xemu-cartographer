@@ -12,6 +12,20 @@ const (
 	GameStatePostGame GameState = "postgame"
 )
 
+// StateInputs are the raw values sampled by a plugin's ReadGameState that drive
+// its GameState classification. Surfaced via the inspect endpoint as a debug
+// aid — lets the debug page show why the scraper thinks the game is in the
+// state it's in (e.g. "main_menu=1, initialized=0 → menu"). Field names are
+// plugin-specific; consumers treat the map as opaque JSON.
+type StateInputs map[string]any
+
+// ScoreProbe is a free-form bag of every candidate address a plugin knows
+// about for gametype detection, team scores, score limits, and per-player
+// scores. Surfaced via the inspect endpoint and rendered as the debug page's
+// "Probe" tab so a human can spot which raw value matches what they see in-
+// game when authoritative offsets are still being worked out.
+type ScoreProbe map[string]any
+
 // Event type constants.
 const (
 	EventKill           = "kill"
@@ -35,6 +49,14 @@ const (
 	EventPlayerQuit     = "player_quit"
 	EventGameStart      = "game_start"
 	EventGameEnd        = "game_end"
+
+	// Roster + team-score change events (Part D of the caching refactor).
+	// Emitted only when the relevant SnapshotPayload field diff vs the
+	// previous tick is non-zero.
+	EventTeamScore         = "team_score"
+	EventPlayerJoined      = "player_joined"
+	EventPlayerLeft        = "player_left"
+	EventPlayerTeamChanged = "player_team_changed"
 )
 
 // Envelope is the top-level wrapper for every WebSocket message.
@@ -130,9 +152,14 @@ type StaticCachePtrs struct {
 // (vs remote via system-link) and, for locals, the splitscreen slot (0–3).
 // Pointer types so games without local detection serialise them as null.
 type SnapshotPlayer struct {
-	Index      int    `json:"index"`
-	Name       string `json:"name"`
-	Team       uint32 `json:"team"`
+	Index int    `json:"index"`
+	Name  string `json:"name"`
+	Team  uint32 `json:"team"`
+	// Score is the per-player gametype score: ctf_score for CTF, the per-
+	// player slot of the matching score table for Slayer/Oddball/King/Race
+	// (these all live in distinct memory bases — see haloce/offsets.go
+	// AddrScore*). Populated by the plugin from the active gametype.
+	Score      int32  `json:"score"`
 	Kills      int16  `json:"kills"`
 	Deaths     int16  `json:"deaths"`
 	Assists    int16  `json:"assists"`
@@ -169,9 +196,10 @@ type PowerItemSpawn struct {
 // Tick types
 // -------------------------------------------------------------------
 
-// TickPayload is the 30Hz broadcast payload.
+// TickPayload is the per-game-tick broadcast (30Hz when in_game). Carries
+// only high-frequency volatile data; cumulative counters and roster identity
+// live on SnapshotPayload and are emitted on change via events.
 type TickPayload struct {
-	TeamScores  []TeamScore       `json:"team_scores"`
 	Players     []TickPlayer      `json:"players"`
 	PowerItems  []PowerItemStatus `json:"power_items"`
 	GameGlobals *TickGameGlobals  `json:"game_globals,omitempty"`
@@ -456,52 +484,37 @@ type TickObject struct {
 // TickProjectile mirrors the projectile sub-struct
 // (at object_address + RefAddrItemDatumSize). Source: OffProj* constants.
 type TickProjectile struct {
-	ObjectID                uint32  `json:"object_id"`
-	Tag                     string  `json:"tag"`
-	X                       float32 `json:"x"`
-	Y                       float32 `json:"y"`
-	Z                       float32 `json:"z"`
-	Flags                   uint32  `json:"flags"`
-	Action                  int16   `json:"action"`
-	HitMaterialType         int16   `json:"hit_material_type"`
-	IgnoreObjectIndex       int32   `json:"ignore_object_index"`
-	DetonationTimer         float32 `json:"detonation_timer"`
-	DetonationTimerDelta    float32 `json:"detonation_timer_delta"`
-	TargetObjectIndex       int32   `json:"target_object_index"` // OR arming_time f32; HC bug
-	ArmingTimeDelta         float32 `json:"arming_time_delta"`
-	DistanceTraveled        float32 `json:"distance_traveled"`
-	DecelerationTimer       float32 `json:"deceleration_timer"`
-	DecelerationTimerDelta  float32 `json:"deceleration_timer_delta"`
-	Deceleration            float32 `json:"deceleration"`
-	MaximumDamageDistance   float32 `json:"maximum_damage_distance"`
-	RotationAxisX           float32 `json:"rotation_axis_x"`
-	RotationAxisY           float32 `json:"rotation_axis_y"`
-	RotationAxisZ           float32 `json:"rotation_axis_z"`
-	RotationSine            float32 `json:"rotation_sine"`
-	RotationCosine          float32 `json:"rotation_cosine"`
+	ObjectID               uint32  `json:"object_id"`
+	Tag                    string  `json:"tag"`
+	X                      float32 `json:"x"`
+	Y                      float32 `json:"y"`
+	Z                      float32 `json:"z"`
+	Flags                  uint32  `json:"flags"`
+	Action                 int16   `json:"action"`
+	HitMaterialType        int16   `json:"hit_material_type"`
+	IgnoreObjectIndex      int32   `json:"ignore_object_index"`
+	DetonationTimer        float32 `json:"detonation_timer"`
+	DetonationTimerDelta   float32 `json:"detonation_timer_delta"`
+	TargetObjectIndex      int32   `json:"target_object_index"` // OR arming_time f32; HC bug
+	ArmingTimeDelta        float32 `json:"arming_time_delta"`
+	DistanceTraveled       float32 `json:"distance_traveled"`
+	DecelerationTimer      float32 `json:"deceleration_timer"`
+	DecelerationTimerDelta float32 `json:"deceleration_timer_delta"`
+	Deceleration           float32 `json:"deceleration"`
+	MaximumDamageDistance  float32 `json:"maximum_damage_distance"`
+	RotationAxisX          float32 `json:"rotation_axis_x"`
+	RotationAxisY          float32 `json:"rotation_axis_y"`
+	RotationAxisZ          float32 `json:"rotation_axis_z"`
+	RotationSine           float32 `json:"rotation_sine"`
+	RotationCosine         float32 `json:"rotation_cosine"`
 }
 
-// TickPlayer is the full per-player dynamic state for one tick.
+// TickPlayer is the per-player slice of one TickPayload — only high-frequency
+// volatile data. Roster identity (name, team, splitscreen index) and
+// cumulative counters (kills/deaths/assists/etc.) live on SnapshotPlayer; they
+// are emitted on change via events rather than streamed every tick.
 type TickPlayer struct {
 	Index int `json:"index"`
-
-	// Roster (volatile if seat is reassigned mid-match).
-	Name       string `json:"name"`
-	Team       uint32 `json:"team"`
-	IsLocal    *bool  `json:"is_local"`
-	LocalIndex *int   `json:"local_index"`
-
-	// Counters (volatile every kill / death / shot).
-	Kills      int16  `json:"kills"`
-	Deaths     int16  `json:"deaths"`
-	Assists    int16  `json:"assists"`
-	TeamKills  int16  `json:"team_kills"`
-	Suicides   int16  `json:"suicides"`
-	CTFScore   int16  `json:"ctf_score"`
-	KillStreak uint16 `json:"kill_streak"`
-	Multikill  uint16 `json:"multikill"`
-	ShotsFired int32  `json:"shots_fired"`
-	ShotsHit   int16  `json:"shots_hit"`
 
 	// Dynamic per-tick state.
 	Alive              bool         `json:"alive"`

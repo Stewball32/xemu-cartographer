@@ -22,14 +22,40 @@ type GameReader interface {
 	// ReadGameState is the lightweight poll-loop check.
 	ReadGameState() (GameState, uint32, error)
 
-	// ReadSnapshot reads full game state for state transitions and new connections.
+	// LastStateInputs returns the raw values sampled by the most recent
+	// ReadGameState call. Used by the inspect endpoint for diagnostics. Plugins
+	// that don't track state inputs may return nil.
+	LastStateInputs() StateInputs
+
+	// BuildScoreProbe reads every candidate address the plugin knows about
+	// for gametype/team-score/per-player-score detection and returns a free-
+	// form bag of the raw values. Called by the manager loop and surfaced to
+	// the debug page's Probe tab. May read memory; called from the scraper
+	// goroutine only. Plugins that don't have score logic may return nil.
+	BuildScoreProbe() ScoreProbe
+
+	// ReadSnapshot reads full game state for state transitions and new
+	// connections. Implementations should populate as much from cached
+	// scenario/match-static data as possible and only re-read live-volatile
+	// fields (roster, scores) on each call.
 	ReadSnapshot() (SnapshotPayload, error)
+
+	// ReadLobby is the cheap variant of ReadSnapshot intended to be called
+	// every loop iteration in non-in_game states. Same return type and
+	// semantics as ReadSnapshot — name distinguishes the call site so the
+	// loop reads as "refresh the lobby view" rather than "snapshot the world."
+	ReadLobby() (SnapshotPayload, error)
 
 	// ReadTick reads per-tick dynamic state.
 	ReadTick(spawns []PowerItemSpawn, state *TickState) (TickResult, error)
 
 	// DetectEvents compares current tick against previous state, returns events.
 	DetectEvents(tick uint32, instance string, snap SnapshotPayload, result TickResult, state *TickState) []Envelope
+
+	// OnStateChange is invoked by the loop on every detected state transition.
+	// Implementations use it to invalidate scenario- or match-scoped caches.
+	// Called with prev=="" on the first observed state.
+	OnStateChange(prev, next GameState) error
 
 	// NewTickState returns a fresh tick state tracker.
 	NewTickState() *TickState
@@ -94,34 +120,41 @@ func DetectionGVAs() []uint32 {
 // Detect reads the XBE title ID from the running Xbox game and returns the
 // matching GameReader. Returns an error if the title ID is unrecognised.
 func Detect(inst *xemu.Instance, instanceName string) (GameReader, uint32, error) {
-	// Read the certificate pointer from the XBE header.
+	titleID, err := ReadTitleID(inst)
+	if err != nil {
+		return nil, 0, err
+	}
+	factory := Lookup(titleID)
+	if factory == nil {
+		return nil, titleID, fmt.Errorf("detect: unknown title ID 0x%08X", titleID)
+	}
+	return factory(inst, instanceName), titleID, nil
+}
+
+// ReadTitleID reads the running XBE's title ID via the same XBE header /
+// certificate path as Detect, but without registry lookup. Used by the
+// manager loop's periodic XBE-swap check: when the user exits a registered
+// game back to a non-game XBE (UnleashX, MS dashboard) without a container
+// teardown, the title ID changes. Compare against the runner's stored
+// titleID — mismatch means the runner should self-stop.
+func ReadTitleID(inst *xemu.Instance) (uint32, error) {
 	headerHVA, err := inst.LowHVA(xbeHeaderGVA)
 	if err != nil {
-		return nil, 0, fmt.Errorf("detect: translate XBE header: %w", err)
+		return 0, fmt.Errorf("detect: translate XBE header: %w", err)
 	}
 	certPtr, err := inst.Mem.ReadU32At(headerHVA + int64(xbeOffCertPtr))
 	if err != nil {
-		return nil, 0, fmt.Errorf("detect: read certificate pointer: %w", err)
+		return 0, fmt.Errorf("detect: read certificate pointer: %w", err)
 	}
-
-	// Compute host VA for the certificate. Low GVAs are relative to
-	// the already-translated header page; high GVAs use the standard offset.
 	var certHVA int64
 	if certPtr < 0x80000000 {
 		certHVA = headerHVA + int64(certPtr) - int64(xbeHeaderGVA)
 	} else {
 		certHVA = inst.Mem.HighGVA(certPtr)
 	}
-
 	titleID, err := inst.Mem.ReadU32At(certHVA + int64(xbeCertOffTitleID))
 	if err != nil {
-		return nil, 0, fmt.Errorf("detect: read title ID: %w", err)
+		return 0, fmt.Errorf("detect: read title ID: %w", err)
 	}
-
-	factory := Lookup(titleID)
-	if factory == nil {
-		return nil, titleID, fmt.Errorf("detect: unknown title ID 0x%08X", titleID)
-	}
-
-	return factory(inst, instanceName), titleID, nil
+	return titleID, nil
 }

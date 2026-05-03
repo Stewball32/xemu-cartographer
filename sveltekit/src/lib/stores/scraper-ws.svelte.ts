@@ -22,6 +22,10 @@ function createScraperWS() {
 	// the map keys lets a future multi-instance overlay disambiguate.
 	let snapshots = $state<Record<string, SnapshotPayload>>({});
 	let ticks = $state<Record<string, TickPayload>>({});
+	// Most-recent envelope.tick value, updated by every envelope kind. The
+	// debug page prefers this over the 3s HTTP-poll value so the engine-tick
+	// counter advances at WS cadence (~30Hz in_game) instead of stuttering.
+	let tickNumbers = $state<Record<string, number>>({});
 	// Receive-timestamps (epoch ms) — used by debug page to surface staleness.
 	let snapshotsAt = $state<Record<string, number>>({});
 	let ticksAt = $state<Record<string, number>>({});
@@ -50,6 +54,11 @@ function createScraperWS() {
 
 	function handleEnvelope(env: Envelope) {
 		const now = Date.now();
+		// Every envelope carries the engine tick at broadcast time — keep the
+		// most recent so the debug page's tick counter updates at WS cadence.
+		if (typeof env.tick === 'number') {
+			tickNumbers = { ...tickNumbers, [env.instance]: env.tick };
+		}
 		if (isSnapshot(env)) {
 			snapshots = { ...snapshots, [env.instance]: env.payload };
 			snapshotsAt = { ...snapshotsAt, [env.instance]: now };
@@ -136,6 +145,9 @@ function createScraperWS() {
 		},
 		get ticks() {
 			return ticks;
+		},
+		get tickNumbers() {
+			return tickNumbers;
 		},
 		get snapshotsAt() {
 			return snapshotsAt;

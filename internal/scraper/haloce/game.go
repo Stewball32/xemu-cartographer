@@ -2,6 +2,7 @@ package haloce
 
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/haloce/events"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -49,8 +50,20 @@ func (g *Game) ReadGameState() (scraper.GameState, uint32, error) {
 	return g.reader.ReadGameState()
 }
 
+func (g *Game) LastStateInputs() scraper.StateInputs {
+	return g.reader.LastStateInputs()
+}
+
+func (g *Game) BuildScoreProbe() scraper.ScoreProbe {
+	return g.reader.BuildScoreProbe()
+}
+
 func (g *Game) ReadSnapshot() (scraper.SnapshotPayload, error) {
 	return g.reader.ReadSnapshot()
+}
+
+func (g *Game) ReadLobby() (scraper.SnapshotPayload, error) {
+	return g.reader.ReadLobby()
 }
 
 func (g *Game) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickState) (scraper.TickResult, error) {
@@ -58,7 +71,11 @@ func (g *Game) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickStat
 }
 
 func (g *Game) DetectEvents(tick uint32, instance string, snap scraper.SnapshotPayload, result scraper.TickResult, state *scraper.TickState) []scraper.Envelope {
-	return DetectEvents(tick, instance, snap, result, state)
+	return events.Detect(tick, instance, snap, result, state)
+}
+
+func (g *Game) OnStateChange(prev, next scraper.GameState) error {
+	return g.reader.OnStateChange(prev, next)
 }
 
 func (g *Game) NewTickState() *scraper.TickState {
