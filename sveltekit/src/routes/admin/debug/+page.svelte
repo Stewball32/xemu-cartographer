@@ -5,9 +5,11 @@
 	import { adminGet, AdminFetchError } from '$lib/utils/admin-api';
 	import { toaster } from '$lib/stores/toaster';
 	import type { ContainerInfo, ContainerDetail, InstanceState } from '$lib/types/containers';
+	import type { ScraperInfo } from '$lib/types/scraper';
 
 	let containers = $state<ContainerInfo[]>([]);
 	let scrapers = $state<Record<string, InstanceState | null>>({});
+	let orphans = $state<ScraperInfo[]>([]);
 	let loading = $state(true);
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -17,7 +19,7 @@
 		return String(err);
 	}
 
-	async function loadContainers() {
+	async function loadAll() {
 		try {
 			loading = true;
 			const list = await adminGet<ContainerInfo[] | null>('containers');
@@ -41,8 +43,18 @@
 		}
 	}
 
+	async function refreshOrphans() {
+		try {
+			const list = await adminGet<ScraperInfo[] | null>('scraper');
+			const knownNames = new Set(containers.map((c) => c.name));
+			orphans = (list ?? []).filter((s) => !knownNames.has(s.name));
+		} catch (err) {
+			console.warn('scraper list fetch failed', err);
+		}
+	}
+
 	async function refreshAll() {
-		await Promise.all(containers.map((c) => refreshOne(c.name)));
+		await Promise.all([...containers.map((c) => refreshOne(c.name)), refreshOrphans()]);
 	}
 
 	function startPolling() {
@@ -61,7 +73,7 @@
 	}
 
 	onMount(() => {
-		loadContainers();
+		loadAll();
 		startPolling();
 	});
 
@@ -79,9 +91,9 @@
 		events. Useful for verifying a freshly-added field is populated and for chasing offset drift.
 	</p>
 
-	{#if loading && containers.length === 0}
+	{#if loading && containers.length === 0 && orphans.length === 0}
 		<div class="placeholder animate-pulse h-40"></div>
-	{:else if containers.length === 0}
+	{:else if containers.length === 0 && orphans.length === 0}
 		<div class="card preset-tonal p-6 text-center">
 			No containers yet. Provision one from the
 			<a class="anchor" href={resolve('/containers/')}>Containers</a> page.
@@ -92,6 +104,7 @@
 				<thead class="bg-surface-200-800">
 					<tr>
 						<th class="px-4 py-2 text-left">Name</th>
+						<th class="px-4 py-2 text-left">Source</th>
 						<th class="px-4 py-2 text-left">Scraper</th>
 						<th class="px-4 py-2 text-left">Game</th>
 						<th class="px-4 py-2 text-left">Xbox name</th>
@@ -103,6 +116,9 @@
 						{@const sc = scrapers[c.name]}
 						<tr class="border-surface-300-700 border-t">
 							<td class="px-4 py-2 font-medium">{c.name}</td>
+							<td class="px-4 py-2">
+								<span class="badge preset-tonal text-xs">Container</span>
+							</td>
 							<td class="px-4 py-2">
 								{#if sc?.running}
 									<span class="badge preset-filled-success-500 text-xs">Running</span>
@@ -116,6 +132,27 @@
 								<a
 									class="btn preset-filled-primary-500 text-xs"
 									href={resolve(`/admin/debug/${c.name}/`)}
+								>
+									Open
+								</a>
+							</td>
+						</tr>
+					{/each}
+					{#each orphans as o}
+						<tr class="border-surface-300-700 border-t">
+							<td class="px-4 py-2 font-medium">{o.name}</td>
+							<td class="px-4 py-2">
+								<span class="badge preset-tonal-warning text-xs" title={o.sock}>External QMP</span>
+							</td>
+							<td class="px-4 py-2">
+								<span class="badge preset-filled-success-500 text-xs">Running</span>
+							</td>
+							<td class="px-4 py-2">{o.game_title || '—'}</td>
+							<td class="px-4 py-2">{o.xbox_name || '—'}</td>
+							<td class="px-4 py-2 text-right">
+								<a
+									class="btn preset-filled-primary-500 text-xs"
+									href={resolve(`/admin/debug/${o.name}/`)}
 								>
 									Open
 								</a>

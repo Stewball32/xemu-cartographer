@@ -39,7 +39,11 @@ if [ ! -f "$INSTANCE_HDD" ]; then
         exit 1
     fi
     cp "$DEFAULT_HDD" "$INSTANCE_HDD"
-    echo "[03-setup-hdd] Copied $DEFAULT_HDD -> $INSTANCE_HDD"
+    # Init runs as root inside the container, so the copy is root-owned.
+    # Hand it back to the PUID/PGID the actual xemu process runs as so
+    # subsequent reads from xemu (and host-side cleanup) don't need sudo.
+    chown "${PUID:-1000}:${PGID:-1000}" "$INSTANCE_HDD"
+    echo "[03-setup-hdd] Copied $DEFAULT_HDD -> $INSTANCE_HDD (owner=${PUID:-1000}:${PGID:-1000})"
 else
     echo "[03-setup-hdd] Found instance HDD at $INSTANCE_HDD."
 fi

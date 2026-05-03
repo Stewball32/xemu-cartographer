@@ -12,9 +12,8 @@ interface MeResponse {
 function createAuthStore() {
 	let user = $state<UsersResponse | null>(pb.authStore.record as UsersResponse | null);
 	let token = $state(pb.authStore.token);
-	let isValid = $state(pb.authStore.isValid);
 	let isAdmin = $state(false);
-	const isLoggedIn = $derived(isValid && user !== null);
+	const isLoggedIn = $derived(token !== '' && user !== null);
 
 	let ready: Promise<void> = Promise.resolve();
 
@@ -32,26 +31,36 @@ function createAuthStore() {
 	}
 
 	function refreshAdmin() {
-		if (!token) {
+		const authToken = pb.authStore.token;
+		if (!authToken) {
 			isAdmin = false;
 			ready = Promise.resolve();
 			return;
 		}
-		const authToken = token;
 		ready = fetchAdmin(authToken).then((result) => {
 			// Drop the result if the token rotated while we were in flight.
-			if (token === authToken) isAdmin = result;
+			if (pb.authStore.token === authToken) isAdmin = result;
 		});
 	}
 
 	pb.authStore.onChange((newToken, record) => {
 		user = (record as UsersResponse | null) ?? null;
 		token = newToken;
-		isValid = !!newToken;
 		refreshAdmin();
 	});
 
-	if (isValid) refreshAdmin();
+	if (pb.authStore.isValid) {
+		// authStore.isValid is local-only (JWT expiry check). Probe the server
+		// to catch tokens signed by a now-gone secret — e.g. when `task dev`
+		// wipes tmp/pb_data/. Cleared store fires onChange → state runes update.
+		ready = pb
+			.collection('users')
+			.authRefresh()
+			.then(() => undefined)
+			.catch(() => {
+				pb.authStore.clear();
+			});
+	}
 
 	return {
 		get user() {

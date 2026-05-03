@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,10 +21,14 @@ type Watcher struct {
 	onAdd    func(name, sockPath string)
 	onRemove func(name string)
 
+	mu sync.Mutex
 	// known tracks sockets we have called onAdd for.
 	known map[string]struct{}
 	// failCount tracks consecutive dial failures for known sockets.
 	failCount map[string]int
+	// everSeen tracks names we have ever logged "socket found" for, so retries
+	// after Forget don't re-log the same line every poll.
+	everSeen map[string]struct{}
 }
 
 const maxDialFails = 3
@@ -40,7 +45,20 @@ func NewWatcher(dir string, interval time.Duration, onAdd func(name, sockPath st
 		onRemove:  onRemove,
 		known:     make(map[string]struct{}),
 		failCount: make(map[string]int),
+		everSeen:  make(map[string]struct{}),
 	}
+}
+
+// Forget drops name from the known set so the next poll re-emits onAdd.
+// Use this from the onAdd callback when an attach attempt failed transiently
+// (e.g. xemu still booting and guest VAs not yet mapped, dashboard with no
+// game loaded). The "socket found" log line is suppressed on retry; the
+// caller is responsible for not spamming its own error logs.
+func (w *Watcher) Forget(name string) {
+	w.mu.Lock()
+	delete(w.known, name)
+	delete(w.failCount, name)
+	w.mu.Unlock()
 }
 
 // Run polls the directory until ctx is cancelled.
@@ -82,46 +100,82 @@ func (w *Watcher) poll() {
 		current[base] = filepath.Join(w.dir, name)
 	}
 
-	// Detect removed sockets.
+	// Snapshot the known set so we can iterate without holding the lock during
+	// dialSocket (500ms timeouts) or the user-supplied onAdd/onRemove callbacks
+	// (which may call Forget). Mutations happen under w.mu inside the loops.
+	w.mu.Lock()
+	knownSnapshot := make([]string, 0, len(w.known))
 	for name := range w.known {
+		knownSnapshot = append(knownSnapshot, name)
+	}
+	w.mu.Unlock()
+
+	// Detect removed sockets (in known but no longer on disk).
+	for _, name := range knownSnapshot {
 		if _, ok := current[name]; !ok {
+			w.mu.Lock()
 			delete(w.known, name)
 			delete(w.failCount, name)
+			delete(w.everSeen, name)
+			w.mu.Unlock()
 			log.Printf("discovery: socket removed: %s", name)
 			w.onRemove(name)
 		}
 	}
 
 	// Check known sockets for staleness (dial failure).
-	for name := range w.known {
+	for _, name := range knownSnapshot {
 		path, ok := current[name]
 		if !ok {
 			continue // already handled above
 		}
-		if !dialSocket(path) {
-			w.failCount[name]++
-			if w.failCount[name] >= maxDialFails {
-				delete(w.known, name)
-				delete(w.failCount, name)
-				log.Printf("discovery: socket stale (%d consecutive dial failures): %s", maxDialFails, name)
-				w.onRemove(name)
-			}
-		} else {
+		if dialSocket(path) {
+			w.mu.Lock()
 			w.failCount[name] = 0
+			w.mu.Unlock()
+			continue
+		}
+		w.mu.Lock()
+		w.failCount[name]++
+		stale := w.failCount[name] >= maxDialFails
+		if stale {
+			delete(w.known, name)
+			delete(w.failCount, name)
+			delete(w.everSeen, name)
+		}
+		w.mu.Unlock()
+		if stale {
+			log.Printf("discovery: socket stale (%d consecutive dial failures): %s", maxDialFails, name)
+			w.onRemove(name)
 		}
 	}
 
-	// Detect new or re-appeared sockets.
+	// Detect new or re-appeared sockets (post-Forget).
 	for name, path := range current {
-		if _, ok := w.known[name]; ok {
-			continue // already tracked
+		w.mu.Lock()
+		_, alreadyKnown := w.known[name]
+		w.mu.Unlock()
+		if alreadyKnown {
+			continue
 		}
 		if !dialSocket(path) {
 			continue // not connectable yet, try next poll
 		}
-		log.Printf("discovery: socket found: %s (%s)", name, path)
+		w.mu.Lock()
+		// Re-check under the lock to handle a Forget/poll race.
+		if _, alreadyKnown := w.known[name]; alreadyKnown {
+			w.mu.Unlock()
+			continue
+		}
+		_, seenBefore := w.everSeen[name]
 		w.known[name] = struct{}{}
+		w.everSeen[name] = struct{}{}
 		delete(w.failCount, name)
+		w.mu.Unlock()
+
+		if !seenBefore {
+			log.Printf("discovery: socket found: %s (%s)", name, path)
+		}
 		w.onAdd(name, path)
 	}
 }

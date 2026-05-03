@@ -15,10 +15,10 @@ Before writing or reviewing code that touches a third-party library where the AP
 
 ```sh
 
-# Install task runner and hot reload
+# Install task runner and hot reload (to /usr/local/bin so both `task dev` and `sudo task dev` work; see README Prerequisites for the rationale and opt-out)
 
-go install github.com/go-task/task/v3/cmd/task@latest
-go install github.com/air-verse/air@latest
+sudo env GOBIN=/usr/local/bin go install github.com/go-task/task/v3/cmd/task@latest
+sudo env GOBIN=/usr/local/bin go install github.com/air-verse/air@latest
 
 # Run both backend and frontend dev servers
 

@@ -7,11 +7,11 @@ const MaxLocalPlayers = 4
 
 // readLocals iterates 0..localCount-1 and assembles the per-local-player
 // subsystem state (FPW, observer cam, IAS, gamepad, UI, player control,
-// update-queue slot, look rates). Update-queue slots are filled by
-// readUpdateQueue (chunk 10) — this function leaves them nil so chunk 10
-// can populate them in a single pass that also reads the queue header.
+// look rates). UI globals and look rates are pulled from r.matchCache —
+// they're match-static and pre-read by ensureMatchStatic. The remaining
+// fields are live per-tick reads.
 //
-// Source: see per-helper comments below.
+// Update-queue slots are filled by readPlayerUpdateQueue elsewhere.
 func (r *Reader) readLocals(localCount uint16) []scraper.TickLocal {
 	if localCount == 0 {
 		return nil
@@ -29,14 +29,39 @@ func (r *Reader) readLocals(localCount uint16) []scraper.TickLocal {
 			ObserverCam:   r.readObserverCam(idx),
 			IAS:           r.readInputAbstract(idx),
 			Gamepad:       r.readGamepad(idx),
-			UI:            r.readUIGlobals(idx),
+			UI:            r.cachedUI(idx),
 			PlayerControl: r.readPlayerControl(idx),
-			LookYawRate:   r.readLookRate(RefAddrLookYawRate, idx),
-			LookPitchRate: r.readLookRate(RefAddrLookPitchRate, idx),
+			LookYawRate:   r.cachedLookYaw(idx),
+			LookPitchRate: r.cachedLookPitch(idx),
 		}
 		out = append(out, l)
 	}
 	return out
+}
+
+// cachedUI returns matchCache.UI[idx] when filled; falls back to a live read
+// in case the cache hasn't populated yet (e.g. ReadTick called before any
+// ensureMatchStatic completed). Same fallback applies to cachedLookYaw /
+// cachedLookPitch below.
+func (r *Reader) cachedUI(idx int) *scraper.TickUIGlobals {
+	if r.matchCache != nil && idx < len(r.matchCache.UI) {
+		return r.matchCache.UI[idx]
+	}
+	return r.readUIGlobals(idx)
+}
+
+func (r *Reader) cachedLookYaw(idx int) float32 {
+	if r.matchCache != nil && idx < len(r.matchCache.LookYawRate) {
+		return r.matchCache.LookYawRate[idx]
+	}
+	return r.readLookRate(RefAddrLookYawRate, idx)
+}
+
+func (r *Reader) cachedLookPitch(idx int) float32 {
+	if r.matchCache != nil && idx < len(r.matchCache.LookPitchRate) {
+		return r.matchCache.LookPitchRate[idx]
+	}
+	return r.readLookRate(RefAddrLookPitchRate, idx)
 }
 
 // readFPWeapon reads the first-person weapon record for one local player.

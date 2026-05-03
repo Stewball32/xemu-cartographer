@@ -19,13 +19,16 @@ package containers
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -99,6 +102,12 @@ func handleKioskProxy(e *core.RequestEvent) error {
 			}
 			req.Host = target.Host
 		},
+		// The browser container's HTTP listener (s6-overlay → nginx) takes
+		// several seconds to come up after `podman start`. Without a retry,
+		// the user's first iframe load races that boot and gets a 502.
+		Transport: &http.Transport{
+			DialContext: dialWithRetry,
+		},
 		ModifyResponse: func(resp *http.Response) error {
 			// Drop framing restrictions from upstream too — same reason as
 			// the PB-default header strip above.
@@ -115,6 +124,29 @@ func handleKioskProxy(e *core.RequestEvent) error {
 
 	proxy.ServeHTTP(e.Response, e.Request)
 	return nil
+}
+
+// dialWithRetry retries a TCP dial for up to ~10s when the upstream refuses
+// the connection — covers the gap between `podman start` returning and the
+// browser container's HTTP listener actually accepting connections. Once the
+// listener is up, the first attempt succeeds with no measurable overhead.
+func dialWithRetry(ctx context.Context, network, addr string) (net.Conn, error) {
+	deadline := time.Now().Add(10 * time.Second)
+	var d net.Dialer
+	for {
+		conn, err := d.DialContext(ctx, network, addr)
+		if err == nil {
+			return conn, nil
+		}
+		if ctx.Err() != nil || time.Now().After(deadline) {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 // injectBaseHref rewrites an HTML response's <head> to include a <base href>

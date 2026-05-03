@@ -8,6 +8,13 @@ type PowerItemTracker struct {
 	RespawnTimer    int32  // ticks remaining when respawning
 }
 
+// RosterEntry is one player's identity at a snapshot in time. Used by event
+// detection to diff joins, leaves, and team changes against the previous tick.
+type RosterEntry struct {
+	Name string
+	Team uint32
+}
+
 // TickState holds per-instance inter-tick state for event detection.
 // One TickState per xemu instance, owned exclusively by that instance's poll goroutine.
 type TickState struct {
@@ -47,6 +54,13 @@ type TickState struct {
 	PrevWeaponAmmo   map[int]int16
 	PrevWeaponEnergy map[int]float32
 
+	// Previous roster (player index → identity) for player_joined /
+	// player_left / player_team_changed event detection.
+	PrevRoster map[int]RosterEntry
+
+	// Previous per-team scores for team_score event detection.
+	PrevTeamScores map[uint32]int32
+
 	// Game state for game_start / game_end detection.
 	PrevGameState GameState
 
@@ -80,6 +94,8 @@ func NewTickState() *TickState {
 		PrevPowerItemHeldBy: make(map[int]int),
 		PrevWeaponAmmo:      make(map[int]int16),
 		PrevWeaponEnergy:    make(map[int]float32),
+		PrevRoster:          make(map[int]RosterEntry),
+		PrevTeamScores:      make(map[uint32]int32),
 	}
 }
 

@@ -52,6 +52,23 @@ func init() {
 			return e.NoContent(http.StatusCreated)
 		})
 
+		// GET /api/admin/scraper/{name}/inspect — deep-dive view used by the
+		// admin debug page. Returns the runner's cached current_state plus the
+		// most recent snapshot/tick/events. Fields are nil/empty when the runner
+		// has been alive but never observed an in-game tick or snapshot-eligible
+		// state transition. 404 when no runner is attached for name.
+		Group.GET("/{name}/inspect", func(e *core.RequestEvent) error {
+			name := e.Request.PathValue("name")
+			if name == "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+			}
+			st, ok := Manager.Inspect(name)
+			if !ok {
+				return e.JSON(http.StatusNotFound, map[string]string{"error": "scraper not running"})
+			}
+			return e.JSON(http.StatusOK, st)
+		})
+
 		// POST /api/admin/scraper/stop/{name} — idempotent.
 		// Returns 204 whether the runner was found or not (Manager.Stop never
 		// errors on unknown names; matches container Stop semantics).
