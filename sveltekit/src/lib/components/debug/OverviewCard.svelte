@@ -139,6 +139,8 @@
 		</div>
 		{#if snapshot}
 			<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
+				<dt class="text-surface-700-200 font-mono text-xs">variant</dt>
+				<dd class="font-mono">{snapshot.variant_name || '—'}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">map</dt>
 				<dd class="font-mono">{snapshot.map || '—'}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">difficulty</dt>

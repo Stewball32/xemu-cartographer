@@ -107,6 +107,7 @@ export interface SnapshotPayload {
 	game_state: GameState;
 	map: string;
 	gametype: string;
+	variant_name?: string;
 	is_team_game: boolean;
 	score_limit: number;
 	time_limit_ticks: number;

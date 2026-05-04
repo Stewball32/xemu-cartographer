@@ -175,8 +175,9 @@ func (r *Reader) composeSnapshot() scraper.SnapshotPayload {
 	} else {
 		out.Gametype = "unknown"
 	}
+	out.VariantName = r.readVariantName()
 	out.ScoreLimit, _ = r.readScoreLimit(gametypeID)
-	out.TeamScores, _ = r.readTeamScores(out.IsTeamGame)
+	out.TeamScores, _ = r.readTeamScores(out.IsTeamGame, gametypeID)
 	out.Players, _ = r.readSnapshotPlayers()
 	if len(out.Players) == 0 {
 		// PlayerDatumArray is empty in lobby states (splitscreen / system-link
@@ -236,25 +237,45 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 	return out
 }
 
+// readVariantName returns the host's loaded variant name (e.g. "TS TRAINING",
+// "CTF 3C 10S", "Accumulate"). Stored as UTF-16-LE in the first 24 bytes
+// (12 chars max) of the variant struct at RefAddrGlobalVariant. Updated
+// at match-start, so in lobby this is the *last loaded* variant rather
+// than the dropdown selection.
+func (r *Reader) readVariantName() string {
+	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
+	if err != nil {
+		return ""
+	}
+	b, err := r.inst.Mem.ReadBytesAt(hva, 24)
+	if err != nil {
+		return ""
+	}
+	return decodeUTF16LE(b)
+}
+
 // readGametypeID returns the current gametype ID (1=ctf, 2=slayer, 3=oddball,
-// 4=king, 5=race, 6=terminator, 7=stub) by dereferencing the engine-globals
-// pointer at AddrGameEngineGlobalsPtr and reading the u32 at OffGEGGametype.
-// Origin: halocaster.py:1889 (`read_u32(game_engine_globals_address + 0x4)`).
+// 4=king, 5=race, 6=terminator, 7=stub) by reading the u32 at
+// RefAddrGlobalVariant + OffGVGametype. The variant struct holds the
+// running variant once a match has started; engine-globals presence gates
+// the read so we don't surface stale "last loaded" data during the lobby.
 //
-// The pointer is null in menu/lobby/pregame — gametype is undefined there,
-// so we return 0 with no error rather than surfacing a translate failure.
-// AddrVariant (the per-gametype variant preset index) was previously used
-// here but is unrelated to the gametype ID and gave wrong answers when the
-// preset index numerically matched a different gametype's ID.
+// Confirmed via probe: in active CTF/Slayer/Oddball matches the value at
+// +0x18 of this struct matches the running gametype. Both bases (0x2F90A8
+// and 0x2FAB60) carry identical bytes mid-match; we use the first.
 func (r *Reader) readGametypeID() (uint32, error) {
-	gePtr, err := r.inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
+	geGlobalsPtr, err := r.inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
 	if err != nil {
 		return 0, err
 	}
-	if gePtr < HighGVAThreshold {
+	if geGlobalsPtr == 0 {
 		return 0, nil
 	}
-	return r.inst.Mem.ReadU32(gePtr + OffGEGGametype)
+	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
+	if err != nil {
+		return 0, err
+	}
+	return r.inst.Mem.ReadU32At(hva + int64(OffGVGametype))
 }
 
 // fillPlayerScores populates each player's Score field using the per-gametype
@@ -263,12 +284,6 @@ func (r *Reader) readGametypeID() (uint32, error) {
 // per-player slot at score_base + PlayerScoreBaseOffset + 4*idx — all four
 // tables live in their own memory bases (see offsets.go AddrScore*). Unknown
 // gametypes leave Score=0.
-//
-// Caveat: gametypeID comes from readGametypeID which currently returns the
-// variant preset index, not the real gametype — so when the running mode
-// doesn't match the variant byte the wrong score base will be used. Fixing
-// that requires a separate offsets investigation; this code is correct given
-// a correct gametype ID.
 func (r *Reader) fillPlayerScores(players []scraper.SnapshotPlayer, gametypeID uint32) {
 	if len(players) == 0 {
 		return
@@ -308,10 +323,9 @@ func (r *Reader) fillPlayerScores(players []scraper.SnapshotPlayer, gametypeID u
 }
 
 // readScoreLimit returns the active score limit. Prefers the limit matching
-// the supplied gametypeID, but falls back to the first non-zero among the
-// other known limits — covers the common case where readGametypeID
-// misclassifies the mode (e.g. returning the variant byte instead of the
-// real gametype) and the "official" pick reads zero from an unused table.
+// the supplied gametypeID; falls back to the first non-zero limit when the
+// gametype-specific value is zero or gametypeID is unknown (e.g. pregame
+// before the engine globals pointer initialises).
 func (r *Reader) readScoreLimit(gametypeID uint32) (int32, error) {
 	type entry struct {
 		gametype uint32
@@ -345,17 +359,29 @@ func (r *Reader) readScoreLimit(gametypeID uint32) (int32, error) {
 	return 0, nil
 }
 
-// readTeamScores returns the per-team scores for team games. Only the Slayer
-// base (AddrScoreSlayer, u32[2]=red,blue) is verified on the Xbox build; the
-// other game-type bases in offsets.go come from the Gearbox PC port docs and
-// haven't been confirmed in-memory yet. Since gametype detection is still
-// unresolved (see readGametypeID), we default to the Slayer base for any
-// team game — correct for Team Slayer, the most common team mode.
-func (r *Reader) readTeamScores(isTeamGame bool) ([]scraper.TeamScore, error) {
+// readTeamScores returns the per-team scores (red, blue) for team games. The
+// score base differs per gametype — see AddrScore* in offsets.go and the
+// matching halocaster.py team_score_addresses_by_gametype map.
+func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.TeamScore, error) {
 	if !isTeamGame {
 		return nil, nil
 	}
-	hva, err := r.inst.LowHVA(AddrScoreSlayer)
+	var baseAddr uint32
+	switch gametypeID {
+	case 1:
+		baseAddr = AddrScoreCTF
+	case 2:
+		baseAddr = AddrScoreSlayer
+	case 3:
+		baseAddr = AddrScoreOddball
+	case 4:
+		baseAddr = AddrScoreKing
+	case 5:
+		baseAddr = AddrScoreRace
+	default:
+		return nil, nil
+	}
+	hva, err := r.inst.LowHVA(baseAddr)
 	if err != nil {
 		return nil, err
 	}

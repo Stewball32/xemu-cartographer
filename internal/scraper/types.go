@@ -83,6 +83,7 @@ type SnapshotPayload struct {
 	GameState       GameState        `json:"game_state"`
 	Map             string           `json:"map"`
 	Gametype        string           `json:"gametype"`
+	VariantName     string           `json:"variant_name,omitempty"`
 	IsTeamGame      bool             `json:"is_team_game"`
 	ScoreLimit      int32            `json:"score_limit"`
 	TimeLimitTicks  int32            `json:"time_limit_ticks"`

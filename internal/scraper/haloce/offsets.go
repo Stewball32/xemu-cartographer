@@ -222,6 +222,21 @@ const (
 )
 
 // ----------------------------------------------------------------------
+// GlobalVariant struct (static base at RefAddrGlobalVariant 0x2F90A8;
+// mirrored at AddrGameVariantGlobalPtr 0x2FAB60 during active matches).
+// Treated as a struct base, NOT a pointer — read directly via the
+// Init-time-translated HVA (no QMP indirection). The first 24 bytes are
+// the variant name as UTF-16-LE. Updated only at match-start, so the
+// gametype field here is authoritative once a match is running.
+//
+// Confirmed via probe captures: CTF variant "CTF 3C 10S" → +0x18 = 1,
+// Slayer "TS TRAINING" → 2, Oddball "Accumulate" → 3.
+// ----------------------------------------------------------------------
+const (
+	OffGVGametype uint32 = 0x18 // u32 gametype ID (1–7)
+)
+
+// ----------------------------------------------------------------------
 // PlayerDatumArray header (at *AddrPlayerDatumArrayPtr)
 // ----------------------------------------------------------------------
 const (
