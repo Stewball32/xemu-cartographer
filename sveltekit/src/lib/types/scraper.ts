@@ -86,6 +86,12 @@ export interface SnapshotPlayer {
 	shots_hit: number;
 	is_local: boolean | null;
 	local_index: number | null;
+	machine_index: number | null;
+}
+
+export interface SnapshotMachine {
+	index: number;
+	name: string;
 }
 
 export interface PowerItemSpawn {
@@ -107,6 +113,7 @@ export interface SnapshotPayload {
 	team_scores: TeamScore[] | null;
 	players: SnapshotPlayer[] | null;
 	power_item_spawns: PowerItemSpawn[] | null;
+	machines?: SnapshotMachine[] | null;
 
 	// Static map / scenario data scraped at match-start.
 	game_difficulty: number;

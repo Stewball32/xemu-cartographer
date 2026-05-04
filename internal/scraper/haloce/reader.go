@@ -178,6 +178,14 @@ func (r *Reader) composeSnapshot() scraper.SnapshotPayload {
 	out.ScoreLimit, _ = r.readScoreLimit(gametypeID)
 	out.TeamScores, _ = r.readTeamScores(out.IsTeamGame)
 	out.Players, _ = r.readSnapshotPlayers()
+	if len(out.Players) == 0 {
+		// PlayerDatumArray is empty in lobby states (splitscreen / system-link
+		// pre-match). Fall back to the network-game-data roster so the debug
+		// page sees lobby joins immediately.
+		out.Players, _ = r.readNetworkRosterPlayers()
+	}
+	out.Machines = r.readNetworkMachines()
+	r.attributeMachines(out.Players)
 	r.fillPlayerScores(out.Players, gametypeID)
 	out.TimeLimitTicks = 0 // no verified address
 
@@ -363,6 +371,141 @@ func (r *Reader) readTeamScores(isTeamGame bool) ([]scraper.TeamScore, error) {
 		{Team: 0, Score: int32(red)},
 		{Team: 1, Score: int32(blue)},
 	}, nil
+}
+
+// readNetworkRosterPlayers reads the lobby roster from network_game_data's
+// network_players table — the source of truth for players who have joined
+// the lobby but whose in-engine PlayerDatum slots aren't allocated yet
+// (system-link / splitscreen pre-match). Each entry is a 32-byte record:
+// wchar name (24 bytes), s16 color, s16 unused, u8 machine, u8 controller,
+// u8 team, u8 player_list_index. Atlas: halocaster.py:1228-1235.
+//
+// Returns a sparse SnapshotPlayer with Index/Name/Team/MachineIndex populated.
+// IsLocal/LocalIndex are set only when the player's machine_index matches
+// this xemu instance's own machine_index (read from network_game_client) —
+// the controller_index field is the controller slot on the player's *own*
+// machine, not a "is this player local to me" signal.
+// Kill/death/score fields stay zero — they don't exist pre-match.
+func (r *Reader) readNetworkRosterPlayers() ([]scraper.SnapshotPlayer, error) {
+	mem := r.inst.Mem
+	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	if err != nil {
+		return nil, err
+	}
+	ngdHVA := clientHVA + int64(OffNGCNetworkGameData)
+	playerCount, err := mem.ReadS16At(ngdHVA + int64(OffNGDPlayerCount))
+	if err != nil || playerCount <= 0 {
+		return nil, err
+	}
+	ownMachine, _ := mem.ReadU16At(clientHVA + int64(OffNGCMachineIndex))
+	rosterHVA := ngdHVA + int64(OffNGDNetworkPlayers)
+	players := make([]scraper.SnapshotPlayer, 0, playerCount)
+	for i := int16(0); i < playerCount; i++ {
+		entryHVA := rosterHVA + int64(uint32(i)*NetworkPlayerStride)
+		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetPlayerName), 24)
+		if err != nil || (nameBytes[0] == 0 && nameBytes[1] == 0) {
+			continue
+		}
+		team, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerTeam))
+		ctrl, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerControllerIndex))
+		machine, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerMachineIndex))
+		listIdx, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerListIndex))
+
+		isLocal := uint16(machine) == ownMachine
+		var localIdx *int
+		if isLocal {
+			v := int(ctrl)
+			localIdx = &v
+		}
+		machineIdx := int(machine)
+		players = append(players, scraper.SnapshotPlayer{
+			Index:        int(listIdx),
+			Name:         decodeUTF16LE(nameBytes),
+			Team:         uint32(team),
+			IsLocal:      &isLocal,
+			LocalIndex:   localIdx,
+			MachineIndex: &machineIdx,
+		})
+	}
+	return players, nil
+}
+
+// readNetworkMachines reads the connected-machine roster from
+// network_game_data.network_machines (atlas:1224-1226). Each entry is a
+// 68-byte record: wchar name (64 bytes / 32 chars) followed by a u8
+// machine_index. Returns nil when no network game is active.
+func (r *Reader) readNetworkMachines() []scraper.SnapshotMachine {
+	mem := r.inst.Mem
+	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	if err != nil {
+		return nil
+	}
+	ngdHVA := clientHVA + int64(OffNGCNetworkGameData)
+	machineCount, err := mem.ReadS16At(ngdHVA + int64(OffNGDMachineCount))
+	if err != nil || machineCount <= 0 {
+		return nil
+	}
+	rosterHVA := ngdHVA + int64(OffNGDNetworkMachines)
+	machines := make([]scraper.SnapshotMachine, 0, machineCount)
+	for i := int16(0); i < machineCount; i++ {
+		entryHVA := rosterHVA + int64(uint32(i)*NetworkMachineStride)
+		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetMachineName), 64)
+		if err != nil {
+			continue
+		}
+		idx, _ := mem.ReadU8At(entryHVA + int64(OffNetMachineMachineIndex))
+		name := decodeUTF16LE(nameBytes)
+		if name == "" {
+			continue
+		}
+		machines = append(machines, scraper.SnapshotMachine{
+			Index: int(idx),
+			Name:  name,
+		})
+	}
+	return machines
+}
+
+// attributeMachines fills SnapshotPlayer.MachineIndex by joining each player
+// against the network_players roster by name. Necessary because the in-engine
+// PlayerDatumArray (the source of in-game roster reads) doesn't carry a
+// machine index — that field only exists in the network roster, which is
+// also what the lobby debug page needs to show "who connected from where"
+// regardless of whether PDA is populated yet.
+func (r *Reader) attributeMachines(players []scraper.SnapshotPlayer) {
+	if len(players) == 0 {
+		return
+	}
+	mem := r.inst.Mem
+	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	if err != nil {
+		return
+	}
+	ngdHVA := clientHVA + int64(OffNGCNetworkGameData)
+	playerCount, err := mem.ReadS16At(ngdHVA + int64(OffNGDPlayerCount))
+	if err != nil || playerCount <= 0 {
+		return
+	}
+	rosterHVA := ngdHVA + int64(OffNGDNetworkPlayers)
+	nameToMachine := make(map[string]int, playerCount)
+	for i := int16(0); i < playerCount; i++ {
+		entryHVA := rosterHVA + int64(uint32(i)*NetworkPlayerStride)
+		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetPlayerName), 24)
+		if err != nil {
+			continue
+		}
+		machine, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerMachineIndex))
+		nameToMachine[decodeUTF16LE(nameBytes)] = int(machine)
+	}
+	for i := range players {
+		if players[i].MachineIndex != nil {
+			continue
+		}
+		if mi, ok := nameToMachine[players[i].Name]; ok {
+			v := mi
+			players[i].MachineIndex = &v
+		}
+	}
 }
 
 func (r *Reader) readSnapshotPlayers() ([]scraper.SnapshotPlayer, error) {

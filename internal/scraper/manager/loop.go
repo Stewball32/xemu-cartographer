@@ -91,22 +91,20 @@ func (r *runner) loop(svc *guards.Services) {
 				r.powerItemsInitialised = false
 			}
 			snapshotOK := true
-			if gs == scraper.GameStateInGame || gs == scraper.GameStatePreGame || gs == scraper.GameStatePostGame {
-				if snap, err := r.reader.ReadSnapshot(); err != nil {
-					log.Printf("scraper[%s]: ReadSnapshot: %v", r.name, err)
-					snapshotOK = false
-				} else {
-					snap.GameState = gs
-					r.snapshot = snap
-					// Reset event-detection prev-state on entering a new
-					// match so kill / death diffs aren't compared against
-					// the previous match's counters.
-					if gs == scraper.GameStateInGame || gs == scraper.GameStatePreGame {
-						r.state = r.reader.NewTickState()
-					}
-					r.cacheSnapshot(snap)
-					r.broadcast(svc, scraper.MakeEnvelope("snapshot", r.name, tick, snap))
+			if snap, err := r.reader.ReadSnapshot(); err != nil {
+				log.Printf("scraper[%s]: ReadSnapshot: %v", r.name, err)
+				snapshotOK = false
+			} else {
+				snap.GameState = gs
+				r.snapshot = snap
+				// Reset event-detection prev-state on entering a new
+				// match so kill / death diffs aren't compared against
+				// the previous match's counters.
+				if gs == scraper.GameStateInGame || gs == scraper.GameStatePreGame {
+					r.state = r.reader.NewTickState()
 				}
+				r.cacheSnapshot(snap)
+				r.broadcast(svc, scraper.MakeEnvelope("snapshot", r.name, tick, snap))
 			}
 			if snapshotOK {
 				prevState = gs
@@ -158,13 +156,14 @@ func (r *runner) loop(svc *guards.Services) {
 		default:
 			// menu / pregame / postgame: cheap snapshot refresh so the
 			// debug page sees lobby joins / team swaps / final scores
-			// within ~500ms. Suppressed on menu where snap data is empty.
-			if gs == scraper.GameStatePreGame || gs == scraper.GameStatePostGame {
-				if snap, err := r.reader.ReadLobby(); err == nil {
-					snap.GameState = gs
-					r.snapshot = snap
-					r.cacheSnapshot(snap)
-				}
+			// within ~500ms. Includes menu so splitscreen and system-link
+			// lobbies (which classify as menu until the match starts) get
+			// roster / network state surfaced live, and so the cached
+			// snapshot from a previous match clears on return-to-menu.
+			if snap, err := r.reader.ReadLobby(); err == nil {
+				snap.GameState = gs
+				r.snapshot = snap
+				r.cacheSnapshot(snap)
 			}
 			// Periodic XBE-swap check: re-read the title ID and self-stop
 			// if the running XBE has changed (e.g. user exited Halo: CE

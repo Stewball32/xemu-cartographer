@@ -37,6 +37,16 @@
 	const isTeam = $derived(snapshot?.is_team_game === true);
 	const players = $derived(snapshot?.players ?? []);
 	const teamScores = $derived(snapshot?.team_scores ?? []);
+	const machineNameByIndex = $derived.by(() => {
+		const map = new Map<number, string>();
+		for (const m of snapshot?.machines ?? []) map.set(m.index, m.name);
+		return map;
+	});
+
+	function machineLabel(p: SnapshotPlayer): string | null {
+		if (p.machine_index === null || p.machine_index === undefined) return null;
+		return machineNameByIndex.get(p.machine_index) ?? `M${p.machine_index}`;
+	}
 
 	const tickByIdx = $derived.by(() => {
 		const map = new Map<number, TickPlayer>();
@@ -340,6 +350,14 @@
 								</td>
 								<td class="truncate px-1 py-1">
 									{p.name || '—'}
+									{#if machineLabel(p)}
+										<span
+											class="badge preset-tonal ml-1 text-[10px]"
+											title="connected from machine {p.machine_index}"
+										>
+											{machineLabel(p)}
+										</span>
+									{/if}
 									{#if localBadge(p)}
 										<span
 											class="badge preset-tonal-warning ml-1 text-[10px]"

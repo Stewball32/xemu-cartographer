@@ -90,6 +90,11 @@ type SnapshotPayload struct {
 	Players         []SnapshotPlayer `json:"players"`
 	PowerItemSpawns []PowerItemSpawn `json:"power_item_spawns"`
 
+	// Machines is the connected-machine roster for system-link / splitscreen
+	// lobbies. Empty when no network game is active. Each entry's Index
+	// matches SnapshotPlayer.MachineIndex.
+	Machines []SnapshotMachine `json:"machines,omitempty"`
+
 	// Static map / scenario data scraped at match-start.
 	GameDifficulty uint8               `json:"game_difficulty"`
 	PlayerSpawns   []StaticPlayerSpawn `json:"player_spawns,omitempty"`
@@ -172,6 +177,18 @@ type SnapshotPlayer struct {
 	ShotsHit   int16  `json:"shots_hit"`
 	IsLocal    *bool  `json:"is_local"`
 	LocalIndex *int   `json:"local_index"`
+	// MachineIndex is the network-machine index this player is hosted on.
+	// Populated from the lobby roster (system-link / splitscreen) and lines
+	// up with SnapshotPayload.Machines[].Index. Nil when machine attribution
+	// isn't available (e.g. in-engine PlayerDatumArray reads pre-network).
+	MachineIndex *int `json:"machine_index"`
+}
+
+// SnapshotMachine is one connected machine in a system-link lobby. Index is
+// the per-machine slot the network stack uses to address the host.
+type SnapshotMachine struct {
+	Index int    `json:"index"`
+	Name  string `json:"name"`
 }
 
 // TeamScore is one team's current score.
