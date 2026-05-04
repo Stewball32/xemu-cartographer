@@ -15,6 +15,7 @@
 		Envelope
 	} from '$lib/types/scraper';
 	import JsonTree from '$lib/components/JsonTree.svelte';
+	import CodeBlock from '$lib/components/CodeBlock.svelte';
 	import OverviewCard from '$lib/components/debug/OverviewCard.svelte';
 	import KvCard from '$lib/components/debug/KvCard.svelte';
 	import PlayerListItem from '$lib/components/debug/PlayerListItem.svelte';
@@ -43,9 +44,7 @@
 
 	async function refreshDetail() {
 		try {
-			const res = await adminGet<ContainerDetail>(
-				`containers/${encodeURIComponent(name)}/detail`
-			);
+			const res = await adminGet<ContainerDetail>(`containers/${encodeURIComponent(name)}/detail`);
 			scraper = res.scraper;
 		} catch (err) {
 			if (err instanceof AdminFetchError && err.status === 404) {
@@ -130,9 +129,30 @@
 	const events = $derived(scraperWS.events[name] ?? inspect?.recent_events ?? []);
 	const stateInputs = $derived(inspect?.state_inputs ?? null);
 	const scoreProbe = $derived(inspect?.score_probe ?? null);
-	const snapshotAt = $derived(
-		inspect?.latest_snapshot ? inspectAt : scraperWS.snapshotsAt[name]
-	);
+
+	// Pull `gametype_candidates.paste_this` out of the probe so it can render
+	// in a CodeBlock (preserved newlines, copy button) instead of a wrapped
+	// JsonTree string. The remainder of the probe still goes through JsonTree.
+	const probePasteThis = $derived.by(() => {
+		const gc = (scoreProbe as Record<string, unknown> | null)?.gametype_candidates;
+		if (!gc || typeof gc !== 'object') return null;
+		const v = (gc as Record<string, unknown>).paste_this;
+		return typeof v === 'string' ? v : null;
+	});
+	const scoreProbeForTree = $derived.by(() => {
+		if (!scoreProbe) return null;
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(scoreProbe)) {
+			if (k === 'gametype_candidates' && v && typeof v === 'object') {
+				const { paste_this: _drop, ...rest } = v as Record<string, unknown>;
+				out[k] = rest;
+			} else {
+				out[k] = v;
+			}
+		}
+		return out;
+	});
+	const snapshotAt = $derived(inspect?.latest_snapshot ? inspectAt : scraperWS.snapshotsAt[name]);
 	const tickAt = $derived(scraperWS.ticksAt[name]);
 
 	const currentState = $derived(inspect?.current_state ?? '');
@@ -170,11 +190,7 @@
 	const objectGroups: ColGroup[] = [
 		{
 			label: 'Identity',
-			columns: [
-				{ key: 'object_id', label: 'id' },
-				{ key: 'tag' },
-				{ key: 'type' }
-			]
+			columns: [{ key: 'object_id', label: 'id' }, { key: 'tag' }, { key: 'type' }]
 		},
 		{ label: 'Flags', columns: [{ key: 'flags' }] },
 		{
@@ -204,10 +220,7 @@
 	const projectileGroups: ColGroup[] = [
 		{
 			label: 'Identity',
-			columns: [
-				{ key: 'object_id', label: 'id' },
-				{ key: 'tag' }
-			]
+			columns: [{ key: 'object_id', label: 'id' }, { key: 'tag' }]
 		},
 		{
 			label: 'Position',
@@ -290,7 +303,7 @@
 
 <div class="container mx-auto max-w-7xl p-4">
 	<header class="mb-4">
-		<a class="anchor mb-2 flex items-center gap-1 text-sm" href={resolve('/admin/debug/')}>
+		<a class="mb-2 flex items-center gap-1 anchor text-sm" href={resolve('/admin/debug/')}>
 			<ArrowLeftIcon class="size-4" />
 			Back to debug
 		</a>
@@ -299,9 +312,9 @@
 				<h1 class="h2">{name}</h1>
 				<p class="text-surface-700-200 text-sm">
 					{#if scraper?.running}
-						<span class="badge preset-filled-success-500 mr-2 text-xs">Scraper running</span>
+						<span class="mr-2 badge preset-filled-success-500 text-xs">Scraper running</span>
 					{:else}
-						<span class="badge preset-tonal mr-2 text-xs">Scraper idle</span>
+						<span class="mr-2 badge preset-tonal text-xs">Scraper idle</span>
 					{/if}
 					{scraper?.game_title || '—'} · {scraper?.xbox_name || '—'}
 				</p>
@@ -364,20 +377,13 @@
 					<div>State: <span class="font-mono">{currentState || '—'}</span></div>
 					<div>Events buffered: <span class="font-mono tabular-nums">{events.length}</span></div>
 				</div>
-				<OverviewCard
-					state={currentState}
-					{snapshot}
-					{tick}
-					{tickValue}
-					{stateInputs}
-					{showAll}
-				/>
+				<OverviewCard state={currentState} {snapshot} {tick} {tickValue} {stateInputs} {showAll} />
 			</Tabs.Content>
 
 			<!-- SNAPSHOT TAB -->
 			<Tabs.Content value="snapshot" class="pt-4">
 				{#if !snapshot}
-					<div class="card preset-tonal text-surface-500-400 p-6 text-center">
+					<div class="text-surface-500-400 card preset-tonal p-6 text-center">
 						No snapshot yet. {isMatchState
 							? 'Should appear shortly.'
 							: 'Snapshots populate during pregame, in-game, and postgame.'}
@@ -501,7 +507,7 @@
 			<!-- TICK TAB -->
 			<Tabs.Content value="tick" class="pt-4">
 				{#if !tick}
-					<div class="card preset-tonal text-surface-500-400 p-6 text-center">
+					<div class="text-surface-500-400 card preset-tonal p-6 text-center">
 						No tick data — only emitted while in a match.
 						{#if currentState}
 							<div class="text-surface-700-200 mt-2 text-xs">
@@ -547,7 +553,7 @@
 						<!-- Players sub-tab: master-detail -->
 						<Tabs.Content value="players" class="pt-3">
 							{#if !tick.players || tick.players.length === 0}
-								<div class="card preset-tonal text-surface-500-400 p-3 text-sm">no players</div>
+								<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no players</div>
 							{:else}
 								<div class="grid grid-cols-1 gap-3 lg:grid-cols-[18rem_1fr]">
 									<div class="space-y-2">
@@ -568,7 +574,7 @@
 												snapshotPlayer={selectedSnapPlayer}
 											/>
 										{:else}
-											<div class="card preset-tonal text-surface-500-400 p-6 text-center text-sm">
+											<div class="text-surface-500-400 card preset-tonal p-6 text-center text-sm">
 												Select a player from the list to inspect.
 											</div>
 										{/if}
@@ -580,7 +586,7 @@
 						<!-- Network sub-tab -->
 						<Tabs.Content value="network" class="pt-3">
 							{#if !tick.network}
-								<div class="card preset-tonal text-surface-500-400 p-3 text-sm">
+								<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
 									no network data (singleplayer or unreplicated)
 								</div>
 							{:else}
@@ -651,7 +657,7 @@
 						<!-- Locals sub-tab -->
 						<Tabs.Content value="locals" class="pt-3">
 							{#if !tick.locals || tick.locals.length === 0}
-								<div class="card preset-tonal text-surface-500-400 p-3 text-sm">no locals</div>
+								<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no locals</div>
 							{:else}
 								<div class="space-y-4">
 									{#each tick.locals as local}
@@ -757,7 +763,7 @@
 					>
 				</div>
 				{#if filteredEvents.length === 0}
-					<div class="card preset-tonal text-surface-500-400 p-3 text-sm">
+					<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
 						no events {eventFilter === 'all' ? '' : `in '${eventFilter}'`} bucket
 					</div>
 				{:else}
@@ -769,20 +775,31 @@
 			<Tabs.Content value="probe" class="space-y-4 pt-4">
 				<div class="card preset-tonal p-3 text-sm">
 					<p class="text-surface-700-200">
-						Raw values from every candidate address the Halo: CE plugin reads for
-						gametype detection, team scores, score limits, and per-player scores. Use
-						this to identify which addresses match what the game actually shows so we
-						can fix the canonical readers.
+						Raw values from every candidate address the Halo: CE plugin reads for gametype
+						detection, team scores, score limits, and per-player scores. Use this to identify which
+						addresses match what the game actually shows so we can fix the canonical readers.
 					</p>
 				</div>
 				{#if !scoreProbe}
-					<div class="card preset-tonal text-surface-500-400 p-3 text-sm">
-						No probe data yet — wait for the next inspect poll (~3s) once a scraper is
-						attached.
+					<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
+						No probe data yet — wait for the next inspect poll (~3s) once a scraper is attached.
 					</div>
 				{:else}
 					<div class="space-y-4">
-						{#each Object.entries(scoreProbe) as [section, value]}
+						{#if probePasteThis}
+							<div>
+								<div class="mb-1 flex items-baseline justify-between">
+									<div class="text-surface-700-200 text-xs font-semibold uppercase">
+										paste this back
+									</div>
+									<div class="text-surface-500-400 text-xs">
+										received {relativeTime(inspectAt)}
+									</div>
+								</div>
+								<CodeBlock code={probePasteThis} />
+							</div>
+						{/if}
+						{#each Object.entries(scoreProbeForTree ?? {}) as [section, value]}
 							<div>
 								<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">
 									{section}
@@ -803,7 +820,7 @@
 					{#if snapshot}
 						<JsonTree value={snapshot} label="Snapshot" />
 					{:else}
-						<div class="card preset-tonal text-surface-500-400 p-3 text-sm">no snapshot yet</div>
+						<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no snapshot yet</div>
 					{/if}
 				</div>
 				<div>
@@ -813,7 +830,7 @@
 					{#if tick}
 						<JsonTree value={tick} label="Latest tick" defaultOpen={false} />
 					{:else}
-						<div class="card preset-tonal text-surface-500-400 p-3 text-sm">no tick yet</div>
+						<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no tick yet</div>
 					{/if}
 				</div>
 				<div>
@@ -823,7 +840,7 @@
 					{#if events.length > 0}
 						<JsonTree value={events} label="Recent events" defaultOpen={false} />
 					{:else}
-						<div class="card preset-tonal text-surface-500-400 p-3 text-sm">no events yet</div>
+						<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no events yet</div>
 					{/if}
 				</div>
 			</Tabs.Content>

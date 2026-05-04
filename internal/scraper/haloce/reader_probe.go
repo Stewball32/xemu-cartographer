@@ -3,6 +3,8 @@ package haloce
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
@@ -93,7 +95,155 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 			}
 		}
 	}
+
+	// Variant-struct hexdumps + per-byte interpretation. Both addresses are
+	// pre-translated in AllLowGVAs so this needs no QMP lookup. halocaster.py:1192
+	// dumps 0x68 bytes from 0x2FAB60 and treats the address as the struct base
+	// (not a pointer); we do the same for both candidate bases.
+	//
+	// Cycle the host's gametype dropdown through CTF/Slayer/Oddball/King/Race
+	// and capture the probe each time. The byte that flips through 1→2→3→4→5
+	// in lockstep is the gametype offset. The "u8_as_gametype" and
+	// "u32_as_gametype" columns auto-decode any value 1–7 into its name so it's
+	// scannable.
+	dumpA := r.dumpVariantStruct(RefAddrGlobalVariant)
+	dumpB := r.dumpVariantStruct(AddrGameVariantGlobalPtr)
+	out["variant_struct_at_2f90a8"] = dumpA
+	out["variant_struct_at_2fab60"] = dumpB
+
+	// One copy-pasteable block summarising the gametype-relevant captures.
+	// Select-and-copy the value of this field, paste it back. Visually wraps
+	// in the JsonTree but newlines survive in the clipboard.
+	var paste strings.Builder
+	paste.WriteString("=== gametype probe ===\n")
+
+	// Freshness header — proves the read is live. host_clock_utc is wall clock
+	// from the Go side; xbox_random_seed (halocaster.py:1932 — RNG at 0x2E3648)
+	// ticks every game frame even in lobby; xbox_game_tick is GTG.GameTime,
+	// only populated when game-time-globals is allocated (in-match). Compare
+	// across two consecutive captures: if seed and/or tick differ, the bytes
+	// below are definitely fresh from emulator memory at this moment.
+	fmt.Fprintf(&paste, "host_clock_utc: %s\n", time.Now().UTC().Format(time.RFC3339Nano))
+	if hva, err := r.inst.LowHVA(RefAddrGlobalRandomSeed); err == nil {
+		if v, err := r.inst.Mem.ReadU32At(hva); err == nil {
+			fmt.Fprintf(&paste, "xbox_random_seed @0x2E3648: 0x%08x (%d)\n", v, v)
+		}
+	}
+	if gtgPtr, err := r.inst.DerefLowPtr(AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
+		if v, err := r.inst.Mem.ReadU32(gtgPtr + OffGTGGameTime); err == nil {
+			fmt.Fprintf(&paste, "xbox_game_tick: %d\n", v)
+		}
+	} else {
+		fmt.Fprintf(&paste, "xbox_game_tick: n/a (lobby/menu — GTG not allocated)\n")
+	}
+	paste.WriteString("\n")
+
+	if v, ok := out["ge_globals_ptr"]; ok {
+		fmt.Fprintf(&paste, "ge_globals_ptr: %v (valid=%v)\n", v, out["ge_globals_ptr_valid"])
+	}
+	if v, ok := out["variant_u8_at_2f90f4"]; ok {
+		fmt.Fprintf(&paste, "variant_byte @0x2F90F4 (preset index, NOT gametype): %v\n", v)
+	}
+	if v, ok := out["global_variant_at_2f90a8_u32"]; ok {
+		fmt.Fprintf(&paste, "global_variant_first_u32 @0x2F90A8: %v\n", v)
+	}
+	if v, ok := out["game_variant_global_at_2fab60_u32"]; ok {
+		fmt.Fprintf(&paste, "game_variant_global_first_u32 @0x2FAB60: %v\n", v)
+	}
+	if v, ok := out["game_connection_at_2e3684_s16"]; ok {
+		fmt.Fprintf(&paste, "game_connection: %v (0=menu/SP, 1=syslink, 2=hosting, 3=film)\n", v)
+	}
+	paste.WriteString("\n")
+	paste.WriteString(renderVariantStructPaste("variant_struct A", dumpA))
+	paste.WriteString("\n")
+	paste.WriteString(renderVariantStructPaste("variant_struct B", dumpB))
+	out["paste_this"] = paste.String()
+
 	return out
+}
+
+// variantStructDump holds the readings from one 104-byte variant-struct
+// candidate base. Designed so the Matches and Hex fields are short and
+// pasteable; the full per-byte sweep stays in the parent probe via
+// renderVariantStructPaste.
+type variantStructDump struct {
+	BaseGVA string           `json:"base_gva"`
+	Hex104  string           `json:"hex_104_bytes,omitempty"`
+	Matches []map[string]any `json:"gametype_matches,omitempty"`
+	Error   string           `json:"error,omitempty"`
+}
+
+// dumpVariantStruct reads 104 bytes (halocaster.py:1192's 0x68) from a
+// pre-translated low-GVA base. Returns the hex blob plus a filtered list of
+// offsets where u8 or u32 decoded as a known gametype name (1–7). The base
+// must already be in AllLowGVAs — no runtime QMP translation happens here.
+func (r *Reader) dumpVariantStruct(base uint32) variantStructDump {
+	out := variantStructDump{BaseGVA: fmt.Sprintf("0x%08x", base)}
+	hva, err := r.inst.LowHVA(base)
+	if err != nil {
+		out.Error = err.Error()
+		return out
+	}
+	const structLen = 0x68 // 104, matching halocaster.py:1192
+	buf, err := r.inst.Mem.ReadBytesAt(hva, structLen)
+	if err != nil {
+		out.Error = err.Error()
+		return out
+	}
+	out.Hex104 = hex.EncodeToString(buf)
+	for off := 0; off < structLen; off++ {
+		if name, ok := gametypeName(uint32(buf[off])); ok {
+			out.Matches = append(out.Matches, map[string]any{
+				"offset": fmt.Sprintf("0x%02x", off),
+				"width":  "u8",
+				"value":  buf[off],
+				"name":   name,
+			})
+		}
+		if off+4 <= structLen {
+			v := uint32(buf[off]) | uint32(buf[off+1])<<8 | uint32(buf[off+2])<<16 | uint32(buf[off+3])<<24
+			if name, ok := gametypeName(v); ok {
+				out.Matches = append(out.Matches, map[string]any{
+					"offset": fmt.Sprintf("0x%02x", off),
+					"width":  "u32",
+					"value":  v,
+					"name":   name,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// gametypeName returns ("ctf"/"slayer"/etc., true) for v in 1..7, else "", false.
+// Filters out 0 (none) and the wildcard 12/13/14 entries which would over-match.
+func gametypeName(v uint32) (string, bool) {
+	if v == 0 || v > 7 {
+		return "", false
+	}
+	name, ok := GametypeNames[v]
+	return name, ok && name != ""
+}
+
+// renderVariantStructPaste flattens a variantStructDump into a copy-pasteable
+// multi-line string. Used to build the top-level `paste_this` field.
+func renderVariantStructPaste(label string, d variantStructDump) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s @ %s:\n", label, d.BaseGVA)
+	if d.Error != "" {
+		fmt.Fprintf(&b, "  error: %s\n", d.Error)
+		return b.String()
+	}
+	fmt.Fprintf(&b, "  hex: %s\n", d.Hex104)
+	if len(d.Matches) == 0 {
+		fmt.Fprintf(&b, "  matches: (none)\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "  matches:\n")
+	for _, m := range d.Matches {
+		fmt.Fprintf(&b, "    %-3s @%s = %d → %s\n", m["width"], m["offset"], m["value"], m["name"])
+	}
+	return b.String()
 }
 
 func (r *Reader) probeTeamScoresRaw() map[string]any {
