@@ -4,7 +4,7 @@ import { buildLoginUrl } from '$lib/utils/redirect';
 import type { PageLoad } from './$types';
 
 // The overlay WebSocket room requires authentication (any role); admin not
-// required. Late-joiner snapshot replay is handled server-side in
+// required. Late-joiner game-data replay (legacy "snapshot" wire envelope) is handled server-side in
 // internal/websocket/handlers/join_room.go.
 export const load: PageLoad = ({ url }) => {
 	if (!pb.authStore.isValid) {

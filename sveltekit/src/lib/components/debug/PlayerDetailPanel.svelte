@@ -1,36 +1,36 @@
 <script lang="ts">
 	import { ChevronDownIcon } from '@lucide/svelte';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
-	import type { TickPlayer, SnapshotPlayer } from '$lib/types/scraper';
+	import type { TickPlayer, GamePlayer } from '$lib/types/scraper';
 	import KvCard from './KvCard.svelte';
 	import JsonTree from '../JsonTree.svelte';
 
 	let {
 		tickPlayer,
-		snapshotPlayer
+		gamePlayer
 	}: {
 		tickPlayer: TickPlayer;
-		snapshotPlayer: SnapshotPlayer | null;
+		gamePlayer: GamePlayer | null;
 	} = $props();
 
 	const identity = $derived({
 		index: tickPlayer.index,
-		name: snapshotPlayer?.name ?? '—',
-		team: snapshotPlayer?.team ?? null,
-		is_local: snapshotPlayer?.is_local ?? null,
-		local_index: snapshotPlayer?.local_index ?? null,
+		name: gamePlayer?.name ?? '—',
+		team: gamePlayer?.team ?? null,
+		is_local: gamePlayer?.is_local ?? null,
+		local_index: gamePlayer?.local_index ?? null,
 		alive: tickPlayer.alive,
 		respawn_in_ticks: tickPlayer.respawn_in_ticks,
-		kills: snapshotPlayer?.kills ?? 0,
-		deaths: snapshotPlayer?.deaths ?? 0,
-		assists: snapshotPlayer?.assists ?? 0,
-		ctf_score: snapshotPlayer?.ctf_score ?? 0,
-		team_kills: snapshotPlayer?.team_kills ?? 0,
-		suicides: snapshotPlayer?.suicides ?? 0,
-		kill_streak: snapshotPlayer?.kill_streak ?? 0,
-		multikill: snapshotPlayer?.multikill ?? 0,
-		shots_fired: snapshotPlayer?.shots_fired ?? 0,
-		shots_hit: snapshotPlayer?.shots_hit ?? 0
+		kills: gamePlayer?.kills ?? 0,
+		deaths: gamePlayer?.deaths ?? 0,
+		assists: gamePlayer?.assists ?? 0,
+		ctf_score: gamePlayer?.ctf_score ?? 0,
+		team_kills: gamePlayer?.team_kills ?? 0,
+		suicides: gamePlayer?.suicides ?? 0,
+		kill_streak: gamePlayer?.kill_streak ?? 0,
+		multikill: gamePlayer?.multikill ?? 0,
+		shots_fired: gamePlayer?.shots_fired ?? 0,
+		shots_hit: gamePlayer?.shots_hit ?? 0
 	});
 
 	const positionVelocity = $derived({
@@ -71,7 +71,7 @@
 
 <div class="card preset-tonal p-3">
 	<div class="mb-3 flex items-center justify-between">
-		<h3 class="font-semibold">{snapshotPlayer?.name ?? `Player ${tickPlayer.index}`}</h3>
+		<h3 class="font-semibold">{gamePlayer?.name ?? `Player ${tickPlayer.index}`}</h3>
 		<span class="text-surface-700-200 font-mono text-xs">slot #{tickPlayer.index}</span>
 	</div>
 

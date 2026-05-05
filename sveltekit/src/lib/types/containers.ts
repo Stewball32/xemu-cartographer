@@ -36,7 +36,7 @@ export interface ContainerStatusResponse {
 export interface InstanceState {
 	name: string;
 	title_id: number;
-	game_title: string;
+	title: string;
 	xbox_name: string;
 	running: boolean;
 }

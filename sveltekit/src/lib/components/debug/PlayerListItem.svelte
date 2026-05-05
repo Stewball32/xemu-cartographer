@@ -1,24 +1,24 @@
 <script lang="ts">
-	import type { TickPlayer, SnapshotPlayer } from '$lib/types/scraper';
+	import type { TickPlayer, GamePlayer } from '$lib/types/scraper';
 
 	let {
 		tickPlayer,
-		snapshotPlayer,
+		gamePlayer,
 		selected = false,
 		teamGame = false,
 		onSelect
 	}: {
 		tickPlayer: TickPlayer;
-		snapshotPlayer: SnapshotPlayer | null;
+		gamePlayer: GamePlayer | null;
 		selected?: boolean;
 		teamGame?: boolean;
 		onSelect: () => void;
 	} = $props();
 
-	const name = $derived(snapshotPlayer?.name ?? `Player ${tickPlayer.index}`);
+	const name = $derived(gamePlayer?.name ?? `Player ${tickPlayer.index}`);
 	const teamColor = $derived.by(() => {
 		if (!teamGame) return 'bg-surface-500';
-		const t = snapshotPlayer?.team ?? 0;
+		const t = gamePlayer?.team ?? 0;
 		return t === 0 ? 'bg-error-500' : 'bg-primary-500';
 	});
 
@@ -40,7 +40,7 @@
 			title={tickPlayer.alive ? 'alive' : 'dead'}
 		></span>
 		{#if teamGame}
-			<span class="size-3 rounded-sm {teamColor}" title="team {snapshotPlayer?.team ?? 0}"></span>
+			<span class="size-3 rounded-sm {teamColor}" title="team {gamePlayer?.team ?? 0}"></span>
 		{/if}
 		<span class="flex-1 truncate text-sm font-medium">{name}</span>
 		<span class="text-surface-700-200 font-mono text-xs">#{tickPlayer.index}</span>
@@ -61,11 +61,11 @@
 			<span class="font-mono text-[10px] tabular-nums w-8 text-right">{shieldPct}%</span>
 		</div>
 	</div>
-	{#if snapshotPlayer}
+	{#if gamePlayer}
 		<div class="text-surface-700-200 mt-1.5 flex gap-3 font-mono text-[10px]">
-			<span>K {snapshotPlayer.kills}</span>
-			<span>D {snapshotPlayer.deaths}</span>
-			<span>A {snapshotPlayer.assists}</span>
+			<span>K {gamePlayer.kills}</span>
+			<span>D {gamePlayer.deaths}</span>
+			<span>A {gamePlayer.assists}</span>
 		</div>
 	{/if}
 </button>

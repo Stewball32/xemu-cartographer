@@ -18,9 +18,15 @@ func init() {
 		})
 
 		// POST /api/admin/scraper/start — body {"name":"...","sock":"/path/to/qmp.sock"}.
-		// 201 with the started scraper's Info on success. 409 on name collision,
-		// 400 on missing fields, 502 when xemu init or game detection fails
-		// (most often "unknown title ID 0x...").
+		// 201 with the started runner's Info on success. 409 on name collision,
+		// 400 on missing fields or chokepoint-rejected names (reserved suffix
+		// "all", names containing ":" or whitespace — see M5 stage 5b in
+		// internal/websocket/rooms/host.go), 502 when xemu QMP init fails.
+		// After M5 stage 5a the runner enters Idle and self-detects the
+		// running XBE — Start no longer rejects unknown titles, so callers
+		// see 201 and need to poll /api/admin/scraper/{name}/inspect to see
+		// whether detection succeeded (phase=ready/live) or the runner is
+		// still in Idle awaiting a known title-ID.
 		Group.POST("/start", func(e *core.RequestEvent) error {
 			var body struct {
 				Name string `json:"name"`
@@ -36,6 +42,9 @@ func init() {
 			if err := Manager.Start(body.Name, body.Sock); err != nil {
 				if errors.Is(err, scrapermgr.ErrAlreadyRunning) {
 					return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+				}
+				if errors.Is(err, scrapermgr.ErrInvalidName) {
+					return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 				}
 				return e.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 			}
@@ -54,8 +63,8 @@ func init() {
 
 		// GET /api/admin/scraper/{name}/inspect — deep-dive view used by the
 		// admin debug page. Returns the runner's cached current_state plus the
-		// most recent snapshot/tick/events. Fields are nil/empty when the runner
-		// has been alive but never observed an in-game tick or snapshot-eligible
+		// most recent game-data/tick/events. Fields are nil/empty when the runner
+		// has been alive but never observed an in-game tick or game-data-eligible
 		// state transition. 404 when no runner is attached for name.
 		Group.GET("/{name}/inspect", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")

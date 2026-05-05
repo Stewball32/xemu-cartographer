@@ -3,7 +3,7 @@ package haloce
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
 // readPlayerSpawns walks the scenario's player-spawn array and returns one
-// StaticPlayerSpawn per entry. Reads at snapshot time only (scenario data is
+// StaticPlayerSpawn per entry. Reads at game-data read time only (scenario data is
 // map-static).
 //
 // Source: OffScenarioPlayerSpawn* + OffPlayerSpawn* constants.
@@ -153,7 +153,7 @@ func (r *Reader) readObjectTypes() []scraper.StaticObjectType {
 }
 
 // readCachePtrs reads the four cache base/size pointer pairs (game state, tag,
-// texture, sound). Diagnostic-only — surfaces in SnapshotPayload.TagCache for
+// texture, sound). Diagnostic-only — surfaces in GameData.TagCache for
 // memory-layout introspection in the debug page.
 func (r *Reader) readCachePtrs() *scraper.StaticCachePtrs {
 	inst := r.inst

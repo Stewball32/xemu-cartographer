@@ -9,26 +9,46 @@ export interface ScraperInfo {
 	name: string;
 	sock: string;
 	title_id: number;
-	game_title: string;
+	title: string;
 	xbox_name: string;
 	tick: number;
 	ticks: number;
 	started_at: string;
 }
 
+// Phase is the runner's lifecycle state introduced in M5 stage 5a:
+// "idle" (no recognised title yet), "ready" (title detected, no live
+// match), "live" (active match in progress). Renders independently of
+// current_state — phase=idle can carry an empty current_state, while
+// current_state=in_game implies phase=live.
+export type Phase = 'idle' | 'ready' | 'live';
+
+// PreviousGameInfo is the just-ended match captured on Live → Ready
+// transitions. Surfaced on Inspect so the debug page can render the
+// previous match's roster / scores while the runner is back in Ready.
+// Dropped on Ready → Idle.
+export interface PreviousGameInfo {
+	game_data: GameData | null;
+	events: Envelope[] | null;
+	ended_at: string;
+}
+
 // Mirrors internal/guards/interfaces/scraper.InspectState — returned by
-// GET /api/admin/scraper/{name}/inspect. Embeds ScraperInfo plus the runner's
-// cached snapshot/tick/state/events for the debug page. Values are nullable
-// when the runner has been alive but never observed an in-game tick or
-// snapshot-eligible state transition.
+// GET /api/admin/scraper/{name}/inspect. Embeds ScraperInfo plus the
+// runner's cached game-data / tick / events for the debug page. Values are
+// nullable when the runner has been alive but never observed an in-game
+// tick or game-data-eligible state transition.
 export interface ScraperInspect extends ScraperInfo {
 	running: boolean;
+	phase: Phase;
+	last_read_at: string;
 	current_state: GameState | '';
 	state_inputs: StateInputs | null;
 	score_probe: ScoreProbe | null;
-	latest_snapshot: SnapshotPayload | null;
+	game_data: GameData | null;
 	latest_tick: TickPayload | null;
 	recent_events: Envelope[] | null;
+	previous_game?: PreviousGameInfo | null;
 }
 
 // StateInputs is a free-form bag of plugin-specific raw values that drive
@@ -45,10 +65,17 @@ export type ScoreProbe = Record<string, unknown>;
 
 export type GameState = 'menu' | 'lobby' | 'pregame' | 'in_game' | 'postgame';
 
+// Envelope types match the legacy wire format. Stage 5c will replace
+// "snapshot" with "current_state" / "state_update". The string literals
+// stay until then; backend-side equivalents live in
+// internal/scraper/manager/loop.go envelopeType* constants.
 export type EnvelopeType = 'snapshot' | 'tick' | 'event';
 
-// Outer WebSocket Message wrapper. The scraper broadcasts always set
-// type="scraper", room="overlay", and payload=<Envelope as JSON>.
+// Outer WebSocket Message wrapper. M5 stage 5b: scraper broadcasts set
+// type="scraper", room="host:<instance>" (per-instance) or room="host:all"
+// (cross-instance summary feed), and payload=<Envelope as JSON>. The
+// envelope's instance field disambiguates the two — "all" indicates the
+// host:all summary feed, anything else is per-instance.
 export interface WSMessage {
 	type: string;
 	room?: string;
@@ -69,7 +96,7 @@ export interface TeamScore {
 	score: number;
 }
 
-export interface SnapshotPlayer {
+export interface GamePlayer {
 	index: number;
 	name: string;
 	team: number;
@@ -89,7 +116,7 @@ export interface SnapshotPlayer {
 	machine_index: number | null;
 }
 
-export interface SnapshotMachine {
+export interface GameMachine {
 	index: number;
 	name: string;
 }
@@ -103,7 +130,7 @@ export interface PowerItemSpawn {
 	z: number;
 }
 
-export interface SnapshotPayload {
+export interface GameData {
 	game_state: GameState;
 	map: string;
 	gametype: string;
@@ -112,9 +139,9 @@ export interface SnapshotPayload {
 	score_limit: number;
 	time_limit_ticks: number;
 	team_scores: TeamScore[] | null;
-	players: SnapshotPlayer[] | null;
+	players: GamePlayer[] | null;
 	power_item_spawns: PowerItemSpawn[] | null;
-	machines?: SnapshotMachine[] | null;
+	machines?: GameMachine[] | null;
 
 	// Static map / scenario data scraped at match-start.
 	game_difficulty: number;
@@ -216,7 +243,7 @@ export interface StaticBipedTagData {
 
 // TickPlayer carries only high-frequency volatile data per game tick.
 // Roster identity (name, team, splitscreen index) and cumulative counters
-// (kills, deaths, assists, etc.) live on SnapshotPlayer. Counter changes
+// (kills, deaths, assists, etc.) live on GamePlayer. Counter changes
 // are emitted via per-event payloads (kill / death / score / etc.) rather
 // than streamed every tick.
 export interface TickPlayer {
@@ -622,7 +649,7 @@ export interface TickProjectile {
 }
 
 // Type guards for narrowing Envelope by type.
-export function isSnapshot(env: Envelope): env is Envelope<SnapshotPayload> {
+export function isSnapshot(env: Envelope): env is Envelope<GameData> {
 	return env.type === 'snapshot';
 }
 

@@ -10,7 +10,7 @@
 	import type {
 		ScraperInfo,
 		ScraperInspect,
-		SnapshotPlayer,
+		GamePlayer,
 		TickPlayer,
 		Envelope
 	} from '$lib/types/scraper';
@@ -55,7 +55,7 @@
 						? {
 								name: match.name,
 								title_id: match.title_id,
-								game_title: match.game_title,
+								title: match.title,
 								xbox_name: match.xbox_name,
 								running: true
 							}
@@ -124,7 +124,7 @@
 		return `${Math.floor(diffMs / 3_600_000)}h ago`;
 	}
 
-	const snapshot = $derived(inspect?.latest_snapshot ?? scraperWS.snapshots[name] ?? null);
+	const gameData = $derived(inspect?.game_data ?? scraperWS.gameData[name] ?? null);
 	const tick = $derived(scraperWS.ticks[name] ?? inspect?.latest_tick ?? null);
 	const events = $derived(scraperWS.events[name] ?? inspect?.recent_events ?? []);
 	const stateInputs = $derived(inspect?.state_inputs ?? null);
@@ -152,16 +152,35 @@
 		}
 		return out;
 	});
-	const snapshotAt = $derived(inspect?.latest_snapshot ? inspectAt : scraperWS.snapshotsAt[name]);
+	const gameDataAt = $derived(inspect?.game_data ? inspectAt : scraperWS.gameDataAt[name]);
 	const tickAt = $derived(scraperWS.ticksAt[name]);
+
+	// Phase status row (M5 stage 5a). The Phase enum is published by the
+	// runner independently of GameState — phase=idle can mean "no reader
+	// bound yet" while current_state stays empty until a reader binds.
+	const phaseBadgeClass: Record<string, string> = {
+		idle: 'preset-tonal',
+		ready: 'preset-filled-warning-500',
+		live: 'preset-filled-success-500'
+	};
+	const lastReadAtMs = $derived.by(() => {
+		if (!inspect?.last_read_at) return undefined;
+		const t = Date.parse(inspect.last_read_at);
+		return Number.isFinite(t) ? t : undefined;
+	});
+	const previousGameEndedAtMs = $derived.by(() => {
+		if (!inspect?.previous_game?.ended_at) return undefined;
+		const t = Date.parse(inspect.previous_game.ended_at);
+		return Number.isFinite(t) ? t : undefined;
+	});
 
 	const currentState = $derived(inspect?.current_state ?? '');
 	const isMatchState = $derived(
 		currentState === 'in_game' || currentState === 'pregame' || currentState === 'postgame'
 	);
 	const runnerAttached = $derived(!!inspect?.running || !!scraper?.running);
-	const isTeamGame = $derived(snapshot?.is_team_game === true);
-	const gametype = $derived(snapshot?.gametype ?? '');
+	const isTeamGame = $derived(gameData?.is_team_game === true);
+	const gametype = $derived(gameData?.gametype ?? '');
 	const isCTF = $derived(gametype === 'ctf');
 
 	// Engine tick: prefer the WS value (refreshes ~30Hz in_game) over the
@@ -175,15 +194,15 @@
 		}
 	});
 
-	function snapshotPlayerFor(idx: number): SnapshotPlayer | null {
-		return snapshot?.players?.find((p) => p.index === idx) ?? null;
+	function gamePlayerFor(idx: number): GamePlayer | null {
+		return gameData?.players?.find((p) => p.index === idx) ?? null;
 	}
 
 	const selectedTickPlayer = $derived<TickPlayer | null>(
 		tick?.players?.find((p) => p.index === selectedPlayerIdx) ?? null
 	);
-	const selectedSnapPlayer = $derived(
-		selectedPlayerIdx !== null ? snapshotPlayerFor(selectedPlayerIdx) : null
+	const selectedGamePlayer = $derived(
+		selectedPlayerIdx !== null ? gamePlayerFor(selectedPlayerIdx) : null
 	);
 
 	// Object table column groups (visual grouping of related fields).
@@ -316,7 +335,7 @@
 					{:else}
 						<span class="mr-2 badge preset-tonal text-xs">Scraper idle</span>
 					{/if}
-					{scraper?.game_title || '—'} · {scraper?.xbox_name || '—'}
+					{scraper?.title || '—'} · {scraper?.xbox_name || '—'}
 				</p>
 			</div>
 			<div class="flex items-center gap-4">
@@ -348,7 +367,7 @@
 		</div>
 	</header>
 
-	{#if !runnerAttached && !snapshot && !tick}
+	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-6 text-center">
 			<p class="mb-2">No scraper attached for this instance.</p>
 			<p class="text-surface-700-200 text-sm">
@@ -361,7 +380,7 @@
 		<Tabs value={topTab} onValueChange={(d) => (topTab = d.value)}>
 			<Tabs.List>
 				<Tabs.Trigger value="overview">Overview</Tabs.Trigger>
-				<Tabs.Trigger value="snapshot">Snapshot</Tabs.Trigger>
+				<Tabs.Trigger value="game">Game</Tabs.Trigger>
 				<Tabs.Trigger value="tick">Tick</Tabs.Trigger>
 				<Tabs.Trigger value="events">Events</Tabs.Trigger>
 				<Tabs.Trigger value="probe">Probe</Tabs.Trigger>
@@ -371,22 +390,55 @@
 
 			<!-- OVERVIEW TAB -->
 			<Tabs.Content value="overview" class="pt-4">
-				<div class="text-surface-700-200 mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-					<div>Snapshot: <span class="font-mono">{relativeTime(snapshotAt)}</span></div>
+				<div class="text-surface-700-200 mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
+					<div>
+						Phase:
+						<span class="badge {phaseBadgeClass[inspect?.phase ?? 'idle']} ml-1 text-[10px] uppercase">
+							{inspect?.phase ?? '—'}
+						</span>
+					</div>
+					<div>Last read: <span class="font-mono">{relativeTime(lastReadAtMs)}</span></div>
+					<div>Game data: <span class="font-mono">{relativeTime(gameDataAt)}</span></div>
 					<div>Tick: <span class="font-mono">{relativeTime(tickAt)}</span></div>
 					<div>State: <span class="font-mono">{currentState || '—'}</span></div>
 					<div>Events buffered: <span class="font-mono tabular-nums">{events.length}</span></div>
 				</div>
-				<OverviewCard state={currentState} {snapshot} {tick} {tickValue} {stateInputs} {showAll} />
+				<OverviewCard state={currentState} {gameData} {tick} {tickValue} {stateInputs} {showAll} />
+				{#if inspect?.previous_game}
+					<div class="card preset-tonal mt-3 p-4">
+						<div class="text-surface-700-200 mb-2 text-xs font-semibold uppercase">
+							Previous match · ended {relativeTime(previousGameEndedAtMs)}
+						</div>
+						{#if inspect.previous_game.game_data}
+							<div class="text-sm">
+								<span class="font-mono">{inspect.previous_game.game_data.map || '—'}</span> ·
+								<span class="font-mono">{inspect.previous_game.game_data.gametype}</span> ·
+								<span class="font-mono tabular-nums">
+									{inspect.previous_game.game_data.players?.length ?? 0} players
+								</span>
+								{#if inspect.previous_game.events && inspect.previous_game.events.length > 0}
+									·
+									<span class="font-mono tabular-nums">
+										{inspect.previous_game.events.length} events
+									</span>
+								{/if}
+							</div>
+						{:else}
+							<div class="text-surface-500-400 text-sm">
+								(no game data captured for the previous match)
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</Tabs.Content>
 
 			<!-- SNAPSHOT TAB -->
-			<Tabs.Content value="snapshot" class="pt-4">
-				{#if !snapshot}
+			<Tabs.Content value="game" class="pt-4">
+				{#if !gameData}
 					<div class="text-surface-500-400 card preset-tonal p-6 text-center">
-						No snapshot yet. {isMatchState
+						No game data yet. {isMatchState
 							? 'Should appear shortly.'
-							: 'Snapshots populate during pregame, in-game, and postgame.'}
+							: 'Game data populates during pregame, in-game, and postgame.'}
 					</div>
 				{:else}
 					<Accordion value={['match-config', 'players']} multiple>
@@ -401,17 +453,17 @@
 							</Accordion.ItemTrigger>
 							<Accordion.ItemContent class="pb-3">
 								{@const matchScalars = {
-									game_state: snapshot.game_state,
-									map: snapshot.map,
-									gametype: snapshot.gametype,
-									is_team_game: snapshot.is_team_game,
-									score_limit: snapshot.score_limit,
-									time_limit_ticks: snapshot.time_limit_ticks,
-									game_difficulty: snapshot.game_difficulty,
+									game_state: gameData.game_state,
+									map: gameData.map,
+									gametype: gameData.gametype,
+									is_team_game: gameData.is_team_game,
+									score_limit: gameData.score_limit,
+									time_limit_ticks: gameData.time_limit_ticks,
+									game_difficulty: gameData.game_difficulty,
 									...(isTeamGame || showAll
 										? {
 												team_scores:
-													snapshot.team_scores
+													gameData.team_scores
 														?.map((t) => `team ${t.team}: ${t.score}`)
 														.join(', ') ?? '—'
 											}
@@ -429,7 +481,7 @@
 							>
 								<span class="font-semibold"
 									>Players <span class="text-surface-700-200 font-normal"
-										>({snapshot.players?.length ?? 0})</span
+										>({gameData.players?.length ?? 0})</span
 									></span
 								>
 								<Accordion.ItemIndicator>
@@ -437,7 +489,7 @@
 								</Accordion.ItemIndicator>
 							</Accordion.ItemTrigger>
 							<Accordion.ItemContent class="pb-3">
-								<JsonTree value={snapshot.players ?? []} depth={1} />
+								<JsonTree value={gameData.players ?? []} depth={1} />
 							</Accordion.ItemContent>
 						</Accordion.Item>
 
@@ -456,15 +508,15 @@
 								<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
 									<div>
 										<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">
-											Player Spawns ({snapshot.player_spawns?.length ?? 0})
+											Player Spawns ({gameData.player_spawns?.length ?? 0})
 										</div>
-										<JsonTree value={snapshot.player_spawns ?? []} depth={1} />
+										<JsonTree value={gameData.player_spawns ?? []} depth={1} />
 									</div>
 									<div>
 										<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">
-											Power Item Spawns ({snapshot.power_item_spawns?.length ?? 0})
+											Power Item Spawns ({gameData.power_item_spawns?.length ?? 0})
 										</div>
-										<JsonTree value={snapshot.power_item_spawns ?? []} depth={1} />
+										<JsonTree value={gameData.power_item_spawns ?? []} depth={1} />
 									</div>
 								</div>
 							</Accordion.ItemContent>
@@ -485,17 +537,17 @@
 								<div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
 									<KvCard
 										title="fog"
-										value={snapshot.fog as unknown as Record<string, unknown> | null}
+										value={gameData.fog as unknown as Record<string, unknown> | null}
 									/>
 									<div>
 										<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">
-											object_types ({snapshot.object_types?.length ?? 0})
+											object_types ({gameData.object_types?.length ?? 0})
 										</div>
-										<JsonTree value={snapshot.object_types ?? []} depth={1} />
+										<JsonTree value={gameData.object_types ?? []} depth={1} />
 									</div>
 									<KvCard
 										title="tag_cache"
-										value={snapshot.tag_cache as unknown as Record<string, unknown> | null}
+										value={gameData.tag_cache as unknown as Record<string, unknown> | null}
 									/>
 								</div>
 							</Accordion.ItemContent>
@@ -560,7 +612,7 @@
 										{#each tick.players as p (p.index)}
 											<PlayerListItem
 												tickPlayer={p}
-												snapshotPlayer={snapshotPlayerFor(p.index)}
+												gamePlayer={gamePlayerFor(p.index)}
 												selected={selectedPlayerIdx === p.index}
 												teamGame={isTeamGame}
 												onSelect={() => (selectedPlayerIdx = p.index)}
@@ -571,7 +623,7 @@
 										{#if selectedTickPlayer}
 											<PlayerDetailPanel
 												tickPlayer={selectedTickPlayer}
-												snapshotPlayer={selectedSnapPlayer}
+												gamePlayer={selectedGamePlayer}
 											/>
 										{:else}
 											<div class="text-surface-500-400 card preset-tonal p-6 text-center text-sm">
@@ -815,12 +867,12 @@
 			<Tabs.Content value="raw" class="space-y-4 pt-4">
 				<div>
 					<div class="text-surface-700-200 mb-1 text-xs">
-						Snapshot · received {relativeTime(snapshotAt)}
+						Game data · received {relativeTime(gameDataAt)}
 					</div>
-					{#if snapshot}
-						<JsonTree value={snapshot} label="Snapshot" />
+					{#if gameData}
+						<JsonTree value={gameData} label="Game data" />
 					{:else}
-						<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no snapshot yet</div>
+						<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no game data yet</div>
 					{/if}
 				</div>
 				<div>

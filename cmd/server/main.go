@@ -95,10 +95,13 @@ func main() {
 				ctx, cancel := context.WithCancel(context.Background())
 				watcherCancel = cancel
 
-				// Per-name dedup of repeated identical auto-start errors. xemu sits
-				// at the dashboard for minutes before a game loads, and Detect fails
-				// the same way (unknown title ID 0x0 / "Unmapped" gva2gpa response)
-				// every poll cycle until then. Without dedup the log floods.
+				// Per-name dedup of repeated identical auto-start errors. After
+				// M5 stage 5a, scraper.Manager.Start no longer rejects unknown
+				// titles — that path is handled inside the runner's Idle phase.
+				// Start only errors here on QMP init failure (xemu container
+				// still booting / socket not yet ready), which is also a state
+				// that resolves on its own. Dedup keeps the log clean during
+				// the boot retry window.
 				var (
 					lastErrMu sync.Mutex
 					lastErr   = map[string]string{}
@@ -180,13 +183,15 @@ func main() {
 
 		// Stop scrapers BEFORE the hub so in-flight tick broadcasts don't try to
 		// write to a closing channel. Manager.Stop blocks until each runner's
-		// tick goroutine exits.
+		// tick goroutine exits. After all runners are gone, Close() stops the
+		// host:all aggregator goroutine so the process can exit cleanly.
 		if scrMgr != nil {
 			for _, info := range scrMgr.List() {
 				if err := scrMgr.Stop(info.Name); err != nil {
 					log.Printf("scraper: stop %s on shutdown: %v", info.Name, err)
 				}
 			}
+			scrMgr.Close()
 		}
 
 		if hub != nil {

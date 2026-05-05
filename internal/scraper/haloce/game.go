@@ -58,19 +58,19 @@ func (g *Game) BuildScoreProbe() scraper.ScoreProbe {
 	return g.reader.BuildScoreProbe()
 }
 
-func (g *Game) ReadSnapshot() (scraper.SnapshotPayload, error) {
-	return g.reader.ReadSnapshot()
+func (g *Game) ReadGameData() (scraper.GameData, error) {
+	return g.reader.ReadGameData()
 }
 
-func (g *Game) ReadLobby() (scraper.SnapshotPayload, error) {
-	return g.reader.ReadLobby()
+func (g *Game) ReadReadyState() (scraper.GameData, error) {
+	return g.reader.ReadReadyState()
 }
 
 func (g *Game) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickState) (scraper.TickResult, error) {
 	return g.reader.ReadTick(spawns, state)
 }
 
-func (g *Game) DetectEvents(tick uint32, instance string, snap scraper.SnapshotPayload, result scraper.TickResult, state *scraper.TickState) []scraper.Envelope {
+func (g *Game) DetectEvents(tick uint32, instance string, snap scraper.GameData, result scraper.TickResult, state *scraper.TickState) []scraper.Envelope {
 	return events.Detect(tick, instance, snap, result, state)
 }
 

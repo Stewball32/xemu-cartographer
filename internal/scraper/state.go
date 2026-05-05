@@ -8,7 +8,7 @@ type PowerItemTracker struct {
 	RespawnTimer    int32  // ticks remaining when respawning
 }
 
-// RosterEntry is one player's identity at a snapshot in time. Used by event
+// RosterEntry is one player's identity at a point in time. Used by event
 // detection to diff joins, leaves, and team changes against the previous tick.
 type RosterEntry struct {
 	Name string
@@ -99,7 +99,7 @@ func NewTickState() *TickState {
 	}
 }
 
-// InitPowerItems initialises power item trackers from the snapshot spawn list.
+// InitPowerItems initialises power item trackers from the game data spawn list.
 func (s *TickState) InitPowerItems(spawns []PowerItemSpawn) {
 	s.PowerItems = make(map[int]*PowerItemTracker, len(spawns))
 	s.PrevPowerItemStatus = make(map[int]string, len(spawns))

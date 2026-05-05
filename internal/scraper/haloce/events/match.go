@@ -2,7 +2,7 @@ package events
 
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
-// detectMatch emits game_start and game_end on the snapshot's GameState
+// detectMatch emits game_start and game_end on the game data's GameState
 // transitioning into in_game / postgame respectively. Today these
 // transitions are observed by the manager loop — but emitting them through
 // the events pipeline keeps the wire shape uniform (every match event flows
@@ -41,14 +41,14 @@ func detectMatch(ctx *Context) []scraper.Envelope {
 }
 
 func updateMatchPrev(state *scraper.TickState, result scraper.TickResult) {
-	// Match-state diff source is the snapshot, not the tick result. Like
+	// Match-state diff source is the game data, not the tick result. Like
 	// roster.go, this updater is a no-op and the bookkeeping happens
 	// inline at the end of detectMatch via finalizeMatchPrev.
 	_ = state
 	_ = result
 }
 
-func finalizeMatchPrev(state *scraper.TickState, snap scraper.SnapshotPayload) {
+func finalizeMatchPrev(state *scraper.TickState, snap scraper.GameData) {
 	state.PrevGameState = snap.GameState
 }
 

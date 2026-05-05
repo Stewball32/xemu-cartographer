@@ -327,7 +327,7 @@
 		<div class="ms-auto flex flex-wrap items-center gap-3">
 			{#if detail?.scraper}
 				<div class="hidden text-sm lg:block">
-					<div class="font-medium">{detail.scraper.game_title || '—'}</div>
+					<div class="font-medium">{detail.scraper.title || '—'}</div>
 					<div class="text-xs text-surface-600-400">
 						{detail.scraper.xbox_name || 'xbox name unknown'}
 					</div>

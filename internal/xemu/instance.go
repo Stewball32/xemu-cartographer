@@ -78,6 +78,32 @@ func (inst *Instance) LowHVA(gva uint32) (int64, error) {
 	return hva, nil
 }
 
+// RefreshLowHVA re-runs the GVA → GPA → HVA translation via QMP and updates
+// the cache. Use when the kernel may have remapped the page since the last
+// Init/RefreshLowHVA — the canonical case is XBE swap (dashboard → game,
+// game → quit-to-dashboard, game → game), where guest virtual addresses
+// stay the same but the underlying physical pages move. The cached HVA
+// from the previous translation reads stale bytes (or fails) until refreshed.
+//
+// Costs one QMP round-trip (open socket + qmp_capabilities + gva2gpa +
+// gpa2hva). Cheap enough for the Idle phase's 3s title-ID poll cadence.
+func (inst *Instance) RefreshLowHVA(gva uint32) (int64, error) {
+	qmp, err := newQMPClient(inst.QMPSock)
+	if err != nil {
+		return 0, fmt.Errorf("%s: refresh QMP: %w", inst.Name, err)
+	}
+	defer qmp.close()
+	hva, err := qmp.translateLowGVA(gva)
+	if err != nil {
+		return 0, fmt.Errorf("%s: refresh translate 0x%x: %w", inst.Name, gva, err)
+	}
+	if inst.lowHVAs == nil {
+		inst.lowHVAs = make(map[uint32]int64)
+	}
+	inst.lowHVAs[gva] = hva
+	return hva, nil
+}
+
 // DerefLowPtr reads the u32 pointer stored at a low guest VA and returns the
 // pointed-to value, which is expected to be a high guest VA (>= 0x80000000).
 func (inst *Instance) DerefLowPtr(lowGVA uint32) (uint32, error) {

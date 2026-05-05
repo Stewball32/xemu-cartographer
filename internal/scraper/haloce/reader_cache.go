@@ -20,7 +20,7 @@ type scenarioStaticCache struct {
 
 // scenarioPowerSpawn is the scenario-static portion of a power item spawn —
 // position + tag + respawn interval. The match-static InitialObjectID lives
-// in matchStaticCache.PowerInitialOIDs and is merged at composeSnapshot time.
+// in matchStaticCache.PowerInitialOIDs and is merged at composeGameData time.
 type scenarioPowerSpawn struct {
 	SpawnID            int
 	Tag                string
@@ -37,7 +37,7 @@ type scenarioPowerSpawn struct {
 //
 // Match-config fields (is_team_game, gametype, score_limit) intentionally do
 // NOT live here — they're cheap to read and the host can change them in
-// pregame, so composeSnapshot reads them live each call.
+// pregame, so composeGameData reads them live each call.
 type matchStaticCache struct {
 	Filled              bool
 	InitialObjIDsFilled bool

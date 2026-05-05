@@ -97,6 +97,15 @@ func (w *Watcher) poll() {
 			continue
 		}
 		base := strings.TrimSuffix(name, ".sock")
+		// "all" is reserved for the host:all aggregate room (see
+		// internal/websocket/rooms/host.go). The scraper Manager.Start
+		// chokepoint rejects it, but skipping it here too avoids spamming
+		// the log with a failed-start error every poll if someone names a
+		// socket "all.sock".
+		if base == "all" {
+			log.Printf("discovery: skipping reserved socket name %q — rename to anything else", name)
+			continue
+		}
 		current[base] = filepath.Join(w.dir, name)
 	}
 
@@ -104,14 +113,14 @@ func (w *Watcher) poll() {
 	// dialSocket (500ms timeouts) or the user-supplied onAdd/onRemove callbacks
 	// (which may call Forget). Mutations happen under w.mu inside the loops.
 	w.mu.Lock()
-	knownSnapshot := make([]string, 0, len(w.known))
+	currentNames := make([]string, 0, len(w.known))
 	for name := range w.known {
-		knownSnapshot = append(knownSnapshot, name)
+		currentNames = append(currentNames, name)
 	}
 	w.mu.Unlock()
 
 	// Detect removed sockets (in known but no longer on disk).
-	for _, name := range knownSnapshot {
+	for _, name := range currentNames {
 		if _, ok := current[name]; !ok {
 			w.mu.Lock()
 			delete(w.known, name)
@@ -124,7 +133,7 @@ func (w *Watcher) poll() {
 	}
 
 	// Check known sockets for staleness (dial failure).
-	for _, name := range knownSnapshot {
+	for _, name := range currentNames {
 		path, ok := current[name]
 		if !ok {
 			continue // already handled above

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type {
 		GameState,
-		SnapshotPayload,
-		SnapshotPlayer,
+		GameData,
+		GamePlayer,
 		StateInputs,
 		TickPayload,
 		TickPlayer
@@ -11,14 +11,14 @@
 
 	let {
 		state,
-		snapshot,
+		gameData,
 		tick,
 		tickValue,
 		stateInputs,
 		showAll
 	}: {
 		state: GameState | '';
-		snapshot: SnapshotPayload | null;
+		gameData: GameData | null;
 		tick: TickPayload | null;
 		tickValue: number | undefined;
 		stateInputs: StateInputs | null;
@@ -34,16 +34,16 @@
 		'': 'preset-tonal'
 	};
 
-	const isTeam = $derived(snapshot?.is_team_game === true);
-	const players = $derived(snapshot?.players ?? []);
-	const teamScores = $derived(snapshot?.team_scores ?? []);
+	const isTeam = $derived(gameData?.is_team_game === true);
+	const players = $derived(gameData?.players ?? []);
+	const teamScores = $derived(gameData?.team_scores ?? []);
 	const machineNameByIndex = $derived.by(() => {
 		const map = new Map<number, string>();
-		for (const m of snapshot?.machines ?? []) map.set(m.index, m.name);
+		for (const m of gameData?.machines ?? []) map.set(m.index, m.name);
 		return map;
 	});
 
-	function machineLabel(p: SnapshotPlayer): string | null {
+	function machineLabel(p: GamePlayer): string | null {
 		if (p.machine_index === null || p.machine_index === undefined) return null;
 		return machineNameByIndex.get(p.machine_index) ?? `M${p.machine_index}`;
 	}
@@ -63,7 +63,7 @@
 
 	// Group players by team for the team-game roster view.
 	const playersByTeam = $derived.by(() => {
-		const map = new Map<number, SnapshotPlayer[]>();
+		const map = new Map<number, GamePlayer[]>();
 		for (const p of players) {
 			const arr = map.get(p.team) ?? [];
 			arr.push(p);
@@ -106,7 +106,7 @@
 		return `${Math.round(Math.max(0, Math.min(100, v * 100)))}%`;
 	}
 
-	function localBadge(p: SnapshotPlayer): string | null {
+	function localBadge(p: GamePlayer): string | null {
 		if (!p.is_local) return null;
 		return p.local_index !== null && p.local_index !== undefined ? `L${p.local_index}` : 'L';
 	}
@@ -119,8 +119,8 @@
 			<span class="badge {stateBadgeClass[state] ?? 'preset-tonal'} text-xs uppercase">
 				{state || 'unknown'}
 			</span>
-			{#if snapshot}
-				<span class="badge preset-tonal text-xs">{snapshot.gametype}</span>
+			{#if gameData}
+				<span class="badge preset-tonal text-xs">{gameData.gametype}</span>
 				{#if isTeam}
 					<span class="badge preset-filled-primary-500 text-xs">Team</span>
 				{:else}
@@ -137,26 +137,26 @@
 				</span>
 			{/if}
 		</div>
-		{#if snapshot}
+		{#if gameData}
 			<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
 				<dt class="text-surface-700-200 font-mono text-xs">variant</dt>
-				<dd class="font-mono">{snapshot.variant_name || '—'}</dd>
+				<dd class="font-mono">{gameData.variant_name || '—'}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">map</dt>
-				<dd class="font-mono">{snapshot.map || '—'}</dd>
+				<dd class="font-mono">{gameData.map || '—'}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">difficulty</dt>
-				<dd class="font-mono tabular-nums">{snapshot.game_difficulty}</dd>
+				<dd class="font-mono tabular-nums">{gameData.game_difficulty}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">score limit</dt>
-				<dd class="font-mono tabular-nums">{fmtLimit(snapshot.score_limit)}</dd>
+				<dd class="font-mono tabular-nums">{fmtLimit(gameData.score_limit)}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">time limit</dt>
-				<dd class="font-mono tabular-nums">{fmtLimit(snapshot.time_limit_ticks, 'ticks')}</dd>
+				<dd class="font-mono tabular-nums">{fmtLimit(gameData.time_limit_ticks, 'ticks')}</dd>
 			</dl>
 		{:else}
-			<div class="text-surface-500-400 text-sm">No snapshot yet — waiting for first read.</div>
+			<div class="text-surface-500-400 text-sm">No game data yet — waiting for first read.</div>
 		{/if}
 	</div>
 
 	<!-- Score block: full-width when only one variant is shown, 2-col when both -->
-	{#if snapshot}
+	{#if gameData}
 		{@const showTeam = isTeam || showAll}
 		{@const showFFA = !isTeam || showAll}
 		{@const bothShown = showTeam && showFFA}
@@ -240,7 +240,7 @@
 
 	<!-- Roster — single table so all per-player columns line up vertically.
 	     In team games we insert team-divider rows between team groups. -->
-	{#if snapshot && players.length > 0}
+	{#if gameData && players.length > 0}
 		{@const colCount = 9 + (showAll && !isTeam ? 1 : 0)}
 		<div class="card preset-tonal p-4">
 			<div class="text-surface-700-200 mb-2 text-xs font-semibold uppercase">

@@ -5,7 +5,7 @@ import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 // detectRoster emits per-player events when a roster slot changes between
 // ticks (player_joined / player_left / player_team_changed) and per-team
 // events when a team's score changes (team_score). All four diff against
-// the snapshot — they're refreshed every loop iteration via ReadLobby, so
+// the game data — they're refreshed every loop iteration via ReadReadyState, so
 // changes show up within ~500ms in pregame and within one game tick in_game.
 //
 // player_team_changed is independent of player_joined / player_left: it
@@ -15,7 +15,7 @@ import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 // than player_team_changed.
 func detectRoster(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
-	currByIdx := snapshotByIndex(ctx.Snap)
+	currByIdx := gamePlayerByIndex(ctx.Snap)
 
 	// Joins + team changes.
 	for idx, cur := range currByIdx {
@@ -70,10 +70,10 @@ func detectRoster(ctx *Context) []scraper.Envelope {
 }
 
 func updateRosterPrev(state *scraper.TickState, result scraper.TickResult) {
-	// Roster updates are driven by snapshot, not result. The loop calls
-	// Detect with snap=ctx.Snap which the manager assigns to runner.snapshot
+	// Roster updates are driven by game data, not result. The loop calls
+	// Detect with snap=ctx.Snap which the manager assigns to runner.gameData
 	// before each Detect call; result is the tick payload. To update PrevRoster
-	// from the snapshot we'd need it here too — but Updater takes only
+	// from the game data we'd need it here too — but Updater takes only
 	// (state, result). Workaround: roster.go performs its own bookkeeping
 	// inline at the end of detectRoster (state mutation is safe — single
 	// goroutine, called once per tick). updateRosterPrev is a no-op kept for
@@ -83,10 +83,10 @@ func updateRosterPrev(state *scraper.TickState, result scraper.TickResult) {
 }
 
 // finalizeRosterPrev is called by detectRoster at the end of every dispatch
-// to record this snapshot's roster + team scores for the next tick's diff.
-// Inlined here rather than via Updater because it depends on the snapshot,
+// to record this game data's roster + team scores for the next tick's diff.
+// Inlined here rather than via Updater because it depends on the game data,
 // which Updater functions don't receive.
-func finalizeRosterPrev(state *scraper.TickState, snap scraper.SnapshotPayload) {
+func finalizeRosterPrev(state *scraper.TickState, snap scraper.GameData) {
 	state.PrevRoster = make(map[int]scraper.RosterEntry, len(snap.Players))
 	for _, p := range snap.Players {
 		state.PrevRoster[p.Index] = scraper.RosterEntry{Name: p.Name, Team: p.Team}

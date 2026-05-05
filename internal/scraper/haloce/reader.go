@@ -134,31 +134,32 @@ func determineGameState(mainMenu, initialized, active, paused uint8, engineRunni
 // Snapshot (called on game-state transition / client connect)
 // -------------------------------------------------------------------
 
-// ReadSnapshot returns the "current state" message — composed from the
+// ReadGameData returns the "current state" message — composed from the
 // scenario- and match-static caches plus a fresh read of live volatile
 // fields (roster, scores, match config). After warm caches this is a
 // cheap call (~50–100 memory reads) suitable for per-iteration refresh.
-func (r *Reader) ReadSnapshot() (scraper.SnapshotPayload, error) {
+func (r *Reader) ReadGameData() (scraper.GameData, error) {
 	r.ensureScenarioStatic()
 	r.ensureMatchStatic()
-	return r.composeSnapshot(), nil
+	return r.composeGameData(), nil
 }
 
-// ReadLobby is the cheap variant of ReadSnapshot intended for the manager
-// loop's per-iteration refresh in non-in_game states. Identical implementation
-// — the name distinguishes the call site so loop code reads as "refresh the
-// lobby view" rather than "snapshot the world."
-func (r *Reader) ReadLobby() (scraper.SnapshotPayload, error) {
-	return r.ReadSnapshot()
+// ReadReadyState is the cheap variant of ReadGameData intended for the
+// manager loop's per-iteration refresh in the Ready phase. Identical
+// implementation — the name distinguishes the call site so loop code reads
+// as "refresh the ready-phase view" rather than "rebuild the full game
+// data."
+func (r *Reader) ReadReadyState() (scraper.GameData, error) {
+	return r.ReadGameData()
 }
 
-// composeSnapshot merges cached scenario- and match-static data with live
+// composeGameData merges cached scenario- and match-static data with live
 // reads of volatile fields (match config, roster, team scores, power-item
-// world status) into a SnapshotPayload. The wire shape matches the legacy
-// ReadSnapshot output exactly — frontend types in
-// sveltekit/src/lib/types/scraper.ts continue to work unchanged.
-func (r *Reader) composeSnapshot() scraper.SnapshotPayload {
-	out := scraper.SnapshotPayload{}
+// world status) into a GameData. The wire shape matches the legacy
+// output exactly — frontend types in sveltekit/src/lib/types/scraper.ts
+// continue to work unchanged.
+func (r *Reader) composeGameData() scraper.GameData {
+	out := scraper.GameData{}
 
 	// Live match-config fields. Cheap; the host can still change these in
 	// pregame, so read every call rather than caching.
@@ -178,7 +179,7 @@ func (r *Reader) composeSnapshot() scraper.SnapshotPayload {
 	out.VariantName = r.readVariantName()
 	out.ScoreLimit, _ = r.readScoreLimit(gametypeID)
 	out.TeamScores, _ = r.readTeamScores(out.IsTeamGame, gametypeID)
-	out.Players, _ = r.readSnapshotPlayers()
+	out.Players, _ = r.readGamePlayers()
 	if len(out.Players) == 0 {
 		// PlayerDatumArray is empty in lobby states (splitscreen / system-link
 		// pre-match). Fall back to the network-game-data roster so the debug
@@ -280,11 +281,11 @@ func (r *Reader) readGametypeID() (uint32, error) {
 
 // fillPlayerScores populates each player's Score field using the per-gametype
 // score table. CTF reuses the static-player ctf_score s16 (already read into
-// CTFScore by readSnapshotPlayer). Slayer/Oddball/King/Race read s32 from the
+// CTFScore by readGamePlayer). Slayer/Oddball/King/Race read s32 from the
 // per-player slot at score_base + PlayerScoreBaseOffset + 4*idx — all four
 // tables live in their own memory bases (see offsets.go AddrScore*). Unknown
 // gametypes leave Score=0.
-func (r *Reader) fillPlayerScores(players []scraper.SnapshotPlayer, gametypeID uint32) {
+func (r *Reader) fillPlayerScores(players []scraper.GamePlayer, gametypeID uint32) {
 	if len(players) == 0 {
 		return
 	}
@@ -406,13 +407,13 @@ func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.T
 // wchar name (24 bytes), s16 color, s16 unused, u8 machine, u8 controller,
 // u8 team, u8 player_list_index. Atlas: halocaster.py:1228-1235.
 //
-// Returns a sparse SnapshotPlayer with Index/Name/Team/MachineIndex populated.
+// Returns a sparse GamePlayer with Index/Name/Team/MachineIndex populated.
 // IsLocal/LocalIndex are set only when the player's machine_index matches
 // this xemu instance's own machine_index (read from network_game_client) —
 // the controller_index field is the controller slot on the player's *own*
 // machine, not a "is this player local to me" signal.
 // Kill/death/score fields stay zero — they don't exist pre-match.
-func (r *Reader) readNetworkRosterPlayers() ([]scraper.SnapshotPlayer, error) {
+func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 	mem := r.inst.Mem
 	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
 	if err != nil {
@@ -425,7 +426,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.SnapshotPlayer, error) {
 	}
 	ownMachine, _ := mem.ReadU16At(clientHVA + int64(OffNGCMachineIndex))
 	rosterHVA := ngdHVA + int64(OffNGDNetworkPlayers)
-	players := make([]scraper.SnapshotPlayer, 0, playerCount)
+	players := make([]scraper.GamePlayer, 0, playerCount)
 	for i := int16(0); i < playerCount; i++ {
 		entryHVA := rosterHVA + int64(uint32(i)*NetworkPlayerStride)
 		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetPlayerName), 24)
@@ -444,7 +445,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.SnapshotPlayer, error) {
 			localIdx = &v
 		}
 		machineIdx := int(machine)
-		players = append(players, scraper.SnapshotPlayer{
+		players = append(players, scraper.GamePlayer{
 			Index:        int(listIdx),
 			Name:         decodeUTF16LE(nameBytes),
 			Team:         uint32(team),
@@ -460,7 +461,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.SnapshotPlayer, error) {
 // network_game_data.network_machines (atlas:1224-1226). Each entry is a
 // 68-byte record: wchar name (64 bytes / 32 chars) followed by a u8
 // machine_index. Returns nil when no network game is active.
-func (r *Reader) readNetworkMachines() []scraper.SnapshotMachine {
+func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 	mem := r.inst.Mem
 	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
 	if err != nil {
@@ -472,7 +473,7 @@ func (r *Reader) readNetworkMachines() []scraper.SnapshotMachine {
 		return nil
 	}
 	rosterHVA := ngdHVA + int64(OffNGDNetworkMachines)
-	machines := make([]scraper.SnapshotMachine, 0, machineCount)
+	machines := make([]scraper.GameMachine, 0, machineCount)
 	for i := int16(0); i < machineCount; i++ {
 		entryHVA := rosterHVA + int64(uint32(i)*NetworkMachineStride)
 		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetMachineName), 64)
@@ -484,7 +485,7 @@ func (r *Reader) readNetworkMachines() []scraper.SnapshotMachine {
 		if name == "" {
 			continue
 		}
-		machines = append(machines, scraper.SnapshotMachine{
+		machines = append(machines, scraper.GameMachine{
 			Index: int(idx),
 			Name:  name,
 		})
@@ -492,13 +493,13 @@ func (r *Reader) readNetworkMachines() []scraper.SnapshotMachine {
 	return machines
 }
 
-// attributeMachines fills SnapshotPlayer.MachineIndex by joining each player
+// attributeMachines fills GamePlayer.MachineIndex by joining each player
 // against the network_players roster by name. Necessary because the in-engine
 // PlayerDatumArray (the source of in-game roster reads) doesn't carry a
 // machine index — that field only exists in the network roster, which is
 // also what the lobby debug page needs to show "who connected from where"
 // regardless of whether PDA is populated yet.
-func (r *Reader) attributeMachines(players []scraper.SnapshotPlayer) {
+func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 	if len(players) == 0 {
 		return
 	}
@@ -534,7 +535,7 @@ func (r *Reader) attributeMachines(players []scraper.SnapshotPlayer) {
 	}
 }
 
-func (r *Reader) readSnapshotPlayers() ([]scraper.SnapshotPlayer, error) {
+func (r *Reader) readGamePlayers() ([]scraper.GamePlayer, error) {
 	inst := r.inst
 	mem := inst.Mem
 
@@ -549,10 +550,10 @@ func (r *Reader) readSnapshotPlayers() ([]scraper.SnapshotPlayer, error) {
 		return nil, nil
 	}
 
-	players := make([]scraper.SnapshotPlayer, 0, currentCount)
+	players := make([]scraper.GamePlayer, 0, currentCount)
 	for i := uint16(0); i < currentCount; i++ {
 		base := firstElement + uint32(i)*uint32(elemSize)
-		p, ok, err := r.readSnapshotPlayer(int(i), base)
+		p, ok, err := r.readGamePlayer(int(i), base)
 		if err != nil || !ok {
 			continue
 		}
@@ -561,15 +562,15 @@ func (r *Reader) readSnapshotPlayers() ([]scraper.SnapshotPlayer, error) {
 	return players, nil
 }
 
-func (r *Reader) readSnapshotPlayer(index int, base uint32) (scraper.SnapshotPlayer, bool, error) {
+func (r *Reader) readGamePlayer(index int, base uint32) (scraper.GamePlayer, bool, error) {
 	mem := r.inst.Mem
 
 	nameBytes, err := mem.ReadBytes(base+OffPlrName, 24)
 	if err != nil {
-		return scraper.SnapshotPlayer{}, false, err
+		return scraper.GamePlayer{}, false, err
 	}
 	if nameBytes[0] == 0 && nameBytes[1] == 0 {
-		return scraper.SnapshotPlayer{}, false, nil
+		return scraper.GamePlayer{}, false, nil
 	}
 
 	team, _ := mem.ReadU32(base + OffPlrTeam)
@@ -592,7 +593,7 @@ func (r *Reader) readSnapshotPlayer(index int, base uint32) (scraper.SnapshotPla
 		localIdx = &v
 	}
 
-	return scraper.SnapshotPlayer{
+	return scraper.GamePlayer{
 		Index:      index,
 		Name:       decodeUTF16LE(nameBytes),
 		Team:       team,

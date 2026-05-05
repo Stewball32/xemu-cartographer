@@ -51,7 +51,7 @@ const (
 	EventGameEnd        = "game_end"
 
 	// Roster + team-score change events (Part D of the caching refactor).
-	// Emitted only when the relevant SnapshotPayload field diff vs the
+	// Emitted only when the relevant GameData field diff vs the
 	// previous tick is non-zero.
 	EventTeamScore         = "team_score"
 	EventPlayerJoined      = "player_joined"
@@ -75,11 +75,18 @@ func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
 }
 
 // -------------------------------------------------------------------
-// Snapshot types
+// Game-data types
 // -------------------------------------------------------------------
 
-// SnapshotPayload is sent on connect and on every game-state transition.
-type SnapshotPayload struct {
+// GameData is the field set the scraper publishes during the Ready and
+// Live phases. Holds match-config (map, gametype, score limit), roster +
+// scores, scenario-static map data, and power-item spawn positions.
+//
+// The wire envelope that carries it still has Type="snapshot" — that
+// legacy string stays in place until M5 stage 5c replaces it with
+// "current_state" / "state_update". See envelopeType* constants in
+// internal/scraper/manager/loop.go.
+type GameData struct {
 	GameState       GameState        `json:"game_state"`
 	Map             string           `json:"map"`
 	Gametype        string           `json:"gametype"`
@@ -88,13 +95,13 @@ type SnapshotPayload struct {
 	ScoreLimit      int32            `json:"score_limit"`
 	TimeLimitTicks  int32            `json:"time_limit_ticks"`
 	TeamScores      []TeamScore      `json:"team_scores"`
-	Players         []SnapshotPlayer `json:"players"`
+	Players         []GamePlayer    `json:"players"`
 	PowerItemSpawns []PowerItemSpawn `json:"power_item_spawns"`
 
 	// Machines is the connected-machine roster for system-link / splitscreen
 	// lobbies. Empty when no network game is active. Each entry's Index
-	// matches SnapshotPlayer.MachineIndex.
-	Machines []SnapshotMachine `json:"machines,omitempty"`
+	// matches GamePlayer.MachineIndex.
+	Machines []GameMachine `json:"machines,omitempty"`
 
 	// Static map / scenario data scraped at match-start.
 	GameDifficulty uint8               `json:"game_difficulty"`
@@ -152,12 +159,12 @@ type StaticCachePtrs struct {
 	SoundCacheSize   uint32 `json:"sound_cache_size"`
 }
 
-// SnapshotPlayer is the static/score portion of a player.
+// GamePlayer is the static/score portion of a player.
 //
 // IsLocal/LocalIndex report whether a player is local to this xemu instance
 // (vs remote via system-link) and, for locals, the splitscreen slot (0–3).
 // Pointer types so games without local detection serialise them as null.
-type SnapshotPlayer struct {
+type GamePlayer struct {
 	Index int    `json:"index"`
 	Name  string `json:"name"`
 	Team  uint32 `json:"team"`
@@ -180,14 +187,14 @@ type SnapshotPlayer struct {
 	LocalIndex *int   `json:"local_index"`
 	// MachineIndex is the network-machine index this player is hosted on.
 	// Populated from the lobby roster (system-link / splitscreen) and lines
-	// up with SnapshotPayload.Machines[].Index. Nil when machine attribution
+	// up with GameData.Machines[].Index. Nil when machine attribution
 	// isn't available (e.g. in-engine PlayerDatumArray reads pre-network).
 	MachineIndex *int `json:"machine_index"`
 }
 
-// SnapshotMachine is one connected machine in a system-link lobby. Index is
+// GameMachine is one connected machine in a system-link lobby. Index is
 // the per-machine slot the network stack uses to address the host.
-type SnapshotMachine struct {
+type GameMachine struct {
 	Index int    `json:"index"`
 	Name  string `json:"name"`
 }
@@ -216,7 +223,7 @@ type PowerItemSpawn struct {
 
 // TickPayload is the per-game-tick broadcast (30Hz when in_game). Carries
 // only high-frequency volatile data; cumulative counters and roster identity
-// live on SnapshotPayload and are emitted on change via events.
+// live on GameData and are emitted on change via events.
 type TickPayload struct {
 	Players     []TickPlayer      `json:"players"`
 	PowerItems  []PowerItemStatus `json:"power_items"`
@@ -529,7 +536,7 @@ type TickProjectile struct {
 
 // TickPlayer is the per-player slice of one TickPayload — only high-frequency
 // volatile data. Roster identity (name, team, splitscreen index) and
-// cumulative counters (kills/deaths/assists/etc.) live on SnapshotPlayer; they
+// cumulative counters (kills/deaths/assists/etc.) live on GamePlayer; they
 // are emitted on change via events rather than streamed every tick.
 type TickPlayer struct {
 	Index int `json:"index"`

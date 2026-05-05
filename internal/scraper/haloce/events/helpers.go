@@ -87,11 +87,11 @@ func findMeleeVictim(dealerIdx int, players []scraper.InternalPlayerState, tick 
 	return -1
 }
 
-// snapshotByIndex builds a player-index → SnapshotPlayer map from the
-// snapshot in ctx. Several detectors need it (team_kill checks, roster
+// gamePlayerByIndex builds a player-index → GamePlayer map from the
+// game-data field in ctx. Several detectors need it (team_kill checks, roster
 // diffs); each builds its own copy to keep Context lean.
-func snapshotByIndex(snap scraper.SnapshotPayload) map[int]scraper.SnapshotPlayer {
-	out := make(map[int]scraper.SnapshotPlayer, len(snap.Players))
+func gamePlayerByIndex(snap scraper.GameData) map[int]scraper.GamePlayer {
+	out := make(map[int]scraper.GamePlayer, len(snap.Players))
 	for _, p := range snap.Players {
 		out[p.Index] = p
 	}

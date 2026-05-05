@@ -9,7 +9,7 @@ import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 // requires comparing kill counters across all players in this single tick.
 func detectKillChain(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
-	snapByIdx := snapshotByIndex(ctx.Snap)
+	snapByIdx := gamePlayerByIndex(ctx.Snap)
 
 	for _, ip := range ctx.Result.InternalPlayers {
 		idx := ip.Index

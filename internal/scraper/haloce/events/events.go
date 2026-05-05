@@ -30,7 +30,7 @@ const (
 type Context struct {
 	Tick     uint32
 	Instance string
-	Snap     scraper.SnapshotPayload
+	Snap     scraper.GameData
 	Result   scraper.TickResult
 	State    *scraper.TickState
 }
@@ -78,9 +78,9 @@ func RegisterUpdater(f Updater) {
 //
 // Note on registration order: detectors run in the order they were registered.
 // Today the only cross-detector ordering concern is roster-change detection
-// referencing the same snapshot the kill chain reads — both consume the
-// snapshot read-only, so order is immaterial.
-func Detect(tick uint32, instance string, snap scraper.SnapshotPayload, result scraper.TickResult, state *scraper.TickState) []scraper.Envelope {
+// referencing the same GameData the kill chain reads — both consume it
+// read-only, so order is immaterial.
+func Detect(tick uint32, instance string, snap scraper.GameData, result scraper.TickResult, state *scraper.TickState) []scraper.Envelope {
 	ctx := &Context{
 		Tick:     tick,
 		Instance: instance,

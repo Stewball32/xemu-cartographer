@@ -87,7 +87,7 @@
 	</header>
 
 	<p class="text-surface-700-200 mb-4 text-sm">
-		Pick a container to inspect every scraped field — the live snapshot, the latest tick, and recent
+		Pick a container to inspect every scraped field — the live game data, the latest tick, and recent
 		events. Useful for verifying a freshly-added field is populated and for chasing offset drift.
 	</p>
 
@@ -126,7 +126,7 @@
 									<span class="badge preset-tonal text-xs">Idle</span>
 								{/if}
 							</td>
-							<td class="px-4 py-2">{sc?.game_title || '—'}</td>
+							<td class="px-4 py-2">{sc?.title || '—'}</td>
 							<td class="px-4 py-2">{sc?.xbox_name || '—'}</td>
 							<td class="px-4 py-2 text-right">
 								<a
@@ -147,7 +147,7 @@
 							<td class="px-4 py-2">
 								<span class="badge preset-filled-success-500 text-xs">Running</span>
 							</td>
-							<td class="px-4 py-2">{o.game_title || '—'}</td>
+							<td class="px-4 py-2">{o.title || '—'}</td>
 							<td class="px-4 py-2">{o.xbox_name || '—'}</td>
 							<td class="px-4 py-2 text-right">
 								<a
