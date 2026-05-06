@@ -1,11 +1,24 @@
 // Package manager owns the per-instance scraper lifecycle: it opens an
-// xemu.Instance, runs scraper.Detect to pick a game-specific GameReader,
-// runs a tick goroutine that broadcasts snapshot/tick/event envelopes
-// to the WebSocket "overlay" room, and tears everything down on Stop.
+// xemu.Instance and runs a phase-driven goroutine that broadcasts
+// current_state / state_update / event envelopes (M5 stage 5c) to a
+// per-instance host:<name> room, while a single per-Manager aggregator
+// goroutine maintains a cross-instance host:all summary feed.
 //
 // One Manager per server. Routes (/api/admin/scraper/*) and the discovery
 // watcher (internal/discovery → onAdd) call Start/Stop/List through the
 // scraperiface.Service interface.
+//
+// M5 stage 5a (single-runner-per-lifetime, OQ4): Start always creates a
+// runner — it does NOT call scraper.Detect upfront. The runner enters the
+// Idle phase and polls the XBE title ID itself; on detection it binds a
+// GameReader and transitions to Ready. This means Start succeeds whenever
+// xemu / QMP is reachable, even if the running XBE isn't registered with
+// the scraper package (the runner sits in Idle, visible via Inspect).
+//
+// M5 stage 5b: instance names are validated at Start via the
+// rooms.RoomForInstance chokepoint (rejects "all" and other reserved
+// strings); the per-instance host room name is cached on the runner so
+// loop broadcasts don't re-derive it per tick.
 package manager
 
 import (
@@ -17,11 +30,18 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
 // ErrAlreadyRunning is returned from Start when name is already in use.
 var ErrAlreadyRunning = errors.New("scraper already running")
+
+// ErrInvalidName is the sentinel wrapped around input-validation failures
+// from the rooms.RoomForInstance chokepoint (M5 stage 5b). Lets HTTP route
+// handlers distinguish "client passed a bad name" (→ 400) from "QMP init
+// failed" (→ 502) without depending on rooms-package internals.
+var ErrInvalidName = errors.New("scraper: invalid instance name")
 
 // Manager owns a name → runner map and dispatches lifecycle operations.
 // Implements scraperiface.Service via structural typing.
@@ -30,27 +50,55 @@ type Manager struct {
 
 	mu      sync.Mutex
 	runners map[string]*runner
+
+	agg *aggregator
 }
 
-// New constructs a Manager that broadcasts via svc.WS. svc may be nil for
-// tests; in that case broadcasts become no-ops.
+// New constructs a Manager that broadcasts via svc.WS and starts a host:all
+// aggregator goroutine. svc may be nil for tests; in that case broadcasts
+// become no-ops but the aggregator still runs (it short-circuits when
+// svc.WS is nil). Call Close() on shutdown to stop the aggregator.
 func New(svc *guards.Services) *Manager {
-	return &Manager{
+	m := &Manager{
 		svc:     svc,
 		runners: make(map[string]*runner),
+		agg:     newAggregator(svc),
+	}
+	go m.agg.run()
+	return m
+}
+
+// Close stops the host:all aggregator goroutine. Idempotent — but does NOT
+// stop running scraper runners; the caller should iterate List + Stop
+// before calling Close (see cmd/server/main.go OnTerminate).
+func (m *Manager) Close() {
+	if m.agg != nil {
+		m.agg.stop()
 	}
 }
 
-// Start spins up a scraper for the named instance. It opens the xemu instance
-// at sock, runs game detection, and spawns the tick goroutine. Returns
-// ErrAlreadyRunning if name is already in use, or whatever error xemu.Init or
-// scraper.Detect surfaced (unknown title IDs land here).
+// Start spins up a runner for the named instance. It opens the xemu instance
+// at sock and launches the phase-driven goroutine. The runner enters Idle
+// and self-detects the running XBE; no upfront scraper.Detect call is made.
+//
+// M5 stage 5b: name is validated through rooms.RoomForInstance — reserved
+// suffixes (currently "all"), names containing ":" or whitespace, and the
+// empty string are rejected before any state is mutated. Both the discovery
+// watcher's auto-start path and the manual /api/admin/scraper/start route
+// flow through here, so this is the single trust boundary for instance-name
+// → room-name derivation.
+//
+// Returns ErrAlreadyRunning if name is already in use, the chokepoint error
+// from rooms.RoomForInstance for invalid names, or whatever error
+// xemu.Instance.Init surfaced.
 func (m *Manager) Start(name, sock string) error {
-	if name == "" {
-		return errors.New("scraper: name required")
-	}
 	if sock == "" {
 		return errors.New("scraper: sock required")
+	}
+
+	hostRoom, err := rooms.RoomForInstance(name)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidName, err)
 	}
 
 	m.mu.Lock()
@@ -65,22 +113,7 @@ func (m *Manager) Start(name, sock string) error {
 		return fmt.Errorf("scraper: init xemu instance: %w", err)
 	}
 
-	reader, titleID, err := scraper.Detect(inst, name)
-	if err != nil {
-		inst.Close()
-		return fmt.Errorf("scraper: detect game: %w", err)
-	}
-
-	// Re-init with the union of detection GVAs and the game's required low GVAs
-	// so all per-game pointer globals are pre-translated. xemu.Instance.Init is
-	// idempotent for already-translated addresses (cached lookup).
-	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
-	if err := inst.Init(allGVAs); err != nil {
-		inst.Close()
-		return fmt.Errorf("scraper: init game low GVAs: %w", err)
-	}
-
-	r := newRunner(name, sock, titleID, inst, reader)
+	r := newRunner(name, sock, hostRoom, m.agg, inst)
 
 	m.mu.Lock()
 	// Re-check under lock — guards against two concurrent Start calls racing.
@@ -93,12 +126,21 @@ func (m *Manager) Start(name, sock string) error {
 	m.runners[name] = r
 	m.mu.Unlock()
 
+	// Seed the aggregator immediately so host:all subscribers see a fresh
+	// Idle entry without waiting for the runner's first heartbeat tick.
+	m.agg.post(summaryUpdate{
+		Instance: name,
+		Snapshot: &hostSummary{Instance: name, Phase: PhaseIdle},
+	})
+
 	go r.loop(m.svc)
 	return nil
 }
 
 // Stop cancels the named runner's context, closes its xemu.Instance, and
 // removes it from the registry. Returns nil if name is unknown (idempotent).
+// Posts a Removed update to the host:all aggregator so the cross-instance
+// summary view evicts the entry promptly.
 func (m *Manager) Stop(name string) error {
 	m.mu.Lock()
 	r, ok := m.runners[name]
@@ -112,6 +154,7 @@ func (m *Manager) Stop(name string) error {
 	}
 	r.cancel()
 	<-r.done
+	m.agg.post(summaryUpdate{Instance: name, Removed: true})
 	return nil
 }
 
@@ -130,6 +173,8 @@ func (m *Manager) List() []scraperiface.Info {
 
 // InstanceState returns a per-runner view (game title, Xbox name) for the
 // container detail page. Returns (zero, false) when no runner is attached.
+// Reads from the runner's cache so the values stay correct across phase
+// transitions (e.g. Title is empty in Idle).
 func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) {
 	m.mu.Lock()
 	r, ok := m.runners[name]
@@ -137,23 +182,69 @@ func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) 
 	if !ok {
 		return scraperiface.InstanceState{Name: name}, false
 	}
+	c := r.readCache()
 	return scraperiface.InstanceState{
 		Name:      name,
-		TitleID:   r.titleID,
-		GameTitle: r.reader.Title(),
-		XboxName:  r.reader.XboxName(),
+		TitleID:   c.TitleID,
+		Title: c.Title,
+		XboxName:  c.XboxName,
 		Running:   true,
 	}, true
 }
 
-// LatestSnapshotMessages returns the most recent wrapped websocket.Message
-// bytes for every runner that has emitted at least one snapshot. Used by the
-// join_room handler to replay snapshots to clients joining the overlay room
-// mid-match — without this, late joiners only see ticks/events going forward
-// and the overlay UI never gets map/players/power-item-spawn data to render.
+// Inspect returns the runner's deep-dive cached state for the debug page.
+// Reads through readCache(); never touches r.reader or r.inst, which the
+// loop accesses without synchronisation. Returns (zero, false) when no
+// runner is attached for name.
+func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return scraperiface.InspectState{Info: scraperiface.Info{Name: name}}, false
+	}
+
+	info := r.info()
+	c := r.readCache()
+
+	var prev *scraperiface.PreviousGameInfo
+	if c.PreviousGame != nil {
+		prev = &scraperiface.PreviousGameInfo{
+			GameData: c.PreviousGame.GameData,
+			Events:    c.PreviousGame.Events,
+			EndedAt:   c.PreviousGame.EndedAt,
+		}
+	}
+
+	return scraperiface.InspectState{
+		Info:         info,
+		Running:      true,
+		Phase:        string(c.Phase),
+		LastReadAt:   c.LastReadAt,
+		CurrentState: c.GameState,
+		StateInputs:  c.StateInputs,
+		ScoreProbe:   c.ScoreProbe,
+		GameData:    c.GameData,
+		LatestTick:   c.LatestTick,
+		RecentEvents: c.Events,
+		PreviousGame: prev,
+	}, true
+}
+
+// JoinReplayMessages returns one current_state envelope per runner, each
+// addressed to that runner's host:<name> room. Retained for the
+// request_state handler until M5 stage 5d narrows it to a single-room
+// reply.
 //
-// Each returned []byte is a copy; callers can hold or send it without locking.
-func (m *Manager) LatestSnapshotMessages() [][]byte {
+// M5 stage 5a: bytes are built on demand from each runner's instanceCache
+// rather than pulled from a pre-marshaled bytes cache.
+// M5 stage 5b: the Room field on each replay message is the per-instance
+// host:<name> room (was "overlay").
+// M5 stage 5c: payload is the new current_state envelope shape — full
+// instanceCache snapshot, not just GameData — so a late-joining client
+// gets phase, identity, freshness, current game data, recent events, and
+// previous_game in a single message.
+func (m *Manager) JoinReplayMessages() [][]byte {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
 	for _, r := range m.runners {
@@ -163,13 +254,35 @@ func (m *Manager) LatestSnapshotMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners))
 	for _, r := range runners {
-		r.snapshotMu.Lock()
-		if len(r.latestSnapshotMsg) > 0 {
-			buf := make([]byte, len(r.latestSnapshotMsg))
-			copy(buf, r.latestSnapshotMsg)
-			out = append(out, buf)
+		if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
+			out = append(out, msgBytes)
 		}
-		r.snapshotMu.Unlock()
 	}
 	return out
+}
+
+// JoinReplayForInstance returns the current_state replay bytes for a single
+// runner, or nil if the named runner doesn't exist (or its cache fails to
+// marshal). Used by the join_room handler when a client subscribes to
+// host:<name> so the overlay can render immediately rather than waiting
+// for the next state_update / phase transition.
+func (m *Manager) JoinReplayForInstance(name string) [][]byte {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
+		return [][]byte{msgBytes}
+	}
+	return nil
+}
+
+// JoinReplayForHostAll returns one envelope-bytes message representing the
+// current host:all summary cache. Used by the join_room handler when a
+// client subscribes to host:all so it can populate its instance list
+// without waiting for the next aggregator coalesce tick.
+func (m *Manager) JoinReplayForHostAll() [][]byte {
+	return m.agg.joinReplay()
 }

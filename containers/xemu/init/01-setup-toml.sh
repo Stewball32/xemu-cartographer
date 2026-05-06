@@ -36,5 +36,9 @@ fi
 
 mkdir -p "$TOML_PATH"
 cp "$DEFAULT_TOML" "$CURRENT_TOML"
-echo "[01-setup-toml] Copied $DEFAULT_TOML -> $CURRENT_TOML"
+# Init runs as root, so the new dirs and file are root-owned. Hand the whole
+# chain back to the user xemu actually runs as so xemu can write the toml
+# back, and host-side cleanup doesn't need sudo.
+chown -R "${PUID:-1000}:${PGID:-1000}" /config/.local 2>/dev/null || true
+echo "[01-setup-toml] Copied $DEFAULT_TOML -> $CURRENT_TOML (owner=${PUID:-1000}:${PGID:-1000})"
 echo "[01-setup-toml] Done."

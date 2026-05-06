@@ -1,0 +1,44 @@
+package handlers
+
+import (
+	"strings"
+
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+)
+
+func init() {
+	register("request_state", handleRequestState)
+}
+
+// handleRequestState replies to the requester with the current_state
+// envelope(s) for whichever host:* rooms they are subscribed to. Used for
+// resync after a network blip without leaving + rejoining rooms.
+//
+// M5 stage 5d: narrowed from "every running scraper" to "the requester's
+// own host:* memberships" via the WS Hub's UserRooms lookup.
+//   - host:<name> → JoinReplayForInstance(name) (one current_state envelope
+//     carrying the runner's full instanceCache).
+//   - host:all   → JoinReplayForHostAll() (one current_state with the full
+//     hostsCache list).
+//
+// Auth: free for any connected client. Membership is the access gate —
+// you only get state for rooms you've already successfully joined (the
+// host RoomType's RequireAuth guard runs at join_room time).
+func handleRequestState(e *Event) {
+	if e.Services == nil || e.Services.Scraper == nil || e.Services.WS == nil {
+		return
+	}
+	for _, room := range e.Services.WS.UserRooms(e.UserID) {
+		switch {
+		case room == rooms.HostAllRoom:
+			for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
+				e.SendRaw(msg)
+			}
+		case strings.HasPrefix(room, rooms.HostRoomPrefix+":"):
+			name := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
+			for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+				e.SendRaw(msg)
+			}
+		}
+	}
+}

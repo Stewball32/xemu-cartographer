@@ -234,7 +234,7 @@
 							</td>
 							<td class="text-xs">
 								{#if scraper}
-									<div class="font-medium">{scraper.game_title || '—'}</div>
+									<div class="font-medium">{scraper.title || '—'}</div>
 									<div class="text-surface-600-400">{scraper.xbox_name || '—'}</div>
 								{:else}
 									<span class="text-surface-600-400">—</span>

@@ -29,9 +29,35 @@ func registerContainersCollection(app *pocketbase.PocketBase) error {
 			OnlyInt: true,
 			Min:     f64(0),
 		},
-		&core.JSONField{
-			Name:     "ports",
+		&core.NumberField{
+			Name:     "xemu_http",
 			Required: true,
+			OnlyInt:  true,
+			Min:      f64(0),
+		},
+		&core.NumberField{
+			Name:     "xemu_https",
+			Required: true,
+			OnlyInt:  true,
+			Min:      f64(0),
+		},
+		&core.NumberField{
+			Name:     "xemu_ws",
+			Required: true,
+			OnlyInt:  true,
+			Min:      f64(0),
+		},
+		&core.NumberField{
+			Name:     "browser_web",
+			Required: true,
+			OnlyInt:  true,
+			Min:      f64(0),
+		},
+		&core.NumberField{
+			Name:     "browser_vnc",
+			Required: true,
+			OnlyInt:  true,
+			Min:      f64(0),
 		},
 		&core.DateField{
 			Name: "created",

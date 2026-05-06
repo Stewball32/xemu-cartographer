@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -93,15 +94,47 @@ func main() {
 			if podmanCfg.SocketDir != "" {
 				ctx, cancel := context.WithCancel(context.Background())
 				watcherCancel = cancel
-				w := discovery.NewWatcher(podmanCfg.SocketDir, 2*time.Second,
+
+				// Per-name dedup of repeated identical auto-start errors. After
+				// M5 stage 5a, scraper.Manager.Start no longer rejects unknown
+				// titles — that path is handled inside the runner's Idle phase.
+				// Start only errors here on QMP init failure (xemu container
+				// still booting / socket not yet ready), which is also a state
+				// that resolves on its own. Dedup keeps the log clean during
+				// the boot retry window.
+				var (
+					lastErrMu sync.Mutex
+					lastErr   = map[string]string{}
+				)
+				var w *discovery.Watcher
+				w = discovery.NewWatcher(podmanCfg.SocketDir, 2*time.Second,
 					func(name, sock string) {
 						go func() {
-							if err := scrMgr.Start(name, sock); err != nil {
+							err := scrMgr.Start(name, sock)
+							if err == nil {
+								lastErrMu.Lock()
+								delete(lastErr, name)
+								lastErrMu.Unlock()
+								return
+							}
+							msg := err.Error()
+							lastErrMu.Lock()
+							prev := lastErr[name]
+							lastErr[name] = msg
+							lastErrMu.Unlock()
+							if prev != msg {
 								log.Printf("discovery: auto-start scraper %s: %v", name, err)
 							}
+							// Drop from the watcher's known set so the next poll
+							// retries — typical case is xemu still booting / on the
+							// dashboard, which resolves once a game is loaded.
+							w.Forget(name)
 						}()
 					},
 					func(name string) {
+						lastErrMu.Lock()
+						delete(lastErr, name)
+						lastErrMu.Unlock()
 						if err := scrMgr.Stop(name); err != nil {
 							log.Printf("discovery: auto-stop scraper %s: %v", name, err)
 						}
@@ -150,13 +183,15 @@ func main() {
 
 		// Stop scrapers BEFORE the hub so in-flight tick broadcasts don't try to
 		// write to a closing channel. Manager.Stop blocks until each runner's
-		// tick goroutine exits.
+		// tick goroutine exits. After all runners are gone, Close() stops the
+		// host:all aggregator goroutine so the process can exit cleanly.
 		if scrMgr != nil {
 			for _, info := range scrMgr.List() {
 				if err := scrMgr.Stop(info.Name); err != nil {
 					log.Printf("scraper: stop %s on shutdown: %v", info.Name, err)
 				}
 			}
+			scrMgr.Close()
 		}
 
 		if hub != nil {

@@ -3,10 +3,10 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
-	import type { SnapshotPlayer, TickPlayer, WeaponInfo } from '$lib/types/scraper';
+	import type { GamePlayer, TickPlayer, WeaponInfo } from '$lib/types/scraper';
 
 	type Joined = {
-		snap: SnapshotPlayer;
+		snap: GamePlayer;
 		tick: TickPlayer | null;
 	};
 
@@ -43,8 +43,8 @@
 	}
 
 	let joined = $derived.by<Joined[]>(() => {
-		const snap = scraperWS.snapshot;
-		const tick = scraperWS.tick;
+		const snap = scraperWS.firstGameData;
+		const tick = scraperWS.firstTick;
 		if (!snap || !snap.players) return [];
 		const tickByIdx = new SvelteMap<number, TickPlayer>();
 		if (tick && tick.players) {

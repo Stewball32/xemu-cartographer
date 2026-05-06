@@ -97,6 +97,16 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		}
 	}
 
+	// Pre-generate a CA + server-cert pair for xemu's HTTPS listener.
+	// nginx serves the server leaf (with SAN for localhost), and the
+	// firefox container imports the CA as a trusted root via
+	// containers/browser/init/60-trust-xemu-cert.sh. See cert.go for why
+	// two certs instead of one self-signed leaf-as-its-own-root.
+	sslDir := filepath.Join(configDir, "ssl")
+	if err := generateXemuCerts(sslDir, name); err != nil {
+		return nil, fmt.Errorf("generate ssl certs: %w", err)
+	}
+
 	// Generate labwc autostart with QMP enabled (only if it doesn't exist).
 	autostartDir := filepath.Join(configDir, ".config", "labwc")
 	autostartPath := filepath.Join(autostartDir, "autostart")
@@ -105,7 +115,7 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 			return nil, fmt.Errorf("mkdir %s: %w", autostartDir, err)
 		}
 		qmpArg := fmt.Sprintf("-qmp unix:/qmp/%s.sock,server,nowait", name)
-		autostart := fmt.Sprintf("#!/bin/bash\nfoot -e /opt/xemu/AppRun %s\n", qmpArg)
+		autostart := fmt.Sprintf("#!/bin/bash\nfoot -e /opt/xemu/AppRun %s -full-screen\n", qmpArg)
 		if err := os.WriteFile(autostartPath, []byte(autostart), 0o755); err != nil {
 			return nil, fmt.Errorf("write autostart: %w", err)
 		}
@@ -187,8 +197,8 @@ func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
 		"-e", fmt.Sprintf("SELKIES_MANUAL_WIDTH=%d", width),
 		"-e", fmt.Sprintf("SELKIES_MANUAL_HEIGHT=%d", height),
 		"-e", fmt.Sprintf("MAX_RESOLUTION=%dx%d", width*2, height*2),
-		"-e", "PUID=0",
-		"-e", "PGID=0",
+		"-e", fmt.Sprintf("PUID=%d", os.Getuid()),
+		"-e", fmt.Sprintf("PGID=%d", os.Getgid()),
 		"-e", "TZ=America/Los_Angeles",
 		// Volumes
 		"-v", fmt.Sprintf("%s:/config", abs(configDir)),
@@ -225,12 +235,13 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	// host firewall (which silently drops SYNs to host ports even with no
 	// firewalld running, courtesy of netavark's default rules).
 	//
-	// X auth caveat: with `--network host`, podman does NOT populate
-	// /etc/hosts with the container's own hostname. jlesage's Xvnc init
-	// uses gethostname() when writing the auth cookie, and a missing
-	// mapping causes xrdb/Firefox to die with "Authorization required,
-	// but no authorization protocol specified". The `--add-host` below
-	// supplies that entry so xauth completes cleanly.
+	// X auth caveat: jlesage's Xvnc starts without `-auth`, and the image
+	// ships no xauth binary or Xauthority setup. Clients (xcompmgr,
+	// hsetroot, Firefox) then die with "Authorization required, but no
+	// authorization protocol specified". Passing `-ac` to Xvnc disables
+	// access control entirely — safe here because the X server only
+	// listens on a unix socket inside the container's namespace, even
+	// with `--network host`. Without `-ac`, the container restart-loops.
 	//
 	// Trade-off: the kiosk's WEB_LISTENING_PORT and VNC_LISTENING_PORT
 	// listen on 0.0.0.0 on the host. Single-public-port goal is preserved
@@ -238,17 +249,6 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	// proxy + WS relay (proxy.go, vnc.go) remain the only intended public
 	// path through PocketBase :8090.
 	xemuTargetHost := "localhost"
-
-	// Build the insecure-fallback list — Firefox accepts xemu's self-signed
-	// cert for localhost plus the configured HostIP.
-	hostIP := m.cfg.HostIP
-	if hostIP == "" {
-		hostIP = "localhost"
-	}
-	certFallbackHosts := xemuTargetHost
-	if hostIP != "" && hostIP != xemuTargetHost {
-		certFallbackHosts += "," + hostIP
-	}
 
 	args := []string{
 		"create",
@@ -259,18 +259,47 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 		"--shm-size", shmSize,
 		"--restart", "unless-stopped",
 		// Environment
+		"-e", fmt.Sprintf("USER_ID=%d", os.Getuid()),
+		"-e", fmt.Sprintf("GROUP_ID=%d", os.Getgid()),
 		"-e", fmt.Sprintf("WEB_LISTENING_PORT=%d", ports.BrowserWeb),
 		"-e", fmt.Sprintf("VNC_LISTENING_PORT=%d", ports.BrowserVNC),
+		"-e", "XVNC_SERVER_CUSTOM_PARAMS=-ac",
+		// HTTPS is required by linuxserver/xemu — selkies's video/audio
+		// pipeline uses WebCodecs, which browsers gate behind HTTPS even
+		// on localhost. Per the image's official docs:
+		// https://docs.linuxserver.io/images/docker-xemu/
+		// "HTTPS is required for full functionality. Modern browser
+		// features such as WebCodecs, used for video and audio, will not
+		// function over an insecure HTTP connection." Trust on the cert
+		// is solved separately (see /etc/cont-init.d/60-trust-xemu-cert.sh
+		// in containers/browser/init/), not by switching to HTTP.
 		"-e", fmt.Sprintf("FF_OPEN_URL=https://%s:%d", xemuTargetHost, ports.XemuHTTPS),
 		"-e", "FF_KIOSK=1",
 		"-e", "FF_CUSTOM_ARGS=",
 		"-e", "FF_PREF_AUTOPLAY=media.autoplay.default=0",
-		"-e", fmt.Sprintf(`FF_PREF_CERT=security.tls.insecure_fallback_hosts="%s"`, certFallbackHosts),
+		// Suppress Firefox first-run / session-restore / "set as default" prompts
+		// that otherwise overlay the kiosk on every restart.
+		"-e", "FF_PREF_DISABLE_RESUME_FROM_CRASH=browser.sessionstore.resume_from_crash=false",
+		"-e", "FF_PREF_DISABLE_MAX_RESUMED_CRASHES=browser.sessionstore.max_resumed_crashes=0",
+		"-e", "FF_PREF_DISABLE_SESSION_RESTORE=browser.sessionstore.resume_session_once=false",
+		"-e", `FF_PREF_DISABLE_WHATSNEW=browser.startup.homepage_override.mstone="ignore"`,
+		"-e", "FF_PREF_DISABLE_WELCOME=browser.aboutwelcome.enabled=false",
+		"-e", "FF_PREF_DISABLE_DEFAULT_BROWSER=browser.shell.checkDefaultBrowser=false",
+		// Suppress the "Firefox automatically sends some data to Mozilla"
+		// banner that appears on first run.
+		"-e", "FF_PREF_DISABLE_DATAREPORTING_NOTICE=datareporting.policy.dataSubmissionPolicyBypassNotification=true",
+		"-e", "FF_PREF_DATAREPORTING_ACCEPTED=datareporting.policy.dataSubmissionPolicyAcceptedVersion=2",
+		"-e", "FF_PREF_DISABLE_TELEMETRY_FIRSTRUN=toolkit.telemetry.reportingpolicy.firstRun=false",
 		"-e", fmt.Sprintf("DISPLAY_WIDTH=%d", width),
 		"-e", fmt.Sprintf("DISPLAY_HEIGHT=%d", height),
 		"-e", "KEEP_APP_RUNNING=1",
 		// Volumes
 		"-v", fmt.Sprintf("%s:/config:rw", abs(browserCfgDir)),
+		// Read-only access to xemu's HTTPS cert. The cont-init script
+		// 60-trust-xemu-cert.sh imports this into Firefox's NSS DB
+		// (cert9.db) as a trusted root, so the kiosk loads
+		// https://localhost:<XemuHTTPS> without a cert warning.
+		"-v", fmt.Sprintf("%s:/xemu-cert:ro", abs(filepath.Join(m.cfg.ConfigsDir, name, "ssl"))),
 	}
 
 	// Mount browser init scripts as individual files in /etc/cont-init.d/

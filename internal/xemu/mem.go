@@ -68,6 +68,14 @@ func (m *Mem) ReadU32At(hva int64) (uint32, error) {
 	return binary.LittleEndian.Uint32(buf[:]), nil
 }
 
+func (m *Mem) ReadU64At(hva int64) (uint64, error) {
+	var buf [8]byte
+	if err := m.readAt(hva, buf[:]); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:]), nil
+}
+
 func (m *Mem) ReadS16At(hva int64) (int16, error) {
 	v, err := m.ReadU16At(hva)
 	return int16(v), err
@@ -91,6 +99,7 @@ func (m *Mem) ReadF32At(hva int64) (float32, error) {
 func (m *Mem) ReadU8(gva uint32) (uint8, error)    { return m.ReadU8At(m.HighGVA(gva)) }
 func (m *Mem) ReadU16(gva uint32) (uint16, error)  { return m.ReadU16At(m.HighGVA(gva)) }
 func (m *Mem) ReadU32(gva uint32) (uint32, error)  { return m.ReadU32At(m.HighGVA(gva)) }
+func (m *Mem) ReadU64(gva uint32) (uint64, error)  { return m.ReadU64At(m.HighGVA(gva)) }
 func (m *Mem) ReadS16(gva uint32) (int16, error)   { return m.ReadS16At(m.HighGVA(gva)) }
 func (m *Mem) ReadS32(gva uint32) (int32, error)   { return m.ReadS32At(m.HighGVA(gva)) }
 func (m *Mem) ReadF32(gva uint32) (float32, error) { return m.ReadF32At(m.HighGVA(gva)) }

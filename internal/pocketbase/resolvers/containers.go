@@ -1,7 +1,6 @@
 package resolvers
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -30,10 +29,7 @@ func (s *ContainersStore) LoadAll() (map[string]*podman.ContainerInfo, error) {
 
 	out := make(map[string]*podman.ContainerInfo, len(records))
 	for _, r := range records {
-		info, err := recordToContainer(r)
-		if err != nil {
-			return nil, fmt.Errorf("load containers: record %s: %w", r.Id, err)
-		}
+		info := recordToContainer(r)
 		out[info.Name] = info
 	}
 	return out, nil
@@ -51,14 +47,13 @@ func (s *ContainersStore) Upsert(info *podman.ContainerInfo) error {
 		record = core.NewRecord(collection)
 	}
 
-	portsJSON, err := json.Marshal(info.Ports)
-	if err != nil {
-		return fmt.Errorf("marshal ports: %w", err)
-	}
-
 	record.Set("name", info.Name)
 	record.Set("index", info.Index)
-	record.Set("ports", string(portsJSON))
+	record.Set("xemu_http", info.Ports.XemuHTTP)
+	record.Set("xemu_https", info.Ports.XemuHTTPS)
+	record.Set("xemu_ws", info.Ports.XemuWS)
+	record.Set("browser_web", info.Ports.BrowserWeb)
+	record.Set("browser_vnc", info.Ports.BrowserVNC)
 	record.Set("created", info.Created)
 
 	if err := s.app.Save(record); err != nil {
@@ -79,19 +74,17 @@ func (s *ContainersStore) Delete(name string) error {
 	return nil
 }
 
-func recordToContainer(r *core.Record) (*podman.ContainerInfo, error) {
-	var ports podman.Ports
-	raw := r.GetString("ports")
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &ports); err != nil {
-			return nil, fmt.Errorf("unmarshal ports: %w", err)
-		}
-	}
-
+func recordToContainer(r *core.Record) *podman.ContainerInfo {
 	return &podman.ContainerInfo{
-		Name:    r.GetString("name"),
-		Index:   r.GetInt("index"),
-		Ports:   ports,
+		Name:  r.GetString("name"),
+		Index: r.GetInt("index"),
+		Ports: podman.Ports{
+			XemuHTTP:   r.GetInt("xemu_http"),
+			XemuHTTPS:  r.GetInt("xemu_https"),
+			XemuWS:     r.GetInt("xemu_ws"),
+			BrowserWeb: r.GetInt("browser_web"),
+			BrowserVNC: r.GetInt("browser_vnc"),
+		},
 		Created: r.GetDateTime("created").Time(),
-	}, nil
+	}
 }

@@ -1,6 +1,10 @@
 package handlers
 
-import "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+import (
+	"strings"
+
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+)
 
 func init() {
 	register("join_room", handleJoinRoom)
@@ -24,12 +28,23 @@ func handleJoinRoom(e *Event) {
 
 	e.JoinRoom(e.Room)
 
-	// Mid-match overlay subscribers don't otherwise receive a snapshot until
-	// the next game-state transition; replay the latest cached snapshot for
-	// each running scraper so the UI can render immediately.
-	if rt.Name == "overlay" && e.Services != nil && e.Services.Scraper != nil {
-		for _, snap := range e.Services.Scraper.LatestSnapshotMessages() {
-			e.SendRaw(snap)
+	// Replay catch-up bytes for the joined room. Only host:* rooms have a
+	// scraper-driven replay path; other rooms (admin, public) join silently.
+	// rooms.Resolve already checked the type registry, but the "host:" prefix
+	// distinguishes between the per-instance and aggregate flavours that
+	// share the single host RoomType registration.
+	if e.Services == nil || e.Services.Scraper == nil {
+		return
+	}
+	switch {
+	case e.Room == rooms.HostAllRoom:
+		for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
+			e.SendRaw(msg)
+		}
+	case strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":"):
+		name := e.Room[len(rooms.HostRoomPrefix)+1:]
+		for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+			e.SendRaw(msg)
 		}
 	}
 }

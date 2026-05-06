@@ -3,6 +3,11 @@ bin/
 tmp/
 vendor/
 /server
+/server.exe
+
+# Task
+.task/
+
 
 # PocketBase
 pb_data/

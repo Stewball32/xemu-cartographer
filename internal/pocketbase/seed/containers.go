@@ -57,15 +57,14 @@ func ensureContainersFromSnapshot(app *pocketbase.PocketBase) error {
 			continue
 		}
 
-		portsJSON, err := json.Marshal(c.Ports)
-		if err != nil {
-			return fmt.Errorf("marshal ports for %s: %w", c.Name, err)
-		}
-
 		record := core.NewRecord(collection)
 		record.Set("name", c.Name)
 		record.Set("index", c.Index)
-		record.Set("ports", string(portsJSON))
+		record.Set("xemu_http", portFromMap(c.Ports, "xemu_http"))
+		record.Set("xemu_https", portFromMap(c.Ports, "xemu_https"))
+		record.Set("xemu_ws", portFromMap(c.Ports, "xemu_ws"))
+		record.Set("browser_web", portFromMap(c.Ports, "browser_web"))
+		record.Set("browser_vnc", portFromMap(c.Ports, "browser_vnc"))
 		record.Set("created", c.Created)
 
 		if err := app.Save(record); err != nil {
@@ -74,6 +73,24 @@ func ensureContainersFromSnapshot(app *pocketbase.PocketBase) error {
 		log.Printf("  container %s: created", c.Name)
 	}
 	return nil
+}
+
+// portFromMap reads an integer port from the seed file's permissive
+// map[string]any. JSON-decoded numbers arrive as float64.
+func portFromMap(m map[string]any, key string) int {
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return 0
 }
 
 // RegisterContainerSnapshotHooks wires PB record hooks so that the snapshot
@@ -100,17 +117,17 @@ func writeContainersSnapshot(app *pocketbase.PocketBase) error {
 
 	out := seedContainerFile{Containers: make(map[string]*seedContainer, len(records))}
 	for _, r := range records {
-		var ports map[string]any
-		if raw := r.GetString("ports"); raw != "" {
-			if err := json.Unmarshal([]byte(raw), &ports); err != nil {
-				return fmt.Errorf("unmarshal ports for %s: %w", r.GetString("name"), err)
-			}
-		}
 		name := r.GetString("name")
 		out.Containers[name] = &seedContainer{
-			Name:    name,
-			Index:   r.GetInt("index"),
-			Ports:   ports,
+			Name:  name,
+			Index: r.GetInt("index"),
+			Ports: map[string]any{
+				"xemu_http":   r.GetInt("xemu_http"),
+				"xemu_https":  r.GetInt("xemu_https"),
+				"xemu_ws":     r.GetInt("xemu_ws"),
+				"browser_web": r.GetInt("browser_web"),
+				"browser_vnc": r.GetInt("browser_vnc"),
+			},
 			Created: r.GetDateTime("created").Time(),
 		}
 	}

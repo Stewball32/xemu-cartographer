@@ -106,8 +106,10 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 - **Go 1.25+** — runs the backend; [go.dev/dl](https://go.dev/dl)
 - **pnpm** _(preferred)_ — package manager for the frontend; `npm install -g pnpm`. npm and yarn work but the project is developed with pnpm.
 - **Podman** _(optional)_ — for building and running containers; Docker works as a drop-in alternative.
-- **Task** _(optional)_ — task runner for dev commands like `task dev` and `task build`; `go install github.com/go-task/task/v3/cmd/task@latest`. Without it, run `air` and `pnpm dev` in separate terminals.
-- **Air** _(optional)_ — Go hot-reload; auto-rebuilds the server on `.go` file saves; `go install github.com/air-verse/air@latest`. Without it, use `go run ./cmd/server serve` and restart manually.
+- **Task** _(optional)_ — task runner for dev commands like `task dev` and `task build`; `sudo env GOBIN=/usr/local/bin go install github.com/go-task/task/v3/cmd/task@latest`. Without it, run `air` and `pnpm dev` in separate terminals.
+- **Air** _(optional)_ — Go hot-reload; auto-rebuilds the server on `.go` file saves; `sudo env GOBIN=/usr/local/bin go install github.com/air-verse/air@latest`. Without it, use `go run ./cmd/server serve` and restart manually.
+
+  > **Why `/usr/local/bin`?** Installing system-wide (rather than the default `~/go/bin`) puts both binaries on root's PATH, so `sudo task dev` works without `command not found` errors — the same applies to `air`, which `task` shells out to. If you never plan to run with sudo, drop the `sudo env GOBIN=/usr/local/bin` prefix and they'll install to `~/go/bin` as usual; or symlink an existing `~/go/bin/{task,air}` into `/usr/local/bin` if you'd rather keep the user-level install and just expose it to root.
 
 ## Quick Start
 

@@ -7,7 +7,7 @@ package scraper
 type InstanceState struct {
 	Name      string `json:"name"`
 	TitleID   uint32 `json:"title_id"`
-	GameTitle string `json:"game_title"`
+	Title string `json:"title"`
 	XboxName  string `json:"xbox_name"`
 	Running   bool   `json:"running"`
 }
