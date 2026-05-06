@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteMap } from 'svelte/reactivity';
 	import type {
 		GameState,
 		GameData,
@@ -38,7 +39,7 @@
 	const players = $derived(gameData?.players ?? []);
 	const teamScores = $derived(gameData?.team_scores ?? []);
 	const machineNameByIndex = $derived.by(() => {
-		const map = new Map<number, string>();
+		const map = new SvelteMap<number, string>();
 		for (const m of gameData?.machines ?? []) map.set(m.index, m.name);
 		return map;
 	});
@@ -49,7 +50,7 @@
 	}
 
 	const tickByIdx = $derived.by(() => {
-		const map = new Map<number, TickPlayer>();
+		const map = new SvelteMap<number, TickPlayer>();
 		for (const p of tick?.players ?? []) map.set(p.index, p);
 		return map;
 	});
@@ -57,13 +58,11 @@
 	// Sort players by score desc for the FFA leaderboard view. Score now
 	// comes from the gametype-specific table (Slayer/Oddball/King/Race) or
 	// CTF flag captures, so it's a meaningful ranking across all modes.
-	const sortedPlayers = $derived(
-		[...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-	);
+	const sortedPlayers = $derived([...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
 
 	// Group players by team for the team-game roster view.
 	const playersByTeam = $derived.by(() => {
-		const map = new Map<number, GamePlayer[]>();
+		const map = new SvelteMap<number, GamePlayer[]>();
 		for (const p of players) {
 			const arr = map.get(p.team) ?? [];
 			arr.push(p);
@@ -138,7 +137,9 @@
 			{/if}
 		</div>
 		{#if gameData}
-			<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
+			<dl
+				class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]"
+			>
 				<dt class="text-surface-700-200 font-mono text-xs">variant</dt>
 				<dd class="font-mono">{gameData.variant_name || '—'}</dd>
 				<dt class="text-surface-700-200 font-mono text-xs">map</dt>
@@ -168,19 +169,15 @@
 					>
 						Team Score
 						{#if !isTeam}
-							<span class="text-surface-500-400 normal-case font-normal"
-								>(unused — FFA match)</span
-							>
+							<span class="text-surface-500-400 font-normal normal-case">(unused — FFA match)</span>
 						{/if}
 					</div>
 					{#if teamScores.length > 0}
 						<div class="grid grid-cols-2 gap-3">
-							{#each teamScores as ts}
+							{#each teamScores as ts (ts.team)}
 								{@const isRed = ts.team === 0}
 								<div
-									class="rounded p-3 text-center {isRed
-										? 'bg-error-500/20'
-										: 'bg-primary-500/20'}"
+									class="rounded p-3 text-center {isRed ? 'bg-error-500/20' : 'bg-primary-500/20'}"
 								>
 									<div class="text-xs uppercase">{teamLabel(ts.team)}</div>
 									<div class="text-3xl font-bold tabular-nums">{ts.score}</div>
@@ -200,8 +197,7 @@
 					>
 						FFA Leaderboard
 						{#if isTeam}
-							<span class="text-surface-500-400 normal-case font-normal"
-								>(unused — team match)</span
+							<span class="text-surface-500-400 font-normal normal-case">(unused — team match)</span
 							>
 						{/if}
 					</div>
@@ -218,8 +214,8 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each sortedPlayers as p, i}
-									<tr class="border-surface-300-700 border-t">
+								{#each sortedPlayers as p, i (p.index)}
+									<tr class="border-t border-surface-300-700">
 										<td class="px-1 py-1 font-mono text-xs">{i + 1}</td>
 										<td class="px-1 py-1">{p.name || '—'}</td>
 										<td class="px-1 py-1 text-right font-mono tabular-nums">{p.score}</td>
@@ -277,13 +273,11 @@
 				</thead>
 				<tbody>
 					{#if isTeam}
-						{#each playersByTeam as [team, members]}
+						{#each playersByTeam as [team, members] (team)}
 							<tr class="bg-surface-200-800">
 								<td class="px-1 py-1">
 									<span
-										class="block size-3 rounded-sm {team === 0
-											? 'bg-error-500'
-											: 'bg-primary-500'}"
+										class="block size-3 rounded-sm {team === 0 ? 'bg-error-500' : 'bg-primary-500'}"
 									></span>
 								</td>
 								<td colspan={colCount - 2} class="px-1 py-1 text-xs font-semibold">
@@ -294,20 +288,18 @@
 								</td>
 								<td class="px-1 py-1"></td>
 							</tr>
-							{#each members as p}
+							{#each members as p (p.index)}
 								{@const t = tickByIdx.get(p.index)}
-								<tr class="border-surface-300-700 border-t">
+								<tr class="border-t border-surface-300-700">
 									<td class="px-1 py-1">
 										{#if t?.alive === true}
-											<span class="bg-success-500 inline-block size-2 rounded-full" title="alive"
+											<span class="inline-block size-2 rounded-full bg-success-500" title="alive"
 											></span>
 										{:else if t?.alive === false}
-											<span class="bg-error-500 inline-block size-2 rounded-full" title="dead"
+											<span class="inline-block size-2 rounded-full bg-error-500" title="dead"
 											></span>
 										{:else}
-											<span
-												class="bg-surface-500 inline-block size-2 rounded-full"
-												title="unknown"
+											<span class="inline-block size-2 rounded-full bg-surface-500" title="unknown"
 											></span>
 										{/if}
 									</td>
@@ -315,7 +307,7 @@
 										{p.name || '—'}
 										{#if localBadge(p)}
 											<span
-												class="badge preset-tonal-warning ml-1 text-[10px]"
+												class="ml-1 badge preset-tonal-warning text-[10px]"
 												title="local player"
 											>
 												{localBadge(p)}
@@ -333,20 +325,17 @@
 							{/each}
 						{/each}
 					{:else}
-						{#each players as p}
+						{#each players as p (p.index)}
 							{@const t = tickByIdx.get(p.index)}
-							<tr class="border-surface-300-700 border-t">
+							<tr class="border-t border-surface-300-700">
 								<td class="px-1 py-1">
 									{#if t?.alive === true}
-										<span class="bg-success-500 inline-block size-2 rounded-full" title="alive"
+										<span class="inline-block size-2 rounded-full bg-success-500" title="alive"
 										></span>
 									{:else if t?.alive === false}
-										<span class="bg-error-500 inline-block size-2 rounded-full" title="dead"
-										></span>
+										<span class="inline-block size-2 rounded-full bg-error-500" title="dead"></span>
 									{:else}
-										<span
-											class="bg-surface-500 inline-block size-2 rounded-full"
-											title="unknown"
+										<span class="inline-block size-2 rounded-full bg-surface-500" title="unknown"
 										></span>
 									{/if}
 								</td>
@@ -354,17 +343,14 @@
 									{p.name || '—'}
 									{#if machineLabel(p)}
 										<span
-											class="badge preset-tonal ml-1 text-[10px]"
+											class="ml-1 badge preset-tonal text-[10px]"
 											title="connected from machine {p.machine_index}"
 										>
 											{machineLabel(p)}
 										</span>
 									{/if}
 									{#if localBadge(p)}
-										<span
-											class="badge preset-tonal-warning ml-1 text-[10px]"
-											title="local player"
-										>
+										<span class="ml-1 badge preset-tonal-warning text-[10px]" title="local player">
 											{localBadge(p)}
 										</span>
 									{/if}

@@ -1,30 +1,44 @@
 package handlers
 
+import (
+	"strings"
+
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+)
+
 func init() {
 	register("request_state", handleRequestState)
 }
 
-// handleRequestState replies to the requesting client with the most recent
-// cached game data for every running scraper. Useful for clients that want
-// to re-sync state without leaving and re-joining their host room — the
-// same bytes are sent to mid-match joiners via join_room, but request_state
-// lets a long-lived client refresh on demand (e.g. after a network blip).
+// handleRequestState replies to the requester with the current_state
+// envelope(s) for whichever host:* rooms they are subscribed to. Used for
+// resync after a network blip without leaving + rejoining rooms.
 //
-// Auth: free for any connected client. The cached bytes are only built for
-// runners that have observed game data; the scraper service is only
-// present when CONTAINERS_ENABLED=true, so an unauthenticated client
-// connecting in a development environment with no scrapers gets an empty
-// response.
+// M5 stage 5d: narrowed from "every running scraper" to "the requester's
+// own host:* memberships" via the WS Hub's UserRooms lookup.
+//   - host:<name> → JoinReplayForInstance(name) (one current_state envelope
+//     carrying the runner's full instanceCache).
+//   - host:all   → JoinReplayForHostAll() (one current_state with the full
+//     hostsCache list).
 //
-// TODO(M5 stage 5d): narrow this to a single-room reply built from the new
-// current_state envelope shape. Today it returns one envelope per runner
-// regardless of which host:<name> room the requester is in; 5d will look
-// up the requester's room membership and reply only for matching rooms.
+// Auth: free for any connected client. Membership is the access gate —
+// you only get state for rooms you've already successfully joined (the
+// host RoomType's RequireAuth guard runs at join_room time).
 func handleRequestState(e *Event) {
-	if e.Services == nil || e.Services.Scraper == nil {
+	if e.Services == nil || e.Services.Scraper == nil || e.Services.WS == nil {
 		return
 	}
-	for _, msg := range e.Services.Scraper.JoinReplayMessages() {
-		e.SendRaw(msg)
+	for _, room := range e.Services.WS.UserRooms(e.UserID) {
+		switch {
+		case room == rooms.HostAllRoom:
+			for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
+				e.SendRaw(msg)
+			}
+		case strings.HasPrefix(room, rooms.HostRoomPrefix+":"):
+			name := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
+			for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+				e.SendRaw(msg)
+			}
+		}
 	}
 }

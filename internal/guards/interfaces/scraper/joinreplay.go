@@ -7,11 +7,10 @@ package scraper
 // only sees broadcasts going forward and the overlay UI never gets
 // map / players / power-item-spawn data to render.
 //
-// Renamed from `Snapshot` / `LatestSnapshotMessages` in M5 stage 5a — the
-// underlying bytes still encode the legacy `Type:"snapshot"` envelope
-// (until M5 stage 5c replaces it with `current_state`), but the *method*
-// describes its purpose ("messages a joiner needs") rather than the
-// soon-to-retire wire type.
+// Renamed from `Snapshot` / `LatestSnapshotMessages` in M5 stage 5a; the
+// underlying bytes encode the M5 stage 5c `current_state` envelope —
+// a full instanceCache snapshot for host:<name> joiners, and the
+// hostsCache list for host:all joiners.
 //
 // JoinReplayMessages (the legacy "all instances" variant) is retained for
 // the request_state handler until M5 stage 5d narrows it to a single room.

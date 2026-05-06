@@ -1,10 +1,8 @@
 // Package manager owns the per-instance scraper lifecycle: it opens an
 // xemu.Instance and runs a phase-driven goroutine that broadcasts
-// game-data / tick / event envelopes to a per-instance host:<name> room,
-// while a single per-Manager aggregator goroutine maintains a cross-
-// instance host:all summary feed.
-// (Wire envelope type strings stay "snapshot" / "tick" / "event" until
-// M5 stage 5c — see envelopeType* constants in loop.go.)
+// current_state / state_update / event envelopes (M5 stage 5c) to a
+// per-instance host:<name> room, while a single per-Manager aggregator
+// goroutine maintains a cross-instance host:all summary feed.
 //
 // One Manager per server. Routes (/api/admin/scraper/*) and the discovery
 // watcher (internal/discovery → onAdd) call Start/Stop/List through the
@@ -24,7 +22,6 @@
 package manager
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -33,7 +30,6 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
@@ -235,16 +231,19 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 	}, true
 }
 
-// JoinReplayMessages returns one game-data envelope per runner, addressed
-// to that runner's host:<name> room. Retained for the request_state
-// handler until M5 stage 5d narrows it to a single-room reply.
+// JoinReplayMessages returns one current_state envelope per runner, each
+// addressed to that runner's host:<name> room. Retained for the
+// request_state handler until M5 stage 5d narrows it to a single-room
+// reply.
 //
 // M5 stage 5a: bytes are built on demand from each runner's instanceCache
 // rather than pulled from a pre-marshaled bytes cache.
 // M5 stage 5b: the Room field on each replay message is the per-instance
-// host:<name> room (was "overlay"). Wire format is otherwise unchanged —
-// the bytes still encode legacy Type:"snapshot" envelopes (M5 stage 5c
-// replaces "snapshot" with "current_state").
+// host:<name> room (was "overlay").
+// M5 stage 5c: payload is the new current_state envelope shape — full
+// instanceCache snapshot, not just GameData — so a late-joining client
+// gets phase, identity, freshness, current game data, recent events, and
+// previous_game in a single message.
 func (m *Manager) JoinReplayMessages() [][]byte {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
@@ -255,18 +254,18 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners))
 	for _, r := range runners {
-		if msgBytes, ok := buildJoinReplayMessage(r); ok {
+		if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
 			out = append(out, msgBytes)
 		}
 	}
 	return out
 }
 
-// JoinReplayForInstance returns the join-replay bytes for a single runner,
-// or an empty slice if the named runner has no cached game data (or doesn't
-// exist). Used by the join_room handler when a client subscribes to
+// JoinReplayForInstance returns the current_state replay bytes for a single
+// runner, or nil if the named runner doesn't exist (or its cache fails to
+// marshal). Used by the join_room handler when a client subscribes to
 // host:<name> so the overlay can render immediately rather than waiting
-// for the next state-transition broadcast.
+// for the next state_update / phase transition.
 func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	m.mu.Lock()
 	r, ok := m.runners[name]
@@ -274,7 +273,7 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	if msgBytes, ok := buildJoinReplayMessage(r); ok {
+	if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
 		return [][]byte{msgBytes}
 	}
 	return nil
@@ -286,29 +285,4 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 // without waiting for the next aggregator coalesce tick.
 func (m *Manager) JoinReplayForHostAll() [][]byte {
 	return m.agg.joinReplay()
-}
-
-// buildJoinReplayMessage marshals one runner's cached GameData into a
-// websocket.Message addressed to the runner's host:<name> room. Returns
-// (nil, false) when the runner has no cached game data or marshaling fails.
-func buildJoinReplayMessage(r *runner) ([]byte, bool) {
-	c := r.readCache()
-	if c.GameData == nil {
-		return nil, false
-	}
-	env := scraper.MakeEnvelope(envelopeTypeGameData, r.name, c.EngineTick, *c.GameData)
-	envBytes, err := json.Marshal(env)
-	if err != nil {
-		return nil, false
-	}
-	msg := websocket.Message{
-		Type:    "scraper",
-		Room:    r.hostRoom,
-		Payload: envBytes,
-	}
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		return nil, false
-	}
-	return msgBytes, true
 }

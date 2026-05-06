@@ -101,6 +101,16 @@
 		}, 1000);
 	});
 
+	// Subscribe to host:<name> + resync once the WS is open. Re-fires on
+	// reconnect so a connection blip recovers without a page reload.
+	// ensureSubscribed queues the join_room before requestState, so the
+	// addressed-reply handler sees the membership when it builds the reply.
+	$effect(() => {
+		if (!scraperWS.connected) return;
+		scraperWS.ensureSubscribed([name]);
+		scraperWS.requestState();
+	});
+
 	$effect(() => {
 		try {
 			localStorage.setItem('debug.showAll', String(showAll));
@@ -124,11 +134,20 @@
 		return `${Math.floor(diffMs / 3_600_000)}h ago`;
 	}
 
-	const gameData = $derived(inspect?.game_data ?? scraperWS.gameData[name] ?? null);
+	// Prefer the WS store (live cadence) over the 3s HTTP inspect poll. The
+	// store is hydrated from current_state on join + every state_update,
+	// so it carries the freshest atomic-cache view.
+	const gameData = $derived(scraperWS.gameData[name] ?? inspect?.game_data ?? null);
 	const tick = $derived(scraperWS.ticks[name] ?? inspect?.latest_tick ?? null);
 	const events = $derived(scraperWS.events[name] ?? inspect?.recent_events ?? []);
 	const stateInputs = $derived(inspect?.state_inputs ?? null);
 	const scoreProbe = $derived(inspect?.score_probe ?? null);
+	const phase = $derived(scraperWS.phases[name] ?? inspect?.phase ?? 'idle');
+	const previousGame = $derived(
+		scraperWS.previousGames[name] !== undefined
+			? scraperWS.previousGames[name]
+			: (inspect?.previous_game ?? null)
+	);
 
 	// Pull `gametype_candidates.paste_this` out of the probe so it can render
 	// in a CodeBlock (preserved newlines, copy button) instead of a wrapped
@@ -144,7 +163,8 @@
 		const out: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(scoreProbe)) {
 			if (k === 'gametype_candidates' && v && typeof v === 'object') {
-				const { paste_this: _drop, ...rest } = v as Record<string, unknown>;
+				const rest = { ...(v as Record<string, unknown>) };
+				delete rest.paste_this;
 				out[k] = rest;
 			} else {
 				out[k] = v;
@@ -164,13 +184,14 @@
 		live: 'preset-filled-success-500'
 	};
 	const lastReadAtMs = $derived.by(() => {
-		if (!inspect?.last_read_at) return undefined;
-		const t = Date.parse(inspect.last_read_at);
+		const iso = scraperWS.lastReadAt[name] ?? inspect?.last_read_at;
+		if (!iso) return undefined;
+		const t = Date.parse(iso);
 		return Number.isFinite(t) ? t : undefined;
 	});
 	const previousGameEndedAtMs = $derived.by(() => {
-		if (!inspect?.previous_game?.ended_at) return undefined;
-		const t = Date.parse(inspect.previous_game.ended_at);
+		if (!previousGame?.ended_at) return undefined;
+		const t = Date.parse(previousGame.ended_at);
 		return Number.isFinite(t) ? t : undefined;
 	});
 
@@ -306,7 +327,10 @@
 	const powerupEvents = new Set(['powerup_picked_up', 'powerup_expired']);
 
 	function eventBucket(ev: Envelope): string {
-		const innerType = (ev.payload as { type?: string } | undefined)?.type ?? ev.type;
+		// Wire shape: outer ev.type is the literal "event" wire-type, the
+		// semantic event type lives in payload.event_type ("kill", "spawn",
+		// "team_score", ...). Match against that, not ev.type.
+		const innerType = (ev.payload as { event_type?: string } | undefined)?.event_type ?? '';
 		if (matchEvents.has(innerType)) return 'match';
 		if (playerEvents.has(innerType)) return 'player';
 		if (combatEvents.has(innerType)) return 'combat';
@@ -318,6 +342,36 @@
 	const filteredEvents = $derived(
 		eventFilter === 'all' ? events : events.filter((e) => eventBucket(e) === eventFilter)
 	);
+
+	// Resync the events log via the request_events handler. since_tick is
+	// the highest tick the local log has seen, so the reply only fills
+	// in the gap. The store dedupes by tick on merge.
+	function resyncEvents() {
+		const sinceTick = events.reduce((m, e) => Math.max(m, e.tick), 0);
+		const types = filterTypes(eventFilter);
+		scraperWS.requestEvents({ sinceTick, types });
+	}
+
+	function filterTypes(
+		filter: 'all' | 'match' | 'player' | 'combat' | 'pickup' | 'powerup'
+	): string[] | undefined {
+		switch (filter) {
+			case 'match':
+				return [...matchEvents];
+			case 'player':
+				return [...playerEvents];
+			case 'combat':
+				return [...combatEvents];
+			case 'pickup':
+				return [...pickupEvents];
+			case 'powerup':
+				return [...powerupEvents];
+			default:
+				return undefined;
+		}
+	}
+
+	const lastEventsReplyAtMs = $derived(scraperWS.lastEventsReplyAt[name]);
 </script>
 
 <div class="container mx-auto max-w-7xl p-4">
@@ -390,11 +444,13 @@
 
 			<!-- OVERVIEW TAB -->
 			<Tabs.Content value="overview" class="pt-4">
-				<div class="text-surface-700-200 mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
+				<div
+					class="text-surface-700-200 mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6"
+				>
 					<div>
 						Phase:
-						<span class="badge {phaseBadgeClass[inspect?.phase ?? 'idle']} ml-1 text-[10px] uppercase">
-							{inspect?.phase ?? '—'}
+						<span class="badge {phaseBadgeClass[phase]} ml-1 text-[10px] uppercase">
+							{phase}
 						</span>
 					</div>
 					<div>Last read: <span class="font-mono">{relativeTime(lastReadAtMs)}</span></div>
@@ -404,22 +460,22 @@
 					<div>Events buffered: <span class="font-mono tabular-nums">{events.length}</span></div>
 				</div>
 				<OverviewCard state={currentState} {gameData} {tick} {tickValue} {stateInputs} {showAll} />
-				{#if inspect?.previous_game}
-					<div class="card preset-tonal mt-3 p-4">
+				{#if previousGame}
+					<div class="mt-3 card preset-tonal p-4">
 						<div class="text-surface-700-200 mb-2 text-xs font-semibold uppercase">
 							Previous match · ended {relativeTime(previousGameEndedAtMs)}
 						</div>
-						{#if inspect.previous_game.game_data}
+						{#if previousGame.game_data}
 							<div class="text-sm">
-								<span class="font-mono">{inspect.previous_game.game_data.map || '—'}</span> ·
-								<span class="font-mono">{inspect.previous_game.game_data.gametype}</span> ·
+								<span class="font-mono">{previousGame.game_data.map || '—'}</span> ·
+								<span class="font-mono">{previousGame.game_data.gametype}</span> ·
 								<span class="font-mono tabular-nums">
-									{inspect.previous_game.game_data.players?.length ?? 0} players
+									{previousGame.game_data.players?.length ?? 0} players
 								</span>
-								{#if inspect.previous_game.events && inspect.previous_game.events.length > 0}
+								{#if previousGame.events && previousGame.events.length > 0}
 									·
 									<span class="font-mono tabular-nums">
-										{inspect.previous_game.events.length} events
+										{previousGame.events.length} events
 									</span>
 								{/if}
 							</div>
@@ -712,7 +768,7 @@
 								<div class="text-surface-500-400 card preset-tonal p-3 text-sm">no locals</div>
 							{:else}
 								<div class="space-y-4">
-									{#each tick.locals as local}
+									{#each tick.locals as local (local.local_index)}
 										<div class="card preset-tonal p-3">
 											<div class="mb-2 text-sm font-semibold">
 												local_index: {local.local_index}
@@ -803,16 +859,29 @@
 								| 'powerup')}
 					>
 						<SegmentedControl.Indicator />
-						{#each ['all', 'match', 'player', 'combat', 'pickup', 'powerup'] as bucket}
+						{#each ['all', 'match', 'player', 'combat', 'pickup', 'powerup'] as bucket (bucket)}
 							<SegmentedControl.Item value={bucket}>
 								<SegmentedControl.ItemText>{bucket}</SegmentedControl.ItemText>
 								<SegmentedControl.ItemHiddenInput />
 							</SegmentedControl.Item>
 						{/each}
 					</SegmentedControl>
-					<span class="text-surface-700-200 text-xs"
-						>{filteredEvents.length} of {events.length} (newest first)</span
-					>
+					<div class="flex items-center gap-3 text-xs">
+						<span class="text-surface-700-200"
+							>{filteredEvents.length} of {events.length} (newest first)</span
+						>
+						{#if lastEventsReplyAtMs}
+							<span class="text-surface-500-400">synced {relativeTime(lastEventsReplyAtMs)}</span>
+						{/if}
+						<button
+							type="button"
+							class="btn preset-tonal btn-sm"
+							disabled={!scraperWS.connected}
+							onclick={resyncEvents}
+						>
+							Resync
+						</button>
+					</div>
 				</div>
 				{#if filteredEvents.length === 0}
 					<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
@@ -851,7 +920,7 @@
 								<CodeBlock code={probePasteThis} />
 							</div>
 						{/if}
-						{#each Object.entries(scoreProbeForTree ?? {}) as [section, value]}
+						{#each Object.entries(scoreProbeForTree ?? {}) as [section, value] (section)}
 							<div>
 								<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">
 									{section}

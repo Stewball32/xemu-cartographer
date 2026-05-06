@@ -28,7 +28,10 @@
 		const first = arr[0] as Record<string, unknown>;
 		const firstKeys = Object.keys(first).sort().join(',');
 		return arr.every(
-			(e) => Object.keys(e as Record<string, unknown>).sort().join(',') === firstKeys
+			(e) =>
+				Object.keys(e as Record<string, unknown>)
+					.sort()
+					.join(',') === firstKeys
 		);
 	}
 
@@ -60,7 +63,7 @@
 
 {#if depth === 0 && (kind === 'object' || kind === 'object-array' || kind === 'array')}
 	<!-- Top-level: collapsible section card -->
-	<div class="card preset-tonal mb-4">
+	<div class="mb-4 card preset-tonal">
 		<button
 			type="button"
 			class="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -74,7 +77,7 @@
 			{/if}
 		</button>
 		{#if open}
-			<div class="border-surface-300-700 border-t px-4 py-3">
+			<div class="border-t border-surface-300-700 px-4 py-3">
 				<Self {value} {label} depth={1} />
 			</div>
 		{/if}
@@ -107,15 +110,15 @@
 		<table class="table-hover w-full text-xs">
 			<thead class="bg-surface-200-800">
 				<tr>
-					{#each cols as col}
+					{#each cols as col (col)}
 						<th class="px-2 py-1 text-left font-medium">{col}</th>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each arr as row}
-					<tr class="border-surface-300-700 border-t">
-						{#each cols as col}
+				{#each arr as row, i (i)}
+					<tr class="border-t border-surface-300-700">
+						{#each cols as col (col)}
 							<td class="px-2 py-1 align-top">
 								<Self value={row[col]} depth={depth + 1} />
 							</td>
@@ -128,8 +131,8 @@
 {:else if kind === 'array'}
 	<!-- Heterogeneous array → ordered list -->
 	{@const arr = value as unknown[]}
-	<ol class="border-surface-300-700 ml-2 border-l pl-3">
-		{#each arr as item, i}
+	<ol class="ml-2 border-l border-surface-300-700 pl-3">
+		{#each arr as item, i (i)}
 			<li class="py-0.5">
 				<span class="text-surface-500-400 mr-2 font-mono text-xs">[{i}]</span>
 				<Self value={item} depth={depth + 1} />
@@ -139,12 +142,8 @@
 {:else if kind === 'object'}
 	<!-- Object at depth>0 → key-value rows in indented border block -->
 	{@const obj = value as Record<string, unknown>}
-	<div
-		class={depth === 1
-			? 'space-y-1'
-			: 'border-surface-300-700 ml-2 space-y-1 border-l pl-3'}
-	>
-		{#each Object.entries(obj) as [k, v]}
+	<div class={depth === 1 ? 'space-y-1' : 'ml-2 space-y-1 border-l border-surface-300-700 pl-3'}>
+		{#each Object.entries(obj) as [k, v] (k)}
 			<div class="flex flex-wrap items-baseline gap-2">
 				<span class="text-surface-700-200 font-mono text-xs">{k}:</span>
 				{#if isScalar(v)}

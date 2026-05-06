@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
 )
 
 // BuildScoreProbe samples every address known to be involved in gametype
@@ -351,9 +352,9 @@ func (r *Reader) probePerPlayerStaticStruct() any {
 	}
 
 	type entry struct {
-		Index             int    `json:"index"`
-		Name              string `json:"name"`
-		CTFScoreOffsetC4  int16  `json:"ctf_score_offset_c4_s16"`
+		Index            int    `json:"index"`
+		Name             string `json:"name"`
+		CTFScoreOffsetC4 int16  `json:"ctf_score_offset_c4_s16"`
 	}
 	entries := make([]entry, 0, currentCount)
 	for i := uint16(0); i < currentCount; i++ {
@@ -368,7 +369,7 @@ func (r *Reader) probePerPlayerStaticStruct() any {
 		ctf, _ := r.inst.Mem.ReadS16(base + OffPlrCTFScore)
 		entries = append(entries, entry{
 			Index:            int(i),
-			Name:             decodeUTF16LE(nameBytes),
+			Name:             xbox.DecodeUTF16LE(nameBytes),
 			CTFScoreOffsetC4: ctf,
 		})
 	}

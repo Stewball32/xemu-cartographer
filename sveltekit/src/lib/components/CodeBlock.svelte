@@ -29,13 +29,13 @@
 </script>
 
 <div class="relative {classes}">
-	<pre class="preset-tonal-surface rounded-container {preClasses}">{code}</pre>
+	<pre class="rounded-container preset-tonal-surface {preClasses}">{code}</pre>
 	{#if copyable}
 		<button
 			type="button"
 			onclick={copy}
 			aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-			class="btn-icon preset-tonal-surface absolute top-2 right-2 size-8"
+			class="absolute top-2 right-2 btn-icon size-8 preset-tonal-surface"
 		>
 			{#if copied}
 				<Check class="size-4" />

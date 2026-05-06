@@ -67,11 +67,11 @@ type GameReader interface {
 	// NewTickState returns a fresh tick state tracker.
 	NewTickState() *TickState
 
-	// XboxName returns the console name of the xbox running this game, or ""
-	// when the plugin can't resolve it (e.g. Halo 2 has no known offset).
-	XboxName() string
-
 	// Title is the human-readable game title (e.g. "Halo: Combat Evolved").
+	//
+	// Console name is NOT a plugin concern — that's an Xbox-the-machine fact
+	// supplied by internal/scraper/xbox/ ReadConsoleName, populated by the
+	// runner's system-snapshot pass independently of which game is bound.
 	Title() string
 }
 

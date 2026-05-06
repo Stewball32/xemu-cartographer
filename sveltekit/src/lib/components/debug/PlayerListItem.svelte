@@ -24,14 +24,16 @@
 
 	// Halo CE caps health at 1.0, shields at 1.0 (normalized).
 	const hpPct = $derived(Math.max(0, Math.min(100, Math.round((tickPlayer.health ?? 0) * 100))));
-	const shieldPct = $derived(Math.max(0, Math.min(100, Math.round((tickPlayer.shields ?? 0) * 100))));
+	const shieldPct = $derived(
+		Math.max(0, Math.min(100, Math.round((tickPlayer.shields ?? 0) * 100)))
+	);
 </script>
 
 <button
 	type="button"
 	onclick={onSelect}
 	class="w-full rounded p-2 text-left transition {selected
-		? 'bg-primary-500/20 ring-primary-500 ring-1'
+		? 'bg-primary-500/20 ring-1 ring-primary-500'
 		: 'hover:bg-surface-200-800'}"
 >
 	<div class="flex items-center gap-2">
@@ -47,18 +49,18 @@
 	</div>
 	<div class="mt-1.5 space-y-0.5">
 		<div class="flex items-center gap-1.5">
-			<span class="text-surface-700-200 w-6 text-[10px] font-mono">HP</span>
-			<div class="bg-surface-300-700 h-1.5 flex-1 overflow-hidden rounded-full">
-				<div class="bg-success-500 h-full" style="width: {hpPct}%"></div>
+			<span class="text-surface-700-200 w-6 font-mono text-[10px]">HP</span>
+			<div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-300-700">
+				<div class="h-full bg-success-500" style="width: {hpPct}%"></div>
 			</div>
-			<span class="font-mono text-[10px] tabular-nums w-8 text-right">{hpPct}%</span>
+			<span class="w-8 text-right font-mono text-[10px] tabular-nums">{hpPct}%</span>
 		</div>
 		<div class="flex items-center gap-1.5">
-			<span class="text-surface-700-200 w-6 text-[10px] font-mono">Sh</span>
-			<div class="bg-surface-300-700 h-1.5 flex-1 overflow-hidden rounded-full">
-				<div class="bg-tertiary-500 h-full" style="width: {shieldPct}%"></div>
+			<span class="text-surface-700-200 w-6 font-mono text-[10px]">Sh</span>
+			<div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-300-700">
+				<div class="h-full bg-tertiary-500" style="width: {shieldPct}%"></div>
 			</div>
-			<span class="font-mono text-[10px] tabular-nums w-8 text-right">{shieldPct}%</span>
+			<span class="w-8 text-right font-mono text-[10px] tabular-nums">{shieldPct}%</span>
 		</div>
 	</div>
 	{#if gamePlayer}

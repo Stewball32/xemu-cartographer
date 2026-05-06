@@ -1,6 +1,9 @@
 package haloce
 
-import "github.com/Stewball32/xemu-cartographer/internal/scraper"
+import (
+	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
+)
 
 // readNetwork reads the per-tick network-game state (client + server +
 // machine list + network-player list). Returns nil when neither client nor
@@ -97,7 +100,7 @@ func (r *Reader) readNetworkGameData() (*scraper.TickNetworkGameData, []scraper.
 			idx, _ := mem.ReadU8At(entry + int64(OffNetMachineMachineIndex))
 			machines = append(machines, scraper.TickNetMachine{
 				Index: idx,
-				Name:  decodeUTF16LE(nameBytes),
+				Name:  xbox.DecodeUTF16LE(nameBytes),
 			})
 		}
 	}
@@ -116,7 +119,7 @@ func (r *Reader) readNetworkGameData() (*scraper.TickNetworkGameData, []scraper.
 			team, _ := mem.ReadU8At(entry + int64(OffNetPlayerTeam))
 			listIdx, _ := mem.ReadU8At(entry + int64(OffNetPlayerListIndex))
 			players = append(players, scraper.TickNetPlayer{
-				Name:            decodeUTF16LE(nameBytes),
+				Name:            xbox.DecodeUTF16LE(nameBytes),
 				Color:           color,
 				Unused:          unused,
 				MachineIndex:    machineIdx,

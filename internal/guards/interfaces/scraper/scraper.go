@@ -7,5 +7,6 @@ type Service interface {
 	Lifecycle
 	Inspect
 	JoinReplay
+	EventsReply
 	State
 }

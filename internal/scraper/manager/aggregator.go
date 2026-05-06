@@ -157,13 +157,14 @@ func (a *aggregator) joinReplay() [][]byte {
 }
 
 // marshalEnvelope is the shared host:all envelope builder. Returns the
-// pre-marshaled wire bytes ready for SendToRoomRaw / SendRaw.
+// pre-marshaled wire bytes ready for SendToRoomRaw / SendRaw. M5 stage 5c:
+// envelope type is "current_state" (full hostsCache snapshot per OQ2's
+// "full re-broadcast, no diffs" resolution); "all" as the envelope's
+// Instance field stays as the client-side disambiguator between the
+// host:all summary feed and per-instance host:<name> streams.
 func (a *aggregator) marshalEnvelope() ([]byte, bool) {
 	summaries := a.snapshot()
-	// "all" as the envelope's Instance field is the client-side disambiguator
-	// between host:all summary feed and a per-instance host:<name> stream
-	// (both ride the legacy "snapshot" wire type until M5 stage 5c).
-	env := scraper.MakeEnvelope(envelopeTypeGameData, "all", 0, summaries)
+	env := scraper.MakeEnvelope(envelopeTypeCurrentState, "all", 0, summaries)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("aggregator: marshal envelope: %v", err)

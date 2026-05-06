@@ -82,9 +82,9 @@ func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
 // Live phases. Holds match-config (map, gametype, score limit), roster +
 // scores, scenario-static map data, and power-item spawn positions.
 //
-// The wire envelope that carries it still has Type="snapshot" — that
-// legacy string stays in place until M5 stage 5c replaces it with
-// "current_state" / "state_update". See envelopeType* constants in
+// Carried inside the current_state envelope's payload (M5 stage 5c) on
+// every phase transition + join, and inside state_update during Ready
+// (under the .ready field). See envelopeType* constants in
 // internal/scraper/manager/loop.go.
 type GameData struct {
 	GameState       GameState        `json:"game_state"`
@@ -194,9 +194,14 @@ type GamePlayer struct {
 
 // GameMachine is one connected machine in a system-link lobby. Index is
 // the per-machine slot the network stack uses to address the host.
+//
+// IsLocal flags the entry whose Index matches network_game_client.machine_index
+// — i.e. "this xemu instance's own slot". Pointer so games without network-
+// stack awareness serialise as null, matching GamePlayer.IsLocal.
 type GameMachine struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
+	Index   int    `json:"index"`
+	Name    string `json:"name"`
+	IsLocal *bool  `json:"is_local"`
 }
 
 // TeamScore is one team's current score.

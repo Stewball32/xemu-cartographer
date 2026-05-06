@@ -81,7 +81,7 @@ Single Go binary (`cmd/server`) runs four concurrent systems plus an optional fi
 1. **PocketBase** — REST API, auth (JWT), SQLite database, static file server (serves `pb_public/`), uses `net/http.ServeMux` router
 2. **Disgo Discord bot** — connects via gateway in PocketBase's OnServe hook, non-blocking
 3. **WebSocket handler** (`coder/websocket`) — custom route on PocketBase's router with optional JWT auth, Hub for managing clients/rooms/broadcasting
-4. **Scraper manager** (`internal/scraper/manager`) — owns per-xemu-instance memory-scraper goroutines; broadcasts game-data / tick / event envelopes to the WebSocket `overlay` room (the wire-type strings stay `"snapshot"` / `"tick"` / `"event"` until M5 stage 5c — see `envelopeType*` constants in [internal/scraper/manager/loop.go](internal/scraper/manager/loop.go))
+4. **Scraper manager** (`internal/scraper/manager`) — owns per-xemu-instance memory-scraper goroutines; broadcasts `current_state` / `state_update` / `event` envelopes to per-instance `host:<name>` rooms and a cross-instance `host:all` summary room (M5 stage 5c — see `envelopeType*` constants in [internal/scraper/manager/loop.go](internal/scraper/manager/loop.go))
 5. **Podman containers + discovery watcher** (optional, gated by `CONTAINERS_ENABLED=true`) — `internal/podman` shells out to provision xemu+browser pairs; `internal/discovery` polls the QMP socket dir and auto-Start/Stops scrapers as instances appear/disappear
 
 The SvelteKit frontend is built with `@sveltejs/adapter-static` into `pb_public/`, which PocketBase serves automatically. The `fallback: 'index.html'` config enables SPA-style client-side routing.
@@ -141,8 +141,9 @@ Protected pages can be served through custom PocketBase routes that validate JWT
 | `internal/disgo/resolvers`              | Discord data lookups via Services — one exported function per file                                                                                                                               |
 | `internal/disgo/components`             | UI builder factories (buttons, embeds, rows, selects, modals)                                                                                                                                    |
 | `internal/scraper`                      | `GameReader` interface + game registry; `Detect()` picks a plugin by xemu title ID                                                                                                               |
-| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs tick goroutine, broadcasts to overlay room; implements `scraperiface.Service`                                                           |
-| `internal/scraper/haloce`               | Halo: CE `GameReader` (offsets, game-data / tick / event readers, Xbox-name decode); self-registers via blank import in `main.go`                                                                |
+| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs tick goroutine, broadcasts to `host:<name>` + `host:all` rooms; implements `scraperiface.Service`                                       |
+| `internal/scraper/haloce`               | Halo: CE `GameReader` (offsets, game-data / tick / event readers); self-registers via blank import in `main.go`                                                                                  |
+| `internal/scraper/xbox`                 | Title-agnostic Xbox console primitives (XBE certificate, console name + serial + MAC + clock + timezone + video standard scans, kernel memory helpers, Xbox-string encoding)                     |
 | `internal/xemu`                         | xemu QMP client + memory bridge — `Instance.Init`, GVA→GPA translation, `ReadBytes`/`ReadAt`                                                                                                     |
 | `internal/podman`                       | Podman CLI wrapper — container pair lifecycle, stride-wise port allocation, state tracking                                                                                                       |
 | `internal/discovery`                    | Polling watcher over `CONTAINERS_SOCKET_DIR`; emits `onAdd(name, sock)` / `onRemove(name)` so the scraper manager can attach/detach as containers come and go                                    |
@@ -191,7 +192,7 @@ Handler flow: **Trigger → Resolve → Guard → Action**
 
 Handlers orchestrate by calling resolvers/guards/actions from multiple systems — no resolver or guard calls sideways into another package's resolvers.
 
-The scraper manager is special: it holds `*guards.Services` and broadcasts via `svc.WS.BroadcastRawToRoom("overlay", ...)`. Late-joining overlay clients are caught up via `Manager.JoinReplayMessages()`, called from the `join_room` WS handler — without that replay, a client that connects mid-match never gets map/players/power-item-spawn data and the overlay UI can't render.
+The scraper manager is special: it holds `*guards.Services` and broadcasts to per-instance `host:<name>` rooms (plus a cross-instance `host:all` summary room) via `svc.WS.BroadcastRawToRoom(...)`. Late-joining clients are caught up two ways: (1) `Manager.JoinReplayMessages()`, called from the `join_room` WS handler, replays the latest `current_state` envelope so the UI can render immediately; (2) `Manager.EventsReply()`, called from the `request_events` WS handler, returns the recent event log filtered by `since_tick` + `types`. Without join replay, a client that connects mid-match never gets map/players/power-item-spawn data; without events reply, on-demand event-log requests would have no path back through the import-cycle-free `scraperiface` boundary.
 
 ## Conventions
 

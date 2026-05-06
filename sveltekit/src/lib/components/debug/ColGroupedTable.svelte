@@ -32,17 +32,16 @@
 </script>
 
 {#if !rows || rows.length === 0}
-	<div class="card preset-tonal text-surface-500-400 p-3 text-sm">{emptyMessage}</div>
+	<div class="text-surface-500-400 card preset-tonal p-3 text-sm">{emptyMessage}</div>
 {:else}
 	<div class="overflow-x-auto">
 		<table class="w-full text-xs">
 			<thead>
 				<tr class="bg-surface-300-700">
-					{#each groups as group, gi}
+					{#each groups as group, gi (gi)}
 						<th
 							colspan={group.columns.length}
-							class="border-surface-400-600 px-2 py-1 text-left font-semibold {gi >
-							0
+							class="border-surface-400-600 px-2 py-1 text-left font-semibold {gi > 0
 								? 'border-l'
 								: ''}"
 						>
@@ -51,9 +50,12 @@
 					{/each}
 				</tr>
 				<tr class="bg-surface-200-800">
-					{#each allCols as col, ci}
+					{#each allCols as col, ci (col.key)}
 						<th
-							class="border-surface-400-600 px-2 py-1 text-left font-medium {ci > 0 && groups.flatMap((g, gi) => g.columns.map(() => gi)).indexOf(ci) === 0 ? 'border-l' : ''} {stickyFirst && ci === 0 ? 'bg-surface-200-800 sticky left-0 z-10' : ''}"
+							class="border-surface-400-600 px-2 py-1 text-left font-medium {ci > 0 &&
+							groups.flatMap((g, gi) => g.columns.map(() => gi)).indexOf(ci) === 0
+								? 'border-l'
+								: ''} {stickyFirst && ci === 0 ? 'sticky left-0 z-10 bg-surface-200-800' : ''}"
 						>
 							{col.label ?? col.key}
 						</th>
@@ -61,11 +63,13 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each rows as row}
-					<tr class="border-surface-300-700 border-t">
-						{#each allCols as col, ci}
+				{#each rows as row, ri (ri)}
+					<tr class="border-t border-surface-300-700">
+						{#each allCols as col, ci (col.key)}
 							<td
-								class="px-2 py-1 align-top tabular-nums {stickyFirst && ci === 0 ? 'bg-surface-50-950 sticky left-0' : ''}"
+								class="px-2 py-1 align-top tabular-nums {stickyFirst && ci === 0
+									? 'sticky left-0 bg-surface-50-950'
+									: ''}"
 							>
 								{#if isScalar(row[col.key])}
 									<span class="font-mono">{fmt(row[col.key])}</span>

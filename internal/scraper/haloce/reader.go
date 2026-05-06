@@ -1,11 +1,11 @@
 package haloce
 
 import (
-	"encoding/binary"
 	"math"
-	"unicode/utf16"
+	"strings"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -252,7 +252,7 @@ func (r *Reader) readVariantName() string {
 	if err != nil {
 		return ""
 	}
-	return decodeUTF16LE(b)
+	return xbox.DecodeUTF16LE(b)
 }
 
 // readGametypeID returns the current gametype ID (1=ctf, 2=slayer, 3=oddball,
@@ -447,7 +447,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 		machineIdx := int(machine)
 		players = append(players, scraper.GamePlayer{
 			Index:        int(listIdx),
-			Name:         decodeUTF16LE(nameBytes),
+			Name:         xbox.DecodeUTF16LE(nameBytes),
 			Team:         uint32(team),
 			IsLocal:      &isLocal,
 			LocalIndex:   localIdx,
@@ -460,7 +460,9 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 // readNetworkMachines reads the connected-machine roster from
 // network_game_data.network_machines (atlas:1224-1226). Each entry is a
 // 68-byte record: wchar name (64 bytes / 32 chars) followed by a u8
-// machine_index. Returns nil when no network game is active.
+// machine_index. IsLocal flags the entry whose Index matches
+// network_game_client.machine_index — the engine's "this is me" pointer.
+// Returns nil when no network game is active.
 func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 	mem := r.inst.Mem
 	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
@@ -472,6 +474,7 @@ func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 	if err != nil || machineCount <= 0 {
 		return nil
 	}
+	ownIndex, ownErr := mem.ReadU16At(clientHVA + int64(OffNGCMachineIndex))
 	rosterHVA := ngdHVA + int64(OffNGDNetworkMachines)
 	machines := make([]scraper.GameMachine, 0, machineCount)
 	for i := int16(0); i < machineCount; i++ {
@@ -481,16 +484,52 @@ func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 			continue
 		}
 		idx, _ := mem.ReadU8At(entryHVA + int64(OffNetMachineMachineIndex))
-		name := decodeUTF16LE(nameBytes)
+		name := xbox.DecodeUTF16LE(nameBytes)
 		if name == "" {
 			continue
 		}
+		isLocal := ownErr == nil && ownIndex != 0xFFFF && uint16(idx) == ownIndex
 		machines = append(machines, scraper.GameMachine{
-			Index: int(idx),
-			Name:  name,
+			Index:   int(idx),
+			Name:    name,
+			IsLocal: &isLocal,
 		})
 	}
 	return machines
+}
+
+// LocalMachineName returns the Xbox console name from this engine's own
+// network_machines roster entry — the canonical "this is me" pointer the
+// network stack uses for player-locality attribution. Returns ("", false)
+// when no network game is bound or the own-machine index isn't represented
+// in the roster (transient lobby state). Trims whitespace because the
+// engine's wchar buffer occasionally carries leading/trailing padding the
+// dashboard UI strips for display.
+func (r *Reader) LocalMachineName() (string, bool) {
+	mem := r.inst.Mem
+	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	if err != nil {
+		return "", false
+	}
+	ownIndex, err := mem.ReadU16At(clientHVA + int64(OffNGCMachineIndex))
+	if err != nil || ownIndex == 0xFFFF {
+		return "", false
+	}
+	ngdHVA := clientHVA + int64(OffNGCNetworkGameData)
+	machineCount, err := mem.ReadS16At(ngdHVA + int64(OffNGDMachineCount))
+	if err != nil || machineCount <= 0 || int32(ownIndex) >= int32(machineCount) {
+		return "", false
+	}
+	entryHVA := ngdHVA + int64(OffNGDNetworkMachines) + int64(uint32(ownIndex)*NetworkMachineStride)
+	nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetMachineName), 64)
+	if err != nil {
+		return "", false
+	}
+	name := strings.TrimSpace(xbox.DecodeUTF16LE(nameBytes))
+	if name == "" {
+		return "", false
+	}
+	return name, true
 }
 
 // attributeMachines fills GamePlayer.MachineIndex by joining each player
@@ -522,7 +561,7 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 			continue
 		}
 		machine, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerMachineIndex))
-		nameToMachine[decodeUTF16LE(nameBytes)] = int(machine)
+		nameToMachine[xbox.DecodeUTF16LE(nameBytes)] = int(machine)
 	}
 	for i := range players {
 		if players[i].MachineIndex != nil {
@@ -595,7 +634,7 @@ func (r *Reader) readGamePlayer(index int, base uint32) (scraper.GamePlayer, boo
 
 	return scraper.GamePlayer{
 		Index:      index,
-		Name:       decodeUTF16LE(nameBytes),
+		Name:       xbox.DecodeUTF16LE(nameBytes),
 		Team:       team,
 		Kills:      kills,
 		Deaths:     deaths,
@@ -1291,19 +1330,4 @@ func (r *Reader) readLowString(lowGVA uint32, maxLen int) string {
 		}
 	}
 	return string(b)
-}
-
-// decodeUTF16LE decodes a null-terminated UTF-16LE byte slice into a Go string.
-func decodeUTF16LE(b []byte) string {
-	u16s := make([]uint16, len(b)/2)
-	for i := range u16s {
-		u16s[i] = binary.LittleEndian.Uint16(b[2*i:])
-	}
-	for i, c := range u16s {
-		if c == 0 {
-			u16s = u16s[:i]
-			break
-		}
-	}
-	return string(utf16.Decode(u16s))
 }

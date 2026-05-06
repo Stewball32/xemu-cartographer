@@ -65,11 +65,22 @@ export type ScoreProbe = Record<string, unknown>;
 
 export type GameState = 'menu' | 'lobby' | 'pregame' | 'in_game' | 'postgame';
 
-// Envelope types match the legacy wire format. Stage 5c will replace
-// "snapshot" with "current_state" / "state_update". The string literals
-// stay until then; backend-side equivalents live in
-// internal/scraper/manager/loop.go envelopeType* constants.
-export type EnvelopeType = 'snapshot' | 'tick' | 'event';
+// Envelope wire types (M5 stage 5c/5d):
+//   - "current_state"  full instanceCache (per-instance) or hostsCache list (host:all);
+//                       sent on join + every phase transition.
+//   - "state_update"   per-poll volatile fields at phase-appropriate cadence
+//                       (Idle ~3s, Ready ~500ms, Live ~30Hz).
+//   - "event"          single live event during Live.
+//   - "events"         plural — addressed reply to a request_events message
+//                       carrying EventsResponsePayload (oldest-first).
+// Backend constants: internal/scraper/manager/loop.go envelopeType* +
+// internal/scraper/manager/events.go envelopeTypeEvents.
+export type EnvelopeType = 'current_state' | 'state_update' | 'event' | 'events';
+
+// Reserved aggregate-room name; mirrors backend rooms.HostAllRoom.
+export const HOST_ALL_ROOM = 'host:all';
+// Per-instance host room prefix; backend rooms.HostRoomPrefix + ":".
+export const HOST_ROOM_PREFIX = 'host:';
 
 // Outer WebSocket Message wrapper. M5 stage 5b: scraper broadcasts set
 // type="scraper", room="host:<instance>" (per-instance) or room="host:all"
@@ -89,6 +100,63 @@ export interface Envelope<P = unknown> {
 	instance: string;
 	tick: number;
 	payload: P;
+}
+
+// hostSummary entry in the host:all aggregate cache. Mirrors
+// internal/scraper/manager/aggregator.go hostSummary.
+export interface HostSummary {
+	instance: string;
+	phase: Phase;
+	title: string;
+	map: string;
+	gametype: string;
+	score_summary: string;
+	last_successful_read_at: string;
+}
+
+// CurrentStatePayload mirrors internal/scraper/manager/runner.go
+// CurrentStatePayload — the per-instance "current_state" envelope payload.
+// Sent on join_room reply + every phase transition. Carries a full atomic
+// read of the runner's instanceCache so a fresh subscriber can render
+// without prior history.
+export interface CurrentStatePayload {
+	phase: Phase;
+	started_at: string;
+	title_id: number;
+	title: string;
+	xbox_name: string;
+	last_read_at: string;
+	engine_tick: number;
+	iterations: number;
+	game_state?: GameState | '';
+	game_data?: GameData | null;
+	latest_tick?: TickPayload | null;
+	events?: Envelope[];
+	previous_game?: PreviousGameInfo | null;
+}
+
+// StateUpdatePayload mirrors internal/scraper/manager/runner.go
+// StateUpdatePayload — the per-poll volatile-fields envelope. Phase-specific
+// fields are populated only in their phase: Idle carries freshness only,
+// Ready carries `ready` (volatile lobby/menu game data), Live carries
+// `engine_tick` + `tick`.
+export interface StateUpdatePayload {
+	phase: Phase;
+	last_read_at: string;
+	iterations: number;
+	engine_tick?: number;
+	tick?: TickPayload | null;
+	ready?: GameData | null;
+}
+
+// EventsResponsePayload mirrors internal/scraper/manager/events.go
+// EventsResponsePayload — addressed reply to request_events. Events are
+// oldest-first per backend OQ7. Phase + since_tick are echoed so the
+// requester can reconcile the reply against an outstanding request.
+export interface EventsResponsePayload {
+	phase: Phase;
+	since_tick: number;
+	events: Envelope[];
 }
 
 export interface TeamScore {
@@ -648,11 +716,26 @@ export interface TickProjectile {
 	rotation_cosine: number;
 }
 
-// Type guards for narrowing Envelope by type.
-export function isSnapshot(env: Envelope): env is Envelope<GameData> {
-	return env.type === 'snapshot';
+// Type guards for narrowing Envelope by type. Each guard discriminates on
+// the `type` literal so an if/else chain narrows the union exhaustively.
+export function isCurrentState(
+	env: Envelope
+): env is Envelope<CurrentStatePayload> & { type: 'current_state' } {
+	return env.type === 'current_state';
 }
 
-export function isTick(env: Envelope): env is Envelope<TickPayload> {
-	return env.type === 'tick';
+export function isStateUpdate(
+	env: Envelope
+): env is Envelope<StateUpdatePayload> & { type: 'state_update' } {
+	return env.type === 'state_update';
+}
+
+export function isEvent(env: Envelope): env is Envelope & { type: 'event' } {
+	return env.type === 'event';
+}
+
+export function isEventsReply(
+	env: Envelope
+): env is Envelope<EventsResponsePayload> & { type: 'events' } {
+	return env.type === 'events';
 }

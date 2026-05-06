@@ -121,7 +121,9 @@
 		<Accordion.Item value="weapons">
 			<Accordion.ItemTrigger class="flex w-full items-center justify-between gap-2 py-2 text-left">
 				<span class="text-sm font-semibold"
-					>Weapons <span class="text-surface-700-200 font-normal">({tickPlayer.weapons?.length ?? 0})</span></span
+					>Weapons <span class="text-surface-700-200 font-normal"
+						>({tickPlayer.weapons?.length ?? 0})</span
+					></span
 				>
 				<Accordion.ItemIndicator>
 					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
@@ -141,7 +143,9 @@
 		<Accordion.Item value="bones">
 			<Accordion.ItemTrigger class="flex w-full items-center justify-between gap-2 py-2 text-left">
 				<span class="text-sm font-semibold"
-					>Bones <span class="text-surface-700-200 font-normal">({tickPlayer.bones?.length ?? 0})</span></span
+					>Bones <span class="text-surface-700-200 font-normal"
+						>({tickPlayer.bones?.length ?? 0})</span
+					></span
 				>
 				<Accordion.ItemIndicator>
 					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />

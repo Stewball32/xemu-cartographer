@@ -8,6 +8,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
@@ -42,24 +43,17 @@ const readyTitleCheckInterval = 10
 // still being validated against real Halo CE → dashboard transitions.
 const liveReadFailureLimit = 30
 
-// inGameDataBroadcastEvery throttles in-game game-data rebroadcasts.
-// GameData carries scoreboard / roster / score-limit fields the overlay
-// wants live, but most of it (map, spawns, fog) is scenario-static —
-// rebroadcasting every 30Hz tick wastes bandwidth. Every 5 ticks is ~167ms
-// update latency, which feels live to a viewer.
-const inGameDataBroadcastEvery = 5
-
-// Legacy wire envelope type strings. M5 stage 5a deliberately retired the
-// "snapshot" term internally (the cache is instanceCache.GameData, the
-// reader method is ReadGameData, the join-replay helper is
-// JoinReplayMessages), but the wire envelope `Type:"snapshot"` stays in
-// place until M5 stage 5c replaces it with `current_state` /
-// `state_update`. These constants are the only sanctioned source of those
-// strings — any other reference is a leak.
+// Wire envelope type strings (M5 stage 5c). current_state carries a full
+// instanceCache snapshot — emitted on join + every phase transition.
+// state_update carries the volatile / tick-fields portion of the cache —
+// emitted every successful poll iteration in all three phases at phase-
+// appropriate cadence (Idle ~3s, Ready ~500ms, Live ~30Hz). event remains
+// the per-instance Live event stream. These constants are the only
+// sanctioned source of those strings — any other reference is a leak.
 const (
-	envelopeTypeGameData = "snapshot"
-	envelopeTypeTick     = "tick"
-	envelopeTypeEvent    = "event"
+	envelopeTypeCurrentState = "current_state"
+	envelopeTypeStateUpdate  = "state_update"
+	envelopeTypeEvent        = "event"
 )
 
 // loop is the per-runner tick goroutine. Started by Manager.Start, exits when
@@ -82,12 +76,26 @@ func (r *runner) loop(svc *guards.Services) {
 
 	r.publishPhase(PhaseIdle)
 	phase := PhaseIdle
+	var prevPhase Phase // empty sentinel — the first iteration always emits
 
 	for {
 		select {
 		case <-r.ctx.Done():
 			return
 		default:
+		}
+
+		// Phase transition: emit current_state before the new phase function
+		// starts streaming state_updates. The runner is the single goroutine
+		// writer for its host:<name> room, so this synchronous ordering
+		// satisfies the M5 brief's invariant — "current_state for a
+		// transition reaches clients before any state_update tagged with the
+		// new phase" — without extra synchronisation. The empty-string
+		// sentinel makes the very first iteration (entering Idle at startup)
+		// emit too.
+		if phase != prevPhase {
+			r.broadcastCurrentState(svc)
+			prevPhase = phase
 		}
 
 		switch phase {
@@ -119,6 +127,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		// header yet. Stay idle and retry. Don't update LastReadAt — a
 		// failing read is not progress.
 		log.Printf("scraper[%s]: idle title-ID read: %v", r.name, err)
+		r.broadcastStateUpdate(svc, PhaseIdle)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -128,11 +137,17 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		c.TitleID = titleID
 	})
 
+	// Run xbox/* system reads (console name, future EEPROM/clock reads). This
+	// fires whether or not a plugin matches the title ID, so UnleashX and
+	// other unrecognised titles still surface xbox_name in the snapshot.
+	r.runSystemSnapshot()
+
 	factory := scraper.Lookup(titleID)
 	if factory == nil {
 		// Unknown title — stay idle and re-poll. The TitleID is already
 		// surfaced in the cache so the debug page can show "phase=idle,
 		// title_id=0x...".
+		r.broadcastStateUpdate(svc, PhaseIdle)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -145,6 +160,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
 	if err := r.inst.Init(allGVAs); err != nil {
 		log.Printf("scraper[%s]: bind reader (init low GVAs): %v — staying idle", r.name, err)
+		r.broadcastStateUpdate(svc, PhaseIdle)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -156,7 +172,6 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	r.liveReadFailures = 0
 	r.withCache(func(c *instanceCache) {
 		c.Title = reader.Title()
-		c.XboxName = reader.XboxName()
 		// Idle drops PreviousGame; entering Ready inherits that empty slot.
 		c.PreviousGame = nil
 	})
@@ -170,10 +185,13 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 // transitions to Live. Periodically re-checks the title ID; on change or
 // read failure releases the reader and transitions back to Idle.
 //
-// Within Ready, every observed GameState transition broadcasts a fresh
-// game-data envelope (legacy wire type "snapshot" until M5 5c replaces
-// it with current_state) so existing overlay clients see lobby joins /
-// team swaps / match start without waiting for Live to begin.
+// M5 stage 5c: every iteration emits one state_update envelope before
+// sleeping, carrying the volatile portion of the cache (Ready-phase game
+// data). GameState transitions within Ready (menu→pregame, postgame→menu,
+// etc.) trigger a thorough ReadGameData refresh so the cache stays current,
+// but no separate envelope fires — the next state_update carries the new
+// data. Phase transitions (Ready → Live, Ready → Idle) emit a fresh
+// current_state from the loop dispatcher before the new phase starts.
 func (r *runner) runReady(svc *guards.Services) Phase {
 	prevState := scraper.GameState("")
 	titleCheckCount := 0
@@ -208,14 +226,23 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 		gs, tick, err := r.reader.ReadGameState()
 		if err != nil {
 			log.Printf("scraper[%s]: ready ReadGameState: %v", r.name, err)
+			r.broadcastStateUpdate(svc, PhaseReady)
 			r.sleepOrCancel(readyPollInterval)
 			continue
 		}
 		r.recordIteration(tick)
 		r.publishGameState(gs, r.reader.LastStateInputs(), r.reader.BuildScoreProbe())
 
-		// State-transition handling within Ready — broadcast a fresh
-		// game-data envelope so the overlay sees the new lobby state.
+		// Refresh xbox/* system values (console name, etc.) — throttled so
+		// the cost is bounded regardless of phase poll cadence. Picks up
+		// renames the user did via the dashboard between matches and any
+		// late-arriving heap state from a freshly-loaded XBE.
+		r.runSystemSnapshot()
+
+		// State-transition handling within Ready — refresh the cache via the
+		// thorough ReadGameData path so static + cached scenario data is
+		// current when the next state_update fires. A summary push here
+		// keeps host:all in sync with map / gametype changes immediately.
 		if gs != prevState {
 			if err := r.reader.OnStateChange(prevState, gs); err != nil {
 				log.Printf("scraper[%s]: OnStateChange %s → %s: %v", r.name, prevState, gs, err)
@@ -234,16 +261,14 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 				snap.GameState = gs
 				r.gameData = snap
 				r.publishGameData(snap)
-				r.broadcast(svc, scraper.MakeEnvelope(envelopeTypeGameData, r.name, tick, snap))
-				// Push a summary on the state-transition path so host:all
-				// reflects map / gametype / score changes right when they
-				// happen rather than on the next heartbeat tick.
 				r.publishSummary()
 				prevState = gs
 			}
 		}
 
-		// Ready → Live transition: in_game observed.
+		// Ready → Live transition: in_game observed. The loop dispatcher
+		// will emit current_state for Live before runLive starts emitting
+		// state_updates, so no need to fire one here.
 		if gs == scraper.GameStateInGame {
 			r.state = r.reader.NewTickState()
 			r.powerItemsInitialised = false
@@ -251,15 +276,16 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			return PhaseLive
 		}
 
-		// Cheap game-data refresh so the inspect endpoint sees current
-		// scoreboard / roster data without waiting for the next state
-		// transition. Not broadcast — debug page polls HTTP at 3s.
+		// Cheap game-data refresh so the cache (and the next state_update)
+		// reflects current scoreboard / roster data without waiting for the
+		// next state transition.
 		if snap, err := r.reader.ReadReadyState(); err == nil {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
 		}
 
+		r.broadcastStateUpdate(svc, PhaseReady)
 		r.sleepOrCancel(readyPollInterval)
 	}
 }
@@ -276,7 +302,6 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 	defer r.captureLiveAsPrevious()
 
 	var lastBroadcastTick uint32
-	gameDataBroadcastCount := 0
 
 	for {
 		select {
@@ -300,6 +325,12 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 		r.liveReadFailures = 0
 		r.recordIteration(tick)
 		r.publishGameState(gs, r.reader.LastStateInputs(), r.reader.BuildScoreProbe())
+
+		// Refresh xbox/* system values during long matches (throttled, ~3s
+		// minimum spacing). Renames are unreachable from in-match, but a
+		// late-binding kernel record on a host that booted straight into
+		// gameplay still gets a chance to land.
+		r.runSystemSnapshot()
 
 		if gs != scraper.GameStateInGame {
 			log.Printf("scraper[%s]: state in_game → %s tick=%d — live → ready", r.name, gs, tick)
@@ -330,22 +361,19 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			continue
 		}
 		r.publishTick(tickResult.Payload)
-		r.broadcast(svc, scraper.MakeEnvelope(envelopeTypeTick, r.name, tick, tickResult.Payload))
 
-		// Refresh the cached game data via ReadReadyState so the inspect
-		// endpoint sees current scoreboard / roster data. Broadcast every
-		// inGameDataBroadcastEvery ticks (~167ms at 30Hz) so the
-		// overlay sees roster / score updates without flooding.
+		// Refresh cached game data so the next state_update / current_state
+		// carries current scoreboard / roster data. Not broadcast separately
+		// — state_update below carries the tick payload, current_state on
+		// phase transitions carries the cache snapshot.
 		if snap, err := r.reader.ReadReadyState(); err == nil {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
-			gameDataBroadcastCount++
-			if gameDataBroadcastCount >= inGameDataBroadcastEvery {
-				gameDataBroadcastCount = 0
-				r.broadcast(svc, scraper.MakeEnvelope(envelopeTypeGameData, r.name, tick, snap))
-			}
 		}
+
+		// One state_update per fresh engine tick (~30Hz).
+		r.broadcastStateUpdate(svc, PhaseLive)
 
 		events := r.reader.DetectEvents(tick, r.name, r.gameData, tickResult, r.state)
 		for _, ev := range events {
@@ -369,8 +397,8 @@ func (r *runner) captureLiveAsPrevious() {
 	}
 	r.cache.PreviousGame = &previousGame{
 		GameData: r.cache.GameData,
-		Events:    r.cache.Events,
-		EndedAt:   time.Now(),
+		Events:   r.cache.Events,
+		EndedAt:  time.Now(),
 	}
 	r.cache.LatestTick = nil
 	r.cache.Events = nil
@@ -379,6 +407,11 @@ func (r *runner) captureLiveAsPrevious() {
 // releaseReader clears the bound GameReader and resets the cache fields
 // that are only meaningful while a reader is in place. Called on
 // Ready→Idle and Live→Idle transitions.
+//
+// XboxName / SystemScannedFor are intentionally NOT cleared — console name
+// is an Xbox-the-machine fact independent of plugin lifecycle, supplied by
+// runSystemSnapshot. The next runIdle iteration re-runs the snapshot only
+// if the title actually changed (cache.TitleID != cache.SystemScannedFor).
 func (r *runner) releaseReader() {
 	r.reader = nil
 	r.state = nil
@@ -387,7 +420,6 @@ func (r *runner) releaseReader() {
 	r.liveReadFailures = 0
 	r.withCache(func(c *instanceCache) {
 		c.Title = ""
-		c.XboxName = ""
 		c.GameState = ""
 		c.StateInputs = nil
 		c.ScoreProbe = nil
@@ -396,6 +428,90 @@ func (r *runner) releaseReader() {
 		c.Events = nil
 		c.PreviousGame = nil
 	})
+}
+
+// systemSnapshotInterval bounds how often a runner walks guest RAM for
+// xbox/* system values. Set just below Idle's 3s tick so consecutive Idle
+// iterations always re-scan (catches dashboard renames without title
+// changes); Ready / Live call sites are naturally throttled to this
+// cadence too without each caller doing its own arithmetic.
+const systemSnapshotInterval = 2500 * time.Millisecond
+
+// runSystemSnapshot reads xbox/* global system values (console name, and
+// future EEPROM / kernel-clock / dashboard-pointer reads) into the cache.
+// Throttled by systemSnapshotInterval so it's safe to call every loop
+// iteration in any phase. Logs the first scan attempt per runner and any
+// observed value change so stdout reflects whether the path is even firing
+// — silent failure was the whole reason debugging this was hard.
+func (r *runner) runSystemSnapshot() {
+	if time.Since(r.lastSystemSnapshotAt) < systemSnapshotInterval {
+		return
+	}
+	titleID := r.cachedTitleID()
+	if titleID == 0 {
+		// "Wait for xemu" gate — title-ID == 0 means the kernel hasn't
+		// mapped the XBE header yet, and the dashboard certainly hasn't
+		// loaded NICKNAME.XBN. xbox.ReadConsoleName is title-agnostic but
+		// has nothing to find this early.
+		return
+	}
+	firstAttempt := r.lastSystemSnapshotAt.IsZero()
+	r.lastSystemSnapshotAt = time.Now()
+
+	name := xbox.ReadConsoleName(r.inst.Mem)
+	serial := xbox.ReadSerialNumber(r.inst.Mem)
+	mac := xbox.ReadMACAddress(r.inst.Mem)
+	video := xbox.ReadVideoStandard(r.inst.Mem)
+	tz, tzOK := xbox.ReadTimeZone(r.inst.Mem)
+	cert, certOK := xbox.ReadXBECertificate(r.inst)
+	clock, clockOK := xbox.ReadSystemClock(r.inst.Mem)
+
+	r.cacheMu.Lock()
+	prev := r.cache.XboxName
+	prevXBETitle := r.cache.XBETitleName
+	if name != "" {
+		r.cache.XboxName = name
+	}
+	if serial != "" {
+		r.cache.SerialNumber = serial
+	}
+	if mac != "" {
+		r.cache.MACAddress = mac
+	}
+	if video != "" {
+		r.cache.VideoStandard = video
+	}
+	if tzOK {
+		r.cache.TimeZoneBias = tz.BiasMinutes
+		r.cache.TimeZoneStdName = tz.StdName
+		r.cache.TimeZoneDltName = tz.DltName
+	}
+	if certOK {
+		r.cache.XBETitleName = cert.TitleName
+		r.cache.XBEVersion = cert.Version
+		r.cache.XBEGameRegion = cert.GameRegion
+		r.cache.XBEDiskNumber = cert.DiskNumber
+		r.cache.XBEAllowedMedia = cert.AllowedMedia
+	}
+	if clockOK {
+		r.cache.KernelSystemTime = clock.SystemTime
+		r.cache.KernelBootTime = clock.BootTime
+		r.cache.KernelUptime = clock.Uptime
+	}
+	r.cacheMu.Unlock()
+
+	switch {
+	case firstAttempt && name != "":
+		log.Printf("scraper[%s]: console name = %q serial=%q mac=%s video=%s tz=%s/%s bias=%d xbe=%q ver=0x%08X region=%s (title 0x%08X)",
+			r.name, name, serial, mac, video, tz.StdName, tz.DltName, tz.BiasMinutes,
+			cert.TitleName, cert.Version, xbox.FormatGameRegion(cert.GameRegion), titleID)
+	case firstAttempt:
+		log.Printf("scraper[%s]: console-name scan: no match in window (title 0x%08X)", r.name, titleID)
+	case name != "" && name != prev:
+		log.Printf("scraper[%s]: console name changed: %q → %q (title 0x%08X)", r.name, prev, name, titleID)
+	case certOK && cert.TitleName != "" && cert.TitleName != prevXBETitle:
+		log.Printf("scraper[%s]: xbe title changed: %q → %q (title 0x%08X)", r.name, prevXBETitle, cert.TitleName, titleID)
+	}
 }
 
 // publishPhase updates cache.Phase under cacheMu.

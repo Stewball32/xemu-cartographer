@@ -27,7 +27,7 @@
 
 <div class="card preset-tonal p-3">
 	{#if title}
-		<div class="text-surface-700-200 mb-2 text-xs font-semibold uppercase tracking-wide">
+		<div class="text-surface-700-200 mb-2 text-xs font-semibold tracking-wide uppercase">
 			{title}
 		</div>
 	{/if}
@@ -35,7 +35,7 @@
 		<div class="text-surface-500-400 text-sm">{emptyMessage}</div>
 	{:else}
 		<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-			{#each entries as [k, v]}
+			{#each entries as [k, v] (k)}
 				<dt class="text-surface-700-200 font-mono text-xs">{k}</dt>
 				<dd>
 					{#if isScalar(v)}
