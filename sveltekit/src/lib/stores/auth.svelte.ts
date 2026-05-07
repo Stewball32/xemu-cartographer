@@ -15,7 +15,7 @@ function createAuthStore() {
 	let isAdmin = $state(false);
 	const isLoggedIn = $derived(token !== '' && user !== null);
 
-	let ready: Promise<void> = Promise.resolve();
+	let hydratePromise: Promise<void> | null = null;
 
 	async function fetchAdmin(authToken: string): Promise<boolean> {
 		try {
@@ -30,36 +30,44 @@ function createAuthStore() {
 		}
 	}
 
-	function refreshAdmin() {
+	async function refreshAdmin() {
 		const authToken = pb.authStore.token;
 		if (!authToken) {
 			isAdmin = false;
-			ready = Promise.resolve();
 			return;
 		}
-		ready = fetchAdmin(authToken).then((result) => {
-			// Drop the result if the token rotated while we were in flight.
-			if (pb.authStore.token === authToken) isAdmin = result;
-		});
+		const result = await fetchAdmin(authToken);
+		// Drop the result if the token rotated while we were in flight.
+		if (pb.authStore.token === authToken) isAdmin = result;
 	}
 
 	pb.authStore.onChange((newToken, record) => {
 		user = (record as UsersResponse | null) ?? null;
 		token = newToken;
-		refreshAdmin();
+		void refreshAdmin();
 	});
 
-	if (pb.authStore.isValid) {
-		// authStore.isValid is local-only (JWT expiry check). Probe the server
-		// to catch tokens signed by a now-gone secret — e.g. when `task dev`
-		// wipes tmp/pb_data/. Cleared store fires onChange → state runes update.
-		ready = pb
-			.collection('users')
-			.authRefresh()
-			.then(() => undefined)
-			.catch(() => {
-				pb.authStore.clear();
-			});
+	// Single-shot initial hydration. The root +layout.ts load awaits this
+	// before any child route's load runs, so guards see a settled isAdmin
+	// instead of racing the onChange listener. Subsequent login/logout flows
+	// update isAdmin via the onChange handler above.
+	function hydrate(): Promise<void> {
+		if (hydratePromise) return hydratePromise;
+		hydratePromise = (async () => {
+			if (pb.authStore.isValid) {
+				// authStore.isValid is local-only (JWT expiry check). Probe the
+				// server to catch tokens signed by a now-gone secret — e.g.
+				// when `task dev` wipes tmp/pb_data/.
+				try {
+					await pb.collection('users').authRefresh();
+				} catch {
+					pb.authStore.clear();
+				}
+			}
+			const authToken = pb.authStore.token;
+			isAdmin = authToken ? await fetchAdmin(authToken) : false;
+		})();
+		return hydratePromise;
 	}
 
 	return {
@@ -75,9 +83,7 @@ function createAuthStore() {
 		get isAdmin() {
 			return isAdmin;
 		},
-		get ready() {
-			return ready;
-		},
+		hydrate,
 		async register(email: string, password: string, passwordConfirm: string) {
 			await pb.collection('users').create({ email, password, passwordConfirm });
 			await pb.collection('users').authWithPassword(email, password);
