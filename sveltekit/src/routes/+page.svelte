@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { APP_NAME } from '$lib/config/app';
+	import Card from '$lib/components/chrome/Card.svelte';
 	import { BoxIcon, ActivityIcon, MonitorIcon, ArrowRightIcon } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 
@@ -52,7 +53,7 @@
 	<section class="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		{#each pillars as pillar (pillar.title)}
 			{@const Icon = pillar.icon}
-			<div class="space-y-3 card p-6">
+			<Card size="lg" class="space-y-3">
 				<div
 					class="flex size-10 items-center justify-center rounded-lg bg-primary-500/10 text-primary-500"
 				>
@@ -60,7 +61,7 @@
 				</div>
 				<h3 class="h5">{pillar.title}</h3>
 				<p class="text-sm opacity-70">{pillar.body}</p>
-			</div>
+			</Card>
 		{/each}
 	</section>
 </div>

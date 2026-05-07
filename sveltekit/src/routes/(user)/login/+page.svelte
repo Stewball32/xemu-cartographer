@@ -6,6 +6,7 @@
 	import pb from '$lib/pocketbase';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 	import { buildRegisterUrl } from '$lib/utils/redirect';
+	import Card from '$lib/components/chrome/Card.svelte';
 	import { LogInIcon, MailIcon, LockIcon } from '@lucide/svelte';
 
 	let { data } = $props();
@@ -70,7 +71,7 @@
 
 <div class="flex min-h-[70vh] items-center justify-center">
 	<div class="w-full max-w-md space-y-6">
-		<div class="space-y-6 card p-8">
+		<Card size="lg" class="space-y-6">
 			<!-- Header -->
 			<div class="space-y-2 text-center">
 				<LogInIcon class="mx-auto size-10 text-primary-500" />
@@ -170,7 +171,7 @@
 					{/each}
 				</div>
 			{/if}
-		</div>
+		</Card>
 
 		<!-- Footer -->
 		<p class="text-center text-sm opacity-70">

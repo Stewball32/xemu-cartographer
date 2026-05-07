@@ -20,6 +20,7 @@
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { toaster } from '$lib/stores/toaster';
+	import Dialog from '$lib/components/chrome/Dialog.svelte';
 	import { VNCKeyboard, KEYSYM } from '$lib/utils/vnc-keyboard';
 	import type {
 		ContainerDetail,
@@ -734,62 +735,31 @@
 </div>
 
 {#if confirmAction}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={(e) => {
-			if (e.target === e.currentTarget) confirmAction = null;
-		}}
-		onkeydown={(e) => {
-			if (e.key === 'Escape') confirmAction = null;
-		}}
-	>
-		<div class="w-full max-w-md card p-6">
-			<h2 class="mb-2 h3">{confirmAction.title}</h2>
-			<p class="mb-4 text-sm text-surface-600-400">{confirmAction.body}</p>
-			<div class="flex justify-end gap-2">
-				<button type="button" class="btn preset-tonal" onclick={() => (confirmAction = null)}>
-					Cancel
-				</button>
-				<button type="button" class="btn preset-filled" onclick={runConfirmed}> Confirm </button>
-			</div>
+	{@const a = confirmAction}
+	<Dialog open={true} onClose={() => (confirmAction = null)} title={a.title}>
+		<p class="mb-4 text-sm text-surface-600-400">{a.body}</p>
+		<div class="flex justify-end gap-2">
+			<button type="button" class="btn preset-tonal" onclick={() => (confirmAction = null)}>
+				Cancel
+			</button>
+			<button type="button" class="btn preset-filled" onclick={runConfirmed}>Confirm</button>
 		</div>
-	</div>
+	</Dialog>
 {/if}
 
-{#if confirmDelete}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={(e) => {
-			if (e.target === e.currentTarget) confirmDelete = false;
-		}}
-		onkeydown={(e) => {
-			if (e.key === 'Escape') confirmDelete = false;
-		}}
-	>
-		<div class="w-full max-w-md card p-6">
-			<h2 class="mb-2 h3">Delete container</h2>
-			<p class="mb-4 text-sm text-surface-600-400">
-				Permanently remove <strong>{name}</strong>?
-				{#if isRunning}
-					<span class="mt-2 block text-error-500">
-						This container is currently running. It will be force-stopped before deletion.
-					</span>
-				{/if}
-			</p>
-			<div class="flex justify-end gap-2">
-				<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = false)}>
-					Cancel
-				</button>
-				<button type="button" class="btn preset-filled-error-500" onclick={handleDelete}>
-					Delete
-				</button>
-			</div>
-		</div>
+<Dialog open={confirmDelete} onClose={() => (confirmDelete = false)} title="Delete container">
+	<p class="mb-4 text-sm text-surface-600-400">
+		Permanently remove <strong>{name}</strong>?
+		{#if isRunning}
+			<span class="mt-2 block text-error-500">
+				This container is currently running. It will be force-stopped before deletion.
+			</span>
+		{/if}
+	</p>
+	<div class="flex justify-end gap-2">
+		<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = false)}>
+			Cancel
+		</button>
+		<button type="button" class="btn preset-tonal-error" onclick={handleDelete}>Delete</button>
 	</div>
-{/if}
+</Dialog>

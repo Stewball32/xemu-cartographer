@@ -6,6 +6,8 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
 	import { toaster } from '$lib/stores/toaster';
+	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
+	import Card from '$lib/components/chrome/Card.svelte';
 	import type { ContainerInfo, ContainerDetail, InstanceState } from '$lib/types/containers';
 	import type { ScraperInfo } from '$lib/types/scraper';
 
@@ -93,27 +95,25 @@
 	};
 </script>
 
-<div class="container mx-auto max-w-5xl p-4">
-	<header class="mb-6 flex items-center gap-3">
-		<ActivityIcon class="size-6" />
-		<h1 class="h2">Scraper debug</h1>
-	</header>
-
-	<p class="text-surface-700-200 mb-4 text-sm">
-		Pick a container to inspect every scraped field — the live game data, the latest tick, and
-		recent events. Useful for verifying a freshly-added field is populated and for chasing offset
-		drift.
-	</p>
+<div class="mx-auto flex max-w-5xl flex-col gap-6">
+	<PageHeader
+		title="Scraper debug"
+		description="Pick a container to inspect every scraped field — the live game data, the latest tick, and recent events. Useful for verifying a freshly-added field is populated and for chasing offset drift."
+	>
+		{#snippet actions()}
+			<ActivityIcon class="size-6" />
+		{/snippet}
+	</PageHeader>
 
 	{#if loading && containers.length === 0 && orphans.length === 0}
 		<div class="h-40 placeholder animate-pulse"></div>
 	{:else if containers.length === 0 && orphans.length === 0}
-		<div class="card preset-tonal p-6 text-center">
+		<Card size="lg" class="text-center">
 			No containers yet. Provision one from the
 			<a class="anchor" href={resolve('/containers/')}>Containers</a> page.
-		</div>
+		</Card>
 	{:else}
-		<div class="overflow-hidden card preset-tonal">
+		<Card size="flush" class="overflow-hidden">
 			<table class="table-hover w-full text-sm">
 				<thead class="bg-surface-200-800">
 					<tr>
@@ -210,6 +210,6 @@
 					{/each}
 				</tbody>
 			</table>
-		</div>
+		</Card>
 	{/if}
 </div>

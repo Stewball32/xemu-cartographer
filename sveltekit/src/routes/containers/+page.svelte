@@ -4,6 +4,9 @@
 	import { PlayIcon, SquareIcon, Trash2Icon, RefreshCwIcon, EyeIcon } from '@lucide/svelte';
 	import { adminGet, adminPost, adminDelete, AdminFetchError } from '$lib/utils/admin-api';
 	import { toaster } from '$lib/stores/toaster';
+	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
+	import Card from '$lib/components/chrome/Card.svelte';
+	import Dialog from '$lib/components/chrome/Dialog.svelte';
 	import type {
 		ContainerInfo,
 		ContainerStatus,
@@ -176,14 +179,11 @@
 </script>
 
 <div class="mx-auto flex max-w-6xl flex-col gap-6">
-	<header class="flex flex-wrap items-center justify-between gap-4">
-		<div>
-			<h1 class="h2">Containers</h1>
-			<p class="text-sm text-surface-600-400">
-				Manage xemu + browser container pairs. Start one to auto-launch its scraper.
-			</p>
-		</div>
-		<div class="flex gap-2">
+	<PageHeader
+		title="Containers"
+		description="Manage xemu + browser container pairs. Start one to auto-launch its scraper."
+	>
+		{#snippet actions()}
 			<button
 				type="button"
 				class="btn preset-tonal"
@@ -197,10 +197,10 @@
 			<button type="button" class="btn preset-filled" onclick={() => (createOpen = true)}>
 				+ New container
 			</button>
-		</div>
-	</header>
+		{/snippet}
+	</PageHeader>
 
-	<div class="overflow-x-auto card p-0">
+	<Card size="flush" class="overflow-x-auto">
 		<table class="table-hover table w-full">
 			<thead>
 				<tr>
@@ -290,103 +290,75 @@
 				{/if}
 			</tbody>
 		</table>
-	</div>
+	</Card>
 </div>
 
-{#if createOpen}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={(e) => {
-			if (e.target === e.currentTarget && !createBusy) createOpen = false;
+<Dialog
+	open={createOpen}
+	onClose={() => {
+		if (!createBusy) createOpen = false;
+	}}
+	title="New container"
+>
+	<form
+		onsubmit={(e) => {
+			e.preventDefault();
+			handleCreate();
 		}}
-		onkeydown={(e) => {
-			if (e.key === 'Escape' && !createBusy) createOpen = false;
-		}}
+		class="flex flex-col gap-4"
 	>
-		<div class="w-full max-w-md card p-6">
-			<h2 class="mb-4 h3">New container</h2>
-			<form
-				onsubmit={(e) => {
-					e.preventDefault();
-					handleCreate();
-				}}
-				class="flex flex-col gap-4"
+		<label class="label">
+			<span class="label-text">Name</span>
+			<!-- svelte-ignore a11y_autofocus -->
+			<input
+				type="text"
+				class="input"
+				bind:value={createName}
+				placeholder="e.g. smoke"
+				autocomplete="off"
+				autofocus
+				disabled={createBusy}
+			/>
+			<span class="text-xs text-surface-600-400">
+				Lowercase letters, digits, <code>-</code>, <code>_</code>. Must start with a letter or
+				digit.
+			</span>
+		</label>
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				class="btn preset-tonal"
+				onclick={() => (createOpen = false)}
+				disabled={createBusy}
 			>
-				<label class="label">
-					<span class="label-text">Name</span>
-					<!-- svelte-ignore a11y_autofocus -->
-					<input
-						type="text"
-						class="input"
-						bind:value={createName}
-						placeholder="e.g. smoke"
-						autocomplete="off"
-						autofocus
-						disabled={createBusy}
-					/>
-					<span class="text-xs text-surface-600-400">
-						Lowercase letters, digits, <code>-</code>, <code>_</code>. Must start with a letter or
-						digit.
-					</span>
-				</label>
-				<div class="flex justify-end gap-2">
-					<button
-						type="button"
-						class="btn preset-tonal"
-						onclick={() => (createOpen = false)}
-						disabled={createBusy}
-					>
-						Cancel
-					</button>
-					<button type="submit" class="btn preset-filled" disabled={createBusy}>
-						{createBusy ? 'Creating…' : 'Create'}
-					</button>
-				</div>
-			</form>
+				Cancel
+			</button>
+			<button type="submit" class="btn preset-filled" disabled={createBusy}>
+				{createBusy ? 'Creating…' : 'Create'}
+			</button>
 		</div>
-	</div>
-{/if}
+	</form>
+</Dialog>
 
 {#if confirmDelete}
 	{@const target = confirmDelete}
 	{@const targetStatus = statuses[target.name] ?? 'unknown'}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-		tabindex="-1"
-		onclick={(e) => {
-			if (e.target === e.currentTarget) confirmDelete = null;
-		}}
-		onkeydown={(e) => {
-			if (e.key === 'Escape') confirmDelete = null;
-		}}
-	>
-		<div class="w-full max-w-md card p-6">
-			<h2 class="mb-2 h3">Delete container</h2>
-			<p class="mb-4 text-sm text-surface-600-400">
-				Permanently remove <strong>{target.name}</strong>?
-				{#if targetStatus === 'running'}
-					<span class="mt-2 block text-error-500">
-						This container is currently running. It will be force-stopped before deletion.
-					</span>
-				{/if}
-			</p>
-			<div class="flex justify-end gap-2">
-				<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = null)}>
-					Cancel
-				</button>
-				<button
-					type="button"
-					class="btn preset-filled-error-500"
-					onclick={() => handleDelete(target)}
-				>
-					Delete
-				</button>
-			</div>
+	<Dialog open={true} onClose={() => (confirmDelete = null)} title="Delete container">
+		<p class="mb-4 text-sm text-surface-600-400">
+			Permanently remove <strong>{target.name}</strong>?
+			{#if targetStatus === 'running'}
+				<span class="mt-2 block text-error-500">
+					This container is currently running. It will be force-stopped before deletion.
+				</span>
+			{/if}
+		</p>
+		<div class="flex justify-end gap-2">
+			<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = null)}>
+				Cancel
+			</button>
+			<button type="button" class="btn preset-tonal-error" onclick={() => handleDelete(target)}>
+				Delete
+			</button>
 		</div>
-	</div>
+	</Dialog>
 {/if}

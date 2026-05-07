@@ -75,7 +75,7 @@
 		<div class="relative flex flex-1 overflow-hidden">
 			<div class="hidden w-25 shrink-0 sm:flex lg:hidden" aria-hidden="true"></div>
 			<NavPanel bind:open={navOpen} {isDesktop} {isTablet} currentPath={page.url.pathname} />
-			<main class="flex-1 overflow-y-auto p-4 pb-20 sm:pb-4 lg:p-8 lg:pb-8">
+			<main class="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 sm:pb-4 lg:p-8 lg:pb-8">
 				{@render children()}
 			</main>
 		</div>
