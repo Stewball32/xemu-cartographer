@@ -1,17 +1,20 @@
 <script lang="ts">
 	import JsonTree from '../JsonTree.svelte';
+	import AnnotationPill from './AnnotationPill.svelte';
 	import type { ColGroup } from './col-grouped-table';
 
 	let {
 		rows,
 		groups,
 		stickyFirst = false,
-		emptyMessage = 'no rows'
+		emptyMessage = 'no rows',
+		annotationPrefix
 	}: {
 		rows: ReadonlyArray<Record<string, unknown>> | null | undefined;
 		groups: ColGroup[];
 		stickyFirst?: boolean;
 		emptyMessage?: string;
+		annotationPrefix?: string;
 	} = $props();
 
 	const allCols = $derived(groups.flatMap((g) => g.columns));
@@ -57,7 +60,12 @@
 								? 'border-l'
 								: ''} {stickyFirst && ci === 0 ? 'sticky left-0 z-10 bg-surface-200-800' : ''}"
 						>
-							{col.label ?? col.key}
+							<span class="inline-flex items-center gap-1">
+								{#if annotationPrefix}
+									<AnnotationPill key="{annotationPrefix}.{col.key}" />
+								{/if}
+								{col.label ?? col.key}
+							</span>
 						</th>
 					{/each}
 				</tr>

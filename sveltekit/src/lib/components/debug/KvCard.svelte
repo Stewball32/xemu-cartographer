@@ -1,14 +1,17 @@
 <script lang="ts">
 	import JsonTree from '../JsonTree.svelte';
+	import AnnotationPill from './AnnotationPill.svelte';
 
 	let {
 		title,
 		value,
-		emptyMessage = 'no data'
+		emptyMessage = 'no data',
+		annotationPrefix
 	}: {
 		title?: string;
 		value: Record<string, unknown> | null | undefined;
 		emptyMessage?: string;
+		annotationPrefix?: string;
 	} = $props();
 
 	function isScalar(v: unknown): boolean {
@@ -34,8 +37,15 @@
 	{#if !value || entries.length === 0}
 		<div class="text-surface-500-400 text-sm">{emptyMessage}</div>
 	{:else}
-		<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+		<dl
+			class="grid {annotationPrefix
+				? 'grid-cols-[auto_max-content_1fr]'
+				: 'grid-cols-[max-content_1fr]'} gap-x-4 gap-y-1 text-sm"
+		>
 			{#each entries as [k, v] (k)}
+				{#if annotationPrefix}
+					<AnnotationPill key="{annotationPrefix}.{k}" />
+				{/if}
 				<dt class="text-surface-700-200 font-mono text-xs">{k}</dt>
 				<dd>
 					{#if isScalar(v)}

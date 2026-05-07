@@ -7,10 +7,12 @@
 
 	let {
 		tickPlayer,
-		gamePlayer
+		gamePlayer,
+		annotationPrefix
 	}: {
 		tickPlayer: TickPlayer;
 		gamePlayer: GamePlayer | null;
+		annotationPrefix?: string;
 	} = $props();
 
 	const identity = $derived({
@@ -84,7 +86,10 @@
 				</Accordion.ItemIndicator>
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
-				<KvCard value={identity} />
+				<KvCard
+					value={identity}
+					annotationPrefix={annotationPrefix ? `${annotationPrefix}.identity` : undefined}
+				/>
 			</Accordion.ItemContent>
 		</Accordion.Item>
 
@@ -98,7 +103,10 @@
 				</Accordion.ItemIndicator>
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
-				<KvCard value={positionVelocity} />
+				<KvCard
+					value={positionVelocity}
+					annotationPrefix={annotationPrefix ? `${annotationPrefix}.position` : undefined}
+				/>
 			</Accordion.ItemContent>
 		</Accordion.Item>
 
@@ -112,7 +120,10 @@
 				</Accordion.ItemIndicator>
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
-				<KvCard value={combat} />
+				<KvCard
+					value={combat}
+					annotationPrefix={annotationPrefix ? `${annotationPrefix}.combat` : undefined}
+				/>
 			</Accordion.ItemContent>
 		</Accordion.Item>
 
@@ -171,7 +182,10 @@
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
 				{#if tickPlayer.extended}
-					<KvCard value={tickPlayer.extended as unknown as Record<string, unknown>} />
+					<KvCard
+						value={tickPlayer.extended as unknown as Record<string, unknown>}
+						annotationPrefix={annotationPrefix ? `${annotationPrefix}.extended` : undefined}
+					/>
 				{:else}
 					<div class="text-surface-500-400 text-sm">no extended data (player likely dead)</div>
 				{/if}
@@ -189,7 +203,10 @@
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
 				{#if tickPlayer.update_queue}
-					<KvCard value={tickPlayer.update_queue as unknown as Record<string, unknown>} />
+					<KvCard
+						value={tickPlayer.update_queue as unknown as Record<string, unknown>}
+						annotationPrefix={annotationPrefix ? `${annotationPrefix}.update_queue` : undefined}
+					/>
 				{:else}
 					<div class="text-surface-500-400 text-sm">no update queue data</div>
 				{/if}
@@ -207,7 +224,10 @@
 			</Accordion.ItemTrigger>
 			<Accordion.ItemContent class="pb-3">
 				{#if tickPlayer.biped_tag}
-					<KvCard value={tickPlayer.biped_tag as unknown as Record<string, unknown>} />
+					<KvCard
+						value={tickPlayer.biped_tag as unknown as Record<string, unknown>}
+						annotationPrefix={annotationPrefix ? `${annotationPrefix}.biped_tag` : undefined}
+					/>
 				{:else}
 					<div class="text-surface-500-400 text-sm">no biped tag (player likely dead)</div>
 				{/if}

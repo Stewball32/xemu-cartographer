@@ -22,6 +22,9 @@
 	import PlayerDetailPanel from '$lib/components/debug/PlayerDetailPanel.svelte';
 	import ColGroupedTable from '$lib/components/debug/ColGroupedTable.svelte';
 	import type { ColGroup } from '$lib/components/debug/col-grouped-table';
+	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
+	import { fieldAnnotations } from '$lib/stores/fieldAnnotations.svelte';
+	import { toaster } from '$lib/stores/toaster';
 
 	let { data } = $props();
 	const name = $derived(data.name);
@@ -372,54 +375,88 @@
 	}
 
 	const lastEventsReplyAtMs = $derived(scraperWS.lastEventsReplyAt[name]);
+
+	// Annotation prefix scoping. Each field's pill is keyed by
+	// `<instance>:<tab>.<...>` so the same field can be re-validated on
+	// different instances independently. M19 will compare these manual marks
+	// against runtime probe results to flag drifted offsets.
+	const annPrefix = $derived(`${name}:`);
+
+	async function exportAnnotations() {
+		const json = fieldAnnotations.exportJSON(annPrefix);
+		try {
+			await navigator.clipboard.writeText(json);
+			toaster.success({
+				title: 'Annotations copied',
+				description: 'Paste into an M19 follow-up note.'
+			});
+		} catch {
+			// Clipboard blocked — fall back to a downloaded file.
+			const blob = new Blob([json], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${name}-field-annotations.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+		}
+	}
+
+	function clearAnnotations() {
+		fieldAnnotations.clearPrefix(annPrefix);
+		toaster.success({ title: 'Cleared', description: `${name} annotations` });
+	}
 </script>
 
-<div class="container mx-auto max-w-7xl p-4">
-	<header class="mb-4">
-		<a class="mb-2 flex items-center gap-1 anchor text-sm" href={resolve('/admin/debug/')}>
-			<ArrowLeftIcon class="size-4" />
-			Back to debug
-		</a>
-		<div class="flex flex-wrap items-center justify-between gap-4">
-			<div>
-				<h1 class="h2">{name}</h1>
-				<p class="text-surface-700-200 text-sm">
-					{#if scraper?.running}
-						<span class="mr-2 badge preset-filled-success-500 text-xs">Scraper running</span>
-					{:else}
-						<span class="mr-2 badge preset-tonal text-xs">Scraper idle</span>
-					{/if}
-					{scraper?.title || '—'} · {scraper?.xbox_name || '—'}
-				</p>
-			</div>
-			<div class="flex items-center gap-4">
-				<label class="flex items-center gap-2 text-xs">
-					<Switch
-						checked={showAll}
-						onCheckedChange={(d) => (showAll = d.checked)}
-						name="debug-show-all"
-					>
-						<Switch.Control>
-							<Switch.Thumb />
-						</Switch.Control>
-						<Switch.HiddenInput />
-					</Switch>
-					<span>Show all data</span>
-				</label>
-				<div class="text-right text-xs">
-					<div>
-						WS:
-						<span class:text-success-500={scraperWS.connected}
-							>{scraperWS.connected ? 'connected' : 'disconnected'}</span
-						>
-					</div>
-					{#if scraperWS.lastError}
-						<div class="text-error-500">{scraperWS.lastError}</div>
-					{/if}
-				</div>
-			</div>
+<div class="mx-auto flex max-w-7xl flex-col gap-4">
+	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/debug/')}>
+		<ArrowLeftIcon class="size-4" />
+		Back to debug
+	</a>
+	<PageHeader title={name}>
+		{#snippet actions()}
+			<label class="flex items-center gap-2 text-xs">
+				<Switch
+					checked={showAll}
+					onCheckedChange={(d) => (showAll = d.checked)}
+					name="debug-show-all"
+				>
+					<Switch.Control>
+						<Switch.Thumb />
+					</Switch.Control>
+					<Switch.HiddenInput />
+				</Switch>
+				<span>Show all data</span>
+			</label>
+			<button type="button" class="btn preset-tonal btn-sm" onclick={exportAnnotations}>
+				Export annotations
+			</button>
+			<button type="button" class="btn preset-tonal-error btn-sm" onclick={clearAnnotations}>
+				Clear
+			</button>
+		{/snippet}
+	</PageHeader>
+	<div class="flex flex-wrap items-center justify-between gap-3 text-xs">
+		<div class="text-surface-700-200">
+			{#if scraper?.running}
+				<span class="mr-2 badge preset-filled-success-500 text-xs">Scraper running</span>
+			{:else}
+				<span class="mr-2 badge preset-tonal text-xs">Scraper idle</span>
+			{/if}
+			{scraper?.title || '—'} · {scraper?.xbox_name || '—'}
 		</div>
-	</header>
+		<div class="text-right">
+			<div>
+				WS:
+				<span class:text-success-500={scraperWS.connected}
+					>{scraperWS.connected ? 'connected' : 'disconnected'}</span
+				>
+			</div>
+			{#if scraperWS.lastError}
+				<div class="text-error-500">{scraperWS.lastError}</div>
+			{/if}
+		</div>
+	</div>
 
 	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-6 text-center">
@@ -514,8 +551,8 @@
 									gametype: gameData.gametype,
 									is_team_game: gameData.is_team_game,
 									score_limit: gameData.score_limit,
-									time_limit_ticks: gameData.time_limit_ticks,
 									game_difficulty: gameData.game_difficulty,
+									...(showAll ? { time_limit_ticks: gameData.time_limit_ticks } : {}),
 									...(isTeamGame || showAll
 										? {
 												team_scores:
@@ -525,7 +562,7 @@
 											}
 										: {})
 								}}
-								<KvCard value={matchScalars} />
+								<KvCard value={matchScalars} annotationPrefix="{annPrefix}game.match_config" />
 							</Accordion.ItemContent>
 						</Accordion.Item>
 
@@ -680,6 +717,7 @@
 											<PlayerDetailPanel
 												tickPlayer={selectedTickPlayer}
 												gamePlayer={selectedGamePlayer}
+												annotationPrefix="{annPrefix}tick.player"
 											/>
 										{:else}
 											<div class="text-surface-500-400 card preset-tonal p-6 text-center text-sm">
@@ -703,16 +741,19 @@
 										title="client"
 										value={tick.network.client as unknown as Record<string, unknown> | null}
 										emptyMessage="no client data"
+										annotationPrefix="{annPrefix}tick.network.client"
 									/>
 									<KvCard
 										title="server"
 										value={tick.network.server as unknown as Record<string, unknown> | null}
 										emptyMessage="no server data"
+										annotationPrefix="{annPrefix}tick.network.server"
 									/>
 									<KvCard
 										title="game_data"
 										value={tick.network.game_data as unknown as Record<string, unknown> | null}
 										emptyMessage="no game_data"
+										annotationPrefix="{annPrefix}tick.network.game_data"
 									/>
 								</div>
 								<div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -739,6 +780,7 @@
 								groups={objectGroups}
 								stickyFirst
 								emptyMessage="no objects"
+								annotationPrefix="{annPrefix}tick.objects"
 							/>
 						</Tabs.Content>
 
@@ -749,6 +791,7 @@
 								groups={projectileGroups}
 								stickyFirst
 								emptyMessage="no projectiles"
+								annotationPrefix="{annPrefix}tick.projectiles"
 							/>
 						</Tabs.Content>
 
@@ -758,6 +801,10 @@
 								{#if !isCTF && showAll}
 									<div class="text-surface-500-400 mb-2 text-xs">(unused — non-CTF gametype)</div>
 								{/if}
+								<div class="text-surface-700-200 mb-2 text-xs">
+									Note: <code>status</code> is hardcoded to <code>"home"</code>; carrier detection
+									is deferred (see ROADMAP M7).
+								</div>
 								<JsonTree value={tick.ctf_flags ?? []} depth={1} />
 							</Tabs.Content>
 						{/if}
@@ -781,31 +828,37 @@
 													title="fp_weapon"
 													value={local.fp_weapon as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.fp_weapon"
 												/>
 												<KvCard
 													title="observer_cam"
 													value={local.observer_cam as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.observer_cam"
 												/>
 												<KvCard
 													title="player_control"
 													value={local.player_control as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.player_control"
 												/>
 												<KvCard
 													title="ias"
 													value={local.ias as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.ias"
 												/>
 												<KvCard
 													title="gamepad"
 													value={local.gamepad as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.gamepad"
 												/>
 												<KvCard
 													title="ui"
 													value={local.ui as unknown as Record<string, unknown> | null}
 													emptyMessage="—"
+													annotationPrefix="{annPrefix}tick.local.ui"
 												/>
 											</div>
 										</div>
@@ -820,10 +873,12 @@
 								<KvCard
 									title="game_globals"
 									value={tick.game_globals as unknown as Record<string, unknown> | null}
+									annotationPrefix="{annPrefix}tick.game_globals"
 								/>
 								<KvCard
 									title="data_queue"
 									value={tick.data_queue as unknown as Record<string, unknown> | null}
+									annotationPrefix="{annPrefix}tick.data_queue"
 								/>
 								<KvCard
 									title="counts"
@@ -831,6 +886,7 @@
 										player_count: tick.player_count,
 										local_count: tick.local_count
 									}}
+									annotationPrefix="{annPrefix}tick.counts"
 								/>
 								<div>
 									<div class="text-surface-700-200 mb-1 text-xs font-semibold uppercase">

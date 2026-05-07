@@ -3,6 +3,7 @@ package haloce
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -27,7 +28,152 @@ func (r *Reader) BuildScoreProbe() scraper.ScoreProbe {
 	out["score_limits_raw"] = r.probeScoreLimitsRaw()
 	out["per_player_score_tables"] = r.probePerPlayerScoreTables()
 	out["per_player_static_struct"] = r.probePerPlayerStaticStruct()
+	out["per_player_biped_regions"] = r.probePerPlayerBipedRegions()
 
+	return out
+}
+
+// probePerPlayerBipedRegions walks the PlayerDatumArray and, for each live
+// player, dereferences the dynamic biped and dumps two byte regions that
+// host fields whose offsets are still flagged unverified:
+//
+//   - weapon_region_2a0_to_2c8 — covers OffDynSelectedSlot (0x2A2) and the
+//     four weapon-slot handles at 0x2A8/0x2AC/0x2B0/0x2B4. Inspect this when
+//     a player's selected weapon or weapon-list looks wrong in the debug UI.
+//   - damage_table_3e0_to_420 — covers the 4×16-byte damage table at
+//     OffDynDamageTable (0x3E0). The damage table is read into
+//     InternalPlayerState (not broadcast); this region lets a human spot
+//     stale entries, ordering issues, or layout drift before M19's runtime
+//     validation lands.
+//
+// Both regions are returned as parsed scalars *and* hex bytes so the user
+// can sanity-check the parser against the raw memory.
+func (r *Reader) probePerPlayerBipedRegions() any {
+	pdaBase, err := r.inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	if err != nil || pdaBase < HighGVAThreshold {
+		return nil
+	}
+	elemSize, err := r.inst.Mem.ReadU16(pdaBase + OffPDAElementSize)
+	if err != nil || elemSize == 0 {
+		return nil
+	}
+	currentCount, _ := r.inst.Mem.ReadU16(pdaBase + OffPDACurrentCount)
+	firstElement, err := r.inst.Mem.ReadU32(pdaBase + OffPDAFirstElement)
+	if err != nil || firstElement < HighGVAThreshold {
+		return nil
+	}
+
+	objHeaderBase, err := r.inst.DerefLowPtr(AddrObjectHeaderDatumPtr)
+	if err != nil || objHeaderBase < HighGVAThreshold {
+		return nil
+	}
+	objHeaderFirst, _ := r.inst.Mem.ReadU32(objHeaderBase + OffPDAFirstElement)
+	objElemSize, _ := r.inst.Mem.ReadU16(objHeaderBase + OffPDAElementSize)
+	if objHeaderFirst < HighGVAThreshold || objElemSize == 0 {
+		return nil
+	}
+
+	type damageEntry struct {
+		Slot          int     `json:"slot"`
+		TimeU32       uint32  `json:"time_u32"`
+		AmountF32     float32 `json:"amount_f32"`
+		DealerObjU32  uint32  `json:"dealer_obj_u32"`
+		DealerPlrU32  uint32  `json:"dealer_plr_u32"`
+		DealerPlrIdx  uint32  `json:"dealer_plr_idx"`
+		Empty         bool    `json:"empty"`
+	}
+	type entry struct {
+		Index                  int            `json:"index"`
+		Name                   string         `json:"name"`
+		Alive                  bool           `json:"alive"`
+		ObjDataAddr            string         `json:"obj_data_addr"`
+		SelectedSlotS16        int16          `json:"selected_slot_s16_at_2a2"`
+		WeaponSlots            []string       `json:"weapon_slot_handles_2a8_2b4"`
+		WeaponRegionHex        string         `json:"weapon_region_2a0_to_2c8_hex"`
+		DamageTableHex         string         `json:"damage_table_3e0_to_420_hex"`
+		DamageEntries          []damageEntry  `json:"damage_entries"`
+	}
+
+	out := make([]entry, 0, currentCount)
+	for i := uint16(0); i < currentCount; i++ {
+		base := firstElement + uint32(i)*uint32(elemSize)
+		nameBytes, err := r.inst.Mem.ReadBytes(base+OffPlrName, 24)
+		if err != nil || (nameBytes[0] == 0 && nameBytes[1] == 0) {
+			continue
+		}
+		handle, _ := r.inst.Mem.ReadS32(base + OffPlrObjectHandle)
+		alive := handle != -1
+
+		e := entry{
+			Index: int(i),
+			Name:  xbox.DecodeUTF16LE(nameBytes),
+			Alive: alive,
+		}
+
+		var bipedAddr uint32
+		if alive {
+			objIdx := uint32(handle) & HandleIndexMask
+			objEntryAddr := objHeaderFirst + objIdx*uint32(objElemSize)
+			bipedAddr, _ = r.inst.Mem.ReadU32(objEntryAddr + OffObjEntryDataAddr)
+		} else {
+			prevHandle, _ := r.inst.Mem.ReadS32(base + OffPlrPrevObjHandle)
+			if prevHandle != -1 {
+				prevIdx := uint32(prevHandle) & HandleIndexMask
+				prevEntry := objHeaderFirst + prevIdx*uint32(objElemSize)
+				bipedAddr, _ = r.inst.Mem.ReadU32(prevEntry + OffObjEntryDataAddr)
+			}
+		}
+
+		if bipedAddr < HighGVAThreshold {
+			out = append(out, e)
+			continue
+		}
+		e.ObjDataAddr = fmt.Sprintf("0x%08x", bipedAddr)
+
+		// Weapon region: 0x2A0..0x2C8 (40 bytes — covers selected slot,
+		// 4 weapon handles, and a few neighbouring fields for context).
+		if b, err := r.inst.Mem.ReadBytes(bipedAddr+0x2A0, 0x28); err == nil {
+			e.WeaponRegionHex = hex.EncodeToString(b)
+		}
+		if v, err := r.inst.Mem.ReadS16(bipedAddr + OffDynSelectedSlot); err == nil {
+			e.SelectedSlotS16 = v
+		}
+		slots := make([]string, 0, 4)
+		for _, off := range []uint32{OffDynWeaponSlot0, OffDynWeaponSlot1, OffDynWeaponSlot2, OffDynWeaponSlot3} {
+			h, err := r.inst.Mem.ReadU32(bipedAddr + off)
+			if err != nil {
+				slots = append(slots, "?")
+				continue
+			}
+			slots = append(slots, fmt.Sprintf("0x%08x", h))
+		}
+		e.WeaponSlots = slots
+
+		// Damage table: 4 × 16-byte entries at 0x3E0..0x420.
+		if b, err := r.inst.Mem.ReadBytes(bipedAddr+OffDynDamageTable, DamageTableSlots*DamageEntrySize); err == nil {
+			e.DamageTableHex = hex.EncodeToString(b)
+		}
+		entries := make([]damageEntry, 0, DamageTableSlots)
+		for s := 0; s < DamageTableSlots; s++ {
+			entryBase := bipedAddr + OffDynDamageTable + uint32(s)*DamageEntrySize
+			t, _ := r.inst.Mem.ReadU32(entryBase + OffDmgTime)
+			amtBits, _ := r.inst.Mem.ReadU32(entryBase + OffDmgAmount)
+			dealerObj, _ := r.inst.Mem.ReadU32(entryBase + OffDmgDealerObjHdl)
+			dealerPlr, _ := r.inst.Mem.ReadU32(entryBase + OffDmgDealerPlrHdl)
+			entries = append(entries, damageEntry{
+				Slot:         s,
+				TimeU32:      t,
+				AmountF32:    math.Float32frombits(amtBits),
+				DealerObjU32: dealerObj,
+				DealerPlrU32: dealerPlr,
+				DealerPlrIdx: dealerPlr & HandleIndexMask,
+				Empty:        t == 0xFFFFFFFF,
+			})
+		}
+		e.DamageEntries = entries
+
+		out = append(out, e)
+	}
 	return out
 }
 
