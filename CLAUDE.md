@@ -81,7 +81,7 @@ Single Go binary (`cmd/server`) runs four concurrent systems plus an optional fi
 1. **PocketBase** — REST API, auth (JWT), SQLite database, static file server (serves `pb_public/`), uses `net/http.ServeMux` router
 2. **Disgo Discord bot** — connects via gateway in PocketBase's OnServe hook, non-blocking
 3. **WebSocket handler** (`coder/websocket`) — custom route on PocketBase's router with optional JWT auth, Hub for managing clients/rooms/broadcasting
-4. **Scraper manager** (`internal/scraper/manager`) — owns per-xemu-instance memory-scraper goroutines; broadcasts `current_state` / `state_update` / `event` envelopes to per-instance `host:<name>` rooms and a cross-instance `host:all` summary room (M5 stage 5c — see `envelopeType*` constants in [internal/scraper/manager/loop.go](internal/scraper/manager/loop.go))
+4. **Scraper manager** (`internal/scraper/manager`) — owns per-xemu-instance memory-scraper goroutines; broadcasts `current_state` / `state_update` / `event` envelopes to per-instance `host:<name>` rooms and a cross-instance `host:all` summary room (M5 stages 5c–5e — see `envelopeType*` constants in [internal/scraper/manager/loop.go](internal/scraper/manager/loop.go); on-demand event log via the `request_events` WS handler + `EventsReply()`; system-snapshot identity sourced from [internal/scraper/xbox/](internal/scraper/xbox/))
 5. **Podman containers + discovery watcher** (optional, gated by `CONTAINERS_ENABLED=true`) — `internal/podman` shells out to provision xemu+browser pairs; `internal/discovery` polls the QMP socket dir and auto-Start/Stops scrapers as instances appear/disappear
 
 The SvelteKit frontend is built with `@sveltejs/adapter-static` into `pb_public/`, which PocketBase serves automatically. The `fallback: 'index.html'` config enables SPA-style client-side routing.
@@ -110,40 +110,23 @@ Protected pages can be served through custom PocketBase routes that validate JWT
 
 ### Key packages
 
+The README's [Project Structure](README.md#project-structure) tree covers the directory layout. The table below highlights packages with cross-cutting roles or non-obvious behavior.
+
 | Package                                 | Purpose                                                                                                                                                                                          |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `internal/guards`                       | Unified cross-system guards, `Services` struct, `GuardFunc` type                                                                                                                                 |
-| `internal/guards/interfaces/discord`    | Per-method Discord interfaces (Membership, Roles, Notify, Voice)                                                                                                                                 |
-| `internal/guards/interfaces/websocket`  | Per-method WS interfaces (Connected, Rooms, Broadcast)                                                                                                                                           |
-| `internal/guards/interfaces/pocketbase` | Per-method PB interfaces (Users)                                                                                                                                                                 |
-| `internal/guards/interfaces/scraper`    | Per-method scraper interfaces (Lifecycle, Inspect, JoinReplay, State)                                                                                                                            |
+| `internal/guards/interfaces/`           | Per-method interfaces, one file each, grouped by system (`discord/`, `websocket/`, `pocketbase/`, `scraper/`). Compose into aggregate `Service` interfaces via embedding.                        |
 | `internal/pocketbase`                   | PB service wrapper — implements `pbiface.Service`                                                                                                                                                |
-| `internal/pocketbase/schema`            | Programmatic collection definitions — one file per domain                                                                                                                                        |
-| `internal/pocketbase/hooks`             | Record event hooks — fire Discord notifications, push to WS clients                                                                                                                              |
-| `internal/pocketbase/oauth`             | OAuth2 provider config — env-driven, self-registering, one per file                                                                                                                              |
-| `internal/pocketbase/routes`            | Custom endpoints + protected page serving via auth-gated routes                                                                                                                                  |
-| `internal/pocketbase/routes/middleware` | Auth middleware, role checks, global middleware registry                                                                                                                                         |
-| `internal/pocketbase/routes/admin`      | Route group for `/api/admin` — auth + admin middleware                                                                                                                                           |
 | `internal/pocketbase/routes/containers` | `/api/admin/containers/*` CRUD + kiosk noVNC reverse proxy + VNC pass-through                                                                                                                    |
 | `internal/pocketbase/routes/scraper`    | `/api/admin/scraper/*` — list/start/stop scraper runners (typed against `scraperiface.Service`, no compile-time dep on the manager)                                                              |
-| `internal/pocketbase/routes/xemu`       | `/api/admin/xemu/*` — memory-bridge probe/smoke endpoints                                                                                                                                        |
+| `internal/pocketbase/routes/xemu`       | `/api/admin/xemu/*` — memory-bridge probe/smoke + live diagnostics (`probe.go`, `probe_title.go`, `sample_deltas.go`, `scan_string.go`)                                                          |
 | `internal/pocketbase/seed`              | In-process dev seeder — `seed.go` (`//go:build dev`) + `stub.go` (`//go:build !dev`) + `data.go` defines seed vars; `containers_snapshot.go` keeps a record-backed snapshot of live podman state |
-| `internal/pocketbase/resolvers`         | PB data lookups — one exported function per file                                                                                                                                                 |
 | `internal/websocket`                    | WebSocket Hub, client management, message routing, JWT auth upgrade                                                                                                                              |
-| `internal/websocket/handlers`           | Self-registering WS message handlers — one per file                                                                                                                                              |
-| `internal/websocket/rooms`              | Room type definitions with guard lists — one per file (`overlay`, `admin`, `public`)                                                                                                             |
-| `internal/websocket/resolvers`          | WS state lookups via Services — one exported function per file                                                                                                                                   |
-| `internal/websocket/actions`            | Reserved for WS outbound action helpers (currently only `.go.example` stub)                                                                                                                      |
-| `internal/disgo`                        | Bot client setup: NewBot(), OpenGateway(), Close(), action methods                                                                                                                               |
-| `internal/disgo/commands`               | Slash command definitions and handler functions                                                                                                                                                  |
-| `internal/disgo/events`                 | Discord gateway event listeners for non-interaction events                                                                                                                                       |
-| `internal/disgo/actions`                | Reusable Discord API calls — one exported function per file                                                                                                                                      |
-| `internal/disgo/resolvers`              | Discord data lookups via Services — one exported function per file                                                                                                                               |
-| `internal/disgo/components`             | UI builder factories (buttons, embeds, rows, selects, modals)                                                                                                                                    |
+| `internal/websocket/rooms`              | Room type definitions with guard lists — one per file (`overlay`, `admin`, `public`, `host:<name>`, `host:all`)                                                                                  |
 | `internal/scraper`                      | `GameReader` interface + game registry; `Detect()` picks a plugin by xemu title ID                                                                                                               |
-| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs tick goroutine, broadcasts to `host:<name>` + `host:all` rooms; implements `scraperiface.Service`                                       |
+| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs phase-driven tick goroutine, broadcasts to `host:<name>` + `host:all` rooms; implements `scraperiface.Service`                          |
 | `internal/scraper/haloce`               | Halo: CE `GameReader` (offsets, game-data / tick / event readers); self-registers via blank import in `main.go`                                                                                  |
-| `internal/scraper/xbox`                 | Title-agnostic Xbox console primitives (XBE certificate, console name + serial + MAC + clock + timezone + video standard scans, kernel memory helpers, Xbox-string encoding)                     |
+| `internal/scraper/xbox`                 | Title-agnostic Xbox console primitives — one file per scan target: `xbe_certificate.go`, `console_name.go`, `serial.go`, `mac.go`, `clock.go`, `timezone.go`, `video_standard.go`; plus `memory.go` (kernel helpers), `offsets.go`, `encoding.go` (Xbox strings) |
 | `internal/xemu`                         | xemu QMP client + memory bridge — `Instance.Init`, GVA→GPA translation, `ReadBytes`/`ReadAt`                                                                                                     |
 | `internal/podman`                       | Podman CLI wrapper — container pair lifecycle, stride-wise port allocation, state tracking                                                                                                       |
 | `internal/discovery`                    | Polling watcher over `CONTAINERS_SOCKET_DIR`; emits `onAdd(name, sock)` / `onRemove(name)` so the scraper manager can attach/detach as containers come and go                                    |
@@ -221,6 +204,8 @@ The scraper manager is special: it holds `*guards.Services` and broadcasts to pe
 ## Containers (xemu + browser pairs)
 
 The `internal/podman/` package shells out to the `podman` CLI to provision xemu + Firefox-kiosk container pairs. Routes live under `/api/admin/containers/*` (admin auth required). Disabled by default; opt in by setting `CONTAINERS_ENABLED=true` in `.env`.
+
+In-container boot logic lives in [containers/xemu/init/](containers/xemu/init/) (numbered shell scripts run in order: `01-setup-toml.sh`, `02-patch-toml.sh`, `03-setup-hdd.sh`). QMP sockets are bind-mounted into [containers/xemu/qmp/](containers/xemu/qmp/), which is what the discovery watcher polls.
 
 ### Prerequisites
 
