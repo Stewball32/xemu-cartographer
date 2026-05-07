@@ -41,7 +41,7 @@ Native-xemu host gotcha to remember for M2 dev work: xemu is typically installed
 
 What landed:
 
-- **2a — full offset audit.** Reconciled all 515 hex constants from `atlas/HaloCaster/HaloCE/halocaster.py` against the 128-offset legacy Go table. Active read-path constants live in [internal/scraper/haloce/offsets.go](internal/scraper/haloce/offsets.go); every other corroborated offset organised by struct in [internal/scraper/haloce/offsets_reference.go](internal/scraper/haloce/offsets_reference.go). Each constant carries a `// halocaster.py:NNN` origin tag. All marked `unverified` until M8's runtime sanity-check pass.
+- **2a — full offset audit.** Reconciled all 515 hex constants from `atlas/HaloCaster/HaloCE/halocaster.py` against the 128-offset legacy Go table. Active read-path constants live in [internal/scraper/haloce/offsets.go](internal/scraper/haloce/offsets.go); every other corroborated offset organised by struct in [internal/scraper/haloce/offsets_reference.go](internal/scraper/haloce/offsets_reference.go). Each constant carries a `// halocaster.py:NNN` origin tag. All marked `unverified` until M19's runtime sanity-check pass.
 - **2b — scraper code ported.** [reader.go](internal/scraper/haloce/reader.go), [events.go](internal/scraper/haloce/events.go) (19 event types via stat-diff + damage-table fallback), [game.go](internal/scraper/haloce/game.go) (`init()` registers Halo: CE with `scraper.Lookup`), [xboxname.go](internal/scraper/haloce/xboxname.go).
 - **2c — WS wiring.** New [internal/scraper/manager](internal/scraper/manager) package owns per-instance lifecycle (Start / Stop / List) and the 30Hz tick goroutine. Decision: **wrap, not extend** — every broadcast becomes `Message{Type:"scraper", Room:"overlay", Payload:<envelope-json>}` so the wire schema stays uniform across all rooms ([loop.go](internal/scraper/manager/loop.go)). New `overlay` room with `RequireAuth` ([rooms/overlay.go](internal/websocket/rooms/overlay.go)). New `Scraper` field on `guards.Services` backed by `internal/guards/interfaces/scraper/` (one-method-per-file).
 - **2d — admin routes + main.go wiring.** `GET /api/admin/scraper`, `POST /api/admin/scraper/start`, `POST /api/admin/scraper/stop/{name}` ([routes/scraper](internal/pocketbase/routes/scraper)), all gated by `RequireAuth + RequireAdmin`. `cmd/server/main.go` builds the `Services` skeleton early so the scraper manager gets a stable `*Services` pointer; subsystems mutate fields as they come up. Blank import `_ "internal/scraper/haloce"` triggers the title-ID registration.
@@ -49,7 +49,7 @@ What landed:
 ### M2 follow-ups (deferred)
 
 - ~~**Snapshot replay for late joiners.**~~ Resolved during M4 with option (a): each `runner` caches the most-recent `websocket.Message` bytes for its snapshot envelope; the `join_room` handler replays them via the new `SendRaw` event capability when a client subscribes to `overlay`. See `internal/scraper/manager/{runner.go,loop.go,manager.go}`, `internal/guards/interfaces/scraper/snapshot.go`, `internal/websocket/handlers/join_room.go`.
-- **Investigate `power_items: null` in tick payloads.** During the smoke test the initial snapshot's `PowerItemSpawns` came back empty (likely the scenario wasn't fully loaded when the scraper started, since power-item resolution depends on world-object scanning). Worth re-running the smoke test with start-after-match-ready and confirming spawns populate; if they still don't, that's a Halo offset divergence to chase during M8.
+- **Investigate `power_items: null` in tick payloads.** During the smoke test the initial snapshot's `PowerItemSpawns` came back empty (likely the scenario wasn't fully loaded when the scraper started, since power-item resolution depends on world-object scanning). Worth re-running the smoke test with start-after-match-ready and confirming spawns populate; if they still don't, that's a Halo offset divergence to chase during M19.
 
 ### 2a. Offset audit (prerequisite)
 
@@ -62,7 +62,7 @@ The legacy Go offset table has 128 hex constants; HaloCaster's `HaloCE/halocaste
    - Non-offsets (struct sizes, magic values, indexing math) → document in comments, don't port.
    - Offsets that exist in both but differ in value → investigate (xemu vs. real-Xbox divergence is plausible).
 4. Produce a reconciled `internal/scraper/haloce/offsets.go` in the new repo, each offset annotated with its HaloCaster origin (file + line) and verification status.
-5. Flag offsets needing runtime verification for Milestone 8's sanity-check work.
+5. Flag offsets needing runtime verification for Milestone 19's sanity-check work.
 
 ### 2b. Port the scraper code
 
@@ -140,7 +140,7 @@ After this milestone, references to "snapshot" in code, comments, log lines, and
 
 ### Out of scope
 
-- **PocketBase persistence** of events / final match state — leaves the in-memory `previous_game` shape such that a future flush is straightforward (M6, formerly M5).
+- **PocketBase persistence** of events / final match state — leaves the in-memory `previous_game` shape such that a future flush is straightforward (M13, formerly M5).
 - **Halo 2 and other titles** — honor the registry extension point, don't build implementations.
 - **Phase-transition debouncing** — emit transitions as observed; if title-ID reads turn out flappy during boot, debounce later.
 - **Backpressure on slow clients** — current Hub behavior is fine for now.
@@ -280,7 +280,7 @@ Test artifacts (Python harness scripts) live at `/tmp/m5_*.py` for re-running.
 
 **Why last:** all backend wire-format work must land first; the frontend churn is contained here and ships in lockstep with the new protocol.
 
-**Defers:** persistence-backed history views (M6, formerly M5).
+**Defers:** persistence-backed history views (M13, formerly M5).
 
 ### Open questions (with proposed resolutions)
 
@@ -335,39 +335,358 @@ Test artifacts (Python harness scripts) live at `/tmp/m5_*.py` for re-running.
 - **`game_end` / `player_quit` synthesis on hard-quit paths.** Surfaced during the 5a + 5b 2026-05-05 smoke test. When xemu is hard-reset (vs an in-engine "Quit to Main Menu"), Halo CE has no opportunity to set the per-player `QuitFlag` byte the existing detector watches, so the cache never records why the match ended. Two approaches:
   - In `runLive`'s exit path (state `in_game` → anything else), synthesize one `game_end` event and append it to the cache before returning `PhaseReady`. Tiny code change in [internal/scraper/manager/loop.go](internal/scraper/manager/loop.go).
   - On Live → Idle via the heartbeat fallback (xemu vanished mid-match), synthesize a `player_quit` for every player still in the live roster. Slightly larger; touches the same exit paths.
-    Both are M8-class robustness work — not blockers for 5c. File the deferred note here.
+    Both are M19-class robustness work — not blockers for 5c. File the deferred note here.
 
-## Milestone 6 — PocketBase persistence (with the legacy drop-on-overload bug fixed)
+## Milestone 6 — Frontend polish (theme + auth-refresh fix + debug revamp)
 
-- Port PocketBase collection schemas from legacy `docs/pocketbase.md` into `internal/pocketbase/schema/`: `sessions`, `snapshots`, `events`, `overlay_state`.
-- Port `internal/pb/client.go` queue logic **but replace** the silent-drop-on-full behavior with one of:
-  - **(a)** Retry with exponential backoff.
-  - **(b)** Disk-spool overflow.
-  - Decide during port; comment the tradeoff in code.
-- Hook scraper events into the new client.
-- Verify records land in PocketBase during a full match.
+> The site has accumulated style drift, the debug page needs both more data and better organization, and a long-standing auth-hydration race redirects admin pages to home on hard refresh. Cluster these three so the visual + dev-tooling foundation is solid before bigger feature work (M9 kiosk, M10 overlays).
 
-## Milestone 7 — Halo 2 scraper (with known caveats)
+### 6a. Auth-refresh redirect fix (frontend + backend audit)
+
+Hard-refreshing `/containers/` or `/admin/debug/` bounces to home.
+
+*Frontend root cause (primary).* In [sveltekit/src/lib/stores/auth.svelte.ts](sveltekit/src/lib/stores/auth.svelte.ts), `auth.ready` is captured at module init, but on a cold CSR hydration the `+page.ts` load function calls `requireAdmin()` ([sveltekit/src/lib/utils/guards.ts](sveltekit/src/lib/utils/guards.ts)) before the auth store has hydrated `isAdmin` from `/api/me`. Both [routes/admin/debug/+page.ts](sveltekit/src/routes/admin/debug/+page.ts) and [routes/admin/debug/[name]/+page.ts](sveltekit/src/routes/admin/debug/[name]/+page.ts) `await auth.ready` already, but the promise resolved instantly with stale state. Options: (a) move the `/api/me` fetch into a root `+layout.ts` load that all child routes inherit, (b) make `auth.ready` rebuild on every `pb.authStore` change rather than capture once. Decide during implementation.
+
+*Backend gating audit.* Sweep [internal/pocketbase/routes/](internal/pocketbase/routes/) for parallel inconsistencies — guards that should fire but don't, or fire too eagerly. Focus on:
+- [internal/pocketbase/routes/middleware/auth.go](internal/pocketbase/routes/middleware/auth.go) and [admin.go](internal/pocketbase/routes/middleware/admin.go) — confirm the `RequireAuth` + `RequireAdmin` chain matches what's documented in CLAUDE.md (PB superusers + `users.isAdmin=true`).
+- [internal/pocketbase/routes/admin/](internal/pocketbase/routes/admin/) group registration — every admin route should inherit the chain, not re-add or skip.
+- [internal/pocketbase/routes/me.go](internal/pocketbase/routes/me.go) — currently exposes `{isAdmin, isSuperuser}` to the caller; verify it doesn't leak other users' admin status.
+- [internal/pocketbase/routes/containers/](internal/pocketbase/routes/containers/), [scraper/](internal/pocketbase/routes/scraper/), [xemu/](internal/pocketbase/routes/xemu/) — confirm each registered handler is gated.
+- [internal/pocketbase/routes/allroutes.go](internal/pocketbase/routes/allroutes.go) and [allgroups.go](internal/pocketbase/routes/allgroups.go) — registration order.
+
+If the frontend fix exposes a backend route that should have been guarded but wasn't, fix both at once.
+
+Smoke test: hard-refresh `/containers/` and `/admin/debug/<name>/` while logged in as admin → page loads, no home bounce. Hit each `/api/admin/*` endpoint as anon, as a non-admin user, and as an admin → 401/403/200 respectively.
+
+### 6b. Custom Skeleton theme + style consistency
+
+Today the cerberus theme is loaded statically via [sveltekit/src/routes/layout.css](sveltekit/src/routes/layout.css) (`@import '@skeletonlabs/skeleton/themes/cerberus'`) and the root sets `data-theme="cerberus"` in [sveltekit/src/app.html](sveltekit/src/app.html). Define a project-branded theme — likely via Skeleton v4's theme generator or a hand-written `tailwind.config.ts` with custom design tokens. Audit pages for inconsistent spacing, button variants, and card patterns; centralize repeating chrome into reusable components. Pages to audit: `/`, `/login/`, `/containers/`, `/containers/[name]/`, `/admin/debug/`, `/admin/debug/[name]/`, `/overlays/players/`.
+
+Smoke test: visual diff before/after; dark + light mode both render cleanly; OBS overlay backdrop stays transparent (overlays must remain unaffected by theme background).
+
+### 6c. Debug page revamp + scraped-data validation
+
+Existing tabs (Overview / Game / Tick / Events / Probe / Raw JSON) in [sveltekit/src/routes/admin/debug/[name]/+page.svelte](sveltekit/src/routes/admin/debug/[name]/+page.svelte) and components in [sveltekit/src/lib/components/debug/](sveltekit/src/lib/components/debug/). Scope:
+
+- **Data coverage audit.** Walk every field surfaced by the Halo: CE reader ([internal/scraper/haloce/reader.go](internal/scraper/haloce/reader.go), `offsets.go`, `offsets_reference.go`); confirm each renders somewhere in the debug UI. Promote currently-buried fields where useful.
+- **Restyle.** Apply M6b theme; replace `KvCard` / raw JSON dumps with structured tables for high-volume fields (objects, projectiles).
+- **Verification harness.** For fields tagged `unverified` in the offset table, surface a per-field "looks plausible / clearly broken / unknown" annotation as a manual-validation pass, feeding M19's runtime offset validation.
+- **Probe tab.** Audit the existing probe outputs (`BuildScoreProbe`, `LastStateInputs`) and add probes for any field cluster currently untrusted.
+
+Smoke test: 4-instance system-link match (same harness as M5 5c+5d+5e smoke), walk every tab on every instance, log any field that displays empty/zero/garbage and create offset-investigation follow-ups for M19.
+
+## Milestone 7 — Identity schemas: gamertags + teams
+
+> Foundation for the match-aware kiosk (M9) and persistence stack (M13+). Many real users carry multiple gamertags ("Stewball32" / "Stewball" / "Stewie"); some rotate teams across events. Model this directly rather than forcing a 1:1 user↔gamertag↔team flattening.
+
+### 7a. Schema design
+
+Target shape:
+
+- `users` (existing) — gains `default_gamertag` FK (nullable) so the system has a sensible "show me as" pick when one is needed and the user hasn't otherwise specified.
+- `gamertags` (`user`, `tag`) — one row per (user, gamertag-string) combo. Simple two-column join. Optional fields to consider: `xbox_machine_name?` (if a tag is tied to a specific console), `notes?`. The `default_gamertag` FK on `users` lives there rather than as an `is_primary` flag on `gamertags` so there's a single canonical "default per user" with no risk of zero or multiple primaries; admins can change it via the user record.
+- `teams` (`name`, `slug`, `created_by`).
+- `trosters` — `team`, `gamertag`, `is_captain`, `is_manager`, `joined_at`, `is_active`. Both `is_captain` and `is_manager` are independent booleans (a player can be both, either, or neither). The roster row joins on `gamertag` (not `user`) so one user can rep different teams under different handles.
+
+Decisions to lock during 7a: cascade rules on user deletion (soft-delete preferred so historical roster + game records survive), uniqueness constraint on `tag` (per-user unique; globally non-unique because two users can validly use the same handle on different consoles), whether `xbox_machine_name` belongs on `gamertags` or its own join table (recommend on `gamertags` until a real second-console-per-tag use case appears).
+
+### 7b. PocketBase collections + admin UI
+
+Add collections under [internal/pocketbase/schema/](internal/pocketbase/schema/), one file each (`gamertags.go`, `teams.go`, `trosters.go`). Update the existing users schema to add `default_gamertag`. Build a SvelteKit admin/self-service UI under [sveltekit/src/routes/admin/identity/](sveltekit/src/routes/admin/identity/) (or similar) for CRUD on gamertags + teams + trosters. Enforce row-level rules in PB API rules: a user can manage only their own gamertags + their own `default_gamertag` pick; team captains/managers can manage their team's trosters; everyone can read non-sensitive fields.
+
+### 7c. Identity exposure to scraper + WS layers
+
+Extend [routes/me.go](internal/pocketbase/routes/me.go) (per the M4 pattern) to include the caller's gamertag list + default. Surface a `gamertag` lookup helper through `guards.Services` (probably via a new `internal/guards/interfaces/identity/` aggregate) so handlers can answer "is this gamertag X owned by user Y?" without circular imports. No backend persistence of in-game events yet — that's M13.
+
+Smoke test: create user → add 3 gamertags → set one as default → create 2 teams → attach different gamertags to each team with captain/manager flags set → confirm `/api/me` returns the membership graph; admin UI round-trips create/edit/delete; non-admin user can't touch other users' gamertags; a non-captain/manager can't edit their team's roster.
+
+## Milestone 8 — Roles + permissions
+
+> Today `users.isAdmin` is a single boolean ([internal/pocketbase/schema/users.go:53-58](internal/pocketbase/schema/users.go#L53-L58)) — fine for "is this person staff" but not enough as the surface area grows (tournament organizers, content moderators, stat reviewers, guild bot operators, etc.). Add a roles collection so permissions can be granted in named bundles, retire the bare `isAdmin` flag in favor of a role-membership check, and update the guard layer to consume roles instead of the boolean.
+
+### 8a. Schema
+
+New collections:
+
+- `roles` (`slug`, `label`, `description`, `level: int`) — examples: `superuser`, `admin`, `tournament_organizer`, `team_manager`, `content_moderator`, `stat_reviewer`. `level` gives a coarse comparable rank for "is X at least an admin?" checks; finer-grained checks use slug membership.
+- `user_roles` (`user`, `role`, `granted_by`, `granted_at`) — join table; a user can hold multiple roles.
+- `permissions` (`slug`, `description`) and `role_permissions` (`role`, `permission`) — optional, for finer-grained "can_create_tournament", "can_post_to_discord_channel" style checks. Decide during 8a whether v1 ships with permissions tables or just role slugs (recommend role-slugs only for v1; defer permissions tables until a real use case demands them).
+
+### 8b. Migrate `isAdmin`
+
+Backfill a `roles` seed (`superuser` `level=100`, `admin` `level=50`, `member` `level=10`); migrate every existing `users.isAdmin=true` user into a `user_roles` row pointing at `admin`. Drop `users.isAdmin` from the schema and any code that reads it.
+
+### 8c. Guard layer update
+
+Replace [internal/pocketbase/routes/middleware/admin.go](internal/pocketbase/routes/middleware/admin.go) `RequireAdmin()` with `RequireRole("admin")` (or `RequireMinLevel(50)`). Add a new `RequireRole(slug)` / `RequireAnyRole(slug...)` helper. Update every call site in `internal/guards/`, `internal/pocketbase/routes/`, `internal/websocket/handlers/`, etc. The frontend mirror in [sveltekit/src/lib/utils/guards.ts](sveltekit/src/lib/utils/guards.ts) likewise switches from `isAdmin` boolean to a roles-array check; [auth.svelte.ts](sveltekit/src/lib/stores/auth.svelte.ts) hydrates `roles: string[]` from `/api/me` instead of `isAdmin: boolean`.
+
+### 8d. Self-service + admin UI
+
+Admin page at [sveltekit/src/routes/admin/roles/](sveltekit/src/routes/admin/roles/) for managing role definitions and assignments. Users see their own roles on their profile page (M15 will surface this).
+
+Smoke test: log in as a pre-migration admin → user record now shows `roles: ["admin"]`, `isAdmin` field gone; admin UI works exactly as before. Create a `tournament_organizer` role, grant to a non-admin user → confirm M16 tournament-create routes accept the request when wired (or at least confirm the guard plumbing accepts the role check).
+
+## Milestone 9 — Match-aware kiosk view
+
+> A logged-in player should see the kiosk for the container they're playing in (and only that one), automatically. The existing per-container kiosk at [sveltekit/src/routes/containers/[name]/+page.svelte](sveltekit/src/routes/containers/[name]/+page.svelte) is admin-gated and assumes you know the container name. Replace that mental model with "log in → see your match", driven by gamertag-to-machine-name detection inside the running scraper data.
+
+### 9a. Gamertag → machine-name detection
+
+Each scraper runner already exposes the local Xbox machine name and the network player roster (machines + gamertags) via the M5 `instanceCache`. Extend the runner to publish a `(container, machines[], gamertags[])` membership view — likely a new field on the `host:all` summary aggregator in [internal/scraper/manager/aggregator.go](internal/scraper/manager/aggregator.go). The same view feeds M10's overlay routing.
+
+### 9b. Per-user "my match" page
+
+New route at `/play/` (or `/my-match/`). Subscribes to `host:all`, finds the container whose roster contains any of the logged-in user's gamertags (from M7c), then renders the existing kiosk iframe + controller UI for that container. Renders blank/idle state otherwise. Auto-refreshes if the user's gamertag appears on a different container later.
+
+### 9c. WS auth narrowing
+
+Today `host:<name>` requires admin. Extend the room guard so a non-admin user is permitted to join `host:<name>` if they have a gamertag in that container's roster. New room-level guard in [internal/websocket/rooms/host.go](internal/websocket/rooms/host.go) or a new sibling guard, consuming the new role helpers from M8c so admins always get in regardless of roster membership. Keep `host:all` admin-only (it's a cross-instance summary).
+
+Smoke test: 4-container match, 4 logged-in users with one gamertag each, each gamertag mapped to one container's local Xbox machine. Each user opens `/play/` → sees only their container's kiosk. Admin opens `/play/` while not playing → blank state, but admin can still hit `/containers/<name>/` directly. User logs in but isn't in any active match → blank state.
+
+## Milestone 10 — Overlay revamp + new browser sources
+
+> Current overlay at [sveltekit/src/routes/overlays/players/+page.svelte](sveltekit/src/routes/overlays/players/+page.svelte) is keyed to `firstGameData` / `firstTick` (the legacy single-instance accessor) and shows local players only. Rebuild around the M5 multi-instance model where overlays bind to a specific machine's POV — sometimes the host container, sometimes a guest the host is connected to — and add new overlay surfaces beyond the current player HUD.
+
+### 10a. POV-bound overlay routing
+
+Route shape: `/overlays/<surface>/<machine_name>/` (surface first — groups by overlay type, e.g. `/overlays/scoreboard-detailed/halo-host-1/`). The overlay subscribes to the `host:<container>` room whose roster contains `<machine_name>` (lookup via the M9a aggregator extension). Players' POV is then rendered relative to that machine's seat in the local players list. Replace `firstGameData` / `firstTick` with this lookup pattern; deprecate the legacy accessors.
+
+### 10b. Scoreboard surfaces
+
+Two browser sources at `/overlays/scoreboard-simple/<machine>/` and `/overlays/scoreboard-detailed/<machine>/`. Simple = team scores + match clock. Detailed = full per-player K/D/A, current weapons, alive/dead state.
+
+### 10c. Event popup overlay
+
+`/overlays/events/<machine>/`. Renders animated card-style popups for kill chains (multi-kills, kill streaks), CTF captures, oddball/hill events, juggernaut transitions. Likely needs an animation library beyond raw CSS — candidates: Svelte's built-in `transition` + `motion`, or a small library like `@svelte-motion`. Decide during 10c.
+
+### 10d. Dummy-player / neutral-host filter
+
+In modded Halo: CE matches with a neutral host, the host container spawns a dummy player out-of-bounds that never participates. Without filtering it shows up in the overlay, the scoreboard, and (later) the stats. Implement a filter at the data layer in [internal/scraper/manager/](internal/scraper/manager/) (or a sibling helper) so the same filter applies to overlays, minimaps (M11), and stats (M15). Three configuration sources:
+
+- Per-container flag `is_neutral_host` (likely added to the container record managed by [internal/podman/](internal/podman/) or as a sidecar config; defaults false).
+- A global allowlist of "always-dummy" gamertags (configurable via PB schema in 10d, e.g. `dummy_gamertags` collection).
+- A per-game manual override accessible from the M15 stats UI for after-the-fact correction.
+
+The filter takes a roster + the container's neutral-host flag and returns the cleaned roster. Overlays/minimaps consume the cleaned roster; raw debug page (M6c) still shows the unfiltered view for diagnostics.
+
+### 10e. POV correctness pass
+
+Today the overlay assumes the rendering machine *is* the local one. After 10a's refactor, the overlay can be POV-bound to any machine in any container's roster — confirm tag names, weapon slots, and stat indices are correct for the targeted machine, not the host. Likely surfaces edge cases in the Halo: CE reader; file follow-ups for M19 if found.
+
+Smoke test (matches M5's 4-instance pattern): start 4 containers (one flagged neutral-host) in a system-link match, open `/overlays/scoreboard-detailed/<machine_a>/` and `/overlays/events/<machine_b>/` in separate OBS Browser Sources, run a 5-minute match. Verify POV correctness, animation timing, OBS transparency, and that the neutral-host's dummy player is absent from both overlays. Re-validate the existing players overlay through the new routing.
+
+## Milestone 11 — Game minimaps
+
+> Browser-rendered minimap as another overlay surface. Show floor outline, player positions + view direction, power-weapon / power-up spawns, height differential cues, animated event flares, and (if feasible) projectile traces. Extends M10's overlay infrastructure but warrants its own milestone because of the rendering complexity.
+
+### 11a. Map geometry feasibility
+
+Audit what the Halo: CE scraper actually exposes for level geometry. Today the reader carries `power_item_spawns` and `map` identity but probably not BSP geometry. Decide between: (i) baking per-map static SVG/PNG tracings into the frontend keyed by map name + scenario tag, (ii) extracting BSP at runtime from the scraper, (iii) hybrid (static floor, dynamic markers). Almost certainly (i) for v1 — floor outlines as committed assets in `sveltekit/static/maps/<scenario>.svg`. For multi-floor maps, commit per-floor variants and use Z-coordinate ranges (see 11c) to switch between them.
+
+### 11b. Player position + view cone
+
+The reader exposes player world coordinates and aim vectors per the M5 tick payload. Project onto the 2D minimap via a per-map transform (committed alongside the SVG asset in 11a). Render with HTML5 canvas or SVG primitives. Filter the roster through M10d's dummy-player filter so the host's out-of-map dummy doesn't show up.
+
+### 11c. Height differential cues
+
+Map a player's Z (vertical) world coordinate to a visual cue on the 2D minimap so viewers can tell who's elevated vs underneath. Two complementary approaches, ship both and let style toggle pick:
+
+- **Icon size scaling** — closer to the camera (higher Z, or whatever convention fits the map) = larger icon. Subtle range, e.g. 0.7×–1.3×.
+- **Color tint / Z-banded layer** — segment Z into N bands and tint the icon (e.g. blue tint = below floor, red tint = above floor). Good for sharp multi-floor maps where size scaling reads ambiguously.
+
+### 11d. Power weapons + power-ups
+
+`power_item_spawns` already in tick data; render as fixed icons. Add held-or-available state if the reader exposes it; otherwise that's a follow-up offset to add (file under M19).
+
+### 11e. Event flares + animations
+
+When certain events fire on a tick, animate a flare on the minimap at the relevant position. Initial event list (each gets its own animation):
+
+- **Death + respawn** — fade-out at death position, brief flash at respawn.
+- **Player teleporting** — line/streak between source and destination teleporter exits.
+- **Active overshield / camo** — persistent halo or shimmer around the icon while the powerup is active.
+- **Power weapon held** — small badge on the icon (rocket, sniper, etc.).
+- **Multi-kill / kill streak** — burst flare at the killer's position.
+
+Animation library decision (see 11g) gates how rich these can be; v1 can ship CSS-keyframe-based animations and upgrade later.
+
+### 11f. Projectile rendering (stretch)
+
+Investigate whether the projectile data the reader currently exposes (visible in the debug page Tick → Projectiles tab) is rich enough for tracer rendering. If not, spec the offset additions and file as M19 follow-ups; ship 11a-e without projectiles.
+
+### 11g. Library choice decision
+
+Raw canvas vs. animation library (PixiJS, two.js, Konva, motion-one). Decide during 11b/11c based on perf — 30Hz tick updates × 16 players (with size + tint deltas) × N projectiles + N flares may justify a real renderer. SVG with Svelte transitions might be enough for 11a-d; flares (11e) and projectiles (11f) probably push toward canvas.
+
+Smoke test: load `/overlays/minimap/<machine>/` for a Halo: CE match on Blood Gulch (or whatever map's been traced first). Player positions track correctly, view cones rotate with aim, height cues swap correctly when a player jumps a cliff, power weapons appear at spawn positions, kill flares fire on every kill captured by the M5 event stream, neutral-host dummy player is absent. Composite over OBS scene.
+
+## Milestone 12 — POV marker overlay (stretch)
+
+> Long-shot. Browser source that overlays directly on top of a machine's actual game POV (e.g. as an OBS Browser Source layered above the kiosk capture), drawing world-anchored markers in real time: enemy silhouettes through walls, powerup tags, teammate gamertags floating above their heads. Requires perspective projection (3D world → 2D screen) instead of M11's top-down projection — same input data, harder math.
+
+### 12a. Camera + projection model
+
+Halo: CE per-player camera state (FOV, position, view direction) is already partially read by the scraper. Audit what's there; spec any missing offsets (camera matrix, near/far planes) for an M19 follow-up if needed. Build a per-tick "render frustum" model in the overlay client.
+
+### 12b. Single-player POV alignment
+
+New overlay at `/overlays/pov/<machine>/`. For full-screen single-player on the target machine: project enemy world positions through the player's camera matrix to screen coordinates. Render markers (silhouettes, name tags, distance indicators) as positioned absolute elements. Validate alignment by overlaying onto the actual kiosk video stream — markers should track tightly as the player turns.
+
+### 12c. Split-screen handling
+
+When the target machine is running 2/3/4-player split-screen, partition the screen into the appropriate viewports and project per-viewport per-player. The M5 reader already exposes local-player count + indices.
+
+### 12d. Marker types
+
+Initial set:
+
+- Enemy silhouettes (filled shape outlining the enemy's bounding box, with team color).
+- Teammate gamertag floats above-head.
+- Powerup labels at spawn positions (with active/respawn timer if available).
+- Optional: line-to-objective in CTF (toward the enemy flag if you're attacking, toward your base if you have it).
+
+### 12e. Composite verification
+
+OBS scene = kiosk video source layered with the POV overlay browser source above it. Test rig: known-good viewing angle on a known map → measure pixel offset between marker and actual entity at multiple angles. If offsets are consistent, calibration matrix is correct; if they drift, the camera offsets are off and feed back to 12a as offset bugs.
+
+Smoke test: 1v1 Slayer on Wizard, single full-screen → enemy silhouette tracks the opponent through walls; teammate-tag-above-head test in a 2v2 game on Hang 'Em High. Split-screen verification: same setup with 2v2 on a single console.
+
+**Stretch flag.** This milestone is explicitly stretch — if M11 reveals that the projection math is brittle, defer M12 to M21+ open bucket and ship M11 alone. Also explicitly out of scope for v1: through-wall occlusion (rendering markers dimmed when behind geometry), since that requires BSP knowledge from M11a's deferred case.
+
+## Milestone 13 — PocketBase persistence foundation: games + series
+
+> Replaces the original M6 "port snapshots/events/sessions/overlay_state" framing. The new data model is **game** (singular contest) + **series** (a group of one or more games with a format and a category). Pickup matches are 1-game series; tournament rounds are best-of-N or first-to-X series. Categorization is a field on series, defaulted by a gametype-variant-name heuristic and editable after the fact.
+>
+> **Terminology:** "game" = singular contest (one round of Slayer, one CTF round). "Series" = a grouping of one or more games with a format and category.
+
+### 13a. Schema design
+
+Collections under [internal/pocketbase/schema/](internal/pocketbase/schema/), one file each:
+
+- `series` — `{name?, format: "exact-N"|"first-to-X", target_n, category: enum, created_by, started_at, ended_at?, tournament?, tournament_round?}`. Category enum at minimum: `casual | competitive | tournament | custom`.
+- `games` — `{series, container, host_machine_name, map, gametype, variant_name, started_at, ended_at, winner_team?, score_summary, snapshot_blob?}`.
+- `game_events` — `{game, tick, type, payload}`. Append-only event log.
+- `game_players` — `{game, gamertag, team, kills, deaths, assists, score, time_alive_ms, weapon_loadout?}`. One row per player per game.
+
+Decisions to lock during 13a: snapshot blob format (full instanceCache JSON vs trimmed?), retention policy on `game_events` (full forever vs roll up to `game_players` + drop after N days?), how series surface "in progress" state (an absence of `ended_at` plus a join-table to active games?).
+
+### 13b. Game-end persistence wiring
+
+Hook into M5 manager's Live → Ready transition (the path that already populates `cache.PreviousGame`). Write a `games` row + N `game_players` + the event stream. If no `series` exists, create a 1-game `casual` series automatically.
+
+### 13c. Variant-name → category heuristic
+
+Build a small lookup table mapping variant-name patterns (regex or substring match) to suggested categories — `Slayer`/`CTF` (default Halo variants) → `casual`; `Tournament` / `MLG` / `Comp` substring → `competitive`; explicit override flag from the M14 series setup beats the heuristic. Heuristic populates the suggested category on game creation; admin can re-categorize anytime through PB admin UI.
+
+### 13d. Replace silent-drop queue (legacy bug)
+
+Port `internal/pb/client.go` queue from legacy with one of:
+
+- (a) Retry with exponential backoff.
+- (b) Disk-spool overflow.
+
+Decide during port; comment the tradeoff.
+
+Smoke test: run a Halo: CE Slayer game start-to-finish on a single container → one `series` (category `casual`) + one `games` row + N `game_players` rows + event stream all land. Re-run with variant name "MLG Tournament v7" → category auto-suggested as `competitive`.
+
+## Milestone 14 — Series management: setup, pick/ban, in-progress UI
+
+> M13 lets the system *record* games as they happen; M14 lets users *intentionally set up* a multi-game series before play, optionally with a pick/ban round, and display the series in progress. Pick/ban is opt-in: if a series is set up with pick/ban, maps are committed up-front; otherwise the series just records whatever's played, game by game.
+
+### 14a. Series creation UI
+
+New page at `/series/new/`. Pick format (single, exact-N, best-of-N, first-to-X), participants (one or more teams from M7, or ad-hoc gamertags), category override, optional name. Creates a `series` row in the not-started state.
+
+### 14b. Pick/ban round (optional)
+
+When series creator opts in: present a draft-style map list, alternate ban / pick between participating teams, store the resulting map order on the series. UI flow can run synchronously in the browser or async via PB realtime — decide during 14b.
+
+### 14c. Series-in-progress UI
+
+New page at `/series/[id]/`. Shows series header (format, participants, category), per-game scoreboard (one row per played game), current standing (X-Y in a best-of-5), next map (if pick/ban committed) or "TBD". Auto-updates via PB realtime as new `games` rows are written by M13b.
+
+### 14d. Series-aware game-end wiring
+
+Extend M13b: when a game finishes and the host container is running under an active series (matched by container or gamertag), attach the new `games` row to that series instead of auto-creating a casual one. Series ends when format completion is reached (e.g. one team has won 3 of 5).
+
+Smoke test: create best-of-3 series with 2 teams + pick/ban → 3 maps committed. Play 2 games (one team wins both). Series UI shows 2-0, marks series complete, doesn't accept the 3rd map. Compare to a casual no-pick/ban series of "first-to-2": same termination behavior driven by the format field.
+
+## Milestone 15 — Per-user / per-team stats
+
+> Aggregate stats computed from M13's `games` + `game_players` data. Per-user aggregation rolls across the user's gamertags (from M7); per-team aggregation rolls across team trosters.
+
+- **15a. Stats query layer.** Internal helpers (Go-side or PB hooks) for per-gamertag, per-user (all gamertags), per-team aggregations: K/D, W/L, win rate, time played, per-game-type splits.
+- **15b. Stats UI.** Profile page at `/u/[username]/` showing stats with filters (game type, category, date range, per-gamertag breakdown). Team page at `/teams/[slug]/` mirroring the same.
+- **15c. Match-history view.** Recent games list with links to series + game detail pages. Shareable URLs.
+- **15d. Dummy-player override.** UI to mark a `game_players` row as "dummy / neutral host" after the fact, excluding it from aggregates. Reuses the M10d filter at the data layer.
+
+Smoke test: play 5 games across 2 gamertags belonging to the same user → profile page shows correct rolled-up K/D and per-gamertag breakdown; per-game-type filter works; team stats include only games where players were repping that team; a manually-flagged dummy-player row is excluded from aggregates and the match-history view.
+
+## Milestone 16 — Tournament system
+
+> Tournaments group multiple series with structure (bracket or round-robin). Each tournament round is one series from M14; matches are the games within those series. Bracket rendering on the site.
+
+- **16a. Schema.** `tournaments` `{name, slug, format: "single-elim"|"double-elim"|"round-robin"|"swiss", participants, started_at, ended_at?}`, `tournament_rounds` `{tournament, round_number, series_a, series_b?, winner_advances_to?}`. Series records gain optional FK back. Tournament create gated by `tournament_organizer` role from M8.
+- **16b. Bracket / round-robin generators.** Create a tournament → auto-generate the round structure based on participant count + format.
+- **16c. Tournament UI.** `/tournaments/[slug]/` rendering bracket or round-robin grid. Live updates as series complete. Click into any round → M14's series-in-progress UI.
+- **16d. Tournament-aware series creation.** Inside a tournament, spawning the next round creates a series pre-tagged with `category: tournament` + `tournament + tournament_round` FKs.
+
+Smoke test: 8-team single-elimination → bracket renders, play through round 1 → 4 series + 4+ games persist, bracket auto-advances winners, round 2 series spawn correctly. Repeat with 4-team round-robin. Confirm a non-`tournament_organizer` user gets 403 on `POST /tournaments`.
+
+## Milestone 17 — Discord integration: stats lookup + per-guild channel posting
+
+> Bot already exists ([internal/disgo/](internal/disgo/)) but does little besides the placeholder `ping`. This milestone makes it useful: stats commands, automatic posting of game/series/tournament events to configured guild channels.
+
+- **17a. Per-guild config schema.** `discord_guilds` `{guild_id, results_channel?, tournament_channel?, posted_categories: enum-list}`. Admin UI for guild owners to configure (likely a slash command `/cartographer config` rather than a web UI to start).
+- **17b. Stats slash commands.** `/stats user:<gamertag>`, `/stats team:<slug>`, `/recent user:<gamertag>` — consume M15 stats helpers, render as Discord embeds via [internal/disgo/components/](internal/disgo/components/).
+- **17c. Event posting.** When a game/series/tournament-round finishes, post an embed to each guild's configured channel (filtered by `posted_categories`). Use the existing `routine.FireAndForget` pattern from PB hooks (CLAUDE.md convention).
+- **17d. Tournament announcements.** Bracket-update embed when a tournament round completes; new-tournament announcement on creation.
+
+Subsumes the basic ops commands originally in old M8 (session start/stop, who's-playing-now) — fold those into a single `/cartographer` command group rather than top-level slash commands.
+
+Smoke test: run a tournament series with auto-posting to a test guild — game results post within seconds; `/stats` returns correct data; per-guild category filter prevents casual games from spamming a tournament-only channel.
+
+## Milestone 18 — Rating system + multiple leaderboards
+
+> Build a per-game-type rating on top of M15's stats and surface leaderboards on the site + via Discord.
+
+- **18a. Rating algorithm choice.** Decide between TrueSkill, Glicko-2, ELO, or a simpler K-factor system. Trade-offs: TrueSkill handles team/FFA out of the box; Glicko-2 has uncertainty bands; ELO is simplest. Document choice + why in code.
+- **18b. Per-game-type rating.** A player has a separate rating per game type (Slayer rating ≠ CTF rating ≠ Oddball rating). Recompute on every game finish via a PB hook on `games` insert.
+- **18c. Leaderboard surfaces.** `/leaderboards/<type>/` — game-type, category (only-competitive, only-tournament, all), and time-window (all-time, season, last-30-days) facets. Default landing at `/leaderboards/`.
+- **18d. Discord leaderboard commands.** `/leaderboard type:<game> [category:<cat>]` → top-N embed. `/rank user:<gamertag>` → user's current rating + rank. Re-uses M17 plumbing.
+
+Smoke test: play 30 games across 3 game types and 2 categories → ratings update each game-end; leaderboard pages render with correct sort and filtering; Discord commands match the web view.
+
+## Milestone 19 — Robustness + offset validation
+
+> Split from the original M8 (Robustness + Discord + auth). The Discord pieces (commands, channel posting) are subsumed by M17; the auth-wrapping work is mostly addressed by M6a + M7c + M8 + M9c; multi-user UX is covered by M15/M16. What remains is the "make silent bad data become loud errors" work, plus general operational hardening.
+
+- **19a. Runtime offset sanity checks.** Apply to both Halo: CE and Halo 2 (whenever it lands). Base-HVA range checks, magic-value probes, plausibility bounds on read values. Loud error (log + WS notification + admin debug page badge) on sanity-check fail.
+- **19b. Field-level validation.** Use the M6c debug-page audit's "looks plausible / clearly broken" annotations as input — promote validated fields out of `unverified` status, file remaining `unverified` fields as offset-investigation tasks.
+- **19c. PB queue + scraper resilience.** Polish M13d's queue logic; add metrics; ensure scraper restarts cleanly after PB outages.
+
+Smoke test: deliberately corrupt an offset in the Halo: CE table → loud error fires within one read; recover by reverting; confirm no silent bad-data writes to PB.
+
+## Milestone 20 — Halo 2 scraper (with known caveats)
+
+> Demoted to last per user direction. Validates the registry abstraction holds for a non-CE Halo title, and consumes M19's offset validation from day one.
 
 - Port `internal/scraper/halo2/*` preserving **every** `UNVERIFIED` comment.
-- Known broken areas (each becomes its own follow-up task):
+- Known broken areas (each gets its own follow-up task):
   - Event buffer (`GVAEventCount` always reads 0) — may not exist in xemu's layout; re-derive offsets or find an alternative data source.
   - Objects datum array → real `Alive / Health / Shields / Vehicle` values (currently hardcoded stubs).
   - Team index / primary color / gametype (`SessOffTeamIndex`, `SessOffPrimaryColor`, `GRGVarGameTypeOff`).
-- Add runtime offset-sanity checks (base-HVA range check, magic-value probe) so silent bad data becomes a loud error. Apply to **both** scrapers, not just Halo 2.
+- Wire into M19 offset validation — H2 fields enter the system already gated by sanity checks.
+- Wire into M13/M15/M16/M18 — game records, stats, tournaments, ratings all become game-type aware including Halo 2.
 
-## Milestone 8 — Robustness + Discord + auth
+## Milestone 21+ — Open
 
-- Runtime offset validation tightened; loud errors on sanity-check fail.
-- Discord bot: slash commands for session start/stop, overlay URLs, who's-playing-now.
-- Wrap PocketBase collections with auth (legacy was localhost-only; the template already ships auth middleware).
-- Multi-user UX: per-user saved overlay configs + session history.
-
-## Milestone 9+ — Open
-
-- Second-game generalization test (confirm the scraper registry abstraction holds for something non-Halo).
+- **qcow2 disk-image editing.** Long shot. Easiest path may be running an FTP server inside the xemu container so UnleashX's FTP client can drop files onto the guest disk. Alternative: mount qcow2 host-side via libguestfs / `qemu-nbd` and edit FATX directly. Investigate before committing to either.
+- **POV marker overlay (M12 fallback target).** If M12 turns out infeasible (perspective math too brittle, camera offsets unreliable), demote it here as a research item rather than a committed milestone.
+- Second-game generalization test (confirm the scraper registry abstraction holds for something non-Halo) — partially answered by M20 but stays open for a third title.
 - Community-contributed offset tables (moderation workflow).
-- Post-game report UI (replaces HaloCaster's Excel export).
+- Post-game report UI (replaces HaloCaster's Excel export) — could land alongside M15 stats as a follow-up.
 - Hosted / remote deployment story.
 
 ---
@@ -378,9 +697,9 @@ Test artifacts (Python harness scripts) live at `/tmp/m5_*.py` for re-running.
 - `cmd/{memscan,prove,localproof}` offset-discovery tools — re-derive on demand.
 - Halo-specific logic leaking into `internal/xemu/` or the top-level `internal/scraper/` — domain code stays in `internal/scraper/<game>/`.
 
-## Open questions to pin during M2–M6
+## Open questions to pin during M2–M13
 
 - **WebSocket format:** adapt legacy `Envelope` to the template's `message.Message`, or extend the template's schema? Decide in M2.
-- **PocketBase overload policy:** retry-with-backoff vs. disk-spool. Decide in M6.
+- **PocketBase overload policy:** retry-with-backoff vs. disk-spool. Decide in M13.
 - **Podman privilege model:** legacy requires root Podman (KVM + DRI + NET_ADMIN). Keep the requirement or explore rootless (would lose direct device access)? Decide in M3.
 - **Deployment model:** same-host (server + xemu on one machine, matches legacy) vs. distributed (thin memory-reader agent + remote PocketBase). Default same-host unless blocked.
