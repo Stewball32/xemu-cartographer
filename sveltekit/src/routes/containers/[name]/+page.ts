@@ -5,7 +5,8 @@ import type { PageLoad } from './$types';
 // runtime since there's no static list of names to crawl from /containers/.
 export const prerender = false;
 
-export const load: PageLoad = async ({ url }) => {
+export const load: PageLoad = async ({ url, parent }) => {
+	await parent();
 	requireAdmin(url);
 	return { requiresAuth: true, isAdmin: true };
 };

@@ -3,7 +3,8 @@ import pb from '$lib/pocketbase';
 import { buildLoginUrl } from '$lib/utils/redirect';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = ({ url }) => {
+export const load: PageLoad = async ({ url, parent }) => {
+	await parent();
 	if (!pb.authStore.isValid) {
 		throw redirect(303, buildLoginUrl(url.pathname + url.search));
 	}
