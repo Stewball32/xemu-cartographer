@@ -1,7 +1,12 @@
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
-@import '../lib/styles/theme-cartographer.css';
+@import '../lib/styles/theme-default.css';
+@import '../lib/styles/theme-forerunner.css';
+@import '../lib/styles/theme-norcal.css';
+@import '../lib/styles/theme-xbox.css';
+@import '../lib/styles/theme-phosphor.css';
+@import '../lib/styles/theme-midnight.css';
 
 @plugin '@tailwindcss/forms';
 

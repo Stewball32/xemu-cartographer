@@ -133,7 +133,7 @@ The README's [Project Structure](README.md#project-structure) tree covers the di
 
 ## Frontend Structure
 
-- **UI framework:** Skeleton UI v4 (Svelte 5 + Tailwind CSS v4), cerberus theme
+- **UI framework:** Skeleton UI v4 (Svelte 5 + Tailwind CSS v4); six bundled themes in [sveltekit/src/lib/styles/](sveltekit/src/lib/styles/) (`theme-{default,forerunner,midnight,norcal,phosphor,xbox}.css`), one is selected via `data-theme="..."` on `<html>` in [sveltekit/src/app.html](sveltekit/src/app.html). Per-theme body decorations (e.g. xbox's warped hex mesh + jewel glow) live behind `[data-theme='...']` selectors in [sveltekit/src/routes/layout.css](sveltekit/src/routes/layout.css). Theme previews: `/debug/theme/` and `/debug/theme-compact/`.
 - **API client:** PocketBase JS SDK (`pocketbase` npm package) — singleton in `src/lib/pocketbase.ts`; in dev points to `http://localhost:PORT`, in production passes `undefined` (same-origin relative)
 - **Auth store:** `src/lib/stores/auth.svelte.ts` — uses Svelte 5 runes (`$state`/`$derived`), not writable stores
 - **Mode store:** `src/lib/stores/mode.svelte.ts` — dark/light mode toggle, persisted in `localStorage`; call `mode.toggle()` or `mode.set('dark'|'light')`
