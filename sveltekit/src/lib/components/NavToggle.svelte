@@ -12,7 +12,7 @@
 		<MenuIcon class="size-10" />
 	</button>
 	<a href={resolve('/')} class="flex min-w-0 items-center gap-2" aria-label="{APP_NAME} home">
-		<img src={logoUrl} alt="" class="size-8 shrink-0" />
+		<img src={logoUrl} alt="" class="size-12 shrink-0" />
 		<span class="hidden truncate text-xl font-bold sm:inline">{APP_NAME}</span>
 	</a>
 </div>
