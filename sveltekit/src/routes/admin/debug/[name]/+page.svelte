@@ -25,6 +25,7 @@
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
 	import ProbeTab from '$lib/components/debug/probe/ProbeTab.svelte';
+	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
