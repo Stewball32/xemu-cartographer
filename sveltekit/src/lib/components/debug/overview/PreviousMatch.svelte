@@ -32,8 +32,6 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="text-surface-500-400 text-sm">
-			(no game data captured for the previous match)
-		</div>
+		<div class="text-surface-500-400 text-sm">(no game data captured for the previous match)</div>
 	{/if}
 </div>

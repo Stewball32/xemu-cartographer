@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import {
 		Accordion,
 		Pagination,
@@ -274,8 +275,9 @@
 				<h1 class="h2">Heading One</h1>
 				<h2 class="h4">Heading Two · subtitle</h2>
 				<p class="mt-1 text-sm">
-					Body paragraph with an <a class="anchor" href="/debug/theme-compact/">anchor link</a>,
-					some <code>inline code</code>, and a <kbd class="kbd">Ctrl</kbd> +
+					Body paragraph with an <a class="anchor" href={resolve('/debug/theme-compact/')}
+						>anchor link</a
+					>, some <code>inline code</code>, and a <kbd class="kbd">Ctrl</kbd> +
 					<kbd class="kbd">K</kbd> shortcut. <strong>Bold</strong> · <em>italic</em>.
 				</p>
 				<blockquote class="mt-2 blockquote text-sm">

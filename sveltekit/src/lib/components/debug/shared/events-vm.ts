@@ -155,9 +155,7 @@ export function summarizeEvent(env: Envelope, players: EventRosterRef[]): Summar
 				txt(` → team ${typeof p.team === 'number' ? p.team : '?'}`)
 			];
 		case 'team_score':
-			return [
-				txt(`team ${typeof p.team === 'number' ? p.team : '?'} → ${p.score ?? '?'}`)
-			];
+			return [txt(`team ${typeof p.team === 'number' ? p.team : '?'} → ${p.score ?? '?'}`)];
 		case 'game_start':
 			return [txt(`Match started${typeof p.gametype === 'string' ? ` (${p.gametype})` : ''}`)];
 		case 'game_end':

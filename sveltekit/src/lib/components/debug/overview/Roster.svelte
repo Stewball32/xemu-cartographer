@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { ChevronDownIcon } from '@lucide/svelte';
 	import type { GameData, GamePlayer, TickPayload, TickPlayer } from '$lib/types/scraper';
@@ -66,13 +66,13 @@
 	// Accordion open-state for team-mode roster — bindable so the user can
 	// collapse a team. Auto-includes any team we haven't seen yet (so a new
 	// team appearing mid-match defaults to expanded rather than hidden).
-	let collapsedTeams = $state(new Set<string>());
+	let collapsedTeams = $state(new SvelteSet<string>());
 	const openTeams = $derived(
 		playersByTeam.map(([t]) => String(t)).filter((v) => !collapsedTeams.has(v))
 	);
 	function onAccordionChange(next: string[]) {
 		const open = new Set(next);
-		const newCollapsed = new Set<string>();
+		const newCollapsed = new SvelteSet<string>();
 		for (const [t] of playersByTeam) {
 			const v = String(t);
 			if (!open.has(v)) newCollapsed.add(v);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { ChevronDownIcon } from '@lucide/svelte';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
@@ -20,26 +21,24 @@
 
 	// Section IDs — driven by which content is visible. Keep in priority
 	// order (top-of-page first).
-	const allSectionIds = [
-		'server',
-		'game',
-		'leaderboard',
-		'roster',
-		'state_inputs',
-		'recent_events',
-		'previous_match'
-	] as const;
-	type SectionId = (typeof allSectionIds)[number];
+	type SectionId =
+		| 'server'
+		| 'game'
+		| 'leaderboard'
+		| 'roster'
+		| 'state_inputs'
+		| 'recent_events'
+		| 'previous_match';
 
 	// Persisted-in-localStorage collapsed set. Same pattern Roster uses for
 	// per-team collapse — the inverse (which are open) feeds the Accordion's
 	// value prop, and toggle events update the collapsed set.
-	let collapsedSections = $state(new Set<string>());
+	let collapsedSections = $state(new SvelteSet<string>());
 
 	function loadCollapsed() {
 		try {
 			const raw = localStorage.getItem('debug.overview.collapsed');
-			if (raw) collapsedSections = new Set<string>(JSON.parse(raw));
+			if (raw) collapsedSections = new SvelteSet<string>(JSON.parse(raw));
 		} catch {
 			// localStorage unavailable; default to all open.
 		}
@@ -68,7 +67,7 @@
 
 	function onAccordionChange(next: string[]) {
 		const open = new Set(next);
-		const newCollapsed = new Set<string>();
+		const newCollapsed = new SvelteSet<string>();
 		for (const id of visibleSections) {
 			if (!open.has(id)) newCollapsed.add(id);
 		}
@@ -84,7 +83,6 @@
 	$effect(() => {
 		if (vm.previousMatchAutoOpen) {
 			collapsedSections.delete('previous_match');
-			collapsedSections = new Set(collapsedSections);
 		}
 	});
 </script>

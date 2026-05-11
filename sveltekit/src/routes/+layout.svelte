@@ -93,10 +93,10 @@
 			{#if toast.meta?.confirm}
 				{@const c = toast.meta.confirm as ToastConfirmMeta}
 				<div class="ms-2 flex shrink-0 gap-2">
-					<button type="button" class="btn btn-sm preset-tonal" onclick={c.onCancel}>
+					<button type="button" class="btn preset-tonal btn-sm" onclick={c.onCancel}>
 						{c.cancelLabel}
 					</button>
-					<button type="button" class="btn btn-sm preset-filled" onclick={c.onConfirm}>
+					<button type="button" class="btn preset-filled btn-sm" onclick={c.onConfirm}>
 						{c.confirmLabel}
 					</button>
 				</div>

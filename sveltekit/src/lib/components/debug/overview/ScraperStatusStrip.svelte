@@ -1,11 +1,5 @@
 <script lang="ts">
-	import {
-		ActivityIcon,
-		DatabaseIcon,
-		HashIcon,
-		RadioTowerIcon,
-		WifiIcon
-	} from '@lucide/svelte';
+	import { ActivityIcon, DatabaseIcon, HashIcon, RadioTowerIcon, WifiIcon } from '@lucide/svelte';
 	import type { Phase } from '$lib/types/scraper';
 	import StatTile, { type StatRow } from '../shared/StatTile.svelte';
 	import { fmtTickAsTime } from '../shared/util';

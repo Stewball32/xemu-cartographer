@@ -1,13 +1,13 @@
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
-@import '$lib/styles/theme-default.css';
-@import '$lib/styles/theme-forerunner.css';
-@import '$lib/styles/theme-norcal.css';
-@import '$lib/styles/theme-xbox.css';
-@import '$lib/styles/theme-phosphor.css';
-@import '$lib/styles/theme-midnight.css';
-@import '$lib/styles/theme-debug.css';
+@import '../lib/styles/theme-default.css';
+@import '../lib/styles/theme-forerunner.css';
+@import '../lib/styles/theme-norcal.css';
+@import '../lib/styles/theme-xbox.css';
+@import '../lib/styles/theme-phosphor.css';
+@import '../lib/styles/theme-midnight.css';
+@import '../lib/styles/theme-debug.css';
 
 /* Theme-agnostic Xbox / Halo presets. These tokens stay constant across all
    six Skeleton themes so team identity (Red/Blue/Green/Yellow), Xbox face
