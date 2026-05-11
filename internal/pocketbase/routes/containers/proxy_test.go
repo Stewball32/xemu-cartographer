@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// makeResp builds a minimal *http.Response for injectBaseHref to chew on.
+// makeResp builds a minimal *http.Response for rewriteKioskHTML to chew on.
 func makeResp(body []byte, gzipped bool) *http.Response {
 	h := make(http.Header)
 	h.Set("Content-Type", "text/html; charset=utf-8")
@@ -49,7 +49,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 
 func TestInjectBaseHrefPlain(t *testing.T) {
 	resp := makeResp([]byte("<html><head><title>k</title></head><body>x</body></html>"), false)
-	if err := injectBaseHref(resp, "/api/admin/containers/alpha/kiosk/"); err != nil {
+	if err := rewriteKioskHTML(resp, "/api/admin/containers/alpha/kiosk/"); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	got := readBody(t, resp)
@@ -63,7 +63,7 @@ func TestInjectBaseHrefPlain(t *testing.T) {
 
 func TestInjectBaseHrefGzipped(t *testing.T) {
 	resp := makeResp([]byte("<html><head></head><body></body></html>"), true)
-	if err := injectBaseHref(resp, "/p/"); err != nil {
+	if err := rewriteKioskHTML(resp, "/p/"); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	got := readBody(t, resp)
@@ -75,7 +75,7 @@ func TestInjectBaseHrefGzipped(t *testing.T) {
 func TestInjectBaseHrefNoHead(t *testing.T) {
 	// HTML without an explicit <head> — the helper should splice one in.
 	resp := makeResp([]byte("<html><body>hi</body></html>"), false)
-	if err := injectBaseHref(resp, "/p/"); err != nil {
+	if err := rewriteKioskHTML(resp, "/p/"); err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	got := readBody(t, resp)

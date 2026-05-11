@@ -197,6 +197,14 @@ func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
 		"-e", fmt.Sprintf("SELKIES_MANUAL_WIDTH=%d", width),
 		"-e", fmt.Sprintf("SELKIES_MANUAL_HEIGHT=%d", height),
 		"-e", fmt.Sprintf("MAX_RESOLUTION=%dx%d", width*2, height*2),
+		// xemu must run as UID 0 inside the container so it can use the
+		// NET_ADMIN + NET_RAW capabilities granted via --cap-add for pcap
+		// netplay (binds raw sockets on the host's enp191s0). Linux only
+		// projects container caps into the effective set for root by default
+		// — a non-root PUID would see "Operation not permitted" on pcap.
+		// Files written under bind mounts end up root-owned on the host;
+		// `Manager.DeleteFiles` and `Manager.CleanupOrphans` use sudo to
+		// remove them when the operator wants to wipe a container's state.
 		"-e", fmt.Sprintf("PUID=%d", os.Getuid()),
 		"-e", fmt.Sprintf("PGID=%d", os.Getgid()),
 		"-e", "TZ=America/Los_Angeles",
@@ -259,6 +267,8 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 		"--shm-size", shmSize,
 		"--restart", "unless-stopped",
 		// Environment
+		// USER_ID/GROUP_ID match xemu's PUID/PGID — both halves run as root
+		// inside their containers when the server is invoked under sudo.
 		"-e", fmt.Sprintf("USER_ID=%d", os.Getuid()),
 		"-e", fmt.Sprintf("GROUP_ID=%d", os.Getgid()),
 		"-e", fmt.Sprintf("WEB_LISTENING_PORT=%d", ports.BrowserWeb),
@@ -275,7 +285,14 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 		// in containers/browser/init/), not by switching to HTTP.
 		"-e", fmt.Sprintf("FF_OPEN_URL=https://%s:%d", xemuTargetHost, ports.XemuHTTPS),
 		"-e", "FF_KIOSK=1",
-		"-e", "FF_CUSTOM_ARGS=",
+		// -no-remote prevents Firefox 145+ from doing the cross-instance
+		// "remote control" handoff (where it dispatches the URL to a perceived
+		// existing instance and exits 0). When the persisted /config/profile
+		// has a stale .parentlock from a prior unclean shutdown, that handoff
+		// fires immediately on startup and KEEP_APP_RUNNING=1 below restarts
+		// it, producing an endless supervisor respawn loop and a black-screen
+		// kiosk view.
+		"-e", "FF_CUSTOM_ARGS=-no-remote",
 		"-e", "FF_PREF_AUTOPLAY=media.autoplay.default=0",
 		// Suppress Firefox first-run / session-restore / "set as default" prompts
 		// that otherwise overlay the kiosk on every restart.
@@ -387,6 +404,123 @@ func (m *Manager) Remove(name string) error {
 	return nil
 }
 
+// DeleteFiles removes the bind-mount source directories for the given
+// container (xemu configs/<name> and browser config-<name>) via sudo rm -rf.
+// Independent of Remove: callers can wipe a stopped container's files to reset
+// its profile without removing the container record, or clean up orphaned
+// directories left behind by an earlier Remove.
+//
+// Refuses if either half of the pair is currently running, paused, or
+// restarting — wiping the bind mount under a live container would corrupt the
+// X session and the Firefox profile.
+func (m *Manager) DeleteFiles(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, c := range []string{name, name + "-browser"} {
+		out, err := m.run("inspect", "--format", "{{.State.Status}}", c)
+		if err != nil {
+			// Container doesn't exist in podman — fine, treat as stopped.
+			continue
+		}
+		s := strings.TrimSpace(string(out))
+		if s == "running" || s == "paused" || s == "restarting" {
+			return fmt.Errorf("container %q is %s; stop it first", c, s)
+		}
+	}
+
+	paths := m.containerOwnedPaths(name)
+	if len(paths) == 0 {
+		return nil
+	}
+	args := append([]string{"rm", "-rf"}, paths...)
+	if out, err := m.runSudo(args...); err != nil {
+		return fmt.Errorf("rm -rf: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// CleanupOrphans removes on-disk container artefacts (browser config dirs,
+// xemu config dirs, per-instance HDD files) for which no live container record
+// exists in m.containers. Baseline HDDs whose basename starts with "_" (e.g.
+// "_default.qcow2") are treated as protected and skipped.
+//
+// Returns the list of paths that were removed (empty slice when nothing was
+// orphaned) so the caller can surface a useful summary to the operator.
+func (m *Manager) CleanupOrphans() ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	known := make(map[string]struct{}, len(m.containers))
+	for name := range m.containers {
+		known[name] = struct{}{}
+	}
+
+	var orphans []string
+
+	// Browser config dirs: containers/browser/config-<name>/
+	if entries, err := os.ReadDir(abs(m.cfg.BrowserDir)); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name, ok := strings.CutPrefix(e.Name(), "config-")
+			if !ok {
+				continue
+			}
+			if _, live := known[name]; live {
+				continue
+			}
+			orphans = append(orphans, filepath.Join(abs(m.cfg.BrowserDir), e.Name()))
+		}
+	}
+
+	// xemu config dirs: containers/xemu/configs/<name>/
+	if entries, err := os.ReadDir(abs(m.cfg.ConfigsDir)); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if _, live := known[e.Name()]; live {
+				continue
+			}
+			orphans = append(orphans, filepath.Join(abs(m.cfg.ConfigsDir), e.Name()))
+		}
+	}
+
+	// HDD files: containers/xemu/shared/hdds/<name>.<ext>
+	hddDir := filepath.Join(abs(m.cfg.SharedDir), "hdds")
+	if entries, err := os.ReadDir(hddDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			base := e.Name()
+			// Skip baselines: any file whose basename starts with "_", plus
+			// an explicit guard for _default.qcow2 in case the convention
+			// drifts.
+			if strings.HasPrefix(base, "_") || base == "_default.qcow2" {
+				continue
+			}
+			name := strings.TrimSuffix(base, filepath.Ext(base))
+			if _, live := known[name]; live {
+				continue
+			}
+			orphans = append(orphans, filepath.Join(hddDir, base))
+		}
+	}
+
+	if len(orphans) == 0 {
+		return nil, nil
+	}
+
+	args := append([]string{"rm", "-rf"}, orphans...)
+	if out, err := m.runSudo(args...); err != nil {
+		return orphans, fmt.Errorf("rm -rf: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return orphans, nil
+}
+
 // List returns all managed containers enriched with live podman status.
 func (m *Manager) List() ([]ContainerInfo, error) {
 	m.mu.Lock()
@@ -479,6 +613,44 @@ func (m *Manager) run(args ...string) ([]byte, error) {
 	full := append(parts[1:], args...)
 	cmd := exec.Command(parts[0], full...)
 	return cmd.CombinedOutput()
+}
+
+// runSudo executes a non-podman command with the same privilege prefix used
+// to invoke podman. The trailing "podman" element of PodmanCmd is dropped so
+// the remaining leading args (e.g. ["sudo", "-n"]) become the sudo prefix.
+// When PodmanCmd is bare "podman" (rootless setup) the command runs with no
+// prefix — appropriate, since rootless podman doesn't produce root-owned files.
+//
+// Used by DeleteFiles and CleanupOrphans to remove bind-mount sources that
+// rootful podman has stamped as root-owned.
+func (m *Manager) runSudo(args ...string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("runSudo: no command")
+	}
+	parts := strings.Fields(m.cfg.PodmanCmd)
+	if len(parts) > 0 && filepath.Base(parts[len(parts)-1]) == "podman" {
+		parts = parts[:len(parts)-1]
+	}
+	full := make([]string, 0, len(parts)+len(args))
+	full = append(full, parts...)
+	full = append(full, args...)
+	cmd := exec.Command(full[0], full[1:]...)
+	return cmd.CombinedOutput()
+}
+
+// containerOwnedPaths returns every host-side path that podman + container
+// init scripts may write into for the given container. Used by DeleteFiles.
+// The HDD path glob picks up whatever extension 03-setup-hdd.sh derived from
+// DEFAULT_HDD_NAME.
+func (m *Manager) containerOwnedPaths(name string) []string {
+	paths := []string{
+		filepath.Join(m.cfg.ConfigsDir, name),
+		filepath.Join(m.cfg.BrowserDir, "config-"+name),
+	}
+	if matches, err := filepath.Glob(filepath.Join(m.cfg.SharedDir, "hdds", name+".*")); err == nil {
+		paths = append(paths, matches...)
+	}
+	return paths
 }
 
 // abs resolves path to absolute, ignoring errors (returns original on failure).

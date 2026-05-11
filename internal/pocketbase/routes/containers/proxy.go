@@ -118,7 +118,7 @@ func handleKioskProxy(e *core.RequestEvent) error {
 			if !strings.HasPrefix(ct, "text/html") {
 				return nil
 			}
-			return injectBaseHref(resp, prefix+"/")
+			return rewriteKioskHTML(resp, prefix+"/")
 		},
 	}
 
@@ -149,10 +149,19 @@ func dialWithRetry(ctx context.Context, network, addr string) (net.Conn, error) 
 	}
 }
 
-// injectBaseHref rewrites an HTML response's <head> to include a <base href>
-// pointing at the proxied prefix, so the kiosk's relative asset paths resolve.
-// Handles gzip transparently and rewrites Content-Length on success.
-func injectBaseHref(resp *http.Response, base string) error {
+// permissionsPolyfillScript wraps navigator.permissions.query so Firefox stops
+// throwing TypeError on unknown permission names like 'clipboard-write' (a
+// Chromium-only enum). noVNC's RFB constructor probes that name and the
+// rejection floods the kiosk console on every load. Returning a denied
+// PermissionStatus-shaped object matches Chromium's behavior. Chromium itself
+// is a no-op since it doesn't throw on the same query.
+const permissionsPolyfillScript = `<script>(function(){var p=navigator.permissions;if(!p||!p.query)return;var orig=p.query.bind(p);p.query=function(d){try{return orig(d).catch(function(e){if(e&&e.name==='TypeError')return{state:'denied',onchange:null};throw e;});}catch(e){if(e&&e.name==='TypeError')return Promise.resolve({state:'denied',onchange:null});return Promise.reject(e);}};})();</script>`
+
+// rewriteKioskHTML splices a <base href> tag and the permissions polyfill into
+// the kiosk's HTML <head>. The base href makes the upstream's relative asset
+// paths resolve under our proxy prefix; the polyfill silences a Firefox-only
+// noVNC console error. Handles gzip transparently and rewrites Content-Length.
+func rewriteKioskHTML(resp *http.Response, base string) error {
 	var (
 		body []byte
 		err  error
@@ -177,15 +186,15 @@ func injectBaseHref(resp *http.Response, base string) error {
 	}
 	resp.Body.Close()
 
-	tag := []byte(`<base href="` + base + `">`)
+	injection := []byte(`<base href="` + base + `">` + permissionsPolyfillScript)
 	if i := bytes.Index(bytes.ToLower(body), []byte("<head>")); i != -1 {
 		insert := i + len("<head>")
-		body = append(body[:insert], append(tag, body[insert:]...)...)
+		body = append(body[:insert], append(injection, body[insert:]...)...)
 	} else if i := bytes.Index(bytes.ToLower(body), []byte("<html")); i != -1 {
 		// No <head> — splice after the <html ...> opening tag's `>`.
 		if end := bytes.IndexByte(body[i:], '>'); end != -1 {
 			insert := i + end + 1
-			body = append(body[:insert], append([]byte("<head>"+string(tag)+"</head>"), body[insert:]...)...)
+			body = append(body[:insert], append([]byte("<head>"+string(injection)+"</head>"), body[insert:]...)...)
 		}
 	}
 
