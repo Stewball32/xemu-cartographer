@@ -24,6 +24,7 @@
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
+	import ProbeTab from '$lib/components/debug/probe/ProbeTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -284,12 +285,7 @@
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
 		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
-		<Tabs.Content value="probe" class="pt-4">
-			<TabPlaceholder
-				title="Probe"
-				description="Live memory-probe diagnostics — score-probe output and LastStateInputs() from the active GameReader. Used for offset hunting and verifying that the reader is converging on the right struct."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="probe" class="pt-4"><ProbeTab {name} /></Tabs.Content>
 		<Tabs.Content value="raw" class="pt-4">
 			<TabPlaceholder
 				title="Raw"
