@@ -26,6 +26,7 @@
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
 	import ProbeTab from '$lib/components/debug/probe/ProbeTab.svelte';
 	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
+	import LogsTab from '$lib/components/debug/logs/LogsTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -293,12 +294,7 @@
 				description="Full JSON dump of the latest scraper inspect snapshot. The unfiltered source for everything the other tabs render — useful when a field looks wrong or missing."
 			/>
 		</Tabs.Content>
-		<Tabs.Content value="logs" class="pt-4">
-			<TabPlaceholder
-				title="Logs"
-				description="Container logs for this instance — xemu and Firefox-kiosk stdout, plus any other container-specific log sources worth surfacing. Will mirror the logs panel already on /containers/[name]/."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="logs" class="pt-4"><LogsTab {name} /></Tabs.Content>
 		<Tabs.Content value="controls" class="pt-4">
 			<TabPlaceholder
 				title="Controls"
