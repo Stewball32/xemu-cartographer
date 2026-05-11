@@ -1,6 +1,6 @@
 # xemu-cartographer
 
-> **For AI assistants:** See [CLAUDE.md](CLAUDE.md) for development commands, conventions, and implementation details, and [ROADMAP.md](ROADMAP.md) for the migration plan.
+> **For AI assistants:** See [CLAUDE.md](CLAUDE.md) for development commands, conventions, and implementation details, and [roadmap/](roadmap/README.md) for the migration plan.
 
 Real-time game-state scraper for Xbox titles running in [xemu](https://xemu.app/). Orchestrates containerized xemu+browser pairs, reads memory via QMP + `/proc/<pid>/mem`, broadcasts live state over WebSocket, and persists match records to PocketBase. Halo: CE support comes first, Halo 2 follows.
 

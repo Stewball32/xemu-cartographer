@@ -17,6 +17,15 @@ pb_public/
 containers/dev-seed.json
 containers/state.json
 
+# Porting reference: legacy code kept for cross-checking offsets / patterns
+# when reimplementing in this repo. Local-only by default — re-verify any
+# artefact before copying into the live tree.
+atlas/
+
+# WIP roadmap scratch — per-stage implementation notes, kept locally while
+# the stage is in flight and deleted once the work lands.
+ROADMAP-*.md
+
 # Node / SvelteKit
 sveltekit/node_modules/
 sveltekit/.svelte-kit/
