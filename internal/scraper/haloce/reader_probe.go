@@ -74,24 +74,24 @@ func (r *Reader) probePerPlayerBipedRegions() any {
 	}
 
 	type damageEntry struct {
-		Slot          int     `json:"slot"`
-		TimeU32       uint32  `json:"time_u32"`
-		AmountF32     float32 `json:"amount_f32"`
-		DealerObjU32  uint32  `json:"dealer_obj_u32"`
-		DealerPlrU32  uint32  `json:"dealer_plr_u32"`
-		DealerPlrIdx  uint32  `json:"dealer_plr_idx"`
-		Empty         bool    `json:"empty"`
+		Slot         int     `json:"slot"`
+		TimeU32      uint32  `json:"time_u32"`
+		AmountF32    float32 `json:"amount_f32"`
+		DealerObjU32 uint32  `json:"dealer_obj_u32"`
+		DealerPlrU32 uint32  `json:"dealer_plr_u32"`
+		DealerPlrIdx uint32  `json:"dealer_plr_idx"`
+		Empty        bool    `json:"empty"`
 	}
 	type entry struct {
-		Index                  int            `json:"index"`
-		Name                   string         `json:"name"`
-		Alive                  bool           `json:"alive"`
-		ObjDataAddr            string         `json:"obj_data_addr"`
-		SelectedSlotS16        int16          `json:"selected_slot_s16_at_2a2"`
-		WeaponSlots            []string       `json:"weapon_slot_handles_2a8_2b4"`
-		WeaponRegionHex        string         `json:"weapon_region_2a0_to_2c8_hex"`
-		DamageTableHex         string         `json:"damage_table_3e0_to_420_hex"`
-		DamageEntries          []damageEntry  `json:"damage_entries"`
+		Index           int           `json:"index"`
+		Name            string        `json:"name"`
+		Alive           bool          `json:"alive"`
+		ObjDataAddr     string        `json:"obj_data_addr"`
+		SelectedSlotS16 int16         `json:"selected_slot_s16_at_2a2"`
+		WeaponSlots     []string      `json:"weapon_slot_handles_2a8_2b4"`
+		WeaponRegionHex string        `json:"weapon_region_2a0_to_2c8_hex"`
+		DamageTableHex  string        `json:"damage_table_3e0_to_420_hex"`
+		DamageEntries   []damageEntry `json:"damage_entries"`
 	}
 
 	out := make([]entry, 0, currentCount)

@@ -171,6 +171,13 @@ type runner struct {
 	// dashboard pick up live. Loop-goroutine only; no mutex needed.
 	lastSystemSnapshotAt time.Time
 
+	// lastReadyBroadcastAt throttles inclusion of GameData in Live
+	// state_update envelopes (cumulative scoring updates at 1Hz, separate
+	// from the 30Hz Tick stream). Reset to zero on Ready→Live so the first
+	// Live broadcast after a transition carries fresh GameData immediately.
+	// Loop-goroutine only; no mutex needed.
+	lastReadyBroadcastAt time.Time
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -323,6 +330,14 @@ func (r *runner) publishTick(tp scraper.TickPayload) {
 // occupies the aggregator's input channel.
 const summaryHeartbeatInterval = time.Second
 
+// readyBroadcastInterval bounds how often Live state_update envelopes
+// include the full GameData payload. The 30Hz tick stream carries volatile
+// per-frame state in TickPayload; cumulative scoring (kills/deaths/assists,
+// team scores) lives on GameData and is refreshed by the runner every tick
+// but only changes on score events. 1Hz keeps overlay rosters in sync
+// without inflating the high-frequency stream.
+const readyBroadcastInterval = time.Second
+
 // publishSummary derives a hostSummary from the current cache and posts it
 // to the aggregator. Loop-goroutine only (lastSummaryPushAt is unsynchronised).
 // No-op when r.agg is nil (tests with injected runners).
@@ -379,7 +394,6 @@ type CurrentStatePayload struct {
 	LastReadAt   time.Time            `json:"last_read_at"`
 	EngineTick   uint32               `json:"engine_tick"`
 	Iterations   uint64               `json:"iterations"`
-	GameState    scraper.GameState    `json:"game_state,omitempty"`
 	GameData     *scraper.GameData    `json:"game_data,omitempty"`
 	LatestTick   *scraper.TickPayload `json:"latest_tick,omitempty"`
 	Events       []scraper.Envelope   `json:"events,omitempty"`
@@ -431,7 +445,6 @@ func (r *runner) buildCurrentStateEnvelope() ([]byte, bool) {
 		LastReadAt:       c.LastReadAt,
 		EngineTick:       c.EngineTick,
 		Iterations:       c.Iterations,
-		GameState:        c.GameState,
 		GameData:         c.GameData,
 		LatestTick:       c.LatestTick,
 		Events:           c.Events,
@@ -447,7 +460,11 @@ func (r *runner) buildCurrentStateEnvelope() ([]byte, bool) {
 // 0 (the brief's "Decisions made" rule). Phase-specific fields are
 // populated only in their phase: Tick in Live, Ready in PhaseReady; Idle
 // carries only the always-present freshness fields.
-func (r *runner) buildStateUpdateEnvelope(phase Phase) ([]byte, bool) {
+//
+// includeReady piggybacks the cached GameData onto the Live payload so
+// cumulative scoring stays fresh on the WS stream. Ignored outside Live —
+// PhaseReady always includes Ready, PhaseIdle has no GameData to send.
+func (r *runner) buildStateUpdateEnvelope(phase Phase, includeReady bool) ([]byte, bool) {
 	c := r.readCache()
 	payload := StateUpdatePayload{
 		Phase:      phase,
@@ -460,6 +477,9 @@ func (r *runner) buildStateUpdateEnvelope(phase Phase) ([]byte, bool) {
 		payload.EngineTick = c.EngineTick
 		payload.Tick = c.LatestTick
 		envTick = c.EngineTick
+		if includeReady {
+			payload.Ready = c.GameData
+		}
 	case PhaseReady:
 		payload.Ready = c.GameData
 	}
@@ -510,11 +530,20 @@ func (r *runner) broadcastCurrentState(svc *guards.Services) {
 // this runner's host:<name> room. Called once per successful poll iteration
 // in each phase function. Phase determines which optional payload fields
 // are populated (see StateUpdatePayload).
+//
+// During Live, GameData is piggybacked at readyBroadcastInterval cadence
+// (~1Hz) so cumulative scoring stays fresh on the WS stream without
+// inflating the 30Hz tick payload.
 func (r *runner) broadcastStateUpdate(svc *guards.Services, phase Phase) {
 	if svc == nil || svc.WS == nil {
 		return
 	}
-	msgBytes, ok := r.buildStateUpdateEnvelope(phase)
+	includeReady := false
+	if phase == PhaseLive && time.Since(r.lastReadyBroadcastAt) >= readyBroadcastInterval {
+		includeReady = true
+		r.lastReadyBroadcastAt = time.Now()
+	}
+	msgBytes, ok := r.buildStateUpdateEnvelope(phase, includeReady)
 	if !ok {
 		return
 	}

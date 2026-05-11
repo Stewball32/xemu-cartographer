@@ -273,6 +273,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			r.state = r.reader.NewTickState()
 			r.powerItemsInitialised = false
 			r.liveReadFailures = 0
+			r.lastReadyBroadcastAt = time.Time{}
 			return PhaseLive
 		}
 

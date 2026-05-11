@@ -162,10 +162,15 @@ func (r *Reader) composeGameData() scraper.GameData {
 	out := scraper.GameData{}
 
 	// Live match-config fields. Cheap; the host can still change these in
-	// pregame, so read every call rather than caching.
-	isTeamGameHVA, _ := r.inst.LowHVA(AddrIsTeamGame)
-	isTeamGameV, _ := r.inst.Mem.ReadU8At(isTeamGameHVA)
-	out.IsTeamGame = isTeamGameV != 0
+	// pregame, so read every call rather than caching. Sourced from the
+	// host's network_game_server variant settings (NGS+0xC8) — the legacy
+	// AddrIsTeamGame at 0x2F90C4 is only written at match-start and reads 0
+	// in the lobby.
+	if hva, err := r.inst.LowHVA(RefAddrNetworkGameServer); err == nil {
+		if v, err := r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantTeamPlay)); err == nil {
+			out.IsTeamGame = v != 0
+		}
+	}
 
 	gametypeID, err := r.readGametypeID()
 	if err != nil {
@@ -239,16 +244,17 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 }
 
 // readVariantName returns the host's loaded variant name (e.g. "TS TRAINING",
-// "CTF 3C 10S", "Accumulate"). Stored as UTF-16-LE in the first 24 bytes
-// (12 chars max) of the variant struct at RefAddrGlobalVariant. Updated
-// at match-start, so in lobby this is the *last loaded* variant rather
-// than the dropdown selection.
+// "CTF Pro", "Elimination"). Stored as UTF-16-LE in 24 bytes at NGS+0xAC —
+// the host writes this continuously while editing the variant in the lobby
+// UI, so it reflects the current dropdown selection even before match-start.
+// The GlobalVariant struct (0x2F90A8) holds the same data only after
+// match-start.
 func (r *Reader) readVariantName() string {
-	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
+	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
 	if err != nil {
 		return ""
 	}
-	b, err := r.inst.Mem.ReadBytesAt(hva, 24)
+	b, err := r.inst.Mem.ReadBytesAt(hva+int64(OffNGSVariantName), 24)
 	if err != nil {
 		return ""
 	}
@@ -256,27 +262,17 @@ func (r *Reader) readVariantName() string {
 }
 
 // readGametypeID returns the current gametype ID (1=ctf, 2=slayer, 3=oddball,
-// 4=king, 5=race, 6=terminator, 7=stub) by reading the u32 at
-// RefAddrGlobalVariant + OffGVGametype. The variant struct holds the
-// running variant once a match has started; engine-globals presence gates
-// the read so we don't surface stale "last loaded" data during the lobby.
-//
-// Confirmed via probe: in active CTF/Slayer/Oddball matches the value at
-// +0x18 of this struct matches the running gametype. Both bases (0x2F90A8
-// and 0x2FAB60) carry identical bytes mid-match; we use the first.
+// 4=king, 5=race, 6=terminator, 7=stub) by reading the u32 at NGS+0xC4 —
+// the host's network_game_server variant settings substruct, which the host
+// writes continuously while editing the variant in the lobby UI. This is
+// lobby-reliable; the legacy read from RefAddrGlobalVariant+OffGVGametype
+// only carries the running gametype once a match has started.
 func (r *Reader) readGametypeID() (uint32, error) {
-	geGlobalsPtr, err := r.inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
+	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
 	if err != nil {
 		return 0, err
 	}
-	if geGlobalsPtr == 0 {
-		return 0, nil
-	}
-	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
-	if err != nil {
-		return 0, err
-	}
-	return r.inst.Mem.ReadU32At(hva + int64(OffGVGametype))
+	return r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantGametype))
 }
 
 // fillPlayerScores populates each player's Score field using the per-gametype
@@ -445,13 +441,15 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 			localIdx = &v
 		}
 		machineIdx := int(machine)
+		ctrlIdx := int(ctrl)
 		players = append(players, scraper.GamePlayer{
-			Index:        int(listIdx),
-			Name:         xbox.DecodeUTF16LE(nameBytes),
-			Team:         uint32(team),
-			IsLocal:      &isLocal,
-			LocalIndex:   localIdx,
-			MachineIndex: &machineIdx,
+			Index:           int(listIdx),
+			Name:            xbox.DecodeUTF16LE(nameBytes),
+			Team:            uint32(team),
+			IsLocal:         &isLocal,
+			LocalIndex:      localIdx,
+			MachineIndex:    &machineIdx,
+			ControllerIndex: &ctrlIdx,
 		})
 	}
 	return players, nil
@@ -532,12 +530,12 @@ func (r *Reader) LocalMachineName() (string, bool) {
 	return name, true
 }
 
-// attributeMachines fills GamePlayer.MachineIndex by joining each player
-// against the network_players roster by name. Necessary because the in-engine
-// PlayerDatumArray (the source of in-game roster reads) doesn't carry a
-// machine index — that field only exists in the network roster, which is
-// also what the lobby debug page needs to show "who connected from where"
-// regardless of whether PDA is populated yet.
+// attributeMachines fills GamePlayer.MachineIndex and ArmorColor by joining
+// each player against the network_players roster by name. Necessary because
+// the in-engine PlayerDatumArray (the source of in-game roster reads) doesn't
+// carry machine index or color — both fields only exist in the network roster,
+// which is also what the lobby debug page needs to show "who connected from
+// where" regardless of whether PDA is populated yet.
 func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 	if len(players) == 0 {
 		return
@@ -553,7 +551,12 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 		return
 	}
 	rosterHVA := ngdHVA + int64(OffNGDNetworkPlayers)
-	nameToMachine := make(map[string]int, playerCount)
+	type netInfo struct {
+		machine    int
+		controller int
+		color      int16
+	}
+	nameToNet := make(map[string]netInfo, playerCount)
 	for i := int16(0); i < playerCount; i++ {
 		entryHVA := rosterHVA + int64(uint32(i)*NetworkPlayerStride)
 		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetPlayerName), 24)
@@ -561,15 +564,25 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 			continue
 		}
 		machine, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerMachineIndex))
-		nameToMachine[xbox.DecodeUTF16LE(nameBytes)] = int(machine)
+		ctrl, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerControllerIndex))
+		color, _ := mem.ReadS16At(entryHVA + int64(OffNetPlayerColor))
+		nameToNet[xbox.DecodeUTF16LE(nameBytes)] = netInfo{
+			machine:    int(machine),
+			controller: int(ctrl),
+			color:      color,
+		}
 	}
 	for i := range players {
-		if players[i].MachineIndex != nil {
-			continue
-		}
-		if mi, ok := nameToMachine[players[i].Name]; ok {
-			v := mi
-			players[i].MachineIndex = &v
+		if ni, ok := nameToNet[players[i].Name]; ok {
+			players[i].ArmorColor = ni.color
+			if players[i].MachineIndex == nil {
+				v := ni.machine
+				players[i].MachineIndex = &v
+			}
+			if players[i].ControllerIndex == nil {
+				v := ni.controller
+				players[i].ControllerIndex = &v
+			}
 		}
 	}
 }
@@ -774,6 +787,7 @@ func (r *Reader) readTickPlayer(
 	ip.QuitFlag = quitRaw
 	respawnRaw, _ := mem.ReadU32(playerBase + OffPlrRespawnTimer)
 	ip.RespawnTimer = respawnRaw
+	camoRaw, _ := mem.ReadU32(playerBase + OffPlrCamoTimer)
 
 	handle, _ := mem.ReadS32(playerBase + OffPlrObjectHandle)
 	prevHandle, _ := mem.ReadS32(playerBase + OffPlrPrevObjHandle)
@@ -788,6 +802,10 @@ func (r *Reader) readTickPlayer(
 	if !alive && respawnRaw > 0 {
 		v := respawnRaw
 		tp.RespawnInTicks = &v
+	}
+	if alive && camoRaw > 0 {
+		v := camoRaw
+		tp.CamoTimer = &v
 	}
 
 	// Dynamic object data.

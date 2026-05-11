@@ -17,19 +17,22 @@
 // Investigations resolved
 // ----------------------------------------------------------------------
 // 0x2E4004 vs 0x2E4068 ("main menu active"):
-//   AddrMainMenuActive is 0x2E4068 (HC:1428, used in HC's actual logic). The
-//   alternate 0x2E4004 read at HC:573 is an exploratory unused global; ignored.
+//
+//	AddrMainMenuActive is 0x2E4068 (HC:1428, used in HC's actual logic). The
+//	alternate 0x2E4004 read at HC:573 is an exploratory unused global; ignored.
 //
 // 0x1B4 (camo vs drop_time):
-//   Same address read with different semantics depending on object subclass.
-//   OffDynCamo is biped-specific (u8: 0x41=no camo, 0x51=active). HC also reads
-//   the same offset as a u32 "drop_time" for generic objects (HC:803). Both are
-//   valid in their respective contexts; OffDynCamo is biped-only here.
+//
+//	Same address read with different semantics depending on object subclass.
+//	OffDynCamo is biped-specific (u8: 0x41=no camo, 0x51=active). HC also reads
+//	the same offset as a u32 "drop_time" for generic objects (HC:803). Both are
+//	valid in their respective contexts; OffDynCamo is biped-only here.
 //
 // 0x1C arming_time vs target_object_index (projectile):
-//   HC reads projectile +0x1C as both target_object_index s32 (HC:818) and
-//   arming_time f32 (HC:821). This is a HaloCaster bug — the two cannot share
-//   one offset. See offsets_reference.go for the documented overlap.
+//
+//	HC reads projectile +0x1C as both target_object_index s32 (HC:818) and
+//	arming_time f32 (HC:821). This is a HaloCaster bug — the two cannot share
+//	one offset. See offsets_reference.go for the documented overlap.
 //
 // ----------------------------------------------------------------------
 // Skipped (debug-only / known-bad)
@@ -43,9 +46,9 @@
 //   - 0x3e590bb7                         (HC:1923; one-off error message ID)
 //   - 0xBB648, 0x1F8C98 framerate cfg    (HC:2139-2140; engine config, not gameplay)
 //   - Memory cache base/size pointers    (HC:330-344, 904-911) — Go reads /proc/<pid>/mem
-//                                         directly; QMP-cache hack from HC unnecessary.
-//                                         (Captured as RefAddrGameStateBasePtr et al. in
-//                                         offsets_reference.go for completeness.)
+//     directly; QMP-cache hack from HC unnecessary.
+//     (Captured as RefAddrGameStateBasePtr et al. in
+//     offsets_reference.go for completeness.)
 //
 // Not promoted to constants (intentionally):
 //   - Loop counters / array indices: 0x0..0x9, 0xA..0xF as small literals where HC
@@ -55,7 +58,6 @@
 //     animation playback type masks). Not memory addresses or struct offsets.
 //   - 0x2E4000 (HC:573, the +4 base of the ignored 0x2E4004 alternate-main-menu
 //     read). Resolved to AddrMainMenuActive=0x2E4068; the 0x2E4000 base is unused.
-//
 package haloce
 
 // All addresses below are Halo: CE guest virtual addresses (GVAs).
@@ -201,15 +203,15 @@ var AllLowGVAs = []uint32{
 // GameTimeGlobals struct (at *AddrGameTimeGlobalsPtr)
 // ----------------------------------------------------------------------
 const (
-	OffGTGInitialized      uint32 = 0x00 // u8  — halocaster.py:701,1419
-	OffGTGActive           uint32 = 0x01 // u8  — halocaster.py:702,1420
-	OffGTGPaused           uint32 = 0x02 // u8  — halocaster.py:703,1421
-	OffGTGMonitorState     uint32 = 0x04 // s16 (diag) — halocaster.py:704
-	OffGTGMonitorCounter   uint32 = 0x06 // s16 (diag) — halocaster.py:705
-	OffGTGMonitorLatency   uint32 = 0x08 // s16 (diag) — halocaster.py:706
-	OffGTGGameTime         uint32 = 0x0C // u32 ticks (30Hz) — halocaster.py:707,1415
-	OffGTGElapsed          uint32 = 0x10 // u32 — halocaster.py:708,1416
-	OffGTGSpeed            uint32 = 0x18 // f32 (1.0 = normal speed) — halocaster.py:709,1422
+	OffGTGInitialized       uint32 = 0x00 // u8  — halocaster.py:701,1419
+	OffGTGActive            uint32 = 0x01 // u8  — halocaster.py:702,1420
+	OffGTGPaused            uint32 = 0x02 // u8  — halocaster.py:703,1421
+	OffGTGMonitorState      uint32 = 0x04 // s16 (diag) — halocaster.py:704
+	OffGTGMonitorCounter    uint32 = 0x06 // s16 (diag) — halocaster.py:705
+	OffGTGMonitorLatency    uint32 = 0x08 // s16 (diag) — halocaster.py:706
+	OffGTGGameTime          uint32 = 0x0C // u32 ticks (30Hz) — halocaster.py:707,1415
+	OffGTGElapsed           uint32 = 0x10 // u32 — halocaster.py:708,1416
+	OffGTGSpeed             uint32 = 0x18 // f32 (1.0 = normal speed) — halocaster.py:709,1422
 	OffGTGLeftoverDeltaTime uint32 = 0x1C // f32 (diag) — halocaster.py:710,1423
 )
 
@@ -421,15 +423,15 @@ const (
 // Scenario item spawn offsets (at *AddrGlobalScenarioPtr)
 // ----------------------------------------------------------------------
 const (
-	OffScenarioItemCount uint32 = 900  // s32 — halocaster.py:631
-	OffScenarioItemFirst uint32 = 904  // u32 — halocaster.py:632
-	ScenarioItemStride          = 144  // bytes per entry — halocaster.py:641
+	OffScenarioItemCount   uint32 = 900  // s32 — halocaster.py:631
+	OffScenarioItemFirst   uint32 = 904  // u32 — halocaster.py:632
+	ScenarioItemStride            = 144  // bytes per entry — halocaster.py:641
 	OffScenItemUnknownAttr uint32 = 0x0E // s16 (HC uses as filter) — halocaster.py:642
-	OffScenItemGameType  uint32 = 0x04 // u8 gametype-restricted spawn flag — halocaster.py:663
-	OffScenItemTagIndex  uint32 = 0x5C // s32 tag index (-1 if empty) — halocaster.py:648
-	OffScenItemX         uint32 = 0x40 // f32 — halocaster.py:664
-	OffScenItemY         uint32 = 0x44 // f32 — halocaster.py:665
-	OffScenItemZ         uint32 = 0x48 // f32 — halocaster.py:666
+	OffScenItemGameType    uint32 = 0x04 // u8 gametype-restricted spawn flag — halocaster.py:663
+	OffScenItemTagIndex    uint32 = 0x5C // s32 tag index (-1 if empty) — halocaster.py:648
+	OffScenItemX           uint32 = 0x40 // f32 — halocaster.py:664
+	OffScenItemY           uint32 = 0x44 // f32 — halocaster.py:665
+	OffScenItemZ           uint32 = 0x48 // f32 — halocaster.py:666
 	// Spawn interval lookup: read_u32(tagDataPtr + OffTagDataPtr) → base; read_s16(base + 0x0C)
 	OffTagRespawnIntervalOff uint32 = 0x14 // u32 at tag_data → pointer to interval table — halocaster.py:655
 	OffTagRespawnInterval    uint32 = 0x0C // s16 within interval table
@@ -439,12 +441,12 @@ const (
 // Common sentinel / magic values used across reads
 // ----------------------------------------------------------------------
 const (
-	HandleEmpty       uint32 = 0xFFFFFFFF // handle "no object" — halocaster.py:1505
-	HandleIndexMask   uint32 = 0x0000FFFF // handle & 0xFFFF = array index — halocaster.py:1471
-	PregameSentinel   uint32 = 0xDEADBEEF // game_globals+0x10 during pregame — halocaster.py:1933
-	HighGVAThreshold  uint32 = 0x80000000 // GVA threshold; ≥ this = direct heap, < this = needs translation — halocaster.py:485
-	CamoStateNo       uint8  = 0x41       // OffDynCamo value when no camo — halocaster.py:1686
-	CamoStateActive   uint8  = 0x51       // OffDynCamo value when active camo — halocaster.py:1686
+	HandleEmpty      uint32 = 0xFFFFFFFF // handle "no object" — halocaster.py:1505
+	HandleIndexMask  uint32 = 0x0000FFFF // handle & 0xFFFF = array index — halocaster.py:1471
+	PregameSentinel  uint32 = 0xDEADBEEF // game_globals+0x10 during pregame — halocaster.py:1933
+	HighGVAThreshold uint32 = 0x80000000 // GVA threshold; ≥ this = direct heap, < this = needs translation — halocaster.py:485
+	CamoStateNo      uint8  = 0x41       // OffDynCamo value when no camo — halocaster.py:1686
+	CamoStateActive  uint8  = 0x51       // OffDynCamo value when active camo — halocaster.py:1686
 )
 
 // Shield-status u16 values at OffDynShieldsStatus (halocaster.py:1676).
@@ -498,7 +500,7 @@ const (
 	RefAddrUnitDatumSize           uint32 = 0x1FC188 // halocaster.py:766 — u16 unit subclass size
 	RefAddrItemDatumSize           uint32 = 0x1FC380 // halocaster.py:767 — u16 item subclass size
 	RefAddrObjectTypeDefRangeLo    uint32 = 0x1FC0D0 // halocaster.py:344 — object-type defs cache range start
-	RefAddrObjectTypeDefRangeHi   uint32 = 0x1FCBA4 // halocaster.py:344 — object-type defs cache range end
+	RefAddrObjectTypeDefRangeHi    uint32 = 0x1FCBA4 // halocaster.py:344 — object-type defs cache range end
 	RefAddrDefaultFramerate        uint32 = 0xBB648  // halocaster.py:2139 — engine config (cosmetic)
 	RefAddrRefreshRate             uint32 = 0x1F8C98 // halocaster.py:2140 — engine config (cosmetic)
 )
@@ -696,11 +698,11 @@ const (
 // as `arming_time` (f32, HC:821). One must be wrong. Documented as-is here; M7
 // runtime verification should resolve which is the real field.
 const (
-	OffProjFlags             uint32 = 0x00 // u32 — halocaster.py:813
-	OffProjAction            uint32 = 0x04 // s16 — halocaster.py:815
-	OffProjHitMaterialType   uint32 = 0x06 // s16 — halocaster.py:816
-	OffProjIgnoreObjectIndex uint32 = 0x08 // s32 — halocaster.py:817
-	OffProjDetonationTimer   uint32 = 0x14 // f32 — halocaster.py:819
+	OffProjFlags                uint32 = 0x00 // u32 — halocaster.py:813
+	OffProjAction               uint32 = 0x04 // s16 — halocaster.py:815
+	OffProjHitMaterialType      uint32 = 0x06 // s16 — halocaster.py:816
+	OffProjIgnoreObjectIndex    uint32 = 0x08 // s32 — halocaster.py:817
+	OffProjDetonationTimer      uint32 = 0x14 // f32 — halocaster.py:819
 	OffProjDetonationTimerDelta uint32 = 0x18 // f32 — halocaster.py:820
 	// 0x1C: HaloCaster bug — same offset read as both target_object_index s32 and arming_time f32
 	OffProjTargetObjectIndex      uint32 = 0x1C // s32 (HC:818) OR arming_time f32 (HC:821); resolve at M7
@@ -1039,6 +1041,30 @@ const (
 	OffNGSCountdownActive       uint32 = 1172 // u8 — halocaster.py:1267
 	OffNGSCountdownPaused       uint32 = 1173 // u8 — halocaster.py:1268
 	OffNGSCountdownAdjustedTime uint32 = 1174 // u8 — halocaster.py:1269
+)
+
+// ============================================================================
+// Network game server — host variant settings substruct.
+//
+// The host writes the lobby variant continuously into this region as it
+// edits in the lobby UI, well before any match starts. Use these in
+// preference to the GlobalVariant struct (0x2F90A8) and AddrIsTeamGame
+// (0x2F90C4), which the engine only writes at match-start and therefore
+// hold stale or zero data during the lobby.
+//
+// Confirmed via three lobby probes against a hosting instance:
+//
+//	"CTF Pro"     → gametype=1 (CTF),    team_play=1
+//	"Elimination" → gametype=2 (Slayer), team_play=0
+//	"TS TRAINING" → gametype=2 (Slayer), team_play=1
+//
+// NGS+0xD0 also flipped in the first two captures but read 2 in the third,
+// ruling it out as the team-play byte.
+// ============================================================================
+const (
+	OffNGSVariantName     uint32 = 0xAC // [24] UTF-16LE, 12 chars max
+	OffNGSVariantGametype uint32 = 0xC4 // u32 gametype ID (1–7)
+	OffNGSVariantTeamPlay uint32 = 0xC8 // u32; non-zero = team game
 )
 
 // ============================================================================

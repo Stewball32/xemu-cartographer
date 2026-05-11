@@ -87,7 +87,11 @@ func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
 // (under the .ready field). See envelopeType* constants in
 // internal/scraper/manager/loop.go.
 type GameData struct {
-	GameState       GameState        `json:"game_state"`
+	// GameState stays in-process for the haloce events package (game_start /
+	// game_end detection compares snapshots) and for the manager's previous-
+	// game capture, but is excluded from JSON since the wire protocol no
+	// longer surfaces it.
+	GameState       GameState        `json:"-"`
 	Map             string           `json:"map"`
 	Gametype        string           `json:"gametype"`
 	VariantName     string           `json:"variant_name,omitempty"`
@@ -95,7 +99,7 @@ type GameData struct {
 	ScoreLimit      int32            `json:"score_limit"`
 	TimeLimitTicks  int32            `json:"time_limit_ticks"`
 	TeamScores      []TeamScore      `json:"team_scores"`
-	Players         []GamePlayer    `json:"players"`
+	Players         []GamePlayer     `json:"players"`
 	PowerItemSpawns []PowerItemSpawn `json:"power_item_spawns"`
 
 	// Machines is the connected-machine roster for system-link / splitscreen
@@ -168,6 +172,11 @@ type GamePlayer struct {
 	Index int    `json:"index"`
 	Name  string `json:"name"`
 	Team  uint32 `json:"team"`
+	// ArmorColor is the engine palette index for this player's biped tint
+	// (Halo: CE 0-17, Halo 2 wider). Joined from the network roster by
+	// gamertag inside the plugin's player-build path. Frontends key into a
+	// per-game palette table to render the color swatch in FFA UIs.
+	ArmorColor int16 `json:"armor_color"`
 	// Score is the per-player gametype score: ctf_score for CTF, the per-
 	// player slot of the matching score table for Slayer/Oddball/King/Race
 	// (these all live in distinct memory bases — see haloce/offsets.go
@@ -190,6 +199,11 @@ type GamePlayer struct {
 	// up with GameData.Machines[].Index. Nil when machine attribution
 	// isn't available (e.g. in-engine PlayerDatumArray reads pre-network).
 	MachineIndex *int `json:"machine_index"`
+	// ControllerIndex is the player's controller slot (0–3) on their *own*
+	// machine — distinct from LocalIndex which is only set for players on
+	// this xemu instance. Sourced from the network player table; nil when
+	// machine attribution isn't available.
+	ControllerIndex *int `json:"controller_index"`
 }
 
 // GameMachine is one connected machine in a system-link lobby. Index is
@@ -563,6 +577,7 @@ type TickPlayer struct {
 	Health             float32      `json:"health"`
 	Shields            float32      `json:"shields"`
 	HasCamo            bool         `json:"has_camo"`
+	CamoTimer          *uint32      `json:"camo_timer,omitempty"`
 	HasOvershield      bool         `json:"has_overshield"`
 	Frags              uint8        `json:"frags"`
 	Plasmas            uint8        `json:"plasmas"`

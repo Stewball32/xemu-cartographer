@@ -11,6 +11,32 @@ export interface ScraperInfo {
 	title_id: number;
 	title: string;
 	xbox_name: string;
+
+	// EEPROM-derived system info — populated by the runner's system-snapshot
+	// pass. Title-agnostic; stable for the lifetime of the runner once first
+	// populated. Fields are absent / 0 until the first successful read.
+	serial_number?: string;
+	mac_address?: string;
+	video_standard?: string;
+	time_zone_bias?: number;
+	time_zone_std_name?: string;
+	time_zone_dlt_name?: string;
+
+	// XBE-certificate-derived fields, populated by the same system-snapshot
+	// pass. Useful as a fallback when the title-ID registry lookup misses
+	// (xbe_title_name is the canonical developer-supplied name).
+	xbe_title_name?: string;
+	xbe_version?: number;
+	xbe_game_region?: number;
+	xbe_disk_number?: number;
+	xbe_allowed_media?: number;
+
+	// Kernel-clock fields. kernel_system_time is wall-clock UTC; kernel_boot_time
+	// is when the guest booted; kernel_uptime_ns is nanoseconds since boot.
+	kernel_system_time?: string;
+	kernel_boot_time?: string;
+	kernel_uptime_ns?: number;
+
 	tick: number;
 	ticks: number;
 	started_at: string;
@@ -18,9 +44,7 @@ export interface ScraperInfo {
 
 // Phase is the runner's lifecycle state introduced in M5 stage 5a:
 // "idle" (no recognised title yet), "ready" (title detected, no live
-// match), "live" (active match in progress). Renders independently of
-// current_state — phase=idle can carry an empty current_state, while
-// current_state=in_game implies phase=live.
+// match), "live" (active match in progress).
 export type Phase = 'idle' | 'ready' | 'live';
 
 // PreviousGameInfo is the just-ended match captured on Live → Ready
@@ -42,7 +66,6 @@ export interface ScraperInspect extends ScraperInfo {
 	running: boolean;
 	phase: Phase;
 	last_read_at: string;
-	current_state: GameState | '';
 	state_inputs: StateInputs | null;
 	score_probe: ScoreProbe | null;
 	game_data: GameData | null;
@@ -62,8 +85,6 @@ export type StateInputs = Record<string, number | boolean | string | null>;
 // the inspect endpoint and rendered as the debug page's Probe tab so a human
 // can spot which raw value matches what they see in-game.
 export type ScoreProbe = Record<string, unknown>;
-
-export type GameState = 'menu' | 'lobby' | 'pregame' | 'in_game' | 'postgame';
 
 // Envelope wire types (M5 stage 5c/5d):
 //   - "current_state"  full instanceCache (per-instance) or hostsCache list (host:all);
@@ -128,7 +149,6 @@ export interface CurrentStatePayload {
 	last_read_at: string;
 	engine_tick: number;
 	iterations: number;
-	game_state?: GameState | '';
 	game_data?: GameData | null;
 	latest_tick?: TickPayload | null;
 	events?: Envelope[];
@@ -168,6 +188,7 @@ export interface GamePlayer {
 	index: number;
 	name: string;
 	team: number;
+	armor_color: number;
 	score: number;
 	kills: number;
 	deaths: number;
@@ -182,6 +203,7 @@ export interface GamePlayer {
 	is_local: boolean | null;
 	local_index: number | null;
 	machine_index: number | null;
+	controller_index: number | null;
 }
 
 export interface GameMachine {
@@ -199,7 +221,6 @@ export interface PowerItemSpawn {
 }
 
 export interface GameData {
-	game_state: GameState;
 	map: string;
 	gametype: string;
 	variant_name?: string;
@@ -334,6 +355,7 @@ export interface TickPlayer {
 	health: number;
 	shields: number;
 	has_camo: boolean;
+	camo_timer: number | null;
 	has_overshield: boolean;
 	frags: number;
 	plasmas: number;

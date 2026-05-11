@@ -185,7 +185,7 @@ func TestBuildStateUpdateEnvelopeIdle(t *testing.T) {
 		c.EngineTick = 999 // should not leak to envelope tick outside Live
 	})
 
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseIdle)
+	bytes, ok := r.buildStateUpdateEnvelope(PhaseIdle, false)
 	if !ok {
 		t.Fatal("buildStateUpdateEnvelope: ok=false")
 	}
@@ -231,7 +231,7 @@ func TestBuildStateUpdateEnvelopeReady(t *testing.T) {
 		c.GameData = gd
 	})
 
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseReady)
+	bytes, ok := r.buildStateUpdateEnvelope(PhaseReady, false)
 	if !ok {
 		t.Fatal("buildStateUpdateEnvelope: ok=false")
 	}
@@ -257,19 +257,25 @@ func TestBuildStateUpdateEnvelopeReady(t *testing.T) {
 }
 
 // TestBuildStateUpdateEnvelopeLive: Live state_update carries the cache's
-// LatestTick + engine tick on the top-level envelope.
+// LatestTick + engine tick on the top-level envelope. With includeReady=false
+// the GameData is omitted (the per-tick high-frequency case); with
+// includeReady=true the cumulative scoring rides along (the 1Hz throttled
+// case driven by readyBroadcastInterval).
 func TestBuildStateUpdateEnvelopeLive(t *testing.T) {
 	r := newTestRunner("alpha")
 	defer r.cancel()
 
 	tp := &scraper.TickPayload{PlayerCount: 2}
+	gd := &scraper.GameData{Map: "bloodgulch", Gametype: "slayer"}
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
 		c.EngineTick = 4242
 		c.LatestTick = tp
+		c.GameData = gd
 	})
 
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseLive)
+	// Per-tick frame: includeReady=false → no GameData on the wire.
+	bytes, ok := r.buildStateUpdateEnvelope(PhaseLive, false)
 	if !ok {
 		t.Fatal("buildStateUpdateEnvelope: ok=false")
 	}
@@ -293,6 +299,23 @@ func TestBuildStateUpdateEnvelopeLive(t *testing.T) {
 		t.Fatalf("payload tick = %+v, want PlayerCount=2", p.Tick)
 	}
 	if p.Ready != nil {
-		t.Fatalf("payload ready = %+v, want nil in Live", p.Ready)
+		t.Fatalf("payload ready = %+v, want nil with includeReady=false", p.Ready)
+	}
+
+	// Throttled 1Hz frame: includeReady=true → GameData piggybacks.
+	bytes, ok = r.buildStateUpdateEnvelope(PhaseLive, true)
+	if !ok {
+		t.Fatal("buildStateUpdateEnvelope (includeReady): ok=false")
+	}
+	_, env = decodeEnvelope(t, bytes)
+
+	if err := json.Unmarshal(env.Payload, &p); err != nil {
+		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
+	}
+	if p.Tick == nil || p.Tick.PlayerCount != 2 {
+		t.Fatalf("payload tick = %+v, want PlayerCount=2", p.Tick)
+	}
+	if p.Ready == nil || p.Ready.Map != "bloodgulch" {
+		t.Fatalf("payload ready = %+v, want bloodgulch slayer with includeReady=true", p.Ready)
 	}
 }

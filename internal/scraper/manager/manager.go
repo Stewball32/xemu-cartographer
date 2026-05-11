@@ -184,11 +184,11 @@ func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) 
 	}
 	c := r.readCache()
 	return scraperiface.InstanceState{
-		Name:      name,
-		TitleID:   c.TitleID,
-		Title: c.Title,
-		XboxName:  c.XboxName,
-		Running:   true,
+		Name:     name,
+		TitleID:  c.TitleID,
+		Title:    c.Title,
+		XboxName: c.XboxName,
+		Running:  true,
 	}, true
 }
 
@@ -211,8 +211,8 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 	if c.PreviousGame != nil {
 		prev = &scraperiface.PreviousGameInfo{
 			GameData: c.PreviousGame.GameData,
-			Events:    c.PreviousGame.Events,
-			EndedAt:   c.PreviousGame.EndedAt,
+			Events:   c.PreviousGame.Events,
+			EndedAt:  c.PreviousGame.EndedAt,
 		}
 	}
 
@@ -221,10 +221,9 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 		Running:      true,
 		Phase:        string(c.Phase),
 		LastReadAt:   c.LastReadAt,
-		CurrentState: c.GameState,
 		StateInputs:  c.StateInputs,
 		ScoreProbe:   c.ScoreProbe,
-		GameData:    c.GameData,
+		GameData:     c.GameData,
 		LatestTick:   c.LatestTick,
 		RecentEvents: c.Events,
 		PreviousGame: prev,
