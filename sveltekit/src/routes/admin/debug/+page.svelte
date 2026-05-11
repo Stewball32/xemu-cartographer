@@ -8,8 +8,28 @@
 	import { toaster } from '$lib/stores/toaster';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
+	import DataTable from '$lib/components/ui/DataTable.svelte';
+	import type { DataColumnGroup } from '$lib/components/ui/data-table';
 	import type { ContainerInfo, ContainerDetail, InstanceState } from '$lib/types/containers';
 	import type { ScraperInfo } from '$lib/types/scraper';
+
+	type Source = 'container' | 'orphan';
+	type Row = {
+		name: string;
+		source: Source;
+		running: boolean;
+		phase: string | null;
+		title: string;
+		score_summary: string | null;
+		xbox_name: string;
+		sock?: string;
+	};
+
+	const phasePriority: Record<string, number> = { live: 0, ready: 1, idle: 2 };
+	function phaseRank(p: string | null): number {
+		if (!p) return 99;
+		return p in phasePriority ? phasePriority[p] : 50;
+	}
 
 	let containers = $state<ContainerInfo[]>([]);
 	let scrapers = $state<Record<string, InstanceState | null>>({});
@@ -93,6 +113,35 @@
 		ready: 'preset-filled-warning-500',
 		live: 'preset-filled-success-500'
 	};
+
+	const rows = $derived<Row[]>([
+		...containers.map<Row>((c) => {
+			const sc = scrapers[c.name];
+			const summary = scraperWS.hostSummaries[c.name];
+			return {
+				name: c.name,
+				source: 'container',
+				running: !!sc?.running,
+				phase: summary?.phase ?? null,
+				title: summary?.title || sc?.title || '',
+				score_summary: summary?.score_summary ?? null,
+				xbox_name: sc?.xbox_name || ''
+			};
+		}),
+		...orphans.map<Row>((o) => {
+			const summary = scraperWS.hostSummaries[o.name];
+			return {
+				name: o.name,
+				source: 'orphan',
+				running: true,
+				phase: summary?.phase ?? null,
+				title: summary?.title || o.title || '',
+				score_summary: summary?.score_summary ?? null,
+				xbox_name: o.xbox_name || '',
+				sock: o.sock
+			};
+		})
+	]);
 </script>
 
 <div class="mx-auto flex max-w-5xl flex-col gap-6">
@@ -105,111 +154,92 @@
 		{/snippet}
 	</PageHeader>
 
-	{#if loading && containers.length === 0 && orphans.length === 0}
-		<div class="h-40 placeholder animate-pulse"></div>
-	{:else if containers.length === 0 && orphans.length === 0}
-		<Card size="lg" class="text-center">
-			No containers yet. Provision one from the
-			<a class="anchor" href={resolve('/containers/')}>Containers</a> page.
-		</Card>
-	{:else}
-		<Card size="flush" class="overflow-hidden">
-			<table class="table-hover w-full text-sm">
-				<thead class="bg-surface-200-800">
-					<tr>
-						<th class="px-4 py-2 text-left">Name</th>
-						<th class="px-4 py-2 text-left">Source</th>
-						<th class="px-4 py-2 text-left">Scraper</th>
-						<th class="px-4 py-2 text-left">Phase</th>
-						<th class="px-4 py-2 text-left">Game</th>
-						<th class="px-4 py-2 text-left">Xbox name</th>
-						<th class="px-4 py-2 text-right">Action</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each containers as c (c.name)}
-						{@const sc = scrapers[c.name]}
-						{@const summary = scraperWS.hostSummaries[c.name]}
-						<tr class="border-t border-surface-300-700">
-							<td class="px-4 py-2 font-medium">{c.name}</td>
-							<td class="px-4 py-2">
-								<span class="badge preset-tonal text-xs">Container</span>
-							</td>
-							<td class="px-4 py-2">
-								{#if sc?.running}
-									<span class="badge preset-filled-success-500 text-xs">Running</span>
-								{:else}
-									<span class="badge preset-tonal text-xs">Idle</span>
-								{/if}
-							</td>
-							<td class="px-4 py-2">
-								{#if summary}
-									<span class="badge {phaseBadgeClass[summary.phase]} text-[10px] uppercase">
-										{summary.phase}
-									</span>
-								{:else}
-									—
-								{/if}
-							</td>
-							<td class="px-4 py-2">
-								{summary?.title || sc?.title || '—'}
-								{#if summary?.score_summary}
-									<span class="text-surface-500-400 ml-1 font-mono text-xs"
-										>· {summary.score_summary}</span
-									>
-								{/if}
-							</td>
-							<td class="px-4 py-2">{sc?.xbox_name || '—'}</td>
-							<td class="px-4 py-2 text-right">
-								<a
-									class="btn preset-filled-primary-500 text-xs"
-									href={resolve(`/admin/debug/${c.name}/`)}
-								>
-									Open
-								</a>
-							</td>
-						</tr>
-					{/each}
-					{#each orphans as o (o.name)}
-						{@const summary = scraperWS.hostSummaries[o.name]}
-						<tr class="border-t border-surface-300-700">
-							<td class="px-4 py-2 font-medium">{o.name}</td>
-							<td class="px-4 py-2">
-								<span class="badge preset-tonal-warning text-xs" title={o.sock}>External QMP</span>
-							</td>
-							<td class="px-4 py-2">
-								<span class="badge preset-filled-success-500 text-xs">Running</span>
-							</td>
-							<td class="px-4 py-2">
-								{#if summary}
-									<span class="badge {phaseBadgeClass[summary.phase]} text-[10px] uppercase">
-										{summary.phase}
-									</span>
-								{:else}
-									—
-								{/if}
-							</td>
-							<td class="px-4 py-2">
-								{summary?.title || o.title || '—'}
-								{#if summary?.score_summary}
-									<span class="text-surface-500-400 ml-1 font-mono text-xs"
-										>· {summary.score_summary}</span
-									>
-								{/if}
-							</td>
-							<td class="px-4 py-2">{o.xbox_name || '—'}</td>
-							<td class="px-4 py-2 text-right">
-								<a
-									class="btn preset-filled-primary-500 text-xs"
-									href={resolve(`/admin/debug/${o.name}/`)}
-								>
-									Open
-								</a>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</Card>
-	{/if}
+	{#snippet sourceCell({ row }: { row: Row })}
+		{#if row.source === 'container'}
+			<span class="badge preset-tonal text-xs">Container</span>
+		{:else}
+			<span class="badge preset-tonal-warning text-xs" title={row.sock}>External QMP</span>
+		{/if}
+	{/snippet}
+	{#snippet scraperCell({ row }: { row: Row })}
+		{#if row.running}
+			<span class="badge preset-filled-success-500 text-xs">Running</span>
+		{:else}
+			<span class="badge preset-tonal text-xs">Idle</span>
+		{/if}
+	{/snippet}
+	{#snippet phaseCell({ row }: { row: Row })}
+		{#if row.phase}
+			<span class="badge {phaseBadgeClass[row.phase] ?? 'preset-tonal'} text-[10px] uppercase">
+				{row.phase}
+			</span>
+		{:else}
+			—
+		{/if}
+	{/snippet}
+	{#snippet gameCell({ row }: { row: Row })}
+		{row.title || '—'}
+		{#if row.score_summary}
+			<span class="text-surface-500-400 ml-1 font-mono text-xs">· {row.score_summary}</span>
+		{/if}
+	{/snippet}
+	{#snippet xboxCell({ row }: { row: Row })}
+		{row.xbox_name || '—'}
+	{/snippet}
+	{#snippet actionCell({ row }: { row: Row })}
+		<a class="btn preset-filled-primary-500 text-xs" href={resolve(`/admin/debug/${row.name}/`)}>
+			Open
+		</a>
+	{/snippet}
+
+	<Card size="flush" class="overflow-hidden">
+		<DataTable
+			{rows}
+			groups={[
+				{
+					columns: [
+						{ key: 'name', label: 'Name' },
+						{
+							key: 'source',
+							label: 'Source',
+							cell: sourceCell,
+							sortAccessor: (r) => r.source
+						},
+						{
+							key: 'scraper',
+							label: 'Scraper',
+							cell: scraperCell,
+							sortAccessor: (r) => (r.running ? 0 : 1)
+						},
+						{
+							key: 'phase',
+							label: 'Phase',
+							cell: phaseCell,
+							comparator: (a, b) => phaseRank(a.phase) - phaseRank(b.phase)
+						},
+						{
+							key: 'title',
+							label: 'Game',
+							cell: gameCell,
+							sortAccessor: (r) => r.title
+						},
+						{ key: 'xbox_name', label: 'Xbox name', cell: xboxCell },
+						{
+							key: 'action',
+							label: 'Action',
+							cell: actionCell,
+							sortable: false,
+							align: 'right'
+						}
+					]
+				}
+			] satisfies DataColumnGroup<Row>[]}
+			rowKey={(r) => `${r.source}:${r.name}`}
+			density="comfortable"
+			defaultSort={{ key: 'name', dir: 'asc' }}
+			secondarySort={{ key: 'name', dir: 'asc' }}
+			loading={loading && rows.length === 0}
+			emptyMessage="No containers yet. Provision one from the Containers page."
+		/>
+	</Card>
 </div>
