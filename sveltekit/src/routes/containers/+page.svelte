@@ -1,12 +1,22 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { PlayIcon, SquareIcon, Trash2Icon, RefreshCwIcon, EyeIcon } from '@lucide/svelte';
+	import {
+		PlayIcon,
+		SquareIcon,
+		Trash2Icon,
+		EraserIcon,
+		RefreshCwIcon,
+		EyeIcon,
+		LoaderIcon
+	} from '@lucide/svelte';
 	import { adminGet, adminPost, adminDelete, AdminFetchError } from '$lib/utils/admin-api';
-	import { toaster } from '$lib/stores/toaster';
+	import { toaster, toastPromise, confirmToast } from '$lib/stores/toaster';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
+	import DataTable from '$lib/components/ui/DataTable.svelte';
+	import type { DataColumnGroup } from '$lib/components/ui/data-table';
 	import type {
 		ContainerInfo,
 		ContainerStatus,
@@ -15,6 +25,28 @@
 	} from '$lib/types/containers';
 
 	type RowStatus = ContainerStatus | 'loading' | string;
+	type Row = ContainerInfo & { status: RowStatus; scraper: InstanceState | null };
+
+	function statusPriority(s: RowStatus): number {
+		switch (s) {
+			case 'running':
+				return 0;
+			case 'starting':
+			case 'stopping':
+			case 'loading':
+				return 1;
+			case 'created':
+			case 'paused':
+				return 2;
+			case 'exited':
+			case 'stopped':
+				return 3;
+			default:
+				return 4;
+		}
+	}
+
+	type BusyAction = 'start' | 'stop' | 'delete';
 
 	let containers = $state<ContainerInfo[]>([]);
 	let statuses = $state<Record<string, RowStatus>>({});
@@ -23,7 +55,8 @@
 	let createOpen = $state(false);
 	let createName = $state('');
 	let createBusy = $state(false);
-	let confirmDelete = $state<ContainerInfo | null>(null);
+	let busy = $state<Record<string, BusyAction | null>>({});
+	let cleanupBusy = $state(false);
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
@@ -96,46 +129,105 @@
 		}
 		try {
 			createBusy = true;
-			const created = await adminPost<ContainerInfo>('containers', { name });
+			const created = await toastPromise(adminPost<ContainerInfo>('containers', { name }), {
+				loading: { title: 'Creating', description: name },
+				success: { title: 'Container created', description: name },
+				errorTitle: 'Create failed'
+			});
 			containers = [created, ...containers];
 			statuses = { ...statuses, [created.name]: 'created' };
 			createName = '';
 			createOpen = false;
-			toaster.success({ title: 'Container created', description: created.name });
-		} catch (err) {
-			toaster.error({ title: 'Create failed', description: describeError(err) });
+		} catch {
+			// toast already shown by toastPromise
 		} finally {
 			createBusy = false;
 		}
 	}
 
 	async function handleStart(c: ContainerInfo) {
+		busy = { ...busy, [c.name]: 'start' };
 		statuses = { ...statuses, [c.name]: 'loading' };
 		try {
-			await adminPost(`containers/${encodeURIComponent(c.name)}/start`);
-			toaster.success({ title: 'Starting', description: c.name });
-			await refreshStatus(c.name);
-		} catch (err) {
-			toaster.error({ title: 'Start failed', description: describeError(err) });
+			await toastPromise(adminPost(`containers/${encodeURIComponent(c.name)}/start`), {
+				loading: { title: 'Starting', description: c.name },
+				success: { title: 'Started', description: c.name },
+				errorTitle: 'Start failed'
+			});
+		} catch {
+			// toast already shown
+		} finally {
+			busy = { ...busy, [c.name]: null };
 			await refreshStatus(c.name);
 		}
 	}
 
 	async function handleStop(c: ContainerInfo) {
+		busy = { ...busy, [c.name]: 'stop' };
 		statuses = { ...statuses, [c.name]: 'loading' };
 		try {
-			await adminPost(`containers/${encodeURIComponent(c.name)}/stop`);
-			toaster.success({ title: 'Stopping', description: c.name });
-			await refreshStatus(c.name);
-		} catch (err) {
-			toaster.error({ title: 'Stop failed', description: describeError(err) });
+			await toastPromise(adminPost(`containers/${encodeURIComponent(c.name)}/stop`), {
+				loading: { title: 'Stopping', description: c.name },
+				success: { title: 'Stopped', description: c.name },
+				errorTitle: 'Stop failed'
+			});
+		} catch {
+			// toast already shown
+		} finally {
+			busy = { ...busy, [c.name]: null };
 			await refreshStatus(c.name);
 		}
 	}
 
-	async function handleDelete(c: ContainerInfo) {
+	async function handleCleanup() {
+		const ok = await confirmToast({
+			title: 'Cleanup orphaned files',
+			description:
+				'Remove on-disk config dirs and HDD files for any container no longer tracked. Baseline HDDs starting with _ are preserved.',
+			confirmLabel: 'Cleanup'
+		});
+		if (!ok) return;
+		cleanupBusy = true;
 		try {
-			await adminDelete(`containers/${encodeURIComponent(c.name)}`);
+			await toastPromise(adminPost<{ deleted: string[] | null }>('containers/cleanup'), {
+				loading: { title: 'Cleaning up' },
+				success: (res) => {
+					const count = res.deleted?.length ?? 0;
+					return count > 0
+						? {
+								title: 'Cleaned up',
+								description: `Removed ${count} orphaned ${count === 1 ? 'entry' : 'entries'}`
+							}
+						: { title: 'Nothing to clean', description: 'No orphaned files were found.' };
+				},
+				errorTitle: 'Cleanup failed'
+			});
+			await loadContainers();
+		} catch {
+			// toast already shown
+		} finally {
+			cleanupBusy = false;
+		}
+	}
+
+	async function handleDelete(c: ContainerInfo) {
+		const targetStatus = statuses[c.name] ?? 'unknown';
+		const runningWarning =
+			targetStatus === 'running' ? ' It is currently running and will be force-stopped.' : '';
+		const ok = await confirmToast({
+			title: 'Delete container',
+			description: `Permanently remove ${c.name}?${runningWarning}`,
+			confirmLabel: 'Delete',
+			type: targetStatus === 'running' ? 'error' : 'warning'
+		});
+		if (!ok) return;
+		busy = { ...busy, [c.name]: 'delete' };
+		try {
+			await toastPromise(adminDelete(`containers/${encodeURIComponent(c.name)}`), {
+				loading: { title: 'Deleting', description: c.name },
+				success: { title: 'Deleted', description: c.name },
+				errorTitle: 'Delete failed'
+			});
 			containers = containers.filter((x) => x.name !== c.name);
 			const nextS = { ...statuses };
 			delete nextS[c.name];
@@ -143,10 +235,10 @@
 			const nextG = { ...scrapers };
 			delete nextG[c.name];
 			scrapers = nextG;
-			confirmDelete = null;
-			toaster.success({ title: 'Deleted', description: c.name });
-		} catch (err) {
-			toaster.error({ title: 'Delete failed', description: describeError(err) });
+		} catch {
+			// toast already shown
+		} finally {
+			busy = { ...busy, [c.name]: null };
 		}
 	}
 
@@ -167,6 +259,14 @@
 				return 'badge preset-tonal-surface';
 		}
 	}
+
+	const rows = $derived<Row[]>(
+		containers.map((c) => ({
+			...c,
+			status: statuses[c.name] ?? 'loading',
+			scraper: scrapers[c.name] ?? null
+		}))
+	);
 
 	onMount(() => {
 		loadContainers();
@@ -191,8 +291,27 @@
 				disabled={loading}
 				aria-label="Refresh"
 			>
-				<RefreshCwIcon class="size-4" />
+				{#if loading}
+					<LoaderIcon class="size-4 animate-spin" />
+				{:else}
+					<RefreshCwIcon class="size-4" />
+				{/if}
 				<span>Refresh</span>
+			</button>
+			<button
+				type="button"
+				class="btn preset-tonal-error"
+				onclick={handleCleanup}
+				disabled={loading || cleanupBusy}
+				aria-label="Cleanup files"
+				title="Remove on-disk artefacts for containers no longer tracked"
+			>
+				{#if cleanupBusy}
+					<LoaderIcon class="size-4 animate-spin" />
+				{:else}
+					<EraserIcon class="size-4" />
+				{/if}
+				<span>Cleanup files</span>
 			</button>
 			<button type="button" class="btn preset-filled" onclick={() => (createOpen = true)}>
 				+ New container
@@ -200,96 +319,121 @@
 		{/snippet}
 	</PageHeader>
 
-	<Card size="flush" class="overflow-x-auto">
-		<table class="table-hover table w-full">
-			<thead>
-				<tr>
-					<th>Name</th>
-					<th>Status</th>
-					<th>Game / Xbox</th>
-					<th>Created</th>
-					<th class="text-right">Actions</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#if loading && containers.length === 0}
-					<tr>
-						<td colspan="5" class="text-center text-surface-600-400">Loading…</td>
-					</tr>
-				{:else if containers.length === 0}
-					<tr>
-						<td colspan="5" class="text-center text-surface-600-400">
-							No containers yet. Create one to get started.
-						</td>
-					</tr>
+	{#snippet statusCell({ row }: { row: Row })}
+		<span class={statusClass(row.status)}>{row.status}</span>
+	{/snippet}
+	{#snippet gameXboxCell({ row }: { row: Row })}
+		{#if row.scraper}
+			<div class="font-medium">{row.scraper.title || '—'}</div>
+			<div class="text-xs text-surface-600-400">{row.scraper.xbox_name || '—'}</div>
+		{:else}
+			<span class="text-surface-600-400">—</span>
+		{/if}
+	{/snippet}
+	{#snippet createdCell({ row }: { row: Row })}
+		<span class="text-xs text-surface-600-400">{new Date(row.created).toLocaleString()}</span>
+	{/snippet}
+	{#snippet actionsCell({ row }: { row: Row })}
+		{@const rowBusy = busy[row.name] ?? null}
+		<div class="inline-flex gap-1">
+			<a
+				href={resolve('/containers/[name]', { name: row.name })}
+				class="btn-icon preset-tonal btn-sm"
+				aria-label="View"
+				title="View"
+			>
+				<EyeIcon class="size-4" />
+			</a>
+			{#if row.status === 'running'}
+				<button
+					type="button"
+					class="btn-icon preset-tonal-warning btn-sm"
+					aria-label="Stop"
+					title="Stop"
+					onclick={() => handleStop(row)}
+					disabled={rowBusy !== null}
+				>
+					{#if rowBusy === 'stop'}
+						<LoaderIcon class="size-4 animate-spin" />
+					{:else}
+						<SquareIcon class="size-4" />
+					{/if}
+				</button>
+			{:else}
+				<button
+					type="button"
+					class="btn-icon preset-tonal-success btn-sm"
+					aria-label="Start"
+					title="Start"
+					onclick={() => handleStart(row)}
+					disabled={rowBusy !== null}
+				>
+					{#if rowBusy === 'start'}
+						<LoaderIcon class="size-4 animate-spin" />
+					{:else}
+						<PlayIcon class="size-4" />
+					{/if}
+				</button>
+			{/if}
+			<button
+				type="button"
+				class="btn-icon preset-tonal-error btn-sm"
+				aria-label="Delete"
+				title="Delete"
+				onclick={() => handleDelete(row)}
+				disabled={rowBusy !== null}
+			>
+				{#if rowBusy === 'delete'}
+					<LoaderIcon class="size-4 animate-spin" />
 				{:else}
-					{#each containers as c (c.name)}
-						{@const status = statuses[c.name] ?? 'loading'}
-						{@const isRunning = status === 'running'}
-						{@const scraper = scrapers[c.name]}
-						<tr>
-							<td class="font-medium">{c.name}</td>
-							<td>
-								<span class={statusClass(status)}>{status}</span>
-							</td>
-							<td class="text-xs">
-								{#if scraper}
-									<div class="font-medium">{scraper.title || '—'}</div>
-									<div class="text-surface-600-400">{scraper.xbox_name || '—'}</div>
-								{:else}
-									<span class="text-surface-600-400">—</span>
-								{/if}
-							</td>
-							<td class="text-xs text-surface-600-400">
-								{new Date(c.created).toLocaleString()}
-							</td>
-							<td class="text-right">
-								<div class="inline-flex gap-1">
-									<a
-										href={resolve('/containers/[name]', { name: c.name })}
-										class="btn-icon preset-tonal btn-sm"
-										aria-label="View"
-										title="View"
-									>
-										<EyeIcon class="size-4" />
-									</a>
-									{#if isRunning}
-										<button
-											type="button"
-											class="btn-icon preset-tonal-warning btn-sm"
-											aria-label="Stop"
-											title="Stop"
-											onclick={() => handleStop(c)}
-										>
-											<SquareIcon class="size-4" />
-										</button>
-									{:else}
-										<button
-											type="button"
-											class="btn-icon preset-tonal-success btn-sm"
-											aria-label="Start"
-											title="Start"
-											onclick={() => handleStart(c)}
-										>
-											<PlayIcon class="size-4" />
-										</button>
-									{/if}
-									<button
-										type="button"
-										class="btn-icon preset-tonal-error btn-sm"
-										aria-label="Delete"
-										title="Delete"
-										onclick={() => (confirmDelete = c)}
-									>
-										<Trash2Icon class="size-4" />
-									</button>
-								</div>
-							</td>
-						</tr>
-					{/each}
+					<Trash2Icon class="size-4" />
 				{/if}
-			</tbody>
-		</table>
+			</button>
+		</div>
+	{/snippet}
+
+	<Card size="flush" class="overflow-x-auto">
+		<DataTable
+			{rows}
+			groups={[
+				{
+					columns: [
+						{ key: 'name', label: 'Name' },
+						{
+							key: 'status',
+							label: 'Status',
+							cell: statusCell,
+							comparator: (a, b) => statusPriority(a.status) - statusPriority(b.status)
+						},
+						{
+							key: 'game_xbox',
+							label: 'Game / Xbox',
+							cell: gameXboxCell,
+							sortAccessor: (r) => r.scraper?.title ?? ''
+						},
+						{
+							key: 'created',
+							label: 'Created',
+							cell: createdCell,
+							sortAccessor: (r) => Date.parse(r.created)
+						},
+						{
+							key: 'actions',
+							label: 'Actions',
+							cell: actionsCell,
+							sortable: false,
+							align: 'right'
+						}
+					]
+				}
+			] satisfies DataColumnGroup<Row>[]}
+			rowKey={(r) => r.name}
+			density="comfortable"
+			defaultSort={{ key: 'name', dir: 'asc' }}
+			secondarySort={{ key: 'created', dir: 'desc' }}
+			loading={loading && rows.length === 0}
+			emptyMessage="No containers yet. Create one to get started."
+		/>
 	</Card>
 </div>
 
@@ -334,31 +478,9 @@
 				Cancel
 			</button>
 			<button type="submit" class="btn preset-filled" disabled={createBusy}>
-				{createBusy ? 'Creating…' : 'Create'}
+				{#if createBusy}<LoaderIcon class="size-4 animate-spin" />{/if}
+				<span>Create</span>
 			</button>
 		</div>
 	</form>
 </Dialog>
-
-{#if confirmDelete}
-	{@const target = confirmDelete}
-	{@const targetStatus = statuses[target.name] ?? 'unknown'}
-	<Dialog open={true} onClose={() => (confirmDelete = null)} title="Delete container">
-		<p class="mb-4 text-sm text-surface-600-400">
-			Permanently remove <strong>{target.name}</strong>?
-			{#if targetStatus === 'running'}
-				<span class="mt-2 block text-error-500">
-					This container is currently running. It will be force-stopped before deletion.
-				</span>
-			{/if}
-		</p>
-		<div class="flex justify-end gap-2">
-			<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = null)}>
-				Cancel
-			</button>
-			<button type="button" class="btn preset-tonal-error" onclick={() => handleDelete(target)}>
-				Delete
-			</button>
-		</div>
-	</Dialog>
-{/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -8,19 +8,19 @@
 		PlayIcon,
 		SquareIcon,
 		Trash2Icon,
+		EraserIcon,
 		RefreshCwIcon,
-		RotateCcwIcon,
-		CameraIcon,
-		ExternalLinkIcon,
 		CopyIcon,
-		CheckIcon
+		CheckIcon,
+		LoaderIcon
 	} from '@lucide/svelte';
-	import { Popover, Portal, SegmentedControl, Tabs } from '@skeletonlabs/skeleton-svelte';
+	import { SegmentedControl, Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { adminGet, adminPost, adminDelete, AdminFetchError } from '$lib/utils/admin-api';
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { toaster } from '$lib/stores/toaster';
-	import Dialog from '$lib/components/ui/Dialog.svelte';
+	import { toaster, toastPromise, confirmToast } from '$lib/stores/toaster';
+	import KioskFrame, { type SnapshotSlot } from '$lib/components/kiosk/KioskFrame.svelte';
+	import XboxController from '$lib/components/kiosk/XboxController.svelte';
 	import { VNCKeyboard, KEYSYM } from '$lib/utils/vnc-keyboard';
 	import type {
 		ContainerDetail,
@@ -30,15 +30,14 @@
 	} from '$lib/types/containers';
 
 	type RowStatus = ContainerStatus | 'loading' | string;
-	type ConfirmAction = { title: string; body: string; run: () => void };
+	type BusyAction = 'start' | 'stop' | 'delete' | 'delete-files';
 
 	const name = $derived(page.params.name ?? '');
 
 	let detail = $state<ContainerDetail | null>(null);
 	let status = $state<RowStatus>('loading');
 	let loading = $state(true);
-	let confirmDelete = $state(false);
-	let confirmAction = $state<ConfirmAction | null>(null);
+	let busyAction = $state<BusyAction | null>(null);
 
 	let logsWhich = $state<LogsWhich>('xemu');
 	let logsTail = $state(200);
@@ -48,7 +47,8 @@
 
 	let vnc: VNCKeyboard | null = null;
 	let vncConnected = $state(false);
-	let pressed = $state<Record<string, boolean>>({});
+
+	let kioskSrc = $state('');
 
 	let detailTimer: ReturnType<typeof setInterval> | null = null;
 	let logsTimer: ReturnType<typeof setInterval> | null = null;
@@ -142,24 +142,6 @@
 		vnc.connect();
 	}
 
-	function handlePointerDown(e: PointerEvent, key: string) {
-		const sym = KEYSYM[key];
-		if (sym == null) return;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		pressed = { ...pressed, [key]: true };
-		vnc?.sendKey(sym, true);
-	}
-
-	function handlePointerUp(e: PointerEvent, key: string) {
-		const sym = KEYSYM[key];
-		if (sym == null) return;
-		const target = e.currentTarget as HTMLElement;
-		if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
-		if (!pressed[key]) return;
-		pressed = { ...pressed, [key]: false };
-		vnc?.sendKey(sym, false);
-	}
-
 	// Tap-and-release for one-shot keys (Reset, snapshot slots).
 	// TODO: wire QMP system_reset / savevm / loadvm in internal/xemu/qmp.go
 	//       for slot-aware snapshots beyond xemu's F-key hotkeys.
@@ -186,48 +168,83 @@
 		}, 60);
 	}
 
-	function askConfirm(title: string, body: string, run: () => void) {
-		confirmAction = { title, body, run };
-	}
-
-	function runConfirmed() {
-		const a = confirmAction;
-		confirmAction = null;
-		a?.run();
-	}
-
 	async function handleStart() {
+		busyAction = 'start';
 		status = 'loading';
 		try {
-			await adminPost(`containers/${encodeURIComponent(name)}/start`);
-			toaster.success({ title: 'Starting', description: name });
-			await loadDetail();
-		} catch (err) {
-			toaster.error({ title: 'Start failed', description: describeError(err) });
+			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/start`), {
+				loading: { title: 'Starting', description: name },
+				success: { title: 'Started', description: name },
+				errorTitle: 'Start failed'
+			});
+		} catch {
+			// toast already shown
+		} finally {
+			busyAction = null;
 			await loadDetail();
 		}
 	}
 
 	async function handleStop() {
+		busyAction = 'stop';
 		status = 'loading';
 		try {
-			await adminPost(`containers/${encodeURIComponent(name)}/stop`);
-			toaster.success({ title: 'Stopping', description: name });
-			await loadDetail();
-		} catch (err) {
-			toaster.error({ title: 'Stop failed', description: describeError(err) });
+			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/stop`), {
+				loading: { title: 'Stopping', description: name },
+				success: { title: 'Stopped', description: name },
+				errorTitle: 'Stop failed'
+			});
+		} catch {
+			// toast already shown
+		} finally {
+			busyAction = null;
 			await loadDetail();
 		}
 	}
 
 	async function handleDelete() {
+		const runningWarning = isRunning ? ' It is currently running and will be force-stopped.' : '';
+		const ok = await confirmToast({
+			title: 'Delete container',
+			description: `Permanently remove ${name}?${runningWarning}`,
+			confirmLabel: 'Delete',
+			type: isRunning ? 'error' : 'warning'
+		});
+		if (!ok) return;
+		busyAction = 'delete';
 		try {
-			await adminDelete(`containers/${encodeURIComponent(name)}`);
-			toaster.success({ title: 'Deleted', description: name });
-			confirmDelete = false;
+			await toastPromise(adminDelete(`containers/${encodeURIComponent(name)}`), {
+				loading: { title: 'Deleting', description: name },
+				success: { title: 'Deleted', description: name },
+				errorTitle: 'Delete failed'
+			});
 			goto(resolve('/containers/'));
-		} catch (err) {
-			toaster.error({ title: 'Delete failed', description: describeError(err) });
+		} catch {
+			// toast already shown
+		} finally {
+			busyAction = null;
+		}
+	}
+
+	async function handleDeleteFiles() {
+		const ok = await confirmToast({
+			title: 'Delete container files',
+			description: `Wipe xemu config + Firefox profile for ${name}? The container record stays; next start recreates dirs.`,
+			confirmLabel: 'Delete files'
+		});
+		if (!ok) return;
+		busyAction = 'delete-files';
+		try {
+			await toastPromise(adminDelete(`containers/${encodeURIComponent(name)}/files`), {
+				loading: { title: 'Deleting files', description: name },
+				success: { title: 'Files deleted', description: name },
+				errorTitle: 'Delete files failed'
+			});
+			await loadDetail();
+		} catch {
+			// toast already shown
+		} finally {
+			busyAction = null;
 		}
 	}
 
@@ -263,6 +280,21 @@
 		}
 	});
 
+	// Bind the iframe src when running, without tracking auth.token — PB's
+	// authStore syncs across tabs via the `storage` event, so a reactive read
+	// would rewrite src on every cross-tab token rotation and KioskFrame's
+	// {#key src} would tear down the noVNC session.
+	$effect(() => {
+		if (!detail || !isRunning) {
+			kioskSrc = '';
+			return;
+		}
+		kioskSrc = untrack(
+			() =>
+				`${apiBaseURL()}/api/admin/containers/${encodeURIComponent(name)}/kiosk/?token=${encodeURIComponent(auth.token ?? '')}`
+		);
+	});
+
 	onMount(async () => {
 		await loadDetail();
 		await loadLogs();
@@ -279,42 +311,16 @@
 	// invoke xemu's quick save/load shortcuts. The exact in-game effect depends
 	// on whether xemu's current build binds those keys — see TODO at sendVNCTap
 	// for QMP-backed alternatives.
-	const resetAction = { label: 'Reset', body: 'Reset the running VM?' } as const;
-	const snapshotActions = [
-		{ label: 'S1', key: 'F5', body: 'Trigger snapshot slot 1 (F5)?' },
-		{ label: 'S2', key: 'F6', body: 'Trigger snapshot slot 2 (F6)?' },
-		{ label: 'S3', key: 'F7', body: 'Trigger snapshot slot 3 (F7)?' },
-		{ label: 'S4', key: 'F8', body: 'Trigger snapshot slot 4 (F8)?' }
-	] as const;
-
-	type ButtonColor = 'red' | 'green' | 'blue' | 'yellow' | 'gray';
-	// Tailwind JIT only generates classes it sees as literal strings, so each
-	// (color, pressed) combination must be spelled out — no template literals.
-	const BUTTON_CLASSES: Record<ButtonColor, { up: string; down: string }> = {
-		red: {
-			up: 'bg-red-900 border-2 border-red-500',
-			down: 'bg-red-500 border-2 border-red-500'
-		},
-		green: {
-			up: 'bg-green-900 border-2 border-green-500',
-			down: 'bg-green-500 border-2 border-green-500'
-		},
-		blue: {
-			up: 'bg-blue-900 border-2 border-blue-500',
-			down: 'bg-blue-500 border-2 border-blue-500'
-		},
-		yellow: {
-			up: 'bg-yellow-900 border-2 border-yellow-500',
-			down: 'bg-yellow-500 border-2 border-yellow-500'
-		},
-		gray: {
-			up: 'bg-gray-900 border-2 border-gray-500',
-			down: 'bg-gray-500 border-2 border-gray-500'
+	async function onSnapshotSlot(slot: SnapshotSlot) {
+		if (await confirmToast({ title: slot.label, description: slot.body, type: 'info' })) {
+			sendVNCTap(slot.key);
 		}
-	};
-	function buttonClass(key: string, color: ButtonColor): string {
-		const c = BUTTON_CLASSES[color];
-		return pressed[key] ? c.down : c.up;
+	}
+
+	async function onResetVM() {
+		if (await confirmToast({ title: 'Reset', description: 'Reset the running VM?' })) {
+			sendVNCChord(['Control_L', 'r']);
+		}
 	}
 </script>
 
@@ -342,8 +348,13 @@
 						aria-label="Stop"
 						title="Stop"
 						onclick={handleStop}
+						disabled={busyAction !== null}
 					>
-						<SquareIcon class="size-4" />
+						{#if busyAction === 'stop'}
+							<LoaderIcon class="size-4 animate-spin" />
+						{:else}
+							<SquareIcon class="size-4" />
+						{/if}
 					</button>
 				{:else}
 					<button
@@ -352,18 +363,42 @@
 						aria-label="Start"
 						title="Start"
 						onclick={handleStart}
+						disabled={busyAction !== null}
 					>
-						<PlayIcon class="size-4" />
+						{#if busyAction === 'start'}
+							<LoaderIcon class="size-4 animate-spin" />
+						{:else}
+							<PlayIcon class="size-4" />
+						{/if}
 					</button>
 				{/if}
 				<button
 					type="button"
 					class="btn-icon preset-tonal-error"
-					aria-label="Delete"
-					title="Delete"
-					onclick={() => (confirmDelete = true)}
+					aria-label="Delete container"
+					title="Delete container"
+					onclick={handleDelete}
+					disabled={busyAction !== null}
 				>
-					<Trash2Icon class="size-4" />
+					{#if busyAction === 'delete'}
+						<LoaderIcon class="size-4 animate-spin" />
+					{:else}
+						<Trash2Icon class="size-4" />
+					{/if}
+				</button>
+				<button
+					type="button"
+					class="btn-icon preset-tonal-error"
+					aria-label="Delete container files"
+					title="Delete container files (wipe Firefox profile + xemu config on disk)"
+					disabled={isRunning || loading || busyAction !== null}
+					onclick={handleDeleteFiles}
+				>
+					{#if busyAction === 'delete-files'}
+						<LoaderIcon class="size-4 animate-spin" />
+					{:else}
+						<EraserIcon class="size-4" />
+					{/if}
 				</button>
 			</div>
 		</div>
@@ -371,82 +406,17 @@
 
 	<div class="grid flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-2 2xl:grid-cols-3">
 		<!-- Kiosk iframe -->
-		<div class="flex flex-col overflow-hidden card p-0 2xl:col-span-2">
-			<div class="flex flex-none items-center justify-around gap-2 p-2 text-xs">
-				<span class="text-surface-600-400"
-					>Kiosk view
-					<span class="ms-1 text-xs {vncConnected ? 'text-success-500' : 'text-surface-600-400'}">
-						{vncConnected ? '●' : isRunning ? '…' : '○'}
-					</span>
-				</span>
-				{#if detail}
-					<!-- eslint-disable svelte/no-navigation-without-resolve -->
-					<a
-						href={kioskURL()}
-						target="_blank"
-						rel="noopener"
-						class="btn-icon btn-icon-sm preset-tonal"
-						aria-label="Open in new tab"
-						title="Open in new tab"
-					>
-						<ExternalLinkIcon class="size-4" />
-					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
-				{/if}
-				<span class="flex"> </span>
-				<div class="ms-auto flex items-center gap-1">
-					<Popover>
-						<Popover.Trigger
-							class="btn preset-tonal btn-sm"
-							disabled={!vncConnected}
-							aria-label="Snapshots"
-						>
-							<CameraIcon class="size-4" />
-							<span>Snapshots</span>
-						</Popover.Trigger>
-						<Portal>
-							<Popover.Positioner>
-								<Popover.Content class="flex gap-1 card bg-surface-100-900 p-2">
-									{#each snapshotActions as { label, key, body } (key)}
-										<Popover.CloseTrigger
-											class="btn preset-tonal btn-sm"
-											onclick={() => askConfirm(label, body, () => sendVNCTap(key))}
-										>
-											{label}
-										</Popover.CloseTrigger>
-									{/each}
-								</Popover.Content>
-							</Popover.Positioner>
-						</Portal>
-					</Popover>
-					<button
-						type="button"
-						class="btn-icon btn-icon-sm preset-tonal-warning"
-						aria-label="Reset"
-						title="Reset"
-						disabled={!vncConnected}
-						onclick={() =>
-							askConfirm(resetAction.label, resetAction.body, () =>
-								sendVNCChord(['Control_L', 'r'])
-							)}
-					>
-						<RotateCcwIcon class="size-4" />
-					</button>
-				</div>
-			</div>
-			{#if detail && isRunning}
-				<iframe
-					src={kioskURL()}
-					title="Kiosk view of {name}"
-					class="aspect-4/3 w-full border-0"
-					allowfullscreen
-				></iframe>
-			{:else}
-				<div class="flex flex-1 items-center justify-center text-sm text-surface-600-400">
-					{loading ? 'Loading…' : 'Container not running. Press Start to launch the kiosk.'}
-				</div>
-			{/if}
-		</div>
+		<KioskFrame
+			class="2xl:col-span-2"
+			{name}
+			src={kioskSrc}
+			running={!!detail && isRunning}
+			{loading}
+			{vncConnected}
+			externalHref={detail ? kioskURL() : undefined}
+			onSnapshot={onSnapshotSlot}
+			onReset={onResetVM}
+		/>
 
 		<!-- Controls + Logs -->
 		<div class="flex min-h-0 flex-col gap-2 overflow-hidden card p-3">
@@ -456,225 +426,12 @@
 					<Tabs.Trigger value="logs" class="flex-1">Logs</Tabs.Trigger>
 					<Tabs.Indicator />
 				</Tabs.List>
-				<Tabs.Content
-					value="controller"
-					class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto select-none"
-				>
-					<!-- Top bar: LB LT | Back Start | RT RB -->
-					<div class="flex items-center justify-between gap-2">
-						<div class="flex gap-1">
-							<button
-								class="btn btn-sm {buttonClass('1', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, '1')}
-								onpointerup={(e) => handlePointerUp(e, '1')}
-								onpointercancel={(e) => handlePointerUp(e, '1')}
-								onlostpointercapture={(e) => handlePointerUp(e, '1')}>LB</button
-							>
-							<button
-								class="btn btn-sm {buttonClass('w', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'w')}
-								onpointerup={(e) => handlePointerUp(e, 'w')}
-								onpointercancel={(e) => handlePointerUp(e, 'w')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'w')}>LT</button
-							>
-						</div>
-						<div class="flex gap-1">
-							<button
-								class="btn btn-sm {buttonClass('BackSpace', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'BackSpace')}
-								onpointerup={(e) => handlePointerUp(e, 'BackSpace')}
-								onpointercancel={(e) => handlePointerUp(e, 'BackSpace')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'BackSpace')}>Back</button
-							>
-							<button
-								class="btn btn-sm {buttonClass('Return', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'Return')}
-								onpointerup={(e) => handlePointerUp(e, 'Return')}
-								onpointercancel={(e) => handlePointerUp(e, 'Return')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'Return')}>Start</button
-							>
-						</div>
-						<div class="flex gap-1">
-							<button
-								class="btn btn-sm {buttonClass('o', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'o')}
-								onpointerup={(e) => handlePointerUp(e, 'o')}
-								onpointercancel={(e) => handlePointerUp(e, 'o')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'o')}>RT</button
-							>
-							<button
-								class="btn btn-sm {buttonClass('2', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, '2')}
-								onpointerup={(e) => handlePointerUp(e, '2')}
-								onpointercancel={(e) => handlePointerUp(e, '2')}
-								onlostpointercapture={(e) => handlePointerUp(e, '2')}>RB</button
-							>
-						</div>
-					</div>
-
-					<!-- Middle: D-pad ⇋ Face diamond -->
-					<div class="flex items-center justify-between gap-2">
-						<!-- D-pad -->
-						<div class="grid grid-cols-3 grid-rows-3 gap-1">
-							<div></div>
-							<button
-								class="btn aspect-square {buttonClass('Up', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'Up')}
-								onpointerup={(e) => handlePointerUp(e, 'Up')}
-								onpointercancel={(e) => handlePointerUp(e, 'Up')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'Up')}>↑</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square {buttonClass('Left', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'Left')}
-								onpointerup={(e) => handlePointerUp(e, 'Left')}
-								onpointercancel={(e) => handlePointerUp(e, 'Left')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'Left')}>←</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square {buttonClass('Right', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'Right')}
-								onpointerup={(e) => handlePointerUp(e, 'Right')}
-								onpointercancel={(e) => handlePointerUp(e, 'Right')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'Right')}>→</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square {buttonClass('Down', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'Down')}
-								onpointerup={(e) => handlePointerUp(e, 'Down')}
-								onpointercancel={(e) => handlePointerUp(e, 'Down')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'Down')}>↓</button
-							>
-							<div></div>
-						</div>
-
-						<!-- Face diamond (Y top, X left, B right, A bottom) -->
-						<div class="grid grid-cols-3 grid-rows-3 gap-1">
-							<div></div>
-							<button
-								class="btn aspect-square rounded-full {buttonClass('y', 'yellow')}"
-								onpointerdown={(e) => handlePointerDown(e, 'y')}
-								onpointerup={(e) => handlePointerUp(e, 'y')}
-								onpointercancel={(e) => handlePointerUp(e, 'y')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'y')}>Y</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square rounded-full {buttonClass('x', 'blue')}"
-								onpointerdown={(e) => handlePointerDown(e, 'x')}
-								onpointerup={(e) => handlePointerUp(e, 'x')}
-								onpointercancel={(e) => handlePointerUp(e, 'x')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'x')}>X</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square rounded-full {buttonClass('b', 'red')}"
-								onpointerdown={(e) => handlePointerDown(e, 'b')}
-								onpointerup={(e) => handlePointerUp(e, 'b')}
-								onpointercancel={(e) => handlePointerUp(e, 'b')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'b')}>B</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square rounded-full {buttonClass('a', 'green')}"
-								onpointerdown={(e) => handlePointerDown(e, 'a')}
-								onpointerup={(e) => handlePointerUp(e, 'a')}
-								onpointercancel={(e) => handlePointerUp(e, 'a')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'a')}>A</button
-							>
-							<div></div>
-						</div>
-					</div>
-
-					<!-- Bottom: Left stick + Right stick (L3 / R3 in centers) -->
-					<div class="flex items-center justify-between gap-2">
-						<div class="grid grid-cols-3 grid-rows-3 gap-1">
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('e', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'e')}
-								onpointerup={(e) => handlePointerUp(e, 'e')}
-								onpointercancel={(e) => handlePointerUp(e, 'e')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'e')}>L↑</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('s', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 's')}
-								onpointerup={(e) => handlePointerUp(e, 's')}
-								onpointercancel={(e) => handlePointerUp(e, 's')}
-								onlostpointercapture={(e) => handlePointerUp(e, 's')}>L←</button
-							>
-							<button
-								class="btn aspect-square btn-sm text-[10px] {buttonClass('3', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, '3')}
-								onpointerup={(e) => handlePointerUp(e, '3')}
-								onpointercancel={(e) => handlePointerUp(e, '3')}
-								onlostpointercapture={(e) => handlePointerUp(e, '3')}>L3</button
-							>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('f', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'f')}
-								onpointerup={(e) => handlePointerUp(e, 'f')}
-								onpointercancel={(e) => handlePointerUp(e, 'f')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'f')}>L→</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('d', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'd')}
-								onpointerup={(e) => handlePointerUp(e, 'd')}
-								onpointercancel={(e) => handlePointerUp(e, 'd')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'd')}>L↓</button
-							>
-							<div></div>
-						</div>
-
-						<div class="grid grid-cols-3 grid-rows-3 gap-1">
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('i', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'i')}
-								onpointerup={(e) => handlePointerUp(e, 'i')}
-								onpointercancel={(e) => handlePointerUp(e, 'i')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'i')}>R↑</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('j', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'j')}
-								onpointerup={(e) => handlePointerUp(e, 'j')}
-								onpointercancel={(e) => handlePointerUp(e, 'j')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'j')}>R←</button
-							>
-							<button
-								class="btn aspect-square btn-sm text-[10px] {buttonClass('4', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, '4')}
-								onpointerup={(e) => handlePointerUp(e, '4')}
-								onpointercancel={(e) => handlePointerUp(e, '4')}
-								onlostpointercapture={(e) => handlePointerUp(e, '4')}>R3</button
-							>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('l', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'l')}
-								onpointerup={(e) => handlePointerUp(e, 'l')}
-								onpointercancel={(e) => handlePointerUp(e, 'l')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'l')}>R→</button
-							>
-							<div></div>
-							<button
-								class="btn aspect-square btn-sm {buttonClass('k', 'gray')}"
-								onpointerdown={(e) => handlePointerDown(e, 'k')}
-								onpointerup={(e) => handlePointerUp(e, 'k')}
-								onpointercancel={(e) => handlePointerUp(e, 'k')}
-								onlostpointercapture={(e) => handlePointerUp(e, 'k')}>R↓</button
-							>
-							<div></div>
-						</div>
-					</div>
+				<Tabs.Content value="controller" class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+					<XboxController
+						disabled={!vncConnected}
+						onPress={(sym) => vnc?.sendKey(sym, true)}
+						onRelease={(sym) => vnc?.sendKey(sym, false)}
+					/>
 				</Tabs.Content>
 
 				<Tabs.Content value="logs" class="flex min-h-0 flex-1 flex-col gap-2">
@@ -721,7 +478,11 @@
 								onclick={loadLogs}
 								disabled={logsLoading}
 							>
-								<RefreshCwIcon class="size-4" />
+								{#if logsLoading}
+									<LoaderIcon class="size-4 animate-spin" />
+								{:else}
+									<RefreshCwIcon class="size-4" />
+								{/if}
 							</button>
 						</div>
 					</div>
@@ -733,33 +494,3 @@
 		</div>
 	</div>
 </div>
-
-{#if confirmAction}
-	{@const a = confirmAction}
-	<Dialog open={true} onClose={() => (confirmAction = null)} title={a.title}>
-		<p class="mb-4 text-sm text-surface-600-400">{a.body}</p>
-		<div class="flex justify-end gap-2">
-			<button type="button" class="btn preset-tonal" onclick={() => (confirmAction = null)}>
-				Cancel
-			</button>
-			<button type="button" class="btn preset-filled" onclick={runConfirmed}>Confirm</button>
-		</div>
-	</Dialog>
-{/if}
-
-<Dialog open={confirmDelete} onClose={() => (confirmDelete = false)} title="Delete container">
-	<p class="mb-4 text-sm text-surface-600-400">
-		Permanently remove <strong>{name}</strong>?
-		{#if isRunning}
-			<span class="mt-2 block text-error-500">
-				This container is currently running. It will be force-stopped before deletion.
-			</span>
-		{/if}
-	</p>
-	<div class="flex justify-end gap-2">
-		<button type="button" class="btn preset-tonal" onclick={() => (confirmDelete = false)}>
-			Cancel
-		</button>
-		<button type="button" class="btn preset-tonal-error" onclick={handleDelete}>Delete</button>
-	</div>
-</Dialog>
