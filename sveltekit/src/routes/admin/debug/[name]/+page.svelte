@@ -22,6 +22,7 @@
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
+	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -280,12 +281,7 @@
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
-		<Tabs.Content value="postgame" class="pt-4">
-			<TabPlaceholder
-				title="Postgame"
-				description="Final summary for the most recently completed match — winning team, end-of-match scoreboard, full event log, and per-player score totals. Populated when the scraper enters the postgame phase."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4">
 			<TabPlaceholder
 				title="Events"
