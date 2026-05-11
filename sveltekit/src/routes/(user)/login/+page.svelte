@@ -6,8 +6,8 @@
 	import pb from '$lib/pocketbase';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 	import { buildRegisterUrl } from '$lib/utils/redirect';
-	import Card from '$lib/components/chrome/Card.svelte';
-	import { LogInIcon, MailIcon, LockIcon } from '@lucide/svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import { LogInIcon, MailIcon, LockIcon, LoaderIcon } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -15,6 +15,7 @@
 	let password = $state('');
 	let error = $state('');
 	let loading = $state(false);
+	let oauthProvider = $state<string | null>(null);
 	let enabledProviders = $state<string[]>([]);
 
 	const visibleProviders = $derived(
@@ -57,6 +58,7 @@
 	async function handleOAuth(provider: string) {
 		error = '';
 		loading = true;
+		oauthProvider = provider;
 		try {
 			await auth.loginWithOAuth(provider);
 			// eslint-disable-next-line svelte/no-navigation-without-resolve
@@ -65,6 +67,7 @@
 			error = err instanceof Error ? err.message : 'OAuth sign-in failed. Please try again.';
 		} finally {
 			loading = false;
+			oauthProvider = null;
 		}
 	}
 </script>
@@ -123,7 +126,8 @@
 				</div>
 
 				<button type="submit" class="btn w-full preset-filled" disabled={loading}>
-					{loading ? 'Signing in...' : 'Sign In'}
+					{#if loading && oauthProvider === null}<LoaderIcon class="size-4 animate-spin" />{/if}
+					<span>Sign In</span>
 				</button>
 			</form>
 
@@ -143,6 +147,7 @@
 					class:grid-cols-4={layout === 'compact'}
 				>
 					{#each visibleProviders as { name, meta }, i (name)}
+						{@const isBusy = oauthProvider === name}
 						<button
 							type="button"
 							class="btn w-full preset-tonal"
@@ -151,13 +156,19 @@
 							title={meta.label}
 							onclick={() => handleOAuth(name)}
 						>
-							<img
-								src={meta.icon}
-								alt={meta.label}
-								class="shrink-0"
-								class:size-8={layout === 'single'}
-								class:size-6={layout !== 'single'}
-							/>
+							{#if isBusy}
+								<LoaderIcon
+									class="shrink-0 animate-spin {layout === 'single' ? 'size-8' : 'size-6'}"
+								/>
+							{:else}
+								<img
+									src={meta.icon}
+									alt={meta.label}
+									class="shrink-0"
+									class:size-8={layout === 'single'}
+									class:size-6={layout !== 'single'}
+								/>
+							{/if}
 							{#if layout !== 'compact'}
 								<span class="flex-1 text-center">{meta.label}</span>
 								<span

@@ -1,17 +1,19 @@
 <script lang="ts">
-	import JsonTree from '../JsonTree.svelte';
+	import JsonTree from '$lib/components/ui/JsonTree.svelte';
 	import AnnotationPill from './AnnotationPill.svelte';
 
 	let {
 		title,
 		value,
 		emptyMessage = 'no data',
-		annotationPrefix
+		annotationPrefix,
+		entriesSort = 'key'
 	}: {
 		title?: string;
 		value: Record<string, unknown> | null | undefined;
 		emptyMessage?: string;
 		annotationPrefix?: string;
+		entriesSort?: 'key' | 'none';
 	} = $props();
 
 	function isScalar(v: unknown): boolean {
@@ -25,7 +27,12 @@
 		return String(v);
 	}
 
-	const entries = $derived(value ? Object.entries(value) : []);
+	const entries = $derived.by(() => {
+		if (!value) return [];
+		const out = Object.entries(value);
+		if (entriesSort === 'key') out.sort(([a], [b]) => a.localeCompare(b));
+		return out;
+	});
 </script>
 
 <div class="card preset-tonal p-3">

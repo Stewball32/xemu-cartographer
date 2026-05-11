@@ -6,8 +6,8 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
 	import { toaster } from '$lib/stores/toaster';
-	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
-	import Card from '$lib/components/chrome/Card.svelte';
+	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import type { ContainerInfo, ContainerDetail, InstanceState } from '$lib/types/containers';
 	import type { ScraperInfo } from '$lib/types/scraper';
 

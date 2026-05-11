@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { MailIcon, ArrowLeftIcon, KeyRoundIcon } from '@lucide/svelte';
+	import { MailIcon, ArrowLeftIcon, KeyRoundIcon, LoaderIcon } from '@lucide/svelte';
 
 	let email = $state('');
 	let error = $state('');
@@ -63,7 +63,8 @@
 					</label>
 
 					<button type="submit" class="btn w-full preset-filled" disabled={loading}>
-						{loading ? 'Sending...' : 'Send Reset Link'}
+						{#if loading}<LoaderIcon class="size-4 animate-spin" />{/if}
+						<span>Send Reset Link</span>
 					</button>
 				</form>
 			{/if}

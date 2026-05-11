@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	type Size = 'sm' | 'md' | 'lg' | 'flush';
+	type Size = 'xs' | 'sm' | 'md' | 'lg' | 'flush';
 	type Tone = 'tonal' | 'filled' | 'outlined';
 
 	let {
@@ -17,7 +17,15 @@
 	} = $props();
 
 	const padding = $derived(
-		size === 'sm' ? 'p-3' : size === 'md' ? 'p-4' : size === 'lg' ? 'p-6' : 'p-0'
+		size === 'xs'
+			? 'p-2'
+			: size === 'sm'
+				? 'p-3'
+				: size === 'md'
+					? 'p-4'
+					: size === 'lg'
+						? 'p-6'
+						: 'p-0'
 	);
 	const preset = $derived(
 		tone === 'tonal'

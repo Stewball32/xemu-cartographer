@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { APP_NAME } from '$lib/config/app';
-	import Card from '$lib/components/chrome/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 	import { BoxIcon, ActivityIcon, MonitorIcon, ArrowRightIcon } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 

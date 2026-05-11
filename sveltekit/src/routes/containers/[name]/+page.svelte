@@ -20,7 +20,7 @@
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { toaster } from '$lib/stores/toaster';
-	import Dialog from '$lib/components/chrome/Dialog.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import { VNCKeyboard, KEYSYM } from '$lib/utils/vnc-keyboard';
 	import type {
 		ContainerDetail,

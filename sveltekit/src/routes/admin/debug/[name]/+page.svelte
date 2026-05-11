@@ -14,15 +14,15 @@
 		TickPlayer,
 		Envelope
 	} from '$lib/types/scraper';
-	import JsonTree from '$lib/components/JsonTree.svelte';
-	import CodeBlock from '$lib/components/CodeBlock.svelte';
+	import JsonTree from '$lib/components/ui/JsonTree.svelte';
+	import CodeBlock from '$lib/components/ui/CodeBlock.svelte';
 	import OverviewCard from '$lib/components/debug/OverviewCard.svelte';
-	import KvCard from '$lib/components/debug/KvCard.svelte';
-	import PlayerListItem from '$lib/components/debug/PlayerListItem.svelte';
+	import KvCard from '$lib/components/debug/shared/KvCard.svelte';
+	import PlayerListItem from '$lib/components/debug/shared/PlayerListItem.svelte';
 	import PlayerDetailPanel from '$lib/components/debug/PlayerDetailPanel.svelte';
-	import ColGroupedTable from '$lib/components/debug/ColGroupedTable.svelte';
-	import type { ColGroup } from '$lib/components/debug/col-grouped-table';
-	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
+	import ColGroupedTable from '$lib/components/debug/shared/ColGroupedTable.svelte';
+	import type { ColGroup } from '$lib/components/debug/shared/col-grouped-table';
+	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import { fieldAnnotations } from '$lib/stores/fieldAnnotations.svelte';
 	import { toaster } from '$lib/stores/toaster';
 

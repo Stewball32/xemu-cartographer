@@ -1,25 +1,13 @@
 <script lang="ts">
-	import { AppBar, Avatar, Popover } from '@skeletonlabs/skeleton-svelte';
+	import { AppBar, Popover } from '@skeletonlabs/skeleton-svelte';
 	import { resolve } from '$app/paths';
-	import NavToggle from '$lib/components/NavToggle.svelte';
-	import ModeToggle from '$lib/components/ModeToggle.svelte';
+	import NavToggle from './NavToggle.svelte';
+	import ModeToggle from './ModeToggle.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { LogInIcon, LogOutIcon, UserIcon } from '@lucide/svelte';
-	import { getFileURL } from '$lib/utils/files';
-	import type { RecordModel } from 'pocketbase';
+	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
 
 	let { onToggle }: { onToggle: () => void } = $props();
-
-	const initials = $derived(
-		auth.user?.name
-			?.split(' ')
-			.map((n: string) => n[0])
-			.join('')
-			.toUpperCase()
-			.slice(0, 2) ??
-			auth.user?.email?.charAt(0).toUpperCase() ??
-			'?'
-	);
 </script>
 
 <AppBar class="h-16 p-4">
@@ -36,10 +24,7 @@
 						aria-label="Open user menu"
 						title={auth.user?.email}
 					>
-						<Avatar class="size-9">
-							<Avatar.Fallback>{initials}</Avatar.Fallback>
-							<Avatar.Image src={getFileURL(auth.user as RecordModel, 'avatar')} />
-						</Avatar>
+						<UserAvatar user={auth.user} size="size-9" />
 					</Popover.Trigger>
 					<Popover.Positioner class="z-50!">
 						<Popover.Content

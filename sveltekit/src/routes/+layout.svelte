@@ -3,10 +3,10 @@
 	import { Toast } from '@skeletonlabs/skeleton-svelte';
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import Header from '$lib/components/Header.svelte';
-	import NavPanel from '$lib/components/NavPanel.svelte';
-	import NavBar from '$lib/components/NavBar.svelte';
-	import { toaster } from '$lib/stores/toaster';
+	import Header from '$lib/components/layout/Header.svelte';
+	import NavPanel from '$lib/components/layout/NavPanel.svelte';
+	import NavBar from '$lib/components/layout/NavBar.svelte';
+	import { toaster, type ToastConfirmMeta } from '$lib/stores/toaster';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -90,6 +90,17 @@
 				<Toast.Title>{toast.title}</Toast.Title>
 				<Toast.Description>{toast.description}</Toast.Description>
 			</Toast.Message>
+			{#if toast.meta?.confirm}
+				{@const c = toast.meta.confirm as ToastConfirmMeta}
+				<div class="ms-2 flex shrink-0 gap-2">
+					<button type="button" class="btn btn-sm preset-tonal" onclick={c.onCancel}>
+						{c.cancelLabel}
+					</button>
+					<button type="button" class="btn btn-sm preset-filled" onclick={c.onConfirm}>
+						{c.confirmLabel}
+					</button>
+				</div>
+			{/if}
 			<Toast.CloseTrigger />
 		</Toast>
 	{/snippet}

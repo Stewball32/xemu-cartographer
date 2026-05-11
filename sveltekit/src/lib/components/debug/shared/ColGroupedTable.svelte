@@ -1,5 +1,5 @@
 <script lang="ts">
-	import JsonTree from '../JsonTree.svelte';
+	import JsonTree from '$lib/components/ui/JsonTree.svelte';
 	import AnnotationPill from './AnnotationPill.svelte';
 	import type { ColGroup } from './col-grouped-table';
 

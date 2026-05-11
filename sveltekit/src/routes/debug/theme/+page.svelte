@@ -23,9 +23,9 @@
 	import { resolve } from '$app/paths';
 	import { APP_NAME } from '$lib/config/app';
 	import { toaster } from '$lib/stores/toaster';
-	import Card from '$lib/components/chrome/Card.svelte';
-	import Dialog from '$lib/components/chrome/Dialog.svelte';
-	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
+	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 
 	type ColorName =
 		| 'primary'
@@ -163,6 +163,309 @@
 		'success',
 		'warning',
 		'error'
+	];
+
+	// Theme-agnostic Xbox / Halo presets (defined in routes/layout.css). These
+	// stay constant across all six Skeleton themes — verify by switching themes
+	// and confirming this section's swatches don't change while the rows above
+	// do. Literal class strings so Tailwind v4's class scanner picks them up.
+	type TeamName =
+		| 'team-red'
+		| 'team-blue'
+		| 'team-green'
+		| 'team-yellow'
+		| 'team-orange'
+		| 'team-purple'
+		| 'team-brown'
+		| 'team-pink';
+	type TeamPaletteRow = { name: TeamName; label: string; steps: Swatch[] };
+
+	const TEAM_PALETTE: TeamPaletteRow[] = [
+		{
+			name: 'team-red',
+			label: 'Red Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-red-50', text: 'text-team-red-contrast-50' },
+				{ step: 100, bg: 'bg-team-red-100', text: 'text-team-red-contrast-100' },
+				{ step: 200, bg: 'bg-team-red-200', text: 'text-team-red-contrast-200' },
+				{ step: 300, bg: 'bg-team-red-300', text: 'text-team-red-contrast-300' },
+				{ step: 400, bg: 'bg-team-red-400', text: 'text-team-red-contrast-400' },
+				{ step: 500, bg: 'bg-team-red-500', text: 'text-team-red-contrast-500' },
+				{ step: 600, bg: 'bg-team-red-600', text: 'text-team-red-contrast-600' },
+				{ step: 700, bg: 'bg-team-red-700', text: 'text-team-red-contrast-700' },
+				{ step: 800, bg: 'bg-team-red-800', text: 'text-team-red-contrast-800' },
+				{ step: 900, bg: 'bg-team-red-900', text: 'text-team-red-contrast-900' },
+				{ step: 950, bg: 'bg-team-red-950', text: 'text-team-red-contrast-950' }
+			]
+		},
+		{
+			name: 'team-blue',
+			label: 'Blue Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-blue-50', text: 'text-team-blue-contrast-50' },
+				{ step: 100, bg: 'bg-team-blue-100', text: 'text-team-blue-contrast-100' },
+				{ step: 200, bg: 'bg-team-blue-200', text: 'text-team-blue-contrast-200' },
+				{ step: 300, bg: 'bg-team-blue-300', text: 'text-team-blue-contrast-300' },
+				{ step: 400, bg: 'bg-team-blue-400', text: 'text-team-blue-contrast-400' },
+				{ step: 500, bg: 'bg-team-blue-500', text: 'text-team-blue-contrast-500' },
+				{ step: 600, bg: 'bg-team-blue-600', text: 'text-team-blue-contrast-600' },
+				{ step: 700, bg: 'bg-team-blue-700', text: 'text-team-blue-contrast-700' },
+				{ step: 800, bg: 'bg-team-blue-800', text: 'text-team-blue-contrast-800' },
+				{ step: 900, bg: 'bg-team-blue-900', text: 'text-team-blue-contrast-900' },
+				{ step: 950, bg: 'bg-team-blue-950', text: 'text-team-blue-contrast-950' }
+			]
+		},
+		{
+			name: 'team-green',
+			label: 'Green Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-green-50', text: 'text-team-green-contrast-50' },
+				{ step: 100, bg: 'bg-team-green-100', text: 'text-team-green-contrast-100' },
+				{ step: 200, bg: 'bg-team-green-200', text: 'text-team-green-contrast-200' },
+				{ step: 300, bg: 'bg-team-green-300', text: 'text-team-green-contrast-300' },
+				{ step: 400, bg: 'bg-team-green-400', text: 'text-team-green-contrast-400' },
+				{ step: 500, bg: 'bg-team-green-500', text: 'text-team-green-contrast-500' },
+				{ step: 600, bg: 'bg-team-green-600', text: 'text-team-green-contrast-600' },
+				{ step: 700, bg: 'bg-team-green-700', text: 'text-team-green-contrast-700' },
+				{ step: 800, bg: 'bg-team-green-800', text: 'text-team-green-contrast-800' },
+				{ step: 900, bg: 'bg-team-green-900', text: 'text-team-green-contrast-900' },
+				{ step: 950, bg: 'bg-team-green-950', text: 'text-team-green-contrast-950' }
+			]
+		},
+		{
+			name: 'team-yellow',
+			label: 'Yellow Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-yellow-50', text: 'text-team-yellow-contrast-50' },
+				{ step: 100, bg: 'bg-team-yellow-100', text: 'text-team-yellow-contrast-100' },
+				{ step: 200, bg: 'bg-team-yellow-200', text: 'text-team-yellow-contrast-200' },
+				{ step: 300, bg: 'bg-team-yellow-300', text: 'text-team-yellow-contrast-300' },
+				{ step: 400, bg: 'bg-team-yellow-400', text: 'text-team-yellow-contrast-400' },
+				{ step: 500, bg: 'bg-team-yellow-500', text: 'text-team-yellow-contrast-500' },
+				{ step: 600, bg: 'bg-team-yellow-600', text: 'text-team-yellow-contrast-600' },
+				{ step: 700, bg: 'bg-team-yellow-700', text: 'text-team-yellow-contrast-700' },
+				{ step: 800, bg: 'bg-team-yellow-800', text: 'text-team-yellow-contrast-800' },
+				{ step: 900, bg: 'bg-team-yellow-900', text: 'text-team-yellow-contrast-900' },
+				{ step: 950, bg: 'bg-team-yellow-950', text: 'text-team-yellow-contrast-950' }
+			]
+		},
+		{
+			name: 'team-orange',
+			label: 'Orange Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-orange-50', text: 'text-team-orange-contrast-50' },
+				{ step: 100, bg: 'bg-team-orange-100', text: 'text-team-orange-contrast-100' },
+				{ step: 200, bg: 'bg-team-orange-200', text: 'text-team-orange-contrast-200' },
+				{ step: 300, bg: 'bg-team-orange-300', text: 'text-team-orange-contrast-300' },
+				{ step: 400, bg: 'bg-team-orange-400', text: 'text-team-orange-contrast-400' },
+				{ step: 500, bg: 'bg-team-orange-500', text: 'text-team-orange-contrast-500' },
+				{ step: 600, bg: 'bg-team-orange-600', text: 'text-team-orange-contrast-600' },
+				{ step: 700, bg: 'bg-team-orange-700', text: 'text-team-orange-contrast-700' },
+				{ step: 800, bg: 'bg-team-orange-800', text: 'text-team-orange-contrast-800' },
+				{ step: 900, bg: 'bg-team-orange-900', text: 'text-team-orange-contrast-900' },
+				{ step: 950, bg: 'bg-team-orange-950', text: 'text-team-orange-contrast-950' }
+			]
+		},
+		{
+			name: 'team-purple',
+			label: 'Purple Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-purple-50', text: 'text-team-purple-contrast-50' },
+				{ step: 100, bg: 'bg-team-purple-100', text: 'text-team-purple-contrast-100' },
+				{ step: 200, bg: 'bg-team-purple-200', text: 'text-team-purple-contrast-200' },
+				{ step: 300, bg: 'bg-team-purple-300', text: 'text-team-purple-contrast-300' },
+				{ step: 400, bg: 'bg-team-purple-400', text: 'text-team-purple-contrast-400' },
+				{ step: 500, bg: 'bg-team-purple-500', text: 'text-team-purple-contrast-500' },
+				{ step: 600, bg: 'bg-team-purple-600', text: 'text-team-purple-contrast-600' },
+				{ step: 700, bg: 'bg-team-purple-700', text: 'text-team-purple-contrast-700' },
+				{ step: 800, bg: 'bg-team-purple-800', text: 'text-team-purple-contrast-800' },
+				{ step: 900, bg: 'bg-team-purple-900', text: 'text-team-purple-contrast-900' },
+				{ step: 950, bg: 'bg-team-purple-950', text: 'text-team-purple-contrast-950' }
+			]
+		},
+		{
+			name: 'team-brown',
+			label: 'Brown Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-brown-50', text: 'text-team-brown-contrast-50' },
+				{ step: 100, bg: 'bg-team-brown-100', text: 'text-team-brown-contrast-100' },
+				{ step: 200, bg: 'bg-team-brown-200', text: 'text-team-brown-contrast-200' },
+				{ step: 300, bg: 'bg-team-brown-300', text: 'text-team-brown-contrast-300' },
+				{ step: 400, bg: 'bg-team-brown-400', text: 'text-team-brown-contrast-400' },
+				{ step: 500, bg: 'bg-team-brown-500', text: 'text-team-brown-contrast-500' },
+				{ step: 600, bg: 'bg-team-brown-600', text: 'text-team-brown-contrast-600' },
+				{ step: 700, bg: 'bg-team-brown-700', text: 'text-team-brown-contrast-700' },
+				{ step: 800, bg: 'bg-team-brown-800', text: 'text-team-brown-contrast-800' },
+				{ step: 900, bg: 'bg-team-brown-900', text: 'text-team-brown-contrast-900' },
+				{ step: 950, bg: 'bg-team-brown-950', text: 'text-team-brown-contrast-950' }
+			]
+		},
+		{
+			name: 'team-pink',
+			label: 'Pink Team',
+			steps: [
+				{ step: 50, bg: 'bg-team-pink-50', text: 'text-team-pink-contrast-50' },
+				{ step: 100, bg: 'bg-team-pink-100', text: 'text-team-pink-contrast-100' },
+				{ step: 200, bg: 'bg-team-pink-200', text: 'text-team-pink-contrast-200' },
+				{ step: 300, bg: 'bg-team-pink-300', text: 'text-team-pink-contrast-300' },
+				{ step: 400, bg: 'bg-team-pink-400', text: 'text-team-pink-contrast-400' },
+				{ step: 500, bg: 'bg-team-pink-500', text: 'text-team-pink-contrast-500' },
+				{ step: 600, bg: 'bg-team-pink-600', text: 'text-team-pink-contrast-600' },
+				{ step: 700, bg: 'bg-team-pink-700', text: 'text-team-pink-contrast-700' },
+				{ step: 800, bg: 'bg-team-pink-800', text: 'text-team-pink-contrast-800' },
+				{ step: 900, bg: 'bg-team-pink-900', text: 'text-team-pink-contrast-900' },
+				{ step: 950, bg: 'bg-team-pink-950', text: 'text-team-pink-contrast-950' }
+			]
+		}
+	];
+
+	// Xbox controller face button ramps (ABXY) + the controller surface gray
+	// for non-ABXY buttons. ABXY ramps unlock the dark-up / bright-down pattern
+	// the controller page uses (e.g. bg-xbox-a-900 unpressed, bg-xbox-a-500
+	// pressed). Same swatch grid format as TEAM_PALETTE.
+	type XboxRampName = 'xbox-a' | 'xbox-b' | 'xbox-x' | 'xbox-y' | 'xbox-controller';
+	type XboxRampRow = { name: XboxRampName; label: string; steps: Swatch[] };
+
+	const XBOX_RAMPS: XboxRampRow[] = [
+		{
+			name: 'xbox-a',
+			label: 'A button (green)',
+			steps: [
+				{ step: 50, bg: 'bg-xbox-a-50', text: 'text-xbox-a-contrast-50' },
+				{ step: 100, bg: 'bg-xbox-a-100', text: 'text-xbox-a-contrast-100' },
+				{ step: 200, bg: 'bg-xbox-a-200', text: 'text-xbox-a-contrast-200' },
+				{ step: 300, bg: 'bg-xbox-a-300', text: 'text-xbox-a-contrast-300' },
+				{ step: 400, bg: 'bg-xbox-a-400', text: 'text-xbox-a-contrast-400' },
+				{ step: 500, bg: 'bg-xbox-a-500', text: 'text-xbox-a-contrast-500' },
+				{ step: 600, bg: 'bg-xbox-a-600', text: 'text-xbox-a-contrast-600' },
+				{ step: 700, bg: 'bg-xbox-a-700', text: 'text-xbox-a-contrast-700' },
+				{ step: 800, bg: 'bg-xbox-a-800', text: 'text-xbox-a-contrast-800' },
+				{ step: 900, bg: 'bg-xbox-a-900', text: 'text-xbox-a-contrast-900' },
+				{ step: 950, bg: 'bg-xbox-a-950', text: 'text-xbox-a-contrast-950' }
+			]
+		},
+		{
+			name: 'xbox-b',
+			label: 'B button (red)',
+			steps: [
+				{ step: 50, bg: 'bg-xbox-b-50', text: 'text-xbox-b-contrast-50' },
+				{ step: 100, bg: 'bg-xbox-b-100', text: 'text-xbox-b-contrast-100' },
+				{ step: 200, bg: 'bg-xbox-b-200', text: 'text-xbox-b-contrast-200' },
+				{ step: 300, bg: 'bg-xbox-b-300', text: 'text-xbox-b-contrast-300' },
+				{ step: 400, bg: 'bg-xbox-b-400', text: 'text-xbox-b-contrast-400' },
+				{ step: 500, bg: 'bg-xbox-b-500', text: 'text-xbox-b-contrast-500' },
+				{ step: 600, bg: 'bg-xbox-b-600', text: 'text-xbox-b-contrast-600' },
+				{ step: 700, bg: 'bg-xbox-b-700', text: 'text-xbox-b-contrast-700' },
+				{ step: 800, bg: 'bg-xbox-b-800', text: 'text-xbox-b-contrast-800' },
+				{ step: 900, bg: 'bg-xbox-b-900', text: 'text-xbox-b-contrast-900' },
+				{ step: 950, bg: 'bg-xbox-b-950', text: 'text-xbox-b-contrast-950' }
+			]
+		},
+		{
+			name: 'xbox-x',
+			label: 'X button (blue)',
+			steps: [
+				{ step: 50, bg: 'bg-xbox-x-50', text: 'text-xbox-x-contrast-50' },
+				{ step: 100, bg: 'bg-xbox-x-100', text: 'text-xbox-x-contrast-100' },
+				{ step: 200, bg: 'bg-xbox-x-200', text: 'text-xbox-x-contrast-200' },
+				{ step: 300, bg: 'bg-xbox-x-300', text: 'text-xbox-x-contrast-300' },
+				{ step: 400, bg: 'bg-xbox-x-400', text: 'text-xbox-x-contrast-400' },
+				{ step: 500, bg: 'bg-xbox-x-500', text: 'text-xbox-x-contrast-500' },
+				{ step: 600, bg: 'bg-xbox-x-600', text: 'text-xbox-x-contrast-600' },
+				{ step: 700, bg: 'bg-xbox-x-700', text: 'text-xbox-x-contrast-700' },
+				{ step: 800, bg: 'bg-xbox-x-800', text: 'text-xbox-x-contrast-800' },
+				{ step: 900, bg: 'bg-xbox-x-900', text: 'text-xbox-x-contrast-900' },
+				{ step: 950, bg: 'bg-xbox-x-950', text: 'text-xbox-x-contrast-950' }
+			]
+		},
+		{
+			name: 'xbox-y',
+			label: 'Y button (yellow)',
+			steps: [
+				{ step: 50, bg: 'bg-xbox-y-50', text: 'text-xbox-y-contrast-50' },
+				{ step: 100, bg: 'bg-xbox-y-100', text: 'text-xbox-y-contrast-100' },
+				{ step: 200, bg: 'bg-xbox-y-200', text: 'text-xbox-y-contrast-200' },
+				{ step: 300, bg: 'bg-xbox-y-300', text: 'text-xbox-y-contrast-300' },
+				{ step: 400, bg: 'bg-xbox-y-400', text: 'text-xbox-y-contrast-400' },
+				{ step: 500, bg: 'bg-xbox-y-500', text: 'text-xbox-y-contrast-500' },
+				{ step: 600, bg: 'bg-xbox-y-600', text: 'text-xbox-y-contrast-600' },
+				{ step: 700, bg: 'bg-xbox-y-700', text: 'text-xbox-y-contrast-700' },
+				{ step: 800, bg: 'bg-xbox-y-800', text: 'text-xbox-y-contrast-800' },
+				{ step: 900, bg: 'bg-xbox-y-900', text: 'text-xbox-y-contrast-900' },
+				{ step: 950, bg: 'bg-xbox-y-950', text: 'text-xbox-y-contrast-950' }
+			]
+		},
+		{
+			name: 'xbox-controller',
+			label: 'Controller surface (shoulders, D-pad, Back/Start, sticks)',
+			steps: [
+				{ step: 50, bg: 'bg-xbox-controller-50', text: 'text-xbox-controller-contrast-50' },
+				{ step: 100, bg: 'bg-xbox-controller-100', text: 'text-xbox-controller-contrast-100' },
+				{ step: 200, bg: 'bg-xbox-controller-200', text: 'text-xbox-controller-contrast-200' },
+				{ step: 300, bg: 'bg-xbox-controller-300', text: 'text-xbox-controller-contrast-300' },
+				{ step: 400, bg: 'bg-xbox-controller-400', text: 'text-xbox-controller-contrast-400' },
+				{ step: 500, bg: 'bg-xbox-controller-500', text: 'text-xbox-controller-contrast-500' },
+				{ step: 600, bg: 'bg-xbox-controller-600', text: 'text-xbox-controller-contrast-600' },
+				{ step: 700, bg: 'bg-xbox-controller-700', text: 'text-xbox-controller-contrast-700' },
+				{ step: 800, bg: 'bg-xbox-controller-800', text: 'text-xbox-controller-contrast-800' },
+				{ step: 900, bg: 'bg-xbox-controller-900', text: 'text-xbox-controller-contrast-900' },
+				{ step: 950, bg: 'bg-xbox-controller-950', text: 'text-xbox-controller-contrast-950' }
+			]
+		}
+	];
+
+	// Controller-style buttons. Each row demos the dark-up / bright-down state
+	// pattern used by the live controller in routes/containers/[name]. Pairs
+	// step-900 background + step-500 border for "up" and step-500 background +
+	// step-500 border for "down".
+	type ControllerButton = {
+		label: string;
+		up: string;
+		down: string;
+	};
+	const CONTROLLER_BUTTONS: ControllerButton[] = [
+		{
+			label: 'A',
+			up: 'bg-xbox-a-900 border-2 border-xbox-a-500',
+			down: 'bg-xbox-a-500 border-2 border-xbox-a-500'
+		},
+		{
+			label: 'B',
+			up: 'bg-xbox-b-900 border-2 border-xbox-b-500',
+			down: 'bg-xbox-b-500 border-2 border-xbox-b-500'
+		},
+		{
+			label: 'X',
+			up: 'bg-xbox-x-900 border-2 border-xbox-x-500',
+			down: 'bg-xbox-x-500 border-2 border-xbox-x-500'
+		},
+		{
+			label: 'Y',
+			up: 'bg-xbox-y-900 border-2 border-xbox-y-500',
+			down: 'bg-xbox-y-500 border-2 border-xbox-y-500'
+		},
+		{
+			label: 'LB',
+			up: 'bg-xbox-controller-900 border-2 border-xbox-controller-500',
+			down: 'bg-xbox-controller-500 border-2 border-xbox-controller-500'
+		}
+	];
+
+	// Black / White face buttons (OG Xbox) — single-tone, displayed as chips.
+	type ButtonSwatch = { name: string; bg: string; text: string; ring?: string };
+	const XBOX_FACE_CHIPS: ButtonSwatch[] = [
+		{
+			name: 'Black',
+			bg: 'bg-xbox-black',
+			text: 'text-xbox-black-contrast',
+			ring: 'ring-1 ring-surface-300-700'
+		},
+		{
+			name: 'White',
+			bg: 'bg-xbox-white',
+			text: 'text-xbox-white-contrast',
+			ring: 'ring-1 ring-surface-300-700'
+		}
 	];
 
 	// Skeleton v4 preset shape:
@@ -307,6 +610,132 @@ console.log(greeting);</code
 		</Card>
 	</section>
 
+	<!-- ==================================== XBOX / HALO PRESETS (THEME-AGNOSTIC) -->
+	<section class="space-y-4">
+		<h2 class="h3">Xbox / Halo presets (theme-agnostic)</h2>
+		<p class="text-sm text-surface-700-300">
+			These tokens are defined once in
+			<code>routes/layout.css</code> and stay constant regardless of the active Skeleton theme — switch
+			themes from the header and confirm the swatches below don't change while the rows above do.
+		</p>
+		<Card tone="outlined">
+			<div class="space-y-6">
+				<div class="space-y-3">
+					<div class="text-xs font-semibold tracking-wider text-surface-700-300 uppercase">
+						Halo team colors (Halo 2 set: 8 teams)
+					</div>
+					{#each TEAM_PALETTE as row (row.name)}
+						<div>
+							<div class="mb-1 text-xs font-medium text-surface-700-300">
+								{row.label} <code class="ml-1">{row.name}</code>
+							</div>
+							<div class="grid grid-cols-11 overflow-hidden rounded-md">
+								{#each row.steps as swatch (swatch.step)}
+									<div
+										class="flex h-12 items-center justify-center text-[10px] font-medium {swatch.bg} {swatch.text}"
+										title="{row.name}-{swatch.step}"
+									>
+										{swatch.step}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<div class="space-y-3">
+					<div class="text-xs font-semibold tracking-wider text-surface-700-300 uppercase">
+						Xbox controller ramps (ABXY + surface)
+					</div>
+					{#each XBOX_RAMPS as row (row.name)}
+						<div>
+							<div class="mb-1 text-xs font-medium text-surface-700-300">
+								{row.label} <code class="ml-1">{row.name}</code>
+							</div>
+							<div class="grid grid-cols-11 overflow-hidden rounded-md">
+								{#each row.steps as swatch (swatch.step)}
+									<div
+										class="flex h-12 items-center justify-center text-[10px] font-medium {swatch.bg} {swatch.text}"
+										title="{row.name}-{swatch.step}"
+									>
+										{swatch.step}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<div>
+					<div class="mb-2 text-xs font-semibold tracking-wider text-surface-700-300 uppercase">
+						Controller buttons (up / down state)
+					</div>
+					<p class="mb-2 text-xs text-surface-700-300">
+						Pattern used by the live controller at <code>/containers/[name]/</code>: dark fill
+						(step-900) + bright border (step-500) when up, bright fill (step-500) + bright border
+						(step-500) when down.
+					</p>
+					<div class="flex flex-wrap items-center gap-4">
+						{#each CONTROLLER_BUTTONS as button (button.label)}
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="btn aspect-square rounded-full {button.up}"
+									aria-label="{button.label} up"
+								>
+									{button.label}
+								</button>
+								<button
+									type="button"
+									class="btn aspect-square rounded-full {button.down}"
+									aria-label="{button.label} down"
+								>
+									{button.label}
+								</button>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<div>
+					<div class="mb-2 text-xs font-semibold tracking-wider text-surface-700-300 uppercase">
+						OG face buttons (Black / White)
+					</div>
+					<div class="flex flex-wrap items-center gap-3">
+						{#each XBOX_FACE_CHIPS as chip (chip.name)}
+							<div class="flex flex-col items-center gap-1">
+								<div
+									class="flex size-10 items-center justify-center rounded-full text-sm font-bold {chip.bg} {chip.text} {chip.ring ??
+										''}"
+									title={chip.bg}
+								>
+									{chip.name}
+								</div>
+								<code class="text-[10px] text-surface-700-300">{chip.bg}</code>
+							</div>
+						{/each}
+					</div>
+				</div>
+
+				<div>
+					<div class="mb-2 text-xs font-semibold tracking-wider text-surface-700-300 uppercase">
+						Xbox brand
+					</div>
+					<div class="flex flex-wrap items-center gap-3">
+						<div class="flex flex-col items-center gap-1">
+							<div
+								class="flex h-10 items-center justify-center rounded-md bg-xbox-green px-4 text-sm font-bold text-xbox-green-contrast"
+							>
+								xbox-green
+							</div>
+							<code class="text-[10px] text-surface-700-300">bg-xbox-green</code>
+						</div>
+					</div>
+				</div>
+			</div>
+		</Card>
+	</section>
+
 	<!-- =========================================== BUTTONS / BADGES / CHIPS -->
 	<section class="space-y-4">
 		<h2 class="h3">Buttons / Badges / Chips</h2>
@@ -330,10 +759,10 @@ console.log(greeting);</code
 						{/each}
 						<div class="flex flex-wrap items-center gap-2">
 							<span class="w-20 text-xs text-surface-700-300">Sizes</span>
-							<button type="button" class="preset-filled-primary-500 btn btn-sm">Small</button>
-							<button type="button" class="preset-filled-primary-500 btn">Default</button>
-							<button type="button" class="preset-filled-primary-500 btn btn-lg">Large</button>
-							<button type="button" class="preset-filled-primary-500 btn" disabled>Disabled</button>
+							<button type="button" class="btn preset-filled-primary-500 btn-sm">Small</button>
+							<button type="button" class="btn preset-filled-primary-500">Default</button>
+							<button type="button" class="btn preset-filled-primary-500 btn-lg">Large</button>
+							<button type="button" class="btn preset-filled-primary-500" disabled>Disabled</button>
 							<button type="button" class="btn-icon preset-tonal-primary" aria-label="Star">
 								<StarIcon class="size-4" />
 							</button>
@@ -363,7 +792,7 @@ console.log(greeting);</code
 						{#each SEMANTIC_COLORS as color (color)}
 							<span class="chip preset-tonal-{color}">{color}</span>
 						{/each}
-						<span class="preset-filled-primary-500 chip">
+						<span class="chip preset-filled-primary-500">
 							<MapPinIcon class="size-4" />
 							<span>With icon</span>
 						</span>
@@ -514,7 +943,7 @@ console.log(greeting);</code
 			<div class="flex flex-wrap items-center gap-3">
 				<button
 					type="button"
-					class="preset-filled-primary-500 btn"
+					class="btn preset-filled-primary-500"
 					onclick={() => (dialogOpen = true)}
 				>
 					Open Dialog
@@ -591,7 +1020,7 @@ console.log(greeting);</code
 				</button>
 				<button
 					type="button"
-					class="preset-filled-primary-500 btn"
+					class="btn preset-filled-primary-500"
 					onclick={() => (dialogOpen = false)}
 				>
 					Confirm
@@ -685,7 +1114,9 @@ console.log(greeting);</code
 						{/each}
 						<div class="mt-3 flex gap-2">
 							<Steps.PrevTrigger class="btn preset-tonal btn-sm">Previous</Steps.PrevTrigger>
-							<Steps.NextTrigger class="preset-filled-primary-500 btn btn-sm">Next</Steps.NextTrigger>
+							<Steps.NextTrigger class="btn preset-filled-primary-500 btn-sm"
+								>Next</Steps.NextTrigger
+							>
 						</div>
 					</Steps>
 				</div>
@@ -708,7 +1139,7 @@ console.log(greeting);</code
 										{#if p.type === 'page'}
 											<Pagination.Item
 												{...p}
-												class="data-selected:preset-filled-primary-500 btn preset-tonal btn-sm"
+												class="btn preset-tonal btn-sm data-selected:preset-filled-primary-500"
 											>
 												{p.value}
 											</Pagination.Item>

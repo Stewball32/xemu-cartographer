@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { TickPlayer, GamePlayer } from '$lib/types/scraper';
+	import { teamAccent } from './util';
 
 	let {
 		tickPlayer,
@@ -16,11 +17,7 @@
 	} = $props();
 
 	const name = $derived(gamePlayer?.name ?? `Player ${tickPlayer.index}`);
-	const teamColor = $derived.by(() => {
-		if (!teamGame) return 'bg-surface-500';
-		const t = gamePlayer?.team ?? 0;
-		return t === 0 ? 'bg-error-500' : 'bg-primary-500';
-	});
+	const teamColor = $derived(teamGame ? teamAccent(gamePlayer?.team ?? 0).dot : 'bg-surface-500');
 
 	// Halo CE caps health at 1.0, shields at 1.0 (normalized).
 	const hpPct = $derived(Math.max(0, Math.min(100, Math.round((tickPlayer.health ?? 0) * 100))));

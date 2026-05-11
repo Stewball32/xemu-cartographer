@@ -143,6 +143,7 @@ The README's [Project Structure](README.md#project-structure) tree covers the di
 - **WebSocket:** Browser native `WebSocket` API connecting to `/api/ws?token=PB_JWT`
 - **Routing:** SvelteKit file-based routing in `sveltekit/src/routes/`; `+layout.ts` sets `ssr = false`, `prerender = true`, `trailingSlash = 'always'` globally
 - **Admin debug page:** [sveltekit/src/routes/admin/debug/](sveltekit/src/routes/admin/debug/) renders per-instance tabs (Overview / Game / Tick / Events / Probe / Raw JSON). Sub-components live in [sveltekit/src/lib/components/debug/](sveltekit/src/lib/components/debug/) (`OverviewCard`, `KvCard`, `ColGroupedTable`, `PlayerListItem`, `PlayerDetailPanel`). The Probe tab consumes `GameReader.BuildScoreProbe()` and `LastStateInputs()` from [internal/scraper/scraper.go](internal/scraper/scraper.go) — when adding diagnostics to a game plugin, surface them through these methods.
+- **Tables:** use `<DataTable>` from [sveltekit/src/lib/components/ui/DataTable.svelte](sveltekit/src/lib/components/ui/DataTable.svelte) for any list of records. Conventions (required props, density, cell patterns, order stability) live in [sveltekit/docs/TABLES.md](sveltekit/docs/TABLES.md).
 - **Build:** adapter-static outputs directly to `pb_public/` with SPA fallback
 - **Env:** `vite.config.ts` uses `envDir: '..'` to read from root `.env` — no separate `sveltekit/.env`
 - **Package manager:** pnpm

@@ -21,7 +21,7 @@
 	} from '@lucide/svelte';
 	import { APP_NAME } from '$lib/config/app';
 	import { mode } from '$lib/stores/mode.svelte';
-	import Card from '$lib/components/chrome/Card.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
 
 	type ColorName =
 		| 'primary'

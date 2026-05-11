@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
-	import NavToggleButton from '$lib/components/NavToggle.svelte';
+	import NavToggleButton from './NavToggle.svelte';
 	import { mainGroups, footerLinks, type NavLink } from '$lib/config/navigation';
 	import { isAdmin } from '$lib/utils/guards';
 

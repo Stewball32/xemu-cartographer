@@ -1,12 +1,424 @@
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
-@import '../lib/styles/theme-default.css';
-@import '../lib/styles/theme-forerunner.css';
-@import '../lib/styles/theme-norcal.css';
-@import '../lib/styles/theme-xbox.css';
-@import '../lib/styles/theme-phosphor.css';
-@import '../lib/styles/theme-midnight.css';
+@import '$lib/styles/theme-default.css';
+@import '$lib/styles/theme-forerunner.css';
+@import '$lib/styles/theme-norcal.css';
+@import '$lib/styles/theme-xbox.css';
+@import '$lib/styles/theme-phosphor.css';
+@import '$lib/styles/theme-midnight.css';
+@import '$lib/styles/theme-debug.css';
+
+/* Theme-agnostic Xbox / Halo presets. These tokens stay constant across all
+   six Skeleton themes so team identity (Red/Blue/Green/Yellow), Xbox face
+   buttons (ABXY + Black/White), and Xbox brand green don't drift when the
+   active `data-theme` changes. Tailwind v4's @theme directive registers each
+   `--color-<name>-<step>` as a utility (bg-<name>-<step>, text-<name>-<step>,
+   etc.). Lightness curve mirrors Skeleton's color groups (50:0.95 →
+   500:~0.58 → 950:~0.23) so opacity/contrast modifiers behave consistently. */
+@theme {
+	/* Halo Red Team — hue ~25 (warm red, distinct from theme `error`) */
+	--color-team-red-50: oklch(0.95 0.04 25);
+	--color-team-red-100: oklch(0.89 0.08 25);
+	--color-team-red-200: oklch(0.81 0.13 25);
+	--color-team-red-300: oklch(0.73 0.17 25);
+	--color-team-red-400: oklch(0.66 0.21 25);
+	--color-team-red-500: oklch(0.6 0.23 25);
+	--color-team-red-600: oklch(0.52 0.22 25);
+	--color-team-red-700: oklch(0.44 0.2 25);
+	--color-team-red-800: oklch(0.37 0.17 25);
+	--color-team-red-900: oklch(0.3 0.14 25);
+	--color-team-red-950: oklch(0.23 0.1 25);
+	--color-team-red-contrast-dark: var(--color-team-red-950);
+	--color-team-red-contrast-light: var(--color-team-red-50);
+	--color-team-red-contrast-50: var(--color-team-red-contrast-dark);
+	--color-team-red-contrast-100: var(--color-team-red-contrast-dark);
+	--color-team-red-contrast-200: var(--color-team-red-contrast-dark);
+	--color-team-red-contrast-300: var(--color-team-red-contrast-dark);
+	--color-team-red-contrast-400: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-500: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-600: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-700: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-800: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-900: var(--color-team-red-contrast-light);
+	--color-team-red-contrast-950: var(--color-team-red-contrast-light);
+
+	/* Halo Blue Team — hue ~250 (cobalt, intentionally different from any
+	   theme's primary so Blue Team always reads as blue) */
+	--color-team-blue-50: oklch(0.95 0.03 250);
+	--color-team-blue-100: oklch(0.88 0.07 250);
+	--color-team-blue-200: oklch(0.8 0.12 250);
+	--color-team-blue-300: oklch(0.71 0.16 250);
+	--color-team-blue-400: oklch(0.63 0.19 250);
+	--color-team-blue-500: oklch(0.55 0.21 250);
+	--color-team-blue-600: oklch(0.48 0.2 250);
+	--color-team-blue-700: oklch(0.41 0.18 250);
+	--color-team-blue-800: oklch(0.34 0.15 250);
+	--color-team-blue-900: oklch(0.27 0.12 250);
+	--color-team-blue-950: oklch(0.2 0.08 250);
+	--color-team-blue-contrast-dark: var(--color-team-blue-950);
+	--color-team-blue-contrast-light: var(--color-team-blue-50);
+	--color-team-blue-contrast-50: var(--color-team-blue-contrast-dark);
+	--color-team-blue-contrast-100: var(--color-team-blue-contrast-dark);
+	--color-team-blue-contrast-200: var(--color-team-blue-contrast-dark);
+	--color-team-blue-contrast-300: var(--color-team-blue-contrast-dark);
+	--color-team-blue-contrast-400: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-500: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-600: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-700: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-800: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-900: var(--color-team-blue-contrast-light);
+	--color-team-blue-contrast-950: var(--color-team-blue-contrast-light);
+
+	/* Halo Green Team — hue ~145 (leaf green) */
+	--color-team-green-50: oklch(0.95 0.05 145);
+	--color-team-green-100: oklch(0.89 0.1 145);
+	--color-team-green-200: oklch(0.82 0.14 145);
+	--color-team-green-300: oklch(0.75 0.17 145);
+	--color-team-green-400: oklch(0.68 0.19 145);
+	--color-team-green-500: oklch(0.62 0.2 145);
+	--color-team-green-600: oklch(0.54 0.18 145);
+	--color-team-green-700: oklch(0.45 0.16 145);
+	--color-team-green-800: oklch(0.38 0.13 145);
+	--color-team-green-900: oklch(0.31 0.1 145);
+	--color-team-green-950: oklch(0.24 0.07 145);
+	--color-team-green-contrast-dark: var(--color-team-green-950);
+	--color-team-green-contrast-light: var(--color-team-green-50);
+	--color-team-green-contrast-50: var(--color-team-green-contrast-dark);
+	--color-team-green-contrast-100: var(--color-team-green-contrast-dark);
+	--color-team-green-contrast-200: var(--color-team-green-contrast-dark);
+	--color-team-green-contrast-300: var(--color-team-green-contrast-dark);
+	--color-team-green-contrast-400: var(--color-team-green-contrast-dark);
+	--color-team-green-contrast-500: var(--color-team-green-contrast-light);
+	--color-team-green-contrast-600: var(--color-team-green-contrast-light);
+	--color-team-green-contrast-700: var(--color-team-green-contrast-light);
+	--color-team-green-contrast-800: var(--color-team-green-contrast-light);
+	--color-team-green-contrast-900: var(--color-team-green-contrast-light);
+	--color-team-green-contrast-950: var(--color-team-green-contrast-light);
+
+	/* Halo Yellow Team — hue ~95 (saturated yellow). Yellow stays light
+	   even at step 500, so the contrast split sits higher than the others. */
+	--color-team-yellow-50: oklch(0.97 0.05 95);
+	--color-team-yellow-100: oklch(0.94 0.1 95);
+	--color-team-yellow-200: oklch(0.91 0.15 95);
+	--color-team-yellow-300: oklch(0.88 0.18 95);
+	--color-team-yellow-400: oklch(0.85 0.2 95);
+	--color-team-yellow-500: oklch(0.82 0.18 95);
+	--color-team-yellow-600: oklch(0.72 0.16 95);
+	--color-team-yellow-700: oklch(0.61 0.14 95);
+	--color-team-yellow-800: oklch(0.5 0.12 95);
+	--color-team-yellow-900: oklch(0.4 0.1 95);
+	--color-team-yellow-950: oklch(0.3 0.08 95);
+	--color-team-yellow-contrast-dark: var(--color-team-yellow-950);
+	--color-team-yellow-contrast-light: var(--color-team-yellow-50);
+	--color-team-yellow-contrast-50: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-100: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-200: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-300: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-400: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-500: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-600: var(--color-team-yellow-contrast-dark);
+	--color-team-yellow-contrast-700: var(--color-team-yellow-contrast-light);
+	--color-team-yellow-contrast-800: var(--color-team-yellow-contrast-light);
+	--color-team-yellow-contrast-900: var(--color-team-yellow-contrast-light);
+	--color-team-yellow-contrast-950: var(--color-team-yellow-contrast-light);
+
+	/* Halo 2 added Orange / Purple / Brown / Pink to the team palette. Same
+	   ramp shape as the four primary teams above so 8-team matches render
+	   consistently. */
+
+	/* Halo Orange Team — hue ~55 (warm orange between red and yellow) */
+	--color-team-orange-50: oklch(0.96 0.05 55);
+	--color-team-orange-100: oklch(0.91 0.1 55);
+	--color-team-orange-200: oklch(0.85 0.14 55);
+	--color-team-orange-300: oklch(0.78 0.17 55);
+	--color-team-orange-400: oklch(0.72 0.19 55);
+	--color-team-orange-500: oklch(0.68 0.2 55);
+	--color-team-orange-600: oklch(0.6 0.18 55);
+	--color-team-orange-700: oklch(0.51 0.16 55);
+	--color-team-orange-800: oklch(0.42 0.13 55);
+	--color-team-orange-900: oklch(0.34 0.1 55);
+	--color-team-orange-950: oklch(0.27 0.08 55);
+	--color-team-orange-contrast-dark: var(--color-team-orange-950);
+	--color-team-orange-contrast-light: var(--color-team-orange-50);
+	--color-team-orange-contrast-50: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-100: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-200: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-300: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-400: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-500: var(--color-team-orange-contrast-dark);
+	--color-team-orange-contrast-600: var(--color-team-orange-contrast-light);
+	--color-team-orange-contrast-700: var(--color-team-orange-contrast-light);
+	--color-team-orange-contrast-800: var(--color-team-orange-contrast-light);
+	--color-team-orange-contrast-900: var(--color-team-orange-contrast-light);
+	--color-team-orange-contrast-950: var(--color-team-orange-contrast-light);
+
+	/* Halo Purple Team — hue ~310 (vivid magenta-purple) */
+	--color-team-purple-50: oklch(0.94 0.04 310);
+	--color-team-purple-100: oklch(0.87 0.08 310);
+	--color-team-purple-200: oklch(0.79 0.12 310);
+	--color-team-purple-300: oklch(0.71 0.15 310);
+	--color-team-purple-400: oklch(0.62 0.18 310);
+	--color-team-purple-500: oklch(0.55 0.2 310);
+	--color-team-purple-600: oklch(0.48 0.18 310);
+	--color-team-purple-700: oklch(0.41 0.16 310);
+	--color-team-purple-800: oklch(0.34 0.13 310);
+	--color-team-purple-900: oklch(0.27 0.1 310);
+	--color-team-purple-950: oklch(0.2 0.07 310);
+	--color-team-purple-contrast-dark: var(--color-team-purple-950);
+	--color-team-purple-contrast-light: var(--color-team-purple-50);
+	--color-team-purple-contrast-50: var(--color-team-purple-contrast-dark);
+	--color-team-purple-contrast-100: var(--color-team-purple-contrast-dark);
+	--color-team-purple-contrast-200: var(--color-team-purple-contrast-dark);
+	--color-team-purple-contrast-300: var(--color-team-purple-contrast-dark);
+	--color-team-purple-contrast-400: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-500: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-600: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-700: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-800: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-900: var(--color-team-purple-contrast-light);
+	--color-team-purple-contrast-950: var(--color-team-purple-contrast-light);
+
+	/* Halo Brown Team — hue ~60 with low chroma (desaturated earth tone) */
+	--color-team-brown-50: oklch(0.94 0.02 60);
+	--color-team-brown-100: oklch(0.87 0.04 60);
+	--color-team-brown-200: oklch(0.79 0.06 60);
+	--color-team-brown-300: oklch(0.7 0.08 60);
+	--color-team-brown-400: oklch(0.61 0.09 60);
+	--color-team-brown-500: oklch(0.52 0.1 60);
+	--color-team-brown-600: oklch(0.45 0.1 60);
+	--color-team-brown-700: oklch(0.38 0.09 60);
+	--color-team-brown-800: oklch(0.31 0.08 60);
+	--color-team-brown-900: oklch(0.25 0.06 60);
+	--color-team-brown-950: oklch(0.18 0.04 60);
+	--color-team-brown-contrast-dark: var(--color-team-brown-950);
+	--color-team-brown-contrast-light: var(--color-team-brown-50);
+	--color-team-brown-contrast-50: var(--color-team-brown-contrast-dark);
+	--color-team-brown-contrast-100: var(--color-team-brown-contrast-dark);
+	--color-team-brown-contrast-200: var(--color-team-brown-contrast-dark);
+	--color-team-brown-contrast-300: var(--color-team-brown-contrast-dark);
+	--color-team-brown-contrast-400: var(--color-team-brown-contrast-dark);
+	--color-team-brown-contrast-500: var(--color-team-brown-contrast-light);
+	--color-team-brown-contrast-600: var(--color-team-brown-contrast-light);
+	--color-team-brown-contrast-700: var(--color-team-brown-contrast-light);
+	--color-team-brown-contrast-800: var(--color-team-brown-contrast-light);
+	--color-team-brown-contrast-900: var(--color-team-brown-contrast-light);
+	--color-team-brown-contrast-950: var(--color-team-brown-contrast-light);
+
+	/* Halo Pink Team — hue ~5 (soft warm pink) */
+	--color-team-pink-50: oklch(0.96 0.03 5);
+	--color-team-pink-100: oklch(0.91 0.06 5);
+	--color-team-pink-200: oklch(0.85 0.1 5);
+	--color-team-pink-300: oklch(0.79 0.13 5);
+	--color-team-pink-400: oklch(0.74 0.16 5);
+	--color-team-pink-500: oklch(0.7 0.18 5);
+	--color-team-pink-600: oklch(0.62 0.18 5);
+	--color-team-pink-700: oklch(0.53 0.17 5);
+	--color-team-pink-800: oklch(0.44 0.15 5);
+	--color-team-pink-900: oklch(0.36 0.13 5);
+	--color-team-pink-950: oklch(0.28 0.1 5);
+	--color-team-pink-contrast-dark: var(--color-team-pink-950);
+	--color-team-pink-contrast-light: var(--color-team-pink-50);
+	--color-team-pink-contrast-50: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-100: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-200: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-300: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-400: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-500: var(--color-team-pink-contrast-dark);
+	--color-team-pink-contrast-600: var(--color-team-pink-contrast-light);
+	--color-team-pink-contrast-700: var(--color-team-pink-contrast-light);
+	--color-team-pink-contrast-800: var(--color-team-pink-contrast-light);
+	--color-team-pink-contrast-900: var(--color-team-pink-contrast-light);
+	--color-team-pink-contrast-950: var(--color-team-pink-contrast-light);
+
+	/* Halo armor colors — single shade per name (the in-engine palette index
+	   maps to one swatch; we don't need a tonal ramp like teams do). Tokens
+	   cover both Halo: CE (indices 0–17) and Halo 2 (additional names beyond
+	   CE — only the CE subset is wired this milestone; H2 tokens ride along
+	   so the palette is ready when the H2 plugin lands). OKLCH tuned to match
+	   the in-game biped tints rather than literal color names. */
+	--color-armor-white: oklch(0.95 0.005 90);
+	--color-armor-black: oklch(0.22 0.005 270);
+	--color-armor-red: oklch(0.6 0.23 25);
+	--color-armor-blue: oklch(0.55 0.21 250);
+	--color-armor-gray: oklch(0.62 0.01 270);
+	--color-armor-yellow: oklch(0.85 0.18 95);
+	--color-armor-green: oklch(0.62 0.2 145);
+	--color-armor-pink: oklch(0.78 0.15 350);
+	--color-armor-purple: oklch(0.5 0.22 300);
+	--color-armor-cyan: oklch(0.78 0.13 195);
+	--color-armor-cobalt: oklch(0.42 0.2 260);
+	--color-armor-orange: oklch(0.7 0.2 55);
+	--color-armor-teal: oklch(0.58 0.13 190);
+	--color-armor-sage: oklch(0.65 0.08 135);
+	--color-armor-brown: oklch(0.4 0.09 50);
+	--color-armor-tan: oklch(0.78 0.06 80);
+	--color-armor-maroon: oklch(0.4 0.15 15);
+	--color-armor-salmon: oklch(0.72 0.13 25);
+	/* Halo 2 additions (not wired yet — placeholders for the H2 plugin) */
+	--color-armor-steel: oklch(0.55 0.02 250);
+	--color-armor-crimson: oklch(0.45 0.22 15);
+	--color-armor-olive: oklch(0.55 0.1 110);
+	--color-armor-mauve: oklch(0.6 0.09 330);
+	--color-armor-rose: oklch(0.65 0.18 10);
+	--color-armor-gold: oklch(0.78 0.15 85);
+
+	/* Shield bar tint — theme-agnostic cyan matching Halo's HUD shield. Used
+	   by debug/shared/util.ts shieldMeterTone() for the healthy tier. */
+	--color-shield-500: oklch(0.78 0.14 200);
+
+	/* Xbox controller face buttons — full 11-step ramps so the controller's
+	   "dark fill when up / bright fill when down" pattern works through the
+	   theme tokens (e.g. bg-xbox-a-900 unpressed, bg-xbox-a-500 pressed).
+	   Hues match Xbox convention: A=green, B=red, X=blue (slightly cyan vs
+	   team-blue), Y=yellow. */
+
+	/* Xbox A button — bright Xbox green (vivid, a touch more saturated than
+	   team-green for Xbox controller fidelity) */
+	--color-xbox-a-50: oklch(0.95 0.05 145);
+	--color-xbox-a-100: oklch(0.89 0.1 145);
+	--color-xbox-a-200: oklch(0.82 0.14 145);
+	--color-xbox-a-300: oklch(0.76 0.18 145);
+	--color-xbox-a-400: oklch(0.7 0.2 145);
+	--color-xbox-a-500: oklch(0.65 0.22 145);
+	--color-xbox-a-600: oklch(0.56 0.2 145);
+	--color-xbox-a-700: oklch(0.47 0.18 145);
+	--color-xbox-a-800: oklch(0.38 0.15 145);
+	--color-xbox-a-900: oklch(0.3 0.12 145);
+	--color-xbox-a-950: oklch(0.23 0.08 145);
+	--color-xbox-a-contrast-dark: var(--color-xbox-a-950);
+	--color-xbox-a-contrast-light: var(--color-xbox-a-50);
+	--color-xbox-a-contrast-50: var(--color-xbox-a-contrast-dark);
+	--color-xbox-a-contrast-100: var(--color-xbox-a-contrast-dark);
+	--color-xbox-a-contrast-200: var(--color-xbox-a-contrast-dark);
+	--color-xbox-a-contrast-300: var(--color-xbox-a-contrast-dark);
+	--color-xbox-a-contrast-400: var(--color-xbox-a-contrast-dark);
+	--color-xbox-a-contrast-500: var(--color-xbox-a-contrast-light);
+	--color-xbox-a-contrast-600: var(--color-xbox-a-contrast-light);
+	--color-xbox-a-contrast-700: var(--color-xbox-a-contrast-light);
+	--color-xbox-a-contrast-800: var(--color-xbox-a-contrast-light);
+	--color-xbox-a-contrast-900: var(--color-xbox-a-contrast-light);
+	--color-xbox-a-contrast-950: var(--color-xbox-a-contrast-light);
+
+	/* Xbox B button — bright Xbox red */
+	--color-xbox-b-50: oklch(0.95 0.04 25);
+	--color-xbox-b-100: oklch(0.89 0.08 25);
+	--color-xbox-b-200: oklch(0.81 0.13 25);
+	--color-xbox-b-300: oklch(0.73 0.17 25);
+	--color-xbox-b-400: oklch(0.66 0.21 25);
+	--color-xbox-b-500: oklch(0.6 0.23 25);
+	--color-xbox-b-600: oklch(0.52 0.22 25);
+	--color-xbox-b-700: oklch(0.44 0.2 25);
+	--color-xbox-b-800: oklch(0.37 0.17 25);
+	--color-xbox-b-900: oklch(0.3 0.14 25);
+	--color-xbox-b-950: oklch(0.23 0.1 25);
+	--color-xbox-b-contrast-dark: var(--color-xbox-b-950);
+	--color-xbox-b-contrast-light: var(--color-xbox-b-50);
+	--color-xbox-b-contrast-50: var(--color-xbox-b-contrast-dark);
+	--color-xbox-b-contrast-100: var(--color-xbox-b-contrast-dark);
+	--color-xbox-b-contrast-200: var(--color-xbox-b-contrast-dark);
+	--color-xbox-b-contrast-300: var(--color-xbox-b-contrast-dark);
+	--color-xbox-b-contrast-400: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-500: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-600: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-700: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-800: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-900: var(--color-xbox-b-contrast-light);
+	--color-xbox-b-contrast-950: var(--color-xbox-b-contrast-light);
+
+	/* Xbox X button — Xbox blue (hue 240, slightly cyan compared to
+	   team-blue's 250 cobalt) */
+	--color-xbox-x-50: oklch(0.95 0.04 240);
+	--color-xbox-x-100: oklch(0.88 0.08 240);
+	--color-xbox-x-200: oklch(0.8 0.13 240);
+	--color-xbox-x-300: oklch(0.71 0.17 240);
+	--color-xbox-x-400: oklch(0.62 0.2 240);
+	--color-xbox-x-500: oklch(0.54 0.22 240);
+	--color-xbox-x-600: oklch(0.47 0.2 240);
+	--color-xbox-x-700: oklch(0.4 0.18 240);
+	--color-xbox-x-800: oklch(0.33 0.15 240);
+	--color-xbox-x-900: oklch(0.26 0.12 240);
+	--color-xbox-x-950: oklch(0.19 0.08 240);
+	--color-xbox-x-contrast-dark: var(--color-xbox-x-950);
+	--color-xbox-x-contrast-light: var(--color-xbox-x-50);
+	--color-xbox-x-contrast-50: var(--color-xbox-x-contrast-dark);
+	--color-xbox-x-contrast-100: var(--color-xbox-x-contrast-dark);
+	--color-xbox-x-contrast-200: var(--color-xbox-x-contrast-dark);
+	--color-xbox-x-contrast-300: var(--color-xbox-x-contrast-dark);
+	--color-xbox-x-contrast-400: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-500: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-600: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-700: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-800: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-900: var(--color-xbox-x-contrast-light);
+	--color-xbox-x-contrast-950: var(--color-xbox-x-contrast-light);
+
+	/* Xbox Y button — bright Xbox yellow */
+	--color-xbox-y-50: oklch(0.97 0.05 95);
+	--color-xbox-y-100: oklch(0.94 0.1 95);
+	--color-xbox-y-200: oklch(0.91 0.15 95);
+	--color-xbox-y-300: oklch(0.88 0.18 95);
+	--color-xbox-y-400: oklch(0.85 0.2 95);
+	--color-xbox-y-500: oklch(0.82 0.18 95);
+	--color-xbox-y-600: oklch(0.72 0.16 95);
+	--color-xbox-y-700: oklch(0.61 0.14 95);
+	--color-xbox-y-800: oklch(0.5 0.12 95);
+	--color-xbox-y-900: oklch(0.4 0.1 95);
+	--color-xbox-y-950: oklch(0.3 0.08 95);
+	--color-xbox-y-contrast-dark: var(--color-xbox-y-950);
+	--color-xbox-y-contrast-light: var(--color-xbox-y-50);
+	--color-xbox-y-contrast-50: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-100: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-200: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-300: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-400: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-500: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-600: var(--color-xbox-y-contrast-dark);
+	--color-xbox-y-contrast-700: var(--color-xbox-y-contrast-light);
+	--color-xbox-y-contrast-800: var(--color-xbox-y-contrast-light);
+	--color-xbox-y-contrast-900: var(--color-xbox-y-contrast-light);
+	--color-xbox-y-contrast-950: var(--color-xbox-y-contrast-light);
+
+	/* Xbox controller surface — theme-agnostic neutral gray for non-ABXY
+	   buttons (shoulders, triggers, D-pad, sticks, Back, Start). Cool slate
+	   tint (hue 230, very low chroma) so it reads as plastic-controller gray
+	   regardless of the active Skeleton theme's surface color. */
+	--color-xbox-controller-50: oklch(0.96 0.005 230);
+	--color-xbox-controller-100: oklch(0.9 0.005 230);
+	--color-xbox-controller-200: oklch(0.81 0.005 230);
+	--color-xbox-controller-300: oklch(0.71 0.008 230);
+	--color-xbox-controller-400: oklch(0.61 0.01 230);
+	--color-xbox-controller-500: oklch(0.5 0.013 230);
+	--color-xbox-controller-600: oklch(0.42 0.015 230);
+	--color-xbox-controller-700: oklch(0.34 0.018 230);
+	--color-xbox-controller-800: oklch(0.27 0.02 230);
+	--color-xbox-controller-900: oklch(0.2 0.022 230);
+	--color-xbox-controller-950: oklch(0.14 0.022 230);
+	--color-xbox-controller-contrast-dark: var(--color-xbox-controller-950);
+	--color-xbox-controller-contrast-light: var(--color-xbox-controller-50);
+	--color-xbox-controller-contrast-50: var(--color-xbox-controller-contrast-dark);
+	--color-xbox-controller-contrast-100: var(--color-xbox-controller-contrast-dark);
+	--color-xbox-controller-contrast-200: var(--color-xbox-controller-contrast-dark);
+	--color-xbox-controller-contrast-300: var(--color-xbox-controller-contrast-dark);
+	--color-xbox-controller-contrast-400: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-500: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-600: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-700: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-800: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-900: var(--color-xbox-controller-contrast-light);
+	--color-xbox-controller-contrast-950: var(--color-xbox-controller-contrast-light);
+
+	/* Black / White face buttons (OG Xbox controller). Near-pure values with
+	   tiny chroma so they read as neutral but still feel "warm/cool" Xbox. */
+	--color-xbox-black: oklch(0.18 0.005 230);
+	--color-xbox-black-contrast: oklch(0.97 0.005 80);
+	--color-xbox-white: oklch(0.97 0.005 80);
+	--color-xbox-white-contrast: oklch(0.18 0.005 230);
+
+	/* Xbox brand green — the classic OG dashboard / nVidia-era jewel green. */
+	--color-xbox-green: oklch(0.78 0.2 145);
+	--color-xbox-green-contrast: oklch(0.18 0.005 230);
+}
 
 @plugin '@tailwindcss/forms';
 
@@ -91,6 +503,17 @@
 
 		@variant dark {
 			background-color: color-mix(in oklch, var(--color-primary-500) 22%, transparent);
+		}
+	}
+
+	/* debug theme — flat in both modes for screenshot clarity. Overrides the
+	   base body rule's dark-mode radial gradients so the body backdrop is a
+	   single neutral color in any screenshot. */
+	[data-theme='debug'] body {
+		background: var(--body-background-color);
+
+		@variant dark {
+			background: var(--body-background-color-dark);
 		}
 	}
 

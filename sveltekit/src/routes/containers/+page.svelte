@@ -4,9 +4,9 @@
 	import { PlayIcon, SquareIcon, Trash2Icon, RefreshCwIcon, EyeIcon } from '@lucide/svelte';
 	import { adminGet, adminPost, adminDelete, AdminFetchError } from '$lib/utils/admin-api';
 	import { toaster } from '$lib/stores/toaster';
-	import PageHeader from '$lib/components/chrome/PageHeader.svelte';
-	import Card from '$lib/components/chrome/Card.svelte';
-	import Dialog from '$lib/components/chrome/Dialog.svelte';
+	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import Card from '$lib/components/ui/Card.svelte';
+	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import type {
 		ContainerInfo,
 		ContainerStatus,
