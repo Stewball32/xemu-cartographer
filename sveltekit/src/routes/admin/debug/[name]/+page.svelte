@@ -20,6 +20,7 @@
 	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
+	import GameTab from '$lib/components/debug/game/GameTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -276,12 +277,7 @@
 
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
-		<Tabs.Content value="game" class="pt-4">
-			<TabPlaceholder
-				title="Game"
-				description="Static per-match game state — map, mode, variant, score and time limits, machines, fog, roster, and power-item spawns. Read once per match and unchanged until the postgame transition."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
 		<Tabs.Content value="tick" class="pt-4">
 			<TabPlaceholder
 				title="Tick"
