@@ -27,6 +27,7 @@
 	import ProbeTab from '$lib/components/debug/probe/ProbeTab.svelte';
 	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
 	import LogsTab from '$lib/components/debug/logs/LogsTab.svelte';
+	import ControlsTab from '$lib/components/debug/controls/ControlsTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -295,11 +296,6 @@
 			/>
 		</Tabs.Content>
 		<Tabs.Content value="logs" class="pt-4"><LogsTab {name} /></Tabs.Content>
-		<Tabs.Content value="controls" class="pt-4">
-			<TabPlaceholder
-				title="Controls"
-				description="Container controls for this instance — embedded kiosk view, Xbox controller for sending input over VNC, and start/stop buttons. Will mirror the kiosk + controller panel already on /containers/[name]/."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="controls" class="pt-4"><ControlsTab {name} /></Tabs.Content>
 	</TabsResponsive>
 </div>
