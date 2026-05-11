@@ -23,6 +23,7 @@
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
+	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -282,12 +283,7 @@
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
 		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
-		<Tabs.Content value="events" class="pt-4">
-			<TabPlaceholder
-				title="Events"
-				description="Live event feed for the active match — kills, captures, betrayals, double-kills, and similar, with per-type frequency stats. Streamed from the scraper event envelopes."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
 		<Tabs.Content value="probe" class="pt-4">
 			<TabPlaceholder
 				title="Probe"
