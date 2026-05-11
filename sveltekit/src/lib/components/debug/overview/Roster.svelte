@@ -4,7 +4,7 @@
 	import { ChevronDownIcon } from '@lucide/svelte';
 	import type { GameData, GamePlayer, TickPayload, TickPlayer } from '$lib/types/scraper';
 	import { teamLabel, teamAccent, armorAccent, armorLabel } from '../shared/util';
-	import PlayerCard from './PlayerCard.svelte';
+	import PlayerCard from '../shared/PlayerCard.svelte';
 
 	let {
 		gameData,

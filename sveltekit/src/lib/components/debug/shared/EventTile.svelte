@@ -14,14 +14,9 @@
 		ZapIcon
 	} from '@lucide/svelte';
 	import type { Envelope } from '$lib/types/scraper';
-	import { armorLabel, armorTextClass } from '../shared/util';
-	import {
-		eventBucket,
-		eventTypeOf,
-		summarizeEvent,
-		type EventRosterRef
-	} from '../shared/events-vm';
-	import StatTile from '../shared/StatTile.svelte';
+	import { armorLabel, armorTextClass } from './util';
+	import { eventBucket, eventTypeOf, summarizeEvent, type EventRosterRef } from './events-vm';
+	import StatTile from './StatTile.svelte';
 
 	let {
 		env,

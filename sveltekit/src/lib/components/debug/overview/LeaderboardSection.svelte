@@ -6,7 +6,7 @@
 
 	import { TrophyIcon } from '@lucide/svelte';
 	import StatTile from '../shared/StatTile.svelte';
-	import ScoreTile from './ScoreTile.svelte';
+	import ScoreTile from '../shared/ScoreTile.svelte';
 	import type { PlayerScoreTile, ScoreRow } from './overview-vm';
 
 	let {

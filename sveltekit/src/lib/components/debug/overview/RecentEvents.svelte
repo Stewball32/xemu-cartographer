@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Envelope } from '$lib/types/scraper';
 	import type { EventRosterRef } from '../shared/events-vm';
-	import EventTile from './EventTile.svelte';
+	import EventTile from '../shared/EventTile.svelte';
 
 	let {
 		events,

@@ -12,7 +12,7 @@
 		overshieldLayers,
 		pctClamped,
 		shieldMeterTone
-	} from '../shared/util';
+	} from './util';
 
 	let {
 		p,

@@ -191,49 +191,6 @@
 		{ value: 'logs', label: 'Logs' },
 		{ value: 'controls', label: 'Controls' }
 	];
-
-	const PLACEHOLDERS: Record<string, { title: string; description: string }> = {
-		game: {
-			title: 'Game',
-			description:
-				'Static per-match game state — map, mode, variant, score and time limits, machines, fog, roster, and power-item spawns. Read once per match and unchanged until the postgame transition.'
-		},
-		tick: {
-			title: 'Tick',
-			description:
-				'Latest tick snapshot — engine flags, locals struct, network struct, and per-player runtime fields. Updates every tick while the scraper is in the live phase.'
-		},
-		postgame: {
-			title: 'Postgame',
-			description:
-				'Final summary for the most recently completed match — winning team, end-of-match scoreboard, full event log, and per-player score totals. Populated when the scraper enters the postgame phase.'
-		},
-		events: {
-			title: 'Events',
-			description:
-				'Live event feed for the active match — kills, captures, betrayals, double-kills, and similar, with per-type frequency stats. Streamed from the scraper event envelopes.'
-		},
-		probe: {
-			title: 'Probe',
-			description:
-				'Live memory-probe diagnostics — score-probe output and LastStateInputs() from the active GameReader. Used for offset hunting and verifying that the reader is converging on the right struct.'
-		},
-		raw: {
-			title: 'Raw',
-			description:
-				'Full JSON dump of the latest scraper inspect snapshot. The unfiltered source for everything the other tabs render — useful when a field looks wrong or missing.'
-		},
-		logs: {
-			title: 'Logs',
-			description:
-				'Container logs for this instance — xemu and Firefox-kiosk stdout, plus any other container-specific log sources worth surfacing. Will mirror the logs panel already on /containers/[name]/.'
-		},
-		controls: {
-			title: 'Controls',
-			description:
-				'Container controls for this instance — embedded kiosk view, Xbox controller for sending input over VNC, and start/stop buttons. Will mirror the kiosk + controller panel already on /containers/[name]/.'
-		}
-	};
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
@@ -319,10 +276,53 @@
 
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
-		{#each ['game', 'tick', 'postgame', 'events', 'probe', 'raw', 'logs', 'controls'] as v (v)}
-			<Tabs.Content value={v} class="pt-4">
-				<TabPlaceholder title={PLACEHOLDERS[v].title} description={PLACEHOLDERS[v].description} />
-			</Tabs.Content>
-		{/each}
+		<Tabs.Content value="game" class="pt-4">
+			<TabPlaceholder
+				title="Game"
+				description="Static per-match game state — map, mode, variant, score and time limits, machines, fog, roster, and power-item spawns. Read once per match and unchanged until the postgame transition."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="tick" class="pt-4">
+			<TabPlaceholder
+				title="Tick"
+				description="Latest tick snapshot — engine flags, locals struct, network struct, and per-player runtime fields. Updates every tick while the scraper is in the live phase."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="postgame" class="pt-4">
+			<TabPlaceholder
+				title="Postgame"
+				description="Final summary for the most recently completed match — winning team, end-of-match scoreboard, full event log, and per-player score totals. Populated when the scraper enters the postgame phase."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="events" class="pt-4">
+			<TabPlaceholder
+				title="Events"
+				description="Live event feed for the active match — kills, captures, betrayals, double-kills, and similar, with per-type frequency stats. Streamed from the scraper event envelopes."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="probe" class="pt-4">
+			<TabPlaceholder
+				title="Probe"
+				description="Live memory-probe diagnostics — score-probe output and LastStateInputs() from the active GameReader. Used for offset hunting and verifying that the reader is converging on the right struct."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="raw" class="pt-4">
+			<TabPlaceholder
+				title="Raw"
+				description="Full JSON dump of the latest scraper inspect snapshot. The unfiltered source for everything the other tabs render — useful when a field looks wrong or missing."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="logs" class="pt-4">
+			<TabPlaceholder
+				title="Logs"
+				description="Container logs for this instance — xemu and Firefox-kiosk stdout, plus any other container-specific log sources worth surfacing. Will mirror the logs panel already on /containers/[name]/."
+			/>
+		</Tabs.Content>
+		<Tabs.Content value="controls" class="pt-4">
+			<TabPlaceholder
+				title="Controls"
+				description="Container controls for this instance — embedded kiosk view, Xbox controller for sending input over VNC, and start/stop buttons. Will mirror the kiosk + controller panel already on /containers/[name]/."
+			/>
+		</Tabs.Content>
 	</TabsResponsive>
 </div>
