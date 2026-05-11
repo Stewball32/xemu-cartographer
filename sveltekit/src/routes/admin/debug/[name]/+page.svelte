@@ -21,6 +21,7 @@
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
+	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
 	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
@@ -278,12 +279,7 @@
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
-		<Tabs.Content value="tick" class="pt-4">
-			<TabPlaceholder
-				title="Tick"
-				description="Latest tick snapshot — engine flags, locals struct, network struct, and per-player runtime fields. Updates every tick while the scraper is in the live phase."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
 		<Tabs.Content value="postgame" class="pt-4">
 			<TabPlaceholder
 				title="Postgame"
