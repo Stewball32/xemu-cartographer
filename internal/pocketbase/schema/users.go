@@ -30,7 +30,7 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		users.Fields.Add(&core.TextField{
 			Name:        "username",
 			Min:         2,
-			Max:         16,
+			Max:         34,
 			Presentable: true,
 			Required:    true,
 		})
