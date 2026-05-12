@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import { SvelteSet } from 'svelte/reactivity';
 import type {
 	CurrentStatePayload,
+	CurrentStateSnapshot,
 	Envelope,
 	EventsResponsePayload,
 	GameData,
@@ -72,6 +73,11 @@ function createScraperWS() {
 	// empty).
 	let lastEventsReplyAt = $state<Record<string, number>>({});
 	let lastEventsReplyPhase = $state<Record<string, Phase>>({});
+	// Slow-moving snapshot from the most recent current_state envelope — see
+	// CurrentStateSnapshot. engine_tick / iterations advance every poll, so
+	// applyStateUpdate refreshes those two fields on the existing snapshot
+	// without re-issuing identity / EEPROM / XBE / kernel data.
+	let snapshots = $state<Record<string, CurrentStateSnapshot>>({});
 	let lastError = $state<string | null>(null);
 
 	// Per-connection set of host:* rooms we've already sent join_room for.
@@ -179,6 +185,33 @@ function createScraperWS() {
 		};
 
 		previousGames = { ...previousGames, [name]: payload.previous_game ?? null };
+
+		// Capture the slow-moving portion of the payload — identity, EEPROM,
+		// XBE certificate, kernel clock — so the Xbox / Runtime tabs render
+		// the whole envelope, not just the parts that have dedicated stores.
+		const snapshot: CurrentStateSnapshot = {
+			started_at: payload.started_at,
+			title_id: payload.title_id,
+			title: payload.title,
+			xbox_name: payload.xbox_name,
+			engine_tick: payload.engine_tick,
+			iterations: payload.iterations,
+			serial_number: payload.serial_number,
+			mac_address: payload.mac_address,
+			video_standard: payload.video_standard,
+			time_zone_bias: payload.time_zone_bias,
+			time_zone_std_name: payload.time_zone_std_name,
+			time_zone_dlt_name: payload.time_zone_dlt_name,
+			xbe_title_name: payload.xbe_title_name,
+			xbe_version: payload.xbe_version,
+			xbe_game_region: payload.xbe_game_region,
+			xbe_disk_number: payload.xbe_disk_number,
+			xbe_allowed_media: payload.xbe_allowed_media,
+			kernel_system_time: payload.kernel_system_time,
+			kernel_boot_time: payload.kernel_boot_time,
+			kernel_uptime_ns: payload.kernel_uptime_ns
+		};
+		snapshots = { ...snapshots, [name]: snapshot };
 	}
 
 	function applyStateUpdate(name: string, payload: StateUpdatePayload, now: number) {
@@ -193,6 +226,22 @@ function createScraperWS() {
 		if (payload.tick !== undefined) {
 			ticks = { ...ticks, [name]: payload.tick };
 			if (payload.tick) ticksAt = { ...ticksAt, [name]: now };
+		}
+		// Advance the snapshot's two volatile counters. Live broadcasts at
+		// ~30Hz; the identity / EEPROM / XBE / kernel fields the snapshot also
+		// holds are stable, so we preserve them by reading the prior snapshot
+		// and only overwriting iterations + engine_tick (and last_read_at
+		// effectively via the lastReadAt store above).
+		const prior = snapshots[name];
+		if (prior) {
+			snapshots = {
+				...snapshots,
+				[name]: {
+					...prior,
+					iterations: payload.iterations ?? prior.iterations,
+					engine_tick: payload.engine_tick ?? prior.engine_tick
+				}
+			};
 		}
 	}
 
@@ -363,6 +412,9 @@ function createScraperWS() {
 		},
 		get lastEventsReplyPhase() {
 			return lastEventsReplyPhase;
+		},
+		get snapshots() {
+			return snapshots;
 		},
 		get lastError() {
 			return lastError;

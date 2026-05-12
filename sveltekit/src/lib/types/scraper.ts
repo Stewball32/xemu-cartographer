@@ -149,10 +149,67 @@ export interface CurrentStatePayload {
 	last_read_at: string;
 	engine_tick: number;
 	iterations: number;
+
+	// EEPROM-derived system info. Title-agnostic, populated by the runner's
+	// runSystemSnapshot pass; omitempty on the wire until first successful read.
+	serial_number?: string;
+	mac_address?: string;
+	video_standard?: string;
+	time_zone_bias?: number;
+	time_zone_std_name?: string;
+	time_zone_dlt_name?: string;
+
+	// XBE certificate fields. Populated by the same system-snapshot pass; the
+	// kernel maps the running XBE header at a fixed GVA so these refresh on
+	// XBE swaps within one snapshot tick.
+	xbe_title_name?: string;
+	xbe_version?: number;
+	xbe_game_region?: number;
+	xbe_disk_number?: number;
+	xbe_allowed_media?: number;
+
+	// Kernel clock. system_time is wall-clock UTC; boot_time is when the guest
+	// booted; uptime_ns is nanoseconds since boot. All three are read together.
+	kernel_system_time?: string;
+	kernel_boot_time?: string;
+	kernel_uptime_ns?: number;
+
 	game_data?: GameData | null;
 	latest_tick?: TickPayload | null;
 	events?: Envelope[];
 	previous_game?: PreviousGameInfo | null;
+}
+
+// CurrentStateSnapshot is the slow-moving portion of a CurrentStatePayload —
+// identity, EEPROM, XBE certificate, and kernel-clock fields plus the two
+// counters (engine_tick / iterations) that the runner advances on every poll.
+// Stored separately from gameData / latestTick / events / previousGame so the
+// Xbox tab and Runtime tab can render the whole snapshot without dragging the
+// hot per-tick payload through the same reactive read.
+export interface CurrentStateSnapshot {
+	started_at: string;
+	title_id: number;
+	title: string;
+	xbox_name: string;
+	engine_tick: number;
+	iterations: number;
+
+	serial_number?: string;
+	mac_address?: string;
+	video_standard?: string;
+	time_zone_bias?: number;
+	time_zone_std_name?: string;
+	time_zone_dlt_name?: string;
+
+	xbe_title_name?: string;
+	xbe_version?: number;
+	xbe_game_region?: number;
+	xbe_disk_number?: number;
+	xbe_allowed_media?: number;
+
+	kernel_system_time?: string;
+	kernel_boot_time?: string;
+	kernel_uptime_ns?: number;
 }
 
 // StateUpdatePayload mirrors internal/scraper/manager/runner.go

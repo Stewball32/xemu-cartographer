@@ -26,7 +26,10 @@ function buildLiveSnapshot(name: string, ws: ScraperWS): Record<string, unknown>
 		gameDataAt: ws.gameDataAt[name] ?? null,
 		ticksAt: ws.ticksAt[name] ?? null,
 		lastEventsReplyAt: ws.lastEventsReplyAt[name] ?? null,
-		lastEventsReplyPhase: ws.lastEventsReplyPhase[name] ?? null
+		lastEventsReplyPhase: ws.lastEventsReplyPhase[name] ?? null,
+		snapshot: ws.snapshots[name] ?? null,
+		hostSummary: ws.hostSummaries[name] ?? null,
+		connection: { connected: ws.connected, lastError: ws.lastError }
 	};
 }
 
