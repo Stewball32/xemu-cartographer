@@ -28,7 +28,6 @@
 	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
 	import LogsTab from '$lib/components/debug/logs/LogsTab.svelte';
 	import ControlsTab from '$lib/components/debug/controls/ControlsTab.svelte';
-	import TabPlaceholder from '$lib/components/debug/TabPlaceholder.svelte';
 	import { setDebugContext } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
 
@@ -289,12 +288,7 @@
 		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
 		<Tabs.Content value="probe" class="pt-4"><ProbeTab {name} /></Tabs.Content>
-		<Tabs.Content value="raw" class="pt-4">
-			<TabPlaceholder
-				title="Raw"
-				description="Full JSON dump of the latest scraper inspect snapshot. The unfiltered source for everything the other tabs render — useful when a field looks wrong or missing."
-			/>
-		</Tabs.Content>
+		<Tabs.Content value="raw" class="pt-4"><RawTab {name} /></Tabs.Content>
 		<Tabs.Content value="logs" class="pt-4"><LogsTab {name} /></Tabs.Content>
 		<Tabs.Content value="controls" class="pt-4"><ControlsTab {name} /></Tabs.Content>
 	</TabsResponsive>
