@@ -23,6 +23,12 @@ export type PlayerTotalRow = {
 	name: string;
 	team: number;
 	armor_color: number;
+	// Identity-ish fields the live caller cares about (Postgame snapshots
+	// preserve them too, even though they aren't useful end-of-match — the
+	// debug page just wants every wire field rendered somewhere).
+	ctf_score: number;
+	is_local: boolean | null;
+	local_index: number | null;
 	score: number;
 	kills: number;
 	deaths: number;
@@ -95,6 +101,9 @@ export function buildPlayerTotalRow(p: GamePlayer): PlayerTotalRow {
 		name: p.name || '—',
 		team: p.team,
 		armor_color: p.armor_color,
+		ctf_score: p.ctf_score ?? 0,
+		is_local: p.is_local ?? null,
+		local_index: p.local_index ?? null,
 		score: p.score ?? 0,
 		kills: p.kills ?? 0,
 		deaths: p.deaths ?? 0,
@@ -193,7 +202,7 @@ function buildWinner(gameData: GameData | null): WinnerInfo {
 	};
 }
 
-function buildPlayerTotals(gameData: GameData | null): {
+export function buildPlayerTotals(gameData: GameData | null): {
 	byTeam: Array<{ team: number; rows: PlayerTotalRow[] }>;
 	flat: PlayerTotalRow[];
 } {

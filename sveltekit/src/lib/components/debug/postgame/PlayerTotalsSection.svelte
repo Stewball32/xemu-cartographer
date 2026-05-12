@@ -21,11 +21,23 @@
 		showHeader?: boolean;
 	} = $props();
 
-	// Column groups — identity first, then combat counters, then accuracy.
+	// Column groups — Player first, then identity (machine / controller / CTF),
+	// then combat counters, then accuracy. The identity group's three fields
+	// are mostly useful live (the Game tab reuses this section), but Postgame
+	// surfaces them too so the user can verify every wire field is rendered
+	// somewhere.
 	const groups: ColGroup[] = [
 		{
 			label: 'Player',
 			columns: [{ key: 'name', label: 'name' }]
+		},
+		{
+			label: 'Identity',
+			columns: [
+				{ key: 'is_local', label: 'local' },
+				{ key: 'local_index', label: 'local#' },
+				{ key: 'ctf_score', label: 'ctf' }
+			]
 		},
 		{
 			label: 'Score',
@@ -60,11 +72,26 @@
 		}
 	];
 
+	// Display helpers for the new identity columns. is_local is a nullable
+	// boolean on GamePlayer; render '—' when unknown, 'yes' / '·' otherwise.
+	// local_index is null for non-local players — surface that explicitly
+	// rather than padding with 0 (which would lie about the wire value).
+	function fmtIsLocal(v: boolean | null): string {
+		if (v === null) return '—';
+		return v ? 'yes' : '·';
+	}
+	function fmtLocalIndex(v: number | null): string {
+		return v === null ? '—' : String(v);
+	}
+
 	// ColGroupedTable renders scalar cells only; colour cues live on the
 	// per-team header bar (team games) or the swatch legend below (FFA).
 	function toRowDicts(rows: PlayerTotalRow[]): Record<string, unknown>[] {
 		return rows.map((r) => ({
 			name: r.name,
+			is_local: fmtIsLocal(r.is_local),
+			local_index: fmtLocalIndex(r.local_index),
+			ctf_score: r.ctf_score,
 			score: r.score,
 			kills: r.kills,
 			deaths: r.deaths,

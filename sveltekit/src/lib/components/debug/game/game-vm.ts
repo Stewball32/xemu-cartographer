@@ -14,11 +14,14 @@ import type {
 	GameMachine,
 	GamePlayer,
 	PowerItemSpawn,
+	StaticCachePtrs,
 	StaticFog,
+	StaticObjectType,
 	StaticPlayerSpawn,
 	TeamScore
 } from '$lib/types/scraper';
 import { teamAccent, teamLabel } from '../shared/util';
+import { buildPlayerTotals, type PlayerTotalRow } from '../postgame/postgame-vm';
 
 type ScraperWS = typeof scraperWS;
 
@@ -38,6 +41,11 @@ export type GameVm = {
 	powerItemSpawns: PowerItemSpawn[];
 	machines: GameMachine[];
 	fog: StaticFog | null;
+	objectTypes: StaticObjectType[];
+	tagCache: StaticCachePtrs | null;
+	isTeamGame: boolean;
+	playerTotalsByTeam: Array<{ team: number; rows: PlayerTotalRow[] }>;
+	playerTotalsFlat: PlayerTotalRow[];
 };
 
 export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
@@ -55,6 +63,7 @@ export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
 export function buildGameVm(name: string, ws: ScraperWS, ctx: DebugContext): GameVm {
 	const gameData = ws.gameData[name] ?? ctx.inspect?.game_data ?? null;
 	const tickValue = ws.tickNumbers[name] ?? ctx.inspect?.tick;
+	const totals = buildPlayerTotals(gameData);
 
 	return {
 		gameData,
@@ -64,6 +73,11 @@ export function buildGameVm(name: string, ws: ScraperWS, ctx: DebugContext): Gam
 		playerSpawns: gameData?.player_spawns ?? [],
 		powerItemSpawns: gameData?.power_item_spawns ?? [],
 		machines: gameData?.machines ?? [],
-		fog: gameData?.fog ?? null
+		fog: gameData?.fog ?? null,
+		objectTypes: gameData?.object_types ?? [],
+		tagCache: gameData?.tag_cache ?? null,
+		isTeamGame: gameData?.is_team_game === true,
+		playerTotalsByTeam: totals.byTeam,
+		playerTotalsFlat: totals.flat
 	};
 }

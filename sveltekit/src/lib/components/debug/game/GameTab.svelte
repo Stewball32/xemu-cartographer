@@ -21,6 +21,9 @@
 	import FogSection from './FogSection.svelte';
 	import PowerItemsSection from './PowerItemsSection.svelte';
 	import MachinesSection from './MachinesSection.svelte';
+	import ObjectTypesSection from './ObjectTypesSection.svelte';
+	import TagCacheSection from './TagCacheSection.svelte';
+	import PlayerTotalsSection from '../postgame/PlayerTotalsSection.svelte';
 
 	let { name }: { name: string } = $props();
 
@@ -30,11 +33,14 @@
 	type SectionId =
 		| 'match_config'
 		| 'team_scores'
+		| 'player_totals'
 		| 'roster'
 		| 'player_spawns'
 		| 'fog'
 		| 'power_items'
-		| 'machines';
+		| 'machines'
+		| 'object_types'
+		| 'tag_cache';
 
 	let collapsedSections = $state(new SvelteSet<string>());
 
@@ -59,11 +65,14 @@
 		if (!vm.gameData) return [];
 		const visible: SectionId[] = ['match_config'];
 		if (vm.scoreRows.length > 0) visible.push('team_scores');
+		if (vm.players.length > 0) visible.push('player_totals');
 		visible.push('roster');
 		if (vm.playerSpawns.length > 0) visible.push('player_spawns');
 		if (vm.fog) visible.push('fog');
 		if (vm.powerItemSpawns.length > 0) visible.push('power_items');
 		if (vm.machines.length > 0) visible.push('machines');
+		if (vm.objectTypes.length > 0) visible.push('object_types');
+		if (vm.tagCache) visible.push('tag_cache');
 		return visible;
 	});
 
@@ -125,6 +134,27 @@
 				</Accordion.ItemTrigger>
 				<Accordion.ItemContent class="pb-3">
 					<TeamScoresSection showHeader={false} scoreRows={vm.scoreRows} />
+				</Accordion.ItemContent>
+			</Accordion.Item>
+		{/if}
+
+		{#if vm.players.length > 0}
+			<Accordion.Item value="player_totals">
+				<Accordion.ItemTrigger
+					class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+				>
+					{@render trigger('Player totals', `(${vm.players.length})`)}
+					<Accordion.ItemIndicator>
+						<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+					</Accordion.ItemIndicator>
+				</Accordion.ItemTrigger>
+				<Accordion.ItemContent class="pb-3">
+					<PlayerTotalsSection
+						showHeader={false}
+						playerTotalsByTeam={vm.playerTotalsByTeam}
+						playerTotalsFlat={vm.playerTotalsFlat}
+						isTeamGame={vm.isTeamGame}
+					/>
 				</Accordion.ItemContent>
 			</Accordion.Item>
 		{/if}
@@ -203,6 +233,38 @@
 				</Accordion.ItemTrigger>
 				<Accordion.ItemContent class="pb-3">
 					<MachinesSection showHeader={false} machines={vm.machines} />
+				</Accordion.ItemContent>
+			</Accordion.Item>
+		{/if}
+
+		{#if vm.objectTypes.length > 0}
+			<Accordion.Item value="object_types">
+				<Accordion.ItemTrigger
+					class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+				>
+					{@render trigger('Object types', `(${vm.objectTypes.length})`)}
+					<Accordion.ItemIndicator>
+						<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+					</Accordion.ItemIndicator>
+				</Accordion.ItemTrigger>
+				<Accordion.ItemContent class="pb-3">
+					<ObjectTypesSection showHeader={false} objectTypes={vm.objectTypes} />
+				</Accordion.ItemContent>
+			</Accordion.Item>
+		{/if}
+
+		{#if vm.tagCache}
+			<Accordion.Item value="tag_cache">
+				<Accordion.ItemTrigger
+					class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+				>
+					{@render trigger('Tag cache')}
+					<Accordion.ItemIndicator>
+						<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+					</Accordion.ItemIndicator>
+				</Accordion.ItemTrigger>
+				<Accordion.ItemContent class="pb-3">
+					<TagCacheSection showHeader={false} tagCache={vm.tagCache} />
 				</Accordion.ItemContent>
 			</Accordion.Item>
 		{/if}
