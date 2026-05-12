@@ -10,8 +10,7 @@
 		fmtPctRaw,
 		meterTone,
 		overshieldLayers,
-		pctClamped,
-		shieldMeterTone
+		pctClamped
 	} from './util';
 
 	let {
@@ -128,15 +127,15 @@
 			<div class="flex items-center gap-2 text-[10px]">
 				<span class="text-surface-700-200 w-8 uppercase">sh</span>
 				<div class="relative h-2.5 flex-1 overflow-hidden rounded-full bg-surface-300-700">
-					<div
-						class="absolute inset-y-0 left-0 {shieldMeterTone(layers.a)}"
-						style="width: {layers.a}%"
-					></div>
+					<div class="absolute inset-y-0 left-0 bg-armor-cyan" style="width: {layers.a}%"></div>
 					{#if layers.b > 0}
-						<div class="absolute inset-y-0 left-0 bg-error-500" style="width: {layers.b}%"></div>
+						<div class="absolute inset-y-0 left-0 bg-team-red-500" style="width: {layers.b}%"></div>
 					{/if}
 					{#if layers.c > 0}
-						<div class="absolute inset-y-0 left-0 bg-success-500" style="width: {layers.c}%"></div>
+						<div
+							class="absolute inset-y-0 left-0 bg-team-green-500"
+							style="width: {layers.c}%"
+						></div>
 					{/if}
 				</div>
 				<span class="w-10 text-right font-mono tabular-nums">{fmtPctRaw(t?.shields)}</span>
