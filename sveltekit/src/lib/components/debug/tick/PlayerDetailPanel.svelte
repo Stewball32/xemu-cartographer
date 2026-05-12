@@ -154,6 +154,22 @@
 		}
 	];
 
+	// Animations sub-table inside StaticWeaponTagData. Columns match every
+	// field on AnimEntry so the user can sanity-check the animation strip
+	// scrape lined up correctly.
+	const animationsGroups: ColGroup[] = [
+		{
+			label: 'animation',
+			columns: [
+				{ key: 'index', label: 'idx' },
+				{ key: 'length', label: 'len' },
+				{ key: 'unk_46', label: 'unk_46' },
+				{ key: 'unk_52', label: 'unk_52' },
+				{ key: 'unk_54', label: 'unk_54' }
+			]
+		}
+	];
+
 	const extendedFields = $derived(recordToFields(tickPlayer.extended, `${indexedPrefix}.extended`));
 	const queueFields = $derived(
 		recordToFields(tickPlayer.update_queue, `${indexedPrefix}.update_queue`)
@@ -237,6 +253,77 @@
 		emptyMessage="no weapons"
 		annotationPrefix="{indexedPrefix}.weapons"
 	/>
+
+	{#if (tickPlayer.weapons ?? []).length > 0}
+		<div class="mt-2 space-y-1">
+			{#each tickPlayer.weapons ?? [] as w, wi (wi)}
+				{@const wPrefix = `${indexedPrefix}.weapons.${w.slot}`}
+				{@const extendedFieldsW = recordToFields(w.extended ?? null, `${wPrefix}.extended`)}
+				{@const tagDataFieldsW = recordToFields(
+					w.tag_data
+						? {
+								zoom_levels: w.tag_data.zoom_levels,
+								zoom_min: w.tag_data.zoom_min,
+								zoom_max: w.tag_data.zoom_max,
+								autoaim_angle: w.tag_data.autoaim_angle,
+								autoaim_range: w.tag_data.autoaim_range,
+								magnetism_angle: w.tag_data.magnetism_angle,
+								magnetism_range: w.tag_data.magnetism_range,
+								deviation_angle: w.tag_data.deviation_angle
+							}
+						: null,
+					`${wPrefix}.tag_data`
+				)}
+				{@const animRows = (w.tag_data?.animations ?? []) as unknown as ReadonlyArray<
+					Record<string, unknown>
+				>}
+				{#if extendedFieldsW.length > 0 || tagDataFieldsW.length > 0 || animRows.length > 0}
+					<details class="card preset-tonal">
+						<summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase">
+							slot {w.slot}
+							<span class="text-surface-500-400 ml-2 font-normal normal-case">{w.tag || '—'}</span>
+						</summary>
+						<div class="space-y-3 p-3">
+							{#if extendedFieldsW.length > 0}
+								<div>
+									<header
+										class="text-surface-700-200 mb-1 text-xs font-semibold tracking-wide uppercase"
+									>
+										extended
+									</header>
+									<KvGrid fields={extendedFieldsW} />
+								</div>
+							{/if}
+							{#if tagDataFieldsW.length > 0}
+								<div>
+									<header
+										class="text-surface-700-200 mb-1 text-xs font-semibold tracking-wide uppercase"
+									>
+										tag_data
+									</header>
+									<KvGrid fields={tagDataFieldsW} />
+								</div>
+							{/if}
+							{#if animRows.length > 0}
+								<div>
+									<header
+										class="text-surface-700-200 mb-1 text-xs font-semibold tracking-wide uppercase"
+									>
+										animations ({animRows.length})
+									</header>
+									<ColGroupedTable
+										rows={animRows}
+										groups={animationsGroups}
+										annotationPrefix="{wPrefix}.tag_data.animations"
+									/>
+								</div>
+							{/if}
+						</div>
+					</details>
+				{/if}
+			{/each}
+		</div>
+	{/if}
 </section>
 
 {#if extendedFields.length > 0}

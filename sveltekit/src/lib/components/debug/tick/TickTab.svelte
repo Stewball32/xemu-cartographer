@@ -9,10 +9,13 @@
 	//   - Locals         per-local sub-structs (fp_weapon, observer_cam, …)
 	//   - Network        client / server / game_data / machines / network_players
 	//   - Players        TickPlayer[] list → Dialog → PlayerDetailPanel
+	//   - Power items    runtime PowerItemStatus[] (pairs with Game tab's static spawns)
+	//   - CTF flags      TickCTFFlag[] (CTF-only)
+	//   - Data queue     TickDataQueue scalar bag
+	//   - Objects        TickObject[] — everything that isn't a player/projectile/power item
+	//   - Projectiles    TickProjectile[]
 	//
-	// Other TickPayload fields (power_items, data_queue, ctf_flags, objects,
-	// projectiles) are surfaced in other tabs (Game / Events / Raw); the
-	// Tick tab focuses on the bits that move per-tick.
+	// The Tick tab owns every TickPayload field; nothing falls back to Raw.
 
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -25,13 +28,27 @@
 	import LocalsSection from './LocalsSection.svelte';
 	import NetworkSection from './NetworkSection.svelte';
 	import PlayersRuntimeSection from './PlayersRuntimeSection.svelte';
+	import PowerItemsSection from './PowerItemsSection.svelte';
+	import CTFFlagsSection from './CTFFlagsSection.svelte';
+	import DataQueueSection from './DataQueueSection.svelte';
+	import ObjectsSection from './ObjectsSection.svelte';
+	import ProjectilesSection from './ProjectilesSection.svelte';
 
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
 	const vm = $derived.by(() => buildTickVm(name, scraperWS, ctx));
 
-	type SectionId = 'engine_flags' | 'locals' | 'network' | 'players';
+	type SectionId =
+		| 'engine_flags'
+		| 'locals'
+		| 'network'
+		| 'players'
+		| 'power_items'
+		| 'ctf_flags'
+		| 'data_queue'
+		| 'objects'
+		| 'projectiles';
 
 	let collapsedSections = $state(new SvelteSet<string>());
 
@@ -55,7 +72,17 @@
 	// Sections always render, even when their slice of the payload is null —
 	// each sub-component shows its own empty state so the operator knows the
 	// scraper isn't currently surfacing that struct.
-	const SECTIONS: SectionId[] = ['engine_flags', 'locals', 'network', 'players'];
+	const SECTIONS: SectionId[] = [
+		'engine_flags',
+		'locals',
+		'network',
+		'players',
+		'power_items',
+		'ctf_flags',
+		'data_queue',
+		'objects',
+		'projectiles'
+	];
 
 	const openSections = $derived(SECTIONS.filter((id) => !collapsedSections.has(id)));
 
@@ -73,6 +100,10 @@
 
 	const localsCount = $derived(vm.tick?.locals?.length ?? 0);
 	const playersCount = $derived(vm.tick?.players?.length ?? 0);
+	const powerItemsCount = $derived(vm.tick?.power_items?.length ?? 0);
+	const ctfFlagsCount = $derived(vm.tick?.ctf_flags?.length ?? 0);
+	const objectsCount = $derived(vm.tick?.objects?.length ?? 0);
+	const projectilesCount = $derived(vm.tick?.projectiles?.length ?? 0);
 </script>
 
 {#snippet trigger(title: string, subtitle?: string)}
@@ -171,6 +202,76 @@
 					playersByIndex={vm.playersByIndex}
 					teamGame={vm.isTeamGame}
 				/>
+			</Accordion.ItemContent>
+		</Accordion.Item>
+
+		<Accordion.Item value="power_items">
+			<Accordion.ItemTrigger
+				class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+			>
+				{@render trigger('Power items', `(${powerItemsCount})`)}
+				<Accordion.ItemIndicator>
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Accordion.ItemIndicator>
+			</Accordion.ItemTrigger>
+			<Accordion.ItemContent class="pb-3">
+				<PowerItemsSection showHeader={false} powerItems={vm.tick.power_items} />
+			</Accordion.ItemContent>
+		</Accordion.Item>
+
+		<Accordion.Item value="ctf_flags">
+			<Accordion.ItemTrigger
+				class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+			>
+				{@render trigger('CTF flags', `(${ctfFlagsCount})`)}
+				<Accordion.ItemIndicator>
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Accordion.ItemIndicator>
+			</Accordion.ItemTrigger>
+			<Accordion.ItemContent class="pb-3">
+				<CTFFlagsSection showHeader={false} flags={vm.tick.ctf_flags} />
+			</Accordion.ItemContent>
+		</Accordion.Item>
+
+		<Accordion.Item value="data_queue">
+			<Accordion.ItemTrigger
+				class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+			>
+				{@render trigger('Data queue', vm.tick.data_queue ? undefined : 'null')}
+				<Accordion.ItemIndicator>
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Accordion.ItemIndicator>
+			</Accordion.ItemTrigger>
+			<Accordion.ItemContent class="pb-3">
+				<DataQueueSection showHeader={false} dataQueue={vm.tick.data_queue} />
+			</Accordion.ItemContent>
+		</Accordion.Item>
+
+		<Accordion.Item value="objects">
+			<Accordion.ItemTrigger
+				class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+			>
+				{@render trigger('Objects', `(${objectsCount})`)}
+				<Accordion.ItemIndicator>
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Accordion.ItemIndicator>
+			</Accordion.ItemTrigger>
+			<Accordion.ItemContent class="pb-3">
+				<ObjectsSection showHeader={false} objects={vm.tick.objects} />
+			</Accordion.ItemContent>
+		</Accordion.Item>
+
+		<Accordion.Item value="projectiles">
+			<Accordion.ItemTrigger
+				class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+			>
+				{@render trigger('Projectiles', `(${projectilesCount})`)}
+				<Accordion.ItemIndicator>
+					<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+				</Accordion.ItemIndicator>
+			</Accordion.ItemTrigger>
+			<Accordion.ItemContent class="pb-3">
+				<ProjectilesSection showHeader={false} projectiles={vm.tick.projectiles} />
 			</Accordion.ItemContent>
 		</Accordion.Item>
 	</Accordion>
