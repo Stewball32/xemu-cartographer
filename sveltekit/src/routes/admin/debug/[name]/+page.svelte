@@ -207,9 +207,9 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
-	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/debug/')}>
+	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/')}>
 		<ArrowLeftIcon class="size-4" />
-		Back to debug
+		Back to pod
 	</a>
 	<PageHeader title={name}>
 		{#snippet actions()}
@@ -283,7 +283,7 @@
 	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-3 text-sm">
 			No scraper attached for this instance. Start it from
-			<a class="anchor" href={resolve(`/containers/${name}/`)}>/containers/{name}/</a>.
+			<a class="anchor" href={resolve('/pod/')}>/pod/</a>.
 		</div>
 	{/if}
 

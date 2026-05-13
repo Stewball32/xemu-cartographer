@@ -67,7 +67,7 @@
 		} catch (err) {
 			if (err instanceof AdminFetchError && err.status === 404) {
 				toaster.error({ title: 'Not found', description: name });
-				goto(resolve('/containers/'));
+				goto(resolve('/pod/'));
 				return;
 			}
 			console.warn('detail fetch failed', err);
@@ -218,7 +218,7 @@
 				success: { title: 'Deleted', description: name },
 				errorTitle: 'Delete failed'
 			});
-			goto(resolve('/containers/'));
+			goto(resolve('/pod/'));
 		} catch {
 			// toast already shown
 		} finally {
@@ -326,7 +326,7 @@
 
 <div class="mx-auto flex max-w-7xl flex-col gap-3 overflow-hidden p-3">
 	<header class="flex flex-none flex-wrap items-center gap-2">
-		<a href={resolve('/containers/')} class="btn-icon preset-tonal" aria-label="Back">
+		<a href={resolve('/pod/')} class="btn-icon preset-tonal" aria-label="Back">
 			<ArrowLeftIcon class="size-4" />
 		</a>
 		<h1 class="h3 lg:h2">{name}</h1>

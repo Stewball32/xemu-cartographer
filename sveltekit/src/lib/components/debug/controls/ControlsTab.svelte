@@ -279,7 +279,7 @@
 	{#if !detail && !loading}
 		<div class="card preset-tonal p-3 text-sm">
 			No container record for <code>{name}</code>. Create one on
-			<a class="anchor" href={resolve('/containers/')}>/containers/</a>.
+			<a class="anchor" href={resolve('/pod/')}>/pod/</a>.
 		</div>
 	{:else}
 		<div class="flex flex-col gap-4 lg:grid lg:grid-cols-[2fr_1fr] lg:gap-4">
