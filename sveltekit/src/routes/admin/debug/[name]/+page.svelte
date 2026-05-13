@@ -283,7 +283,7 @@
 	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-3 text-sm">
 			No scraper attached for this instance. Start it from
-			<a class="anchor" href={resolve('/pod/')}>/pod/</a>.
+			<a class="anchor" href={resolve('/pod/view/[name]', { name })}>/pod/view/{name}/</a>.
 		</div>
 	{/if}
 
