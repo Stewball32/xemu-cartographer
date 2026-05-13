@@ -26,7 +26,6 @@
 	import XboxTab from '$lib/components/debug/xbox/XboxTab.svelte';
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
-	import ProbeTab from '$lib/components/debug/probe/ProbeTab.svelte';
 	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
 	import LogsTab from '$lib/components/debug/logs/LogsTab.svelte';
 	import ControlsTab from '$lib/components/debug/controls/ControlsTab.svelte';
@@ -50,7 +49,6 @@
 		'xbox',
 		'postgame',
 		'events',
-		'probe',
 		'raw',
 		'logs',
 		'controls'
@@ -199,7 +197,6 @@
 		{ value: 'xbox', label: 'Xbox' },
 		{ value: 'postgame', label: 'Postgame' },
 		{ value: 'events', label: 'Events' },
-		{ value: 'probe', label: 'Probe' },
 		{ value: 'raw', label: 'Raw' },
 		{ value: 'logs', label: 'Logs' },
 		{ value: 'controls', label: 'Controls' }
@@ -207,10 +204,13 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
-	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/debug/')}>
-		<ArrowLeftIcon class="size-4" />
-		Back to debug
-	</a>
+	<div class="flex items-center justify-between gap-2">
+		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/')}>
+			<ArrowLeftIcon class="size-4" />
+			Back to pods
+		</a>
+		<a class="btn preset-tonal btn-sm" href={resolve(`/pod/probe/${name}/`)}>Probe →</a>
+	</div>
 	<PageHeader title={name}>
 		{#snippet actions()}
 			<label class="flex items-center gap-2 text-xs">
@@ -295,7 +295,6 @@
 		<Tabs.Content value="xbox" class="pt-4"><XboxTab {name} /></Tabs.Content>
 		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
-		<Tabs.Content value="probe" class="pt-4"><ProbeTab {name} /></Tabs.Content>
 		<Tabs.Content value="raw" class="pt-4"><RawTab {name} /></Tabs.Content>
 		<Tabs.Content value="logs" class="pt-4"><LogsTab {name} /></Tabs.Content>
 		<Tabs.Content value="controls" class="pt-4"><ControlsTab {name} /></Tabs.Content>

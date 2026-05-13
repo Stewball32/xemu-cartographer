@@ -187,7 +187,7 @@
 		{row.xbox_name || '—'}
 	{/snippet}
 	{#snippet actionCell({ row }: { row: Row })}
-		<a class="btn preset-filled-primary-500 text-xs" href={resolve(`/admin/debug/${row.name}/`)}>
+		<a class="btn preset-filled-primary-500 text-xs" href={resolve(`/pod/debug/${row.name}/`)}>
 			Open
 		</a>
 	{/snippet}
