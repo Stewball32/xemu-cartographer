@@ -337,7 +337,7 @@
 		{@const rowBusy = busy[row.name] ?? null}
 		<div class="inline-flex gap-1">
 			<a
-				href={resolve('/containers/[name]', { name: row.name })}
+				href={resolve('/pod/view/[name]', { name: row.name })}
 				class="btn-icon preset-tonal btn-sm"
 				aria-label="View"
 				title="View"
