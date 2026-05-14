@@ -16,17 +16,31 @@
 		showHeader?: boolean;
 	} = $props();
 
+	// Every StaticPlayerSpawn field gets a column — this is a debug surface,
+	// hiding wire-level fields makes the scraper harder to verify. Grouped
+	// into spawn-id / position / scenario-gametype flags so the wide table
+	// stays scannable horizontally.
 	const groups: ColGroup[] = [
 		{
-			label: 'Player spawns',
+			label: 'Spawn',
 			columns: [
 				{ key: 'index', label: 'idx' },
 				{ key: 'team_index', label: 'team' },
-				{ key: 'bsp_index', label: 'bsp' },
-				{ key: 'x' },
-				{ key: 'y' },
-				{ key: 'z' },
-				{ key: 'facing' }
+				{ key: 'bsp_index', label: 'bsp' }
+			]
+		},
+		{
+			label: 'Position',
+			columns: [{ key: 'x' }, { key: 'y' }, { key: 'z' }, { key: 'facing' }]
+		},
+		{
+			label: 'Gametype flags',
+			columns: [
+				{ key: 'unk_0' },
+				{ key: 'gametype_0' },
+				{ key: 'gametype_1' },
+				{ key: 'gametype_2' },
+				{ key: 'gametype_3' }
 			]
 		}
 	];
