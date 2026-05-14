@@ -1,12 +1,11 @@
 <script lang="ts">
-	// Per-player end-of-match stats. In team games, one ColGroupedTable per
-	// team (with a colored team-label header bar). In FFA, a single
-	// ColGroupedTable. Columns: name, kills, deaths, assists, team_kills,
-	// suicides, kill_streak, multikill, shots_fired, shots_hit, accuracy.
-	// The name cell carries armor-tinted text (FFA) or team-tinted (team).
-	import type { ColGroup } from '../shared/col-grouped-table';
-	import ColGroupedTable from '../shared/ColGroupedTable.svelte';
-	import { armorTextClass, teamAccent, teamLabel } from '../shared/util';
+	// Per-player end-of-match stats, rendered as a grid of PlayerStatsCard
+	// (the shared card also used by the Game tab's merged players section).
+	// Team games: one card grid per team under a colored header bar. FFA: a
+	// single grid, each card wrapped in an armor-tinted div. Every card
+	// surfaces all 19 GamePlayer wire fields grouped into FieldTile clusters.
+	import PlayerStatsCard from '../shared/PlayerStatsCard.svelte';
+	import { armorAccent, armorLabel, teamAccent, teamLabel } from '../shared/util';
 	import type { PlayerTotalRow } from './postgame-vm';
 
 	let {
@@ -20,93 +19,6 @@
 		isTeamGame: boolean;
 		showHeader?: boolean;
 	} = $props();
-
-	// Column groups — Player first, then identity (machine / controller / CTF),
-	// then combat counters, then accuracy. The identity group's three fields
-	// are mostly useful live (the Game tab reuses this section), but Postgame
-	// surfaces them too so the user can verify every wire field is rendered
-	// somewhere.
-	const groups: ColGroup[] = [
-		{
-			label: 'Player',
-			columns: [{ key: 'name', label: 'name' }]
-		},
-		{
-			label: 'Identity',
-			columns: [
-				{ key: 'is_local', label: 'local' },
-				{ key: 'local_index', label: 'local#' },
-				{ key: 'ctf_score', label: 'ctf' }
-			]
-		},
-		{
-			label: 'Score',
-			columns: [
-				{ key: 'score', label: 'pts' },
-				{ key: 'kills', label: 'K' },
-				{ key: 'deaths', label: 'D' },
-				{ key: 'assists', label: 'A' }
-			]
-		},
-		{
-			label: 'Negatives',
-			columns: [
-				{ key: 'team_kills', label: 'TK' },
-				{ key: 'suicides', label: 'suicides' }
-			]
-		},
-		{
-			label: 'Streaks',
-			columns: [
-				{ key: 'kill_streak', label: 'streak' },
-				{ key: 'multikill', label: 'multi' }
-			]
-		},
-		{
-			label: 'Accuracy',
-			columns: [
-				{ key: 'shots_fired', label: 'fired' },
-				{ key: 'shots_hit', label: 'hit' },
-				{ key: 'accuracy', label: 'acc' }
-			]
-		}
-	];
-
-	// Display helpers for the new identity columns. is_local is a nullable
-	// boolean on GamePlayer; render '—' when unknown, 'yes' / '·' otherwise.
-	// local_index is null for non-local players — surface that explicitly
-	// rather than padding with 0 (which would lie about the wire value).
-	function fmtIsLocal(v: boolean | null): string {
-		if (v === null) return '—';
-		return v ? 'yes' : '·';
-	}
-	function fmtLocalIndex(v: number | null): string {
-		return v === null ? '—' : String(v);
-	}
-
-	// ColGroupedTable renders scalar cells only; colour cues live on the
-	// per-team header bar (team games) or the swatch legend below (FFA).
-	function toRowDicts(rows: PlayerTotalRow[]): Record<string, unknown>[] {
-		return rows.map((r) => ({
-			name: r.name,
-			is_local: fmtIsLocal(r.is_local),
-			local_index: fmtLocalIndex(r.local_index),
-			ctf_score: r.ctf_score,
-			score: r.score,
-			kills: r.kills,
-			deaths: r.deaths,
-			assists: r.assists,
-			team_kills: r.team_kills,
-			suicides: r.suicides,
-			kill_streak: r.kill_streak,
-			multikill: r.multikill,
-			shots_fired: r.shots_fired,
-			shots_hit: r.shots_hit,
-			accuracy: r.accuracy
-		}));
-	}
-
-	const ffaRowsDict = $derived(toRowDicts(playerTotalsFlat));
 
 	const hasContent = $derived(
 		isTeamGame ? playerTotalsByTeam.length > 0 : playerTotalsFlat.length > 0
@@ -137,25 +49,22 @@
 							{group.rows.length} player{group.rows.length === 1 ? '' : 's'}
 						</span>
 					</div>
-					<ColGroupedTable rows={toRowDicts(group.rows)} {groups} stickyFirst />
+					<div class="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+						{#each group.rows as row (row.index)}
+							<PlayerStatsCard {row} />
+						{/each}
+					</div>
 				</div>
 			{/each}
 		</div>
 	{:else}
-		<div>
-			{#if playerTotalsFlat.length > 0}
-				<div class="mb-1.5 flex flex-wrap gap-2">
-					{#each playerTotalsFlat as r (r.index)}
-						<span
-							class="inline-flex items-center gap-1 text-[11px] {armorTextClass(r.armor_color)}"
-						>
-							<span class="block size-2 rounded-sm bg-current" title={r.name}></span>
-							<span class="font-semibold">{r.name}</span>
-						</span>
-					{/each}
+		<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+			{#each playerTotalsFlat as row (row.index)}
+				{@const armor = armorAccent(row.armor_color)}
+				<div class="rounded {armor.bg}" title={armorLabel(row.armor_color)}>
+					<PlayerStatsCard {row} />
 				</div>
-			{/if}
-			<ColGroupedTable rows={ffaRowsDict} {groups} stickyFirst />
+			{/each}
 		</div>
 	{/if}
 </section>
