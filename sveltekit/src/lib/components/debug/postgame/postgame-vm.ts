@@ -16,8 +16,10 @@ import { fmtPct, teamAccent, teamLabel } from '../shared/util';
 
 type ScraperWS = typeof scraperWS;
 
-// One per-player row in the end-of-match totals table. Keys match the
-// ColGroupedTable column keys below so the renderer can read row[col.key].
+// One per-player row of end-of-match totals. A faithful superset of the
+// GamePlayer wire struct plus the derived `accuracy` string — rendered by
+// PlayerStatsCard on both the Game tab (merged players section) and the
+// Postgame tab (PlayerTotalsSection).
 export type PlayerTotalRow = {
 	index: number;
 	name: string;
@@ -29,6 +31,8 @@ export type PlayerTotalRow = {
 	ctf_score: number;
 	is_local: boolean | null;
 	local_index: number | null;
+	machine_index: number | null;
+	controller_index: number | null;
 	score: number;
 	kills: number;
 	deaths: number;
@@ -104,6 +108,8 @@ export function buildPlayerTotalRow(p: GamePlayer): PlayerTotalRow {
 		ctf_score: p.ctf_score ?? 0,
 		is_local: p.is_local ?? null,
 		local_index: p.local_index ?? null,
+		machine_index: p.machine_index ?? null,
+		controller_index: p.controller_index ?? null,
 		score: p.score ?? 0,
 		kills: p.kills ?? 0,
 		deaths: p.deaths ?? 0,

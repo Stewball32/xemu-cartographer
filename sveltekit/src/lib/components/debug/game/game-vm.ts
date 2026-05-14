@@ -26,6 +26,7 @@ import { buildPlayerTotals, type PlayerTotalRow } from '../postgame/postgame-vm'
 type ScraperWS = typeof scraperWS;
 
 export type GameScoreRow = {
+	team: number;
 	label: string;
 	value: number;
 	limit: number;
@@ -53,6 +54,7 @@ export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
 	const limit = gameData.score_limit ?? 0;
 	const teamScores: TeamScore[] = gameData.team_scores ?? [];
 	return teamScores.map((ts) => ({
+		team: ts.team,
 		label: teamLabel(ts.team),
 		value: ts.score,
 		limit,
