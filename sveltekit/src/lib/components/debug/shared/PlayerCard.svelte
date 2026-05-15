@@ -119,23 +119,36 @@
 		<div class="space-y-1">
 			<div class="flex items-center gap-2 text-[10px]">
 				<span class="text-surface-700-200 w-8 uppercase">hp</span>
-				<div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-300-700">
-					<div class="h-full {meterTone(hp)}" style="width: {hp}%"></div>
-				</div>
+				<Progress value={hp} class="flex-1">
+					<Progress.Track
+						class="block h-1.5 w-full overflow-hidden rounded-full bg-surface-300-700"
+					>
+						<Progress.Range class="block h-full {meterTone(hp)}" />
+					</Progress.Track>
+				</Progress>
 				<span class="w-10 text-right font-mono tabular-nums">{fmtPct(t?.health)}</span>
 			</div>
 			<div class="flex items-center gap-2 text-[10px]">
 				<span class="text-surface-700-200 w-8 uppercase">sh</span>
 				<div class="relative h-2.5 flex-1 overflow-hidden rounded-full bg-surface-300-700">
-					<div class="absolute inset-y-0 left-0 bg-armor-cyan" style="width: {layers.a}%"></div>
+					<Progress value={layers.a} class="absolute inset-0">
+						<Progress.Track class="block h-full w-full">
+							<Progress.Range class="block h-full bg-armor-cyan" />
+						</Progress.Track>
+					</Progress>
 					{#if layers.b > 0}
-						<div class="absolute inset-y-0 left-0 bg-team-red-500" style="width: {layers.b}%"></div>
+						<Progress value={layers.b} class="absolute inset-0">
+							<Progress.Track class="block h-full w-full">
+								<Progress.Range class="block h-full bg-team-red-500" />
+							</Progress.Track>
+						</Progress>
 					{/if}
 					{#if layers.c > 0}
-						<div
-							class="absolute inset-y-0 left-0 bg-team-green-500"
-							style="width: {layers.c}%"
-						></div>
+						<Progress value={layers.c} class="absolute inset-0">
+							<Progress.Track class="block h-full w-full">
+								<Progress.Range class="block h-full bg-team-green-500" />
+							</Progress.Track>
+						</Progress>
 					{/if}
 				</div>
 				<span class="w-10 text-right font-mono tabular-nums">{fmtPctRaw(t?.shields)}</span>

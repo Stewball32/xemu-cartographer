@@ -1,12 +1,12 @@
 <script lang="ts">
-	// Events tab — frequency strip + multi-select type filter + scrollable
-	// feed of EventTile cards. Empty selectedTypes = show all.
+	// Events tab — interactive type-chip filter (doubles as the frequency
+	// display) and scrollable feed of EventTile cards. Empty selectedTypes =
+	// show all.
 
 	import { SvelteSet } from 'svelte/reactivity';
 	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildEventsTabVm } from './events-tab-vm';
-	import FrequencyStrip from './FrequencyStrip.svelte';
 	import TypeFilter from './TypeFilter.svelte';
 	import EventFeed from './EventFeed.svelte';
 
@@ -39,29 +39,20 @@
 					none yet
 				{:else}
 					{vm.typeBuckets.length} type{vm.typeBuckets.length === 1 ? '' : 's'}
+					{#if selectedTypes.size > 0}
+						· {selectedTypes.size} selected
+					{:else}
+						· showing all
+					{/if}
 				{/if}
 			</span>
 		</div>
-		<FrequencyStrip typeBuckets={vm.typeBuckets} />
-	</section>
-
-	{#if vm.typeBuckets.length > 0}
-		<section>
-			<div
-				class="text-surface-700-200 mb-2 flex items-baseline gap-2 text-xs font-semibold tracking-wide uppercase"
-			>
-				Filter
-				<span class="text-surface-500-400 font-normal normal-case">
-					{#if selectedTypes.size === 0}
-						showing all
-					{:else}
-						{selectedTypes.size} selected
-					{/if}
-				</span>
-			</div>
+		{#if vm.typeBuckets.length === 0}
+			<div class="text-surface-500-400 text-xs">no events to summarise</div>
+		{:else}
 			<TypeFilter typeBuckets={vm.typeBuckets} {selectedTypes} />
-		</section>
-	{/if}
+		{/if}
+	</section>
 
 	<EventFeed
 		events={vm.filteredEvents}

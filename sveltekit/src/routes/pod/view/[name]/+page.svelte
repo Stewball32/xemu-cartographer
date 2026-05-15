@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
-	import { ArrowLeftIcon, LoaderIcon, PlayIcon, SquareIcon } from '@lucide/svelte';
+	import { ArrowLeftIcon, LoaderIcon, PlayIcon, RotateCwIcon, SquareIcon } from '@lucide/svelte';
 	import { adminGet, adminPost, AdminFetchError } from '$lib/utils/admin-api';
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { toastPromise } from '$lib/stores/toaster';
+	import { confirmToast, toastPromise } from '$lib/stores/toaster';
 	import KioskFrame from '$lib/components/kiosk/KioskFrame.svelte';
 	import XboxController from '$lib/components/kiosk/XboxController.svelte';
 	import { VNCKeyboard } from '$lib/utils/vnc-keyboard';
@@ -14,7 +14,7 @@
 	const name = $derived(data.name);
 
 	type RowStatus = ContainerStatus | 'loading' | string;
-	type BusyAction = 'start' | 'stop';
+	type BusyAction = 'start' | 'stop' | 'restart';
 
 	let detail = $state<ContainerDetail | null>(null);
 	let status = $state<RowStatus>('loading');
@@ -115,6 +115,14 @@
 	}
 
 	async function handleStop() {
+		const ok = await confirmToast({
+			type: 'error',
+			title: 'Stop pod?',
+			description: `${name} — this will end the current session.`,
+			confirmLabel: 'Stop',
+			cancelLabel: 'Keep running'
+		});
+		if (!ok) return;
 		busyAction = 'stop';
 		status = 'loading';
 		try {
@@ -123,6 +131,37 @@
 				success: { title: 'Stopped', description: name },
 				errorTitle: 'Stop failed'
 			});
+		} catch {
+			// toast already shown
+		} finally {
+			busyAction = null;
+			await loadDetail();
+		}
+	}
+
+	// No /restart endpoint on the backend — emulate with stop + start.
+	async function handleRestart() {
+		const ok = await confirmToast({
+			type: 'warning',
+			title: 'Restart pod?',
+			description: `${name} — current session will be lost.`,
+			confirmLabel: 'Restart'
+		});
+		if (!ok) return;
+		busyAction = 'restart';
+		status = 'loading';
+		try {
+			await toastPromise(
+				(async () => {
+					await adminPost(`containers/${encodeURIComponent(name)}/stop`);
+					await adminPost(`containers/${encodeURIComponent(name)}/start`);
+				})(),
+				{
+					loading: { title: 'Restarting', description: name },
+					success: { title: 'Restarted', description: name },
+					errorTitle: 'Restart failed'
+				}
+			);
 		} catch {
 			// toast already shown
 		} finally {
@@ -167,35 +206,51 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-3">
-	{#snippet startButton(extraClass: string)}
+	{#snippet restartButton(extraClass: string)}
 		<button
 			type="button"
-			class="preset-filled-primary btn {extraClass}"
-			disabled={loading || busyAction !== null || isRunning}
-			onclick={handleStart}
+			class="btn preset-tonal {extraClass}"
+			disabled={loading || busyAction !== null || !isRunning}
+			onclick={handleRestart}
 		>
-			{#if busyAction === 'start'}
+			{#if busyAction === 'restart'}
 				<LoaderIcon class="size-4 animate-spin" />
 			{:else}
-				<PlayIcon class="size-4" />
+				<RotateCwIcon class="size-4" />
 			{/if}
-			<span>Start</span>
+			<span>Restart</span>
 		</button>
 	{/snippet}
-	{#snippet stopButton(extraClass: string)}
-		<button
-			type="button"
-			class="btn preset-tonal-error {extraClass}"
-			disabled={loading || busyAction !== null || !isRunning}
-			onclick={handleStop}
-		>
-			{#if busyAction === 'stop'}
-				<LoaderIcon class="size-4 animate-spin" />
-			{:else}
-				<SquareIcon class="size-4" />
-			{/if}
-			<span>Stop</span>
-		</button>
+	{#snippet toggleButton(extraClass: string)}
+		{#if isRunning}
+			<button
+				type="button"
+				class="btn preset-tonal-error {extraClass}"
+				disabled={loading || busyAction !== null}
+				onclick={handleStop}
+			>
+				{#if busyAction === 'stop'}
+					<LoaderIcon class="size-4 animate-spin" />
+				{:else}
+					<SquareIcon class="size-4" />
+				{/if}
+				<span>Stop</span>
+			</button>
+		{:else}
+			<button
+				type="button"
+				class="preset-filled-primary btn {extraClass}"
+				disabled={loading || busyAction !== null}
+				onclick={handleStart}
+			>
+				{#if busyAction === 'start'}
+					<LoaderIcon class="size-4 animate-spin" />
+				{:else}
+					<PlayIcon class="size-4" />
+				{/if}
+				<span>Start</span>
+			</button>
+		{/if}
 	{/snippet}
 
 	<header class="flex flex-wrap items-center gap-2">
@@ -207,9 +262,9 @@
 		</a>
 		<h1 class="h3 lg:h2">{name}</h1>
 		<span class={statusBadgeClass(status)}>{status}</span>
-		<div class="ms-auto hidden flex-wrap gap-2 lg:flex">
-			{@render startButton('btn-sm')}
-			{@render stopButton('btn-sm')}
+		<div class="ms-auto flex flex-wrap gap-2">
+			{@render restartButton('btn-sm')}
+			{@render toggleButton('btn-sm')}
 		</div>
 	</header>
 
@@ -221,14 +276,16 @@
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3 lg:grid lg:grid-cols-[2fr_1fr] lg:gap-4">
-			<KioskFrame
-				{name}
-				src={kioskSrc}
-				running={isRunning}
-				{loading}
-				{vncConnected}
-				externalHref={detail ? kioskURL() : undefined}
-			/>
+			<div class="sticky top-0 z-10 lg:static lg:z-auto">
+				<KioskFrame
+					{name}
+					src={kioskSrc}
+					running={isRunning}
+					{loading}
+					{vncConnected}
+					externalHref={detail ? kioskURL() : undefined}
+				/>
+			</div>
 
 			<div class="flex min-h-0 flex-col gap-2 overflow-hidden card preset-tonal p-3">
 				<header class="flex items-center justify-between text-xs">
@@ -245,11 +302,4 @@
 			</div>
 		</div>
 	{/if}
-
-	<footer
-		class="sticky bottom-0 -mx-4 flex gap-2 border-t border-surface-200-800 bg-surface-50-950/90 p-3 backdrop-blur sm:-mx-6 lg:hidden"
-	>
-		{@render startButton('flex-1')}
-		{@render stopButton('flex-1')}
-	</footer>
 </div>

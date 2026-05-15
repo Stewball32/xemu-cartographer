@@ -21,9 +21,8 @@
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
-	import RuntimeTab from '$lib/components/debug/runtime/RuntimeTab.svelte';
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
-	import XboxTab from '$lib/components/debug/xbox/XboxTab.svelte';
+	import SystemTab from '$lib/components/debug/system/SystemTab.svelte';
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
 	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
@@ -44,9 +43,8 @@
 	const TAB_VALUES = [
 		'overview',
 		'game',
-		'runtime',
 		'tick',
-		'xbox',
+		'system',
 		'postgame',
 		'events',
 		'raw',
@@ -192,9 +190,8 @@
 	const tabs = [
 		{ value: 'overview', label: 'Overview' },
 		{ value: 'game', label: 'Game' },
-		{ value: 'runtime', label: 'Runtime' },
 		{ value: 'tick', label: 'Tick' },
-		{ value: 'xbox', label: 'Xbox' },
+		{ value: 'system', label: 'System' },
 		{ value: 'postgame', label: 'Postgame' },
 		{ value: 'events', label: 'Events' },
 		{ value: 'raw', label: 'Raw' },
@@ -290,9 +287,8 @@
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
-		<Tabs.Content value="runtime" class="pt-4"><RuntimeTab {name} /></Tabs.Content>
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
-		<Tabs.Content value="xbox" class="pt-4"><XboxTab {name} /></Tabs.Content>
+		<Tabs.Content value="system" class="pt-4"><SystemTab {name} /></Tabs.Content>
 		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
 		<Tabs.Content value="raw" class="pt-4"><RawTab {name} /></Tabs.Content>

@@ -1,17 +1,21 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import {
-		ActivityIcon,
+		ArrowDownIcon,
+		ArrowUpIcon,
 		BugIcon,
 		EraserIcon,
 		EyeIcon,
 		LoaderIcon,
 		PlayIcon,
+		RadarIcon,
 		RefreshCwIcon,
 		SearchIcon,
 		SquareIcon,
 		Trash2Icon
 	} from '@lucide/svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { adminGet, adminPost, adminDelete } from '$lib/utils/admin-api';
 	import { confirmToast, describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -20,7 +24,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import DataTable from '$lib/components/ui/DataTable.svelte';
-	import type { DataColumnGroup } from '$lib/components/ui/data-table';
+	import type { DataColumnGroup, SortState } from '$lib/components/ui/data-table';
 	import type {
 		ContainerInfo,
 		ContainerStatus,
@@ -82,6 +86,7 @@
 	let createName = $state('');
 	let createBusy = $state(false);
 	let filter = $state('');
+	let sortState = $state<SortState>({ key: 'name', dir: 'asc' });
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	async function loadAll() {
@@ -186,6 +191,13 @@
 	}
 
 	async function handleStop(name: string) {
+		const ok = await confirmToast({
+			title: 'Stop container',
+			description: `Stop ${name}? Any active session will end immediately.`,
+			confirmLabel: 'Stop',
+			type: 'warning'
+		});
+		if (!ok) return;
 		busy = { ...busy, [name]: 'stop' };
 		statuses = { ...statuses, [name]: 'loading' };
 		try {
@@ -333,6 +345,31 @@
 		);
 	});
 
+	function compareRows(a: Row, b: Row, key: string): number {
+		switch (key) {
+			case 'status':
+				return statusPriority(a.status) - statusPriority(b.status);
+			case 'phase':
+				return phaseRank(a.phase) - phaseRank(b.phase);
+			case 'game_xbox':
+				return (a.title || '').localeCompare(b.title || '');
+			case 'name':
+			default:
+				return a.name.localeCompare(b.name);
+		}
+	}
+
+	const sortedFilteredRows = $derived.by<Row[]>(() => {
+		const s = sortState;
+		if (!s) return filteredRows;
+		const dir = s.dir === 'desc' ? -1 : 1;
+		return [...filteredRows].sort((a, b) => {
+			const primary = compareRows(a, b, s.key) * dir;
+			if (primary !== 0) return primary;
+			return a.name.localeCompare(b.name);
+		});
+	});
+
 	onMount(() => {
 		loadAll();
 		startPolling();
@@ -363,7 +400,7 @@
 				{:else}
 					<RefreshCwIcon class="size-4" />
 				{/if}
-				<span class="hidden sm:inline">Refresh</span>
+				<span>Refresh</span>
 			</button>
 			<button
 				type="button"
@@ -378,7 +415,7 @@
 				{:else}
 					<EraserIcon class="size-4" />
 				{/if}
-				<span class="hidden sm:inline">Cleanup files</span>
+				<span>Cleanup files</span>
 			</button>
 			<button type="button" class="btn preset-filled" onclick={() => (createOpen = true)}>
 				+ <span class="ml-1">New</span>
@@ -401,22 +438,64 @@
 
 	<!-- Mobile: card per container. Stacked layout, 44px-min action buttons. -->
 	<div class="flex flex-col gap-3 sm:hidden">
-		{#if loading && filteredRows.length === 0}
+		<div class="flex items-center gap-2 text-xs text-surface-600-400">
+			<span>Sort</span>
+			<select
+				class="select-sm select flex-1"
+				bind:value={
+					() => sortState?.key ?? 'name',
+					(v) => (sortState = { key: v, dir: sortState?.dir ?? 'asc' })
+				}
+				aria-label="Sort by"
+			>
+				<option value="name">Name</option>
+				<option value="status">Status</option>
+				<option value="phase">Phase</option>
+				<option value="game_xbox">Game</option>
+			</select>
+			<button
+				type="button"
+				class="btn-icon preset-tonal btn-sm"
+				aria-label={sortState?.dir === 'desc' ? 'Sort descending' : 'Sort ascending'}
+				title={sortState?.dir === 'desc' ? 'Descending' : 'Ascending'}
+				onclick={() =>
+					(sortState = {
+						key: sortState?.key ?? 'name',
+						dir: sortState?.dir === 'desc' ? 'asc' : 'desc'
+					})}
+			>
+				{#if sortState?.dir === 'desc'}
+					<ArrowDownIcon class="size-4" />
+				{:else}
+					<ArrowUpIcon class="size-4" />
+				{/if}
+			</button>
+		</div>
+		{#if loading && sortedFilteredRows.length === 0}
 			<Card><div class="text-sm text-surface-600-400">Loading…</div></Card>
-		{:else if filteredRows.length === 0}
+		{:else if sortedFilteredRows.length === 0}
 			<Card>
 				<div class="text-sm text-surface-600-400">
 					{filter ? 'No matches for that filter.' : 'No containers yet. Create one to get started.'}
 				</div>
 			</Card>
 		{:else}
-			{#each filteredRows as row (`${row.source}:${row.name}`)}
+			{#each sortedFilteredRows as row (`${row.source}:${row.name}`)}
 				{@const rowBusy = busy[row.name] ?? null}
+				<!-- Sibling units own /pod/view/[name], /pod/debug/[name], and
+					/pod/probe/[name]; until those routes exist they aren't in the
+					typed route map, so the hrefs stay as plain strings. -->
+				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<Card size="sm">
 					<div class="flex flex-col gap-3">
 						<div class="flex items-start justify-between gap-2">
 							<div class="min-w-0">
-								<div class="truncate font-semibold">{row.name}</div>
+								<a
+									href="/pod/view/{row.name}/"
+									class="block truncate font-semibold hover:underline"
+								>
+									{row.name}
+								</a>
 								<div class="mt-1 flex flex-wrap items-center gap-1">
 									<span class={statusBadgeClass(row.status)}>{row.status}</span>
 									{#if row.phase}
@@ -442,10 +521,6 @@
 								<div class="text-surface-500-400 mt-1 font-mono">{row.score_summary}</div>
 							{/if}
 						</div>
-						<!-- Sibling units own /pod/view/[name], /pod/debug/[name], and
-							/pod/probe/[name]; until those routes exist they aren't in the
-							typed route map, so the hrefs stay as plain strings. -->
-						<!-- eslint-disable svelte/no-navigation-without-resolve -->
 						<div class="grid grid-cols-3 gap-2">
 							<a
 								href="/pod/view/{row.name}/"
@@ -460,7 +535,7 @@
 								class="btn min-h-11 justify-center preset-tonal"
 								aria-label="Debug"
 							>
-								<ActivityIcon class="size-4" />
+								<BugIcon class="size-4" />
 								<span>Debug</span>
 							</a>
 							<a
@@ -468,7 +543,7 @@
 								class="btn min-h-11 justify-center preset-tonal"
 								aria-label="Probe"
 							>
-								<BugIcon class="size-4" />
+								<RadarIcon class="size-4" />
 								<span>Probe</span>
 							</a>
 							{#if row.source === 'container'}
@@ -555,77 +630,86 @@
 		{#snippet actionsCell({ row }: { row: Row })}
 			{@const rowBusy = busy[row.name] ?? null}
 			<!-- eslint-disable svelte/no-navigation-without-resolve -->
-			<div class="inline-flex flex-wrap justify-end gap-1">
-				<a
-					href="/pod/view/{row.name}/"
-					class="btn-icon preset-tonal btn-sm"
-					aria-label="View"
-					title="View"
-				>
-					<EyeIcon class="size-4" />
-				</a>
-				<a
-					href="/pod/debug/{row.name}/"
-					class="btn-icon preset-tonal btn-sm"
-					aria-label="Debug"
-					title="Debug"
-				>
-					<ActivityIcon class="size-4" />
-				</a>
-				<a
-					href="/pod/probe/{row.name}/"
-					class="btn-icon preset-tonal btn-sm"
-					aria-label="Probe"
-					title="Probe"
-				>
-					<BugIcon class="size-4" />
-				</a>
-				{#if row.source === 'container'}
-					{#if row.status === 'running'}
-						<button
-							type="button"
-							class="btn-icon preset-tonal-warning btn-sm"
-							aria-label="Stop"
-							title="Stop"
-							onclick={() => handleStop(row.name)}
-							disabled={rowBusy !== null}
-						>
-							{#if rowBusy === 'stop'}
-								<LoaderIcon class="size-4 animate-spin" />
-							{:else}
-								<SquareIcon class="size-4" />
-							{/if}
-						</button>
-					{:else}
-						<button
-							type="button"
-							class="btn-icon preset-tonal-success btn-sm"
-							aria-label="Start"
-							title="Start"
-							onclick={() => handleStart(row.name)}
-							disabled={rowBusy !== null}
-						>
-							{#if rowBusy === 'start'}
-								<LoaderIcon class="size-4 animate-spin" />
-							{:else}
-								<PlayIcon class="size-4" />
-							{/if}
-						</button>
-					{/if}
-					<button
-						type="button"
-						class="btn-icon preset-tonal-error btn-sm"
-						aria-label="Delete"
-						title="Delete"
-						onclick={() => handleDelete(row.name)}
-						disabled={rowBusy !== null}
+			<div
+				role="presentation"
+				class="inline-flex flex-wrap items-center justify-end gap-3"
+				onclick={(e) => e.stopPropagation()}
+				onkeydown={(e) => e.stopPropagation()}
+			>
+				<div class="inline-flex gap-1">
+					<a
+						href="/pod/view/{row.name}/"
+						class="btn-icon preset-tonal btn-sm"
+						aria-label="View"
+						title="View"
 					>
-						{#if rowBusy === 'delete'}
-							<LoaderIcon class="size-4 animate-spin" />
+						<EyeIcon class="size-4" />
+					</a>
+					<a
+						href="/pod/debug/{row.name}/"
+						class="btn-icon preset-tonal btn-sm"
+						aria-label="Debug"
+						title="Debug"
+					>
+						<BugIcon class="size-4" />
+					</a>
+					<a
+						href="/pod/probe/{row.name}/"
+						class="btn-icon preset-tonal btn-sm"
+						aria-label="Probe"
+						title="Probe"
+					>
+						<RadarIcon class="size-4" />
+					</a>
+				</div>
+				{#if row.source === 'container'}
+					<div class="inline-flex gap-1">
+						{#if row.status === 'running'}
+							<button
+								type="button"
+								class="btn-icon preset-tonal-warning btn-sm"
+								aria-label="Stop"
+								title="Stop"
+								onclick={() => handleStop(row.name)}
+								disabled={rowBusy !== null}
+							>
+								{#if rowBusy === 'stop'}
+									<LoaderIcon class="size-4 animate-spin" />
+								{:else}
+									<SquareIcon class="size-4" />
+								{/if}
+							</button>
 						{:else}
-							<Trash2Icon class="size-4" />
+							<button
+								type="button"
+								class="btn-icon preset-tonal-success btn-sm"
+								aria-label="Start"
+								title="Start"
+								onclick={() => handleStart(row.name)}
+								disabled={rowBusy !== null}
+							>
+								{#if rowBusy === 'start'}
+									<LoaderIcon class="size-4 animate-spin" />
+								{:else}
+									<PlayIcon class="size-4" />
+								{/if}
+							</button>
 						{/if}
-					</button>
+						<button
+							type="button"
+							class="btn-icon preset-tonal-error btn-sm"
+							aria-label="Delete"
+							title="Delete"
+							onclick={() => handleDelete(row.name)}
+							disabled={rowBusy !== null}
+						>
+							{#if rowBusy === 'delete'}
+								<LoaderIcon class="size-4 animate-spin" />
+							{:else}
+								<Trash2Icon class="size-4" />
+							{/if}
+						</button>
+					</div>
 				{/if}
 			</div>
 			<!-- eslint-enable svelte/no-navigation-without-resolve -->
@@ -668,8 +752,10 @@
 				] satisfies DataColumnGroup<Row>[]}
 				rowKey={(r) => `${r.source}:${r.name}`}
 				density="comfortable"
-				defaultSort={{ key: 'name', dir: 'asc' }}
+				sort={sortState}
+				onSortChange={(s) => (sortState = s)}
 				secondarySort={{ key: 'name', dir: 'asc' }}
+				onRowClick={(row) => goto(resolve('/pod/view/[name]', { name: row.name }))}
 				loading={loading && filteredRows.length === 0}
 				emptyMessage={filter
 					? 'No matches for that filter.'

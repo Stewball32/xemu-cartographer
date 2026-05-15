@@ -84,11 +84,9 @@
 			case 'powerup_picked_up':
 			case 'powerup_expired':
 				return String(p.tag ?? p.kind ?? `tick #${env.tick}`);
-			case 'team_score':
-				return `team ${p.team ?? '?'} → ${p.score ?? '?'}`;
 			case 'game_start':
 			case 'game_end':
-				return `${p.gametype ?? '—'} on ${p.map ?? '—'}`;
+				return typeof p.map === 'string' && p.map ? `on ${p.map}` : `tick #${env.tick}`;
 			default:
 				return `tick #${env.tick}`;
 		}

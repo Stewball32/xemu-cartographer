@@ -293,6 +293,31 @@ function createScraperWS() {
 			applyStateUpdate(env.instance, env.payload, now);
 		} else if (isEvent(env)) {
 			const prev = events[env.instance] ?? [];
+			// Defensive dedup against replay races / backend retransmission:
+			// when a current_state replay (whose cached events list already
+			// contains the in-flight live event) reaches the client just before
+			// the matching live broadcast, prepending blindly would produce two
+			// identical tiles in the feed. The log is newest-first, so events
+			// sharing a tick cluster at the front — walk them and skip the
+			// prepend if any has an identical payload.
+			let envPayloadJSON: string | null;
+			try {
+				envPayloadJSON = JSON.stringify(env.payload);
+			} catch {
+				envPayloadJSON = null;
+			}
+			if (envPayloadJSON !== null) {
+				for (let i = 0; i < prev.length && prev[i].tick === env.tick; i++) {
+					try {
+						if (JSON.stringify(prev[i].payload) === envPayloadJSON) {
+							return;
+						}
+					} catch {
+						// fall through — accept the prepend rather than drop a
+						// legitimate event if stringify ever throws.
+					}
+				}
+			}
 			const next = [env, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
 			events = { ...events, [env.instance]: next };
 		} else if (isEventsReply(env)) {
