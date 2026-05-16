@@ -67,8 +67,8 @@ func TestAggregatorBroadcastsOnDirtyTick(t *testing.T) {
 	if len(sends) == 0 {
 		t.Fatal("aggregator: no broadcast after dirty update")
 	}
-	if got := sends[0].Room; got != rooms.HostAllRoom {
-		t.Fatalf("aggregator: broadcast room = %q, want %q", got, rooms.HostAllRoom)
+	if got := sends[0].Room; got != rooms.SummaryRoom {
+		t.Fatalf("aggregator: broadcast room = %q, want %q", got, rooms.SummaryRoom)
 	}
 }
 
@@ -127,13 +127,14 @@ func TestAggregatorRemovedEvicts(t *testing.T) {
 	if err := json.Unmarshal(msg.Payload, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
-	if env.Type != envelopeTypeCurrentState {
-		t.Fatalf("aggregator envelope type = %q, want %q", env.Type, envelopeTypeCurrentState)
+	if env.Type != envelopeTypeSummary {
+		t.Fatalf("aggregator envelope type = %q, want %q", env.Type, envelopeTypeSummary)
 	}
-	var summaries []hostSummary
-	if err := json.Unmarshal(env.Data, &summaries); err != nil {
-		t.Fatalf("unmarshal []hostSummary: %v", err)
+	var sp SummaryPayload
+	if err := json.Unmarshal(env.Data, &sp); err != nil {
+		t.Fatalf("unmarshal SummaryPayload: %v", err)
 	}
+	summaries := sp.Hosts
 	for _, s := range summaries {
 		if s.Instance == "alpha" {
 			t.Fatalf("aggregator: alpha still present after Removed: %+v", summaries)
@@ -187,16 +188,17 @@ func TestAggregatorFullSnapshotEachBroadcast(t *testing.T) {
 	if err := json.Unmarshal(msg.Payload, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
-	if env.Type != envelopeTypeCurrentState {
-		t.Fatalf("aggregator envelope type = %q, want %q", env.Type, envelopeTypeCurrentState)
+	if env.Type != envelopeTypeSummary {
+		t.Fatalf("aggregator envelope type = %q, want %q", env.Type, envelopeTypeSummary)
 	}
-	if env.Instance != "all" {
-		t.Fatalf("aggregator envelope instance = %q, want %q", env.Instance, "all")
+	if env.Instance != "" {
+		t.Fatalf("aggregator envelope instance = %q, want empty (summary is multi-instance)", env.Instance)
 	}
-	var summaries []hostSummary
-	if err := json.Unmarshal(env.Data, &summaries); err != nil {
-		t.Fatalf("unmarshal []hostSummary: %v", err)
+	var sp SummaryPayload
+	if err := json.Unmarshal(env.Data, &sp); err != nil {
+		t.Fatalf("unmarshal SummaryPayload: %v", err)
 	}
+	summaries := sp.Hosts
 	if len(summaries) != 2 {
 		t.Fatalf("expected 2 summaries, got %d: %+v", len(summaries), summaries)
 	}
@@ -229,15 +231,15 @@ func TestAggregatorJoinReplay(t *testing.T) {
 	if err := json.Unmarshal(out[0], &msg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if msg.Room != rooms.HostAllRoom {
-		t.Fatalf("joinReplay room = %q, want %q", msg.Room, rooms.HostAllRoom)
+	if msg.Room != rooms.SummaryRoom {
+		t.Fatalf("joinReplay room = %q, want %q", msg.Room, rooms.SummaryRoom)
 	}
 	var env scraper.Envelope
 	if err := json.Unmarshal(msg.Payload, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
-	if env.Type != envelopeTypeCurrentState {
-		t.Fatalf("joinReplay envelope type = %q, want %q", env.Type, envelopeTypeCurrentState)
+	if env.Type != envelopeTypeSummary {
+		t.Fatalf("joinReplay envelope type = %q, want %q", env.Type, envelopeTypeSummary)
 	}
 }
 

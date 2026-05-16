@@ -30,14 +30,23 @@ func handleRequestState(e *Event) {
 	}
 	for _, room := range e.Services.WS.UserRooms(e.UserID) {
 		switch {
-		case room == rooms.HostAllRoom:
+		case room == rooms.HostAllRoom, room == rooms.SummaryRoom:
 			for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
 				e.SendRaw(msg)
 			}
 		case strings.HasPrefix(room, rooms.HostRoomPrefix+":"):
-			name := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
-			for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
-				e.SendRaw(msg)
+			rest := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
+			parts := strings.SplitN(rest, ":", 2)
+			name := parts[0]
+			if len(parts) == 1 {
+				for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+					e.SendRaw(msg)
+				}
+			} else {
+				class := parts[1]
+				for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(name, class) {
+					e.SendRaw(msg)
+				}
 			}
 		}
 	}
