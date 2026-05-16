@@ -11,7 +11,8 @@
 	} from '@lucide/svelte';
 	import { Tabs, Switch } from '@skeletonlabs/skeleton-svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
+	import type { EnvelopeTypeV2 } from '$lib/types/scraper-v2';
 	import type { InstanceState } from '$lib/types/containers';
 	import type { ScraperInspect } from '$lib/types/scraper';
 	import { fieldAnnotations } from '$lib/stores/fieldAnnotations.svelte';
@@ -107,6 +108,21 @@
 		if (r.inspectAt !== undefined) inspectAt = r.inspectAt;
 	}
 
+	// V2 debug page subscribes to every per-instance class room for the
+	// named runner. The runner-side demand model (PR 15) skips the heavy
+	// reads (ReadTick → tick/objects/debug) when no client is listening,
+	// so subscribing here is what lights up the data flow for this page.
+	const DEBUG_CLASSES: EnvelopeTypeV2[] = [
+		'xbox',
+		'scenario',
+		'game',
+		'tick',
+		'objects',
+		'debug',
+		'event',
+		'previous_game'
+	];
+
 	onMount(() => {
 		try {
 			const saved = localStorage.getItem('debug.showAll');
@@ -114,7 +130,7 @@
 		} catch {
 			// localStorage unavailable; keep default.
 		}
-		if (auth.token) scraperWS.connect(auth.token);
+		if (auth.token) scraperWSV2.connect(auth.token);
 		refreshDetail();
 		pollTimer = setInterval(() => {
 			if (document.visibilityState === 'visible') refreshDetail();
@@ -123,9 +139,10 @@
 	});
 
 	$effect(() => {
-		if (!scraperWS.connected) return;
-		scraperWS.ensureSubscribed([name]);
-		scraperWS.requestState();
+		// Subscribe regardless of connected state — subscribeInstance just
+		// records intent if the socket isn't open yet and replays on
+		// connect via the store's intendedRooms set (PR 20).
+		scraperWSV2.subscribeInstance(name, DEBUG_CLASSES);
 	});
 
 	$effect(() => {
@@ -137,7 +154,8 @@
 	});
 
 	onDestroy(() => {
-		scraperWS.disconnect();
+		scraperWSV2.unsubscribeInstance(name, DEBUG_CLASSES);
+		scraperWSV2.disconnect();
 		if (pollTimer) clearInterval(pollTimer);
 		if (nowTimer) clearInterval(nowTimer);
 	});
@@ -168,10 +186,18 @@
 		toaster.success({ title: 'Cleared', description: `${name} annotations` });
 	}
 
-	const gameData = $derived(scraperWS.gameData[name] ?? inspect?.game_data ?? null);
-	const tick = $derived(scraperWS.ticks[name] ?? inspect?.latest_tick ?? null);
+	// Header-only derivations — sub-components below still read from the
+	// legacy scraperWS store and will be migrated in PRs 22+ as each tab
+	// gets its own pass. The v1 store is non-functional against the v2
+	// backend (the v1 envelope types don't match what the server emits),
+	// so sub-tabs render whatever the 3 s HTTP-poll inspect endpoint
+	// supplies until they migrate.
+	const v2Game = $derived(scraperWSV2.game[name] ?? null);
+	const v2Tick = $derived(scraperWSV2.tick[name] ?? null);
+	const gameData = $derived(inspect?.game_data ?? null);
+	const tick = $derived(v2Tick ?? inspect?.latest_tick ?? null);
 	const runnerAttached = $derived(!!inspect?.running || !!scraper?.running);
-	const phase = $derived(scraperWS.phases[name] ?? inspect?.phase ?? 'idle');
+	const phase = $derived(v2Game?.phase ?? inspect?.phase ?? 'idle');
 
 	// Combined scraper/phase tile colour: dot reflects whether the scraper is
 	// running, text reflects the phase. When the scraper isn't running we
@@ -185,7 +211,13 @@
 	// "Team Slayer Pro") and falls back to the engine gametype string when
 	// the variant is unnamed — same value the gametype tile in the Game
 	// section shows, so the header still surfaces "what's being played".
-	const variantDisplay = $derived(gameData?.variant_name || gameData?.gametype || '—');
+	const variantDisplay = $derived(
+		v2Game?.config?.variant_name ||
+			v2Game?.config?.gametype ||
+			gameData?.variant_name ||
+			gameData?.gametype ||
+			'—'
+	);
 
 	const tabs = [
 		{ value: 'overview', label: 'Overview' },
@@ -237,9 +269,9 @@
 	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
 		<StatTile
 			label="websockets"
-			display={scraperWS.connected ? 'connected' : 'disconnected'}
-			statusKind={scraperWS.connected ? 'on' : 'off'}
-			title={scraperWS.lastError ?? (scraperWS.connected ? 'connected' : 'disconnected')}
+			display={scraperWSV2.connected ? 'connected' : 'disconnected'}
+			statusKind={scraperWSV2.connected ? 'on' : 'off'}
+			title={scraperWSV2.lastError ?? (scraperWSV2.connected ? 'connected' : 'disconnected')}
 			icon={wsIcon}
 		/>
 		<StatTile
@@ -273,8 +305,8 @@
 			icon={variantIcon}
 		/>
 	</div>
-	{#if scraperWS.lastError}
-		<div class="text-right text-xs text-error-500">{scraperWS.lastError}</div>
+	{#if scraperWSV2.lastError}
+		<div class="text-right text-xs text-error-500">{scraperWSV2.lastError}</div>
 	{/if}
 
 	{#if !runnerAttached && !gameData && !tick}
