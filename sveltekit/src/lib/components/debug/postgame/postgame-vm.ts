@@ -1,10 +1,20 @@
-// View-model for the postgame tab: shapes the just-ended match snapshot from
-// scraperWS.previousGames[name] into a single object PostgameTab and its
-// children render. Plain-TS (not a runes module) — reactivity is established
-// at the call site via $derived.by(). Mirrors overview/overview-vm.ts.
+// View-model for the postgame tab. Sources scraperWSV2.previousGame[name]
+// (the v2 PreviousGamePayload — game snapshot + per-game event log, sent
+// on Live→Ready edge + on subscribe). Projects the v2 game payload into
+// the v1 GameData shape via the shared game-vm adapter so the existing
+// scoreboard + player-totals + event-log sections render unchanged.
+//
+// Pure TS; reactivity is wired at the call site via $derived.by().
+//
+// Note: previous_game class doesn't ship scenario data (map, spawns,
+// fog, etc.) — those belong to a finished match only as backdrop, not
+// as live state. v2ToV1GameData is called with scenario=null and the
+// scoreboard / player-totals / event-log sections all rely on game-class
+// fields only, so the postgame view stays complete.
 
-import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 import type { DebugContext } from '../context';
+import type { AnyEvent, EnvelopeV2, PreviousGamePayload } from '$lib/types/scraper-v2';
 import type {
 	Envelope,
 	GameData,
@@ -12,9 +22,10 @@ import type {
 	PreviousGameInfo,
 	TeamScore
 } from '$lib/types/scraper';
+import { v2ToV1GameData } from '../game/game-vm';
 import { fmtPct, teamAccent, teamLabel } from '../shared/util';
 
-type ScraperWS = typeof scraperWS;
+type ScraperWSV2 = typeof scraperWSV2;
 
 // One per-player row of end-of-match totals. A faithful superset of the
 // GamePlayer wire struct plus the derived `accuracy` string — rendered by
@@ -232,11 +243,40 @@ export function buildPlayerTotals(gameData: GameData | null): {
 	return { byTeam, flat };
 }
 
-export function buildPostgameVm(name: string, ws: ScraperWS, ctx: DebugContext): PostgameVm {
-	const previousGame =
-		ws.previousGames[name] !== undefined
-			? ws.previousGames[name]
-			: (ctx.inspect?.previous_game ?? null);
+// Translate the v2 PreviousGamePayload (game-class snapshot + per-game
+// envelope list) into the v1 PreviousGameInfo shape PostgameTab still
+// expects. Returns null when the runner hasn't published a previous_game
+// envelope yet (the tab renders its EmptyState).
+function v2ToV1PreviousGame(payload: PreviousGamePayload | null): PreviousGameInfo | null {
+	if (!payload) return null;
+	const gameData = v2ToV1GameData(payload.game, null);
+	const events: Envelope[] = (payload.events ?? []).map(v2EnvelopeToV1);
+	return {
+		game_data: gameData,
+		events,
+		ended_at: payload.ended_at
+	};
+}
+
+// Map a v2 envelope (event class) to the v1 Envelope shape EventTile /
+// EventFeed / EventLogSection consume. Field rename: data → payload.
+function v2EnvelopeToV1(env: EnvelopeV2): Envelope {
+	const innerData = env.data as AnyEvent | undefined;
+	return {
+		v: env.v,
+		// v2 envelopes inside a previous_game.events list are always
+		// "event" — the per-game log records live event broadcasts only.
+		type: 'event',
+		instance: env.instance,
+		tick: env.tick,
+		payload: (innerData as unknown as Record<string, unknown>) ?? {}
+	};
+}
+
+export function buildPostgameVm(name: string, ws: ScraperWSV2, ctx: DebugContext): PostgameVm {
+	const v2Prev = ws.previousGame[name] ?? null;
+	const projected = v2ToV1PreviousGame(v2Prev);
+	const previousGame = projected ?? ctx.inspect?.previous_game ?? null;
 	const gameData = previousGame?.game_data ?? null;
 	const events = previousGame?.events ?? [];
 	const endedAtMs = parseIsoMs(previousGame?.ended_at);

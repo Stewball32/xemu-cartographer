@@ -68,7 +68,7 @@ export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
 	}));
 }
 
-// v2ToV1GameData projects v2 game-class + scenario-class payloads into
+//
 // the v1 GameData shape the GameTab's section components still expect.
 // Returns null when neither v2 envelope has arrived (the tab's empty-
 // state UI then shows "waiting for first read").
@@ -84,7 +84,7 @@ export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
 //   - v2 ScenarioMemoryRegions nests each region as {base,size}; v1
 //     flattens to <region>_base / <region>_size pairs and (mis-)names
 //     the holder tag_cache.
-function v2ToV1GameData(
+export function v2ToV1GameData(
 	game: GamePayload | null,
 	scenario: ScenarioPayload | null
 ): GameData | null {

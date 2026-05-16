@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Postgame tab — final summary for the just-ended match. Source of truth
-	// is scraperWS.previousGames[name]: when null we render EmptyState; when
+	// is scraperWSV2.previousGame[name]: when null we render EmptyState; when
 	// populated we lay out four collapsible sections (Headline / Scoreboard /
 	// Player totals / Event log) using the same SvelteSet + localStorage
 	// pattern as overview/OverviewTab.svelte.
@@ -8,7 +8,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { ChevronDownIcon } from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildPostgameVm } from './postgame-vm';
 	import WinnerHeadline from './WinnerHeadline.svelte';
@@ -20,7 +20,7 @@
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
-	const vm = $derived.by(() => buildPostgameVm(name, scraperWS, ctx));
+	const vm = $derived.by(() => buildPostgameVm(name, scraperWSV2, ctx));
 
 	// Section IDs — driven by what content is present.
 	type SectionId = 'headline' | 'scoreboard' | 'player_totals' | 'event_log';

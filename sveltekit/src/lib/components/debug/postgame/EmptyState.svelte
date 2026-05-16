@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Postgame-tab empty state. Shown when scraperWS.previousGames[name] is
+	// Postgame-tab empty state. Shown when scraperWSV2.previousGame[name] is
 	// null — the runner is still on its first match, or the previous-match
 	// snapshot has been dropped (Ready → Idle).
 	import { TrophyIcon } from '@lucide/svelte';
