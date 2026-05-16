@@ -10,6 +10,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
@@ -185,6 +186,14 @@ type runner struct {
 
 	cacheMu sync.Mutex
 	cache   instanceCache
+
+	// policyMu guards policies. Replaced wholesale by setPolicies so
+	// readers under policies() get a stable snapshot without holding
+	// the lock for the resolve loop. nil until the Manager wires in
+	// the capture-policy loader (PR 16); shouldRead treats nil as
+	// "no capture rows" and falls back to WS-subscriber-only gating.
+	policyMu sync.RWMutex
+	policies []capture.Policy
 }
 
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {
@@ -204,6 +213,26 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 			StartedAt: now,
 		},
 	}
+}
+
+// getPolicies returns a stable snapshot of the runner's current capture
+// policies. Safe to call from any goroutine; the returned slice must not
+// be mutated. Returns nil when the Manager hasn't pushed policies yet,
+// which the demand aggregator treats the same as "no rows".
+func (r *runner) getPolicies() []capture.Policy {
+	r.policyMu.RLock()
+	defer r.policyMu.RUnlock()
+	return r.policies
+}
+
+// setPolicies replaces the runner's capture-policy snapshot. Called by
+// the Manager's loader on startup and on capture_policies record-change
+// hooks (PR 16). Wholesale replacement keeps getPolicies lock-free at
+// the read site.
+func (r *runner) setPolicies(p []capture.Policy) {
+	r.policyMu.Lock()
+	r.policies = p
+	r.policyMu.Unlock()
 }
 
 func (r *runner) info() scraperiface.Info {
@@ -497,17 +526,26 @@ func (r *runner) broadcastPoll(svc *guards.Services) {
 		return
 	}
 	c := r.readCache()
-	r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	pol := r.getPolicies()
+	if shouldRead(r.name, "game", pol, svc.WS) {
+		r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	}
 	if c.LatestTick == nil {
 		return
 	}
-	if tp := buildTickPayload(&c); tp != nil {
-		r.emitClass(svc, "tick", c.EngineTick, *tp)
+	if shouldRead(r.name, "tick", pol, svc.WS) {
+		if tp := buildTickPayload(&c); tp != nil {
+			r.emitClass(svc, "tick", c.EngineTick, *tp)
+		}
 	}
-	if op := buildObjectsPayload(&c); op != nil {
-		r.emitClass(svc, "objects", c.EngineTick, *op)
+	if shouldRead(r.name, "objects", pol, svc.WS) {
+		if op := buildObjectsPayload(&c); op != nil {
+			r.emitClass(svc, "objects", c.EngineTick, *op)
+		}
 	}
-	if dp := buildDebugPayload(&c); dp != nil {
-		r.emitClass(svc, "debug", c.EngineTick, *dp)
+	if shouldRead(r.name, "debug", pol, svc.WS) {
+		if dp := buildDebugPayload(&c); dp != nil {
+			r.emitClass(svc, "debug", c.EngineTick, *dp)
+		}
 	}
 }

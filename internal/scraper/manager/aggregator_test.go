@@ -18,6 +18,10 @@ import (
 type stubWS struct {
 	mu        sync.Mutex
 	roomSends []roomSend
+	// occupied marks rooms that RoomHasMembers should report as having
+	// subscribers. Empty by default; set per-test to make broadcastPoll
+	// (PR 15 demand-gated) exercise individual classes.
+	occupied map[string]bool
 }
 
 type roomSend struct {
@@ -30,7 +34,11 @@ func (s *stubWS) SendToUserRaw(string, []byte) {}
 func (s *stubWS) IsConnected(string) bool      { return false }
 func (s *stubWS) IsInRoom(string, string) bool { return false }
 func (s *stubWS) UserRooms(string) []string    { return nil }
-func (s *stubWS) RoomHasMembers(string) bool   { return false }
+func (s *stubWS) RoomHasMembers(room string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.occupied[room]
+}
 func (s *stubWS) SendToRoomRaw(room string, data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

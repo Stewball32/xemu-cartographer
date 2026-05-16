@@ -7,6 +7,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
@@ -177,10 +178,13 @@ func TestBroadcastSnapshotEmitsToPerClassRooms(t *testing.T) {
 	}
 }
 
-// TestBroadcastPollGameAndTick: broadcastPoll always emits game; emits
-// tick / objects / debug only when LatestTick is set.
+// TestBroadcastPollGameAndTick: broadcastPoll emits game when LatestTick
+// is unset (Idle case) and adds tick / objects / debug when it's set.
+// PR 15: broadcastPoll is now demand-gated, so the per-class rooms must
+// be marked occupied for the emit to happen — that mirrors the live
+// behaviour where the broadcast skips classes with no subscribers.
 func TestBroadcastPollGameAndTick(t *testing.T) {
-	ws := &stubWS{}
+	ws := &stubWS{occupied: map[string]bool{"host:alpha:game": true}}
 	svc := &guards.Services{WS: ws}
 	r := newTestRunner("alpha")
 	defer r.cancel()
@@ -193,8 +197,14 @@ func TestBroadcastPollGameAndTick(t *testing.T) {
 		t.Fatalf("poll w/o tick: want one send to host:alpha:game, got %+v", sends)
 	}
 
-	// Now add a tick — game + tick + objects + debug all emit.
-	ws2 := &stubWS{}
+	// Now add a tick — game + tick + objects + debug all emit (every
+	// room marked occupied).
+	ws2 := &stubWS{occupied: map[string]bool{
+		"host:alpha:game":    true,
+		"host:alpha:tick":    true,
+		"host:alpha:objects": true,
+		"host:alpha:debug":   true,
+	}}
 	svc2 := &guards.Services{WS: ws2}
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
@@ -209,6 +219,53 @@ func TestBroadcastPollGameAndTick(t *testing.T) {
 		if !got[want] {
 			t.Fatalf("poll w/ tick: missing %q (got %v)", want, got)
 		}
+	}
+}
+
+// TestBroadcastPollSkipsUnsubscribedClasses: broadcastPoll must respect
+// per-class demand — with only host:alpha:debug occupied, the runner
+// emits debug but nothing else, even when LatestTick is set.
+func TestBroadcastPollSkipsUnsubscribedClasses(t *testing.T) {
+	ws := &stubWS{occupied: map[string]bool{"host:alpha:debug": true}}
+	svc := &guards.Services{WS: ws}
+	r := newTestRunner("alpha")
+	defer r.cancel()
+
+	r.withCache(func(c *instanceCache) {
+		c.Phase = PhaseLive
+		c.LatestTick = &scraper.TickPayload{}
+	})
+	r.broadcastPoll(svc)
+
+	sends := ws.snapshot()
+	if len(sends) != 1 || sends[0].Room != "host:alpha:debug" {
+		t.Fatalf("partial demand: want one send to host:alpha:debug, got %+v", sends)
+	}
+}
+
+// TestBroadcastPollAlwaysModeBypassesWS: capture policy `always` for a
+// class forces the broadcast even with the WS room empty. This is the
+// "record without viewers" case — the runner must still hand the marshal
+// to the WS hub (which no-ops on empty rooms) so the same envelope can
+// later be teed to a sink (PR 17+).
+func TestBroadcastPollAlwaysModeBypassesWS(t *testing.T) {
+	ws := &stubWS{occupied: map[string]bool{}}
+	svc := &guards.Services{WS: ws}
+	r := newTestRunner("alpha")
+	defer r.cancel()
+	r.setPolicies([]capture.Policy{
+		{Instance: "alpha", Class: "tick", Mode: capture.ModeAlways},
+	})
+
+	r.withCache(func(c *instanceCache) {
+		c.Phase = PhaseLive
+		c.LatestTick = &scraper.TickPayload{}
+	})
+	r.broadcastPoll(svc)
+
+	sends := ws.snapshot()
+	if len(sends) != 1 || sends[0].Room != "host:alpha:tick" {
+		t.Fatalf("always policy: want one send to host:alpha:tick, got %+v", sends)
 	}
 }
 
