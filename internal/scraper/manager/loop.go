@@ -70,6 +70,11 @@ func (r *runner) loop(svc *guards.Services) {
 	defer close(r.done)
 	defer r.inst.Close()
 	defer func() {
+		if r.sinks != nil {
+			r.sinks.closeAll()
+		}
+	}()
+	defer func() {
 		if rec := recover(); rec != nil {
 			log.Printf("scraper[%s]: panic in tick loop: %v\n%s", r.name, rec, debug.Stack())
 		}

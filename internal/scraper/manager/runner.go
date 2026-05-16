@@ -194,6 +194,13 @@ type runner struct {
 	// "no capture rows" and falls back to WS-subscriber-only gating.
 	policyMu sync.RWMutex
 	policies []capture.Policy
+
+	// sinks holds per-class destinations (file:, pb:) for envelopes the
+	// runner emits. Driven by the same capture-policy slice that gates
+	// reads — setPolicies reconciles by calling sinks.applyPolicies.
+	// Owned for the runner's lifetime; closed in the loop's shutdown
+	// defer.
+	sinks *sinkManager
 }
 
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {
@@ -212,6 +219,7 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 			Phase:     PhaseIdle,
 			StartedAt: now,
 		},
+		sinks: newSinkManager(name),
 	}
 }
 
@@ -228,11 +236,16 @@ func (r *runner) getPolicies() []capture.Policy {
 // setPolicies replaces the runner's capture-policy snapshot. Called by
 // the Manager's loader on startup and on capture_policies record-change
 // hooks (PR 16). Wholesale replacement keeps getPolicies lock-free at
-// the read site.
+// the read site. Also reconciles the per-class sinks so any spec
+// changes take effect immediately — adds open new sinks, dropped rows
+// close the matching active sink.
 func (r *runner) setPolicies(p []capture.Policy) {
 	r.policyMu.Lock()
 	r.policies = p
 	r.policyMu.Unlock()
+	if r.sinks != nil {
+		r.sinks.applyPolicies(p)
+	}
 }
 
 func (r *runner) info() scraperiface.Info {
@@ -394,15 +407,10 @@ func (r *runner) maybeHeartbeatSummary() {
 	r.publishSummary()
 }
 
-// marshalRoomMessage wraps env in websocket.Message{Type:"scraper", Room:room}
-// and returns the marshaled wire bytes. Logged-and-dropped on marshal error
-// (caller-visible via the (nil, false) return).
-func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) {
-	envBytes, err := json.Marshal(env)
-	if err != nil {
-		log.Printf("scraper[%s]: marshal envelope (%s): %v", name, env.Type, err)
-		return nil, false
-	}
+// wrapRoomMessage wraps envBytes (already-marshaled scraper.Envelope)
+// in websocket.Message{Type:"scraper", Room:room} and returns the wire
+// bytes. Logged-and-dropped on marshal error.
+func wrapRoomMessage(name, room string, envBytes []byte) ([]byte, bool) {
 	msg := websocket.Message{
 		Type:    "scraper",
 		Room:    room,
@@ -416,32 +424,59 @@ func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) 
 	return msgBytes, true
 }
 
-// marshalClassEnvelope wraps a v2 class payload in an envelope addressed
-// to the per-instance per-class room ("host:<inst>:<class>"). Returns the
-// marshaled wire bytes + the resolved room name. (nil, "", false) on
-// validation or marshal error (logged).
-func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, string, bool) {
+// marshalRoomMessage takes a scraper.Envelope, serialises it, and
+// wraps the result in the websocket.Message envelope. Used by callers
+// (events.go's EventsReply) that don't need the inner bytes separately.
+func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) {
+	envBytes, err := json.Marshal(env)
+	if err != nil {
+		log.Printf("scraper[%s]: marshal envelope (%s): %v", name, env.Type, err)
+		return nil, false
+	}
+	return wrapRoomMessage(name, room, envBytes)
+}
+
+// marshalClassEnvelope builds a v2 class envelope and serialises both
+// the inner envelope and the WS-wrapped message. Returns:
+//
+//	envBytes  — marshaled scraper.Envelope (one NDJSON line for sinks)
+//	msgBytes  — websocket.Message{Type:"scraper", Room:room, Payload:envBytes}
+//	room      — per-class room name (host:<inst>:<class>)
+//
+// (nil, nil, "", false) on validation or marshal failure (logged).
+func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, []byte, string, bool) {
 	room, err := rooms.RoomForInstanceClass(r.name, class)
 	if err != nil {
 		log.Printf("scraper[%s]: cannot resolve room for class %q: %v", r.name, class, err)
-		return nil, "", false
+		return nil, nil, "", false
 	}
 	env := scraper.MakeEnvelope(class, r.name, 0, tick, payload)
-	msgBytes, ok := marshalRoomMessage(r.name, room, env)
-	return msgBytes, room, ok
+	envBytes, err := json.Marshal(env)
+	if err != nil {
+		log.Printf("scraper[%s]: marshal envelope (%s): %v", r.name, class, err)
+		return nil, nil, "", false
+	}
+	msgBytes, ok := wrapRoomMessage(r.name, room, envBytes)
+	if !ok {
+		return nil, nil, "", false
+	}
+	return envBytes, msgBytes, room, ok
 }
 
-// emitClass marshals and broadcasts a single v2 class envelope to the
-// per-class room. No-op on nil svc/WS (test harnesses) or marshal failure.
+// emitClass marshals a v2 class envelope, broadcasts the WS-wrapped
+// message to the per-class room, and tees the inner envelope to the
+// configured sink (if any). No-op on nil svc/WS (test harnesses) or
+// marshal failure.
 func (r *runner) emitClass(svc *guards.Services, class string, tick uint32, payload any) {
 	if svc == nil || svc.WS == nil {
 		return
 	}
-	msgBytes, room, ok := r.marshalClassEnvelope(class, tick, payload)
+	envBytes, msgBytes, room, ok := r.marshalClassEnvelope(class, tick, payload)
 	if !ok {
 		return
 	}
 	svc.WS.SendToRoomRaw(room, msgBytes)
+	r.sinks.write(class, envBytes)
 }
 
 // classEnvelopeMessages returns one marshaled-message-bytes per class that
@@ -457,11 +492,11 @@ func (r *runner) classEnvelopeMessages() []classMessage {
 		if payload == nil {
 			return
 		}
-		bytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
+		_, msgBytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
 		if !ok {
 			return
 		}
-		out = append(out, classMessage{Class: class, Bytes: bytes})
+		out = append(out, classMessage{Class: class, Bytes: msgBytes})
 	}
 	add("xbox", buildXboxPayload(&c))
 	if sp := buildScenarioPayload(&c); sp != nil {
