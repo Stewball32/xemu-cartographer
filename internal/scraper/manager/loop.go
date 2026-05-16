@@ -10,6 +10,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 )
 
 // Per-phase poll cadences (M5 stage 5a). Each phase trades freshness for read
@@ -94,7 +95,7 @@ func (r *runner) loop(svc *guards.Services) {
 		// sentinel makes the very first iteration (entering Idle at startup)
 		// emit too.
 		if phase != prevPhase {
-			r.broadcastCurrentState(svc)
+			r.broadcastSnapshot(svc)
 			prevPhase = phase
 		}
 
@@ -127,7 +128,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		// header yet. Stay idle and retry. Don't update LastReadAt — a
 		// failing read is not progress.
 		log.Printf("scraper[%s]: idle title-ID read: %v", r.name, err)
-		r.broadcastStateUpdate(svc, PhaseIdle)
+		r.broadcastPoll(svc)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -147,7 +148,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		// Unknown title — stay idle and re-poll. The TitleID is already
 		// surfaced in the cache so the debug page can show "phase=idle,
 		// title_id=0x...".
-		r.broadcastStateUpdate(svc, PhaseIdle)
+		r.broadcastPoll(svc)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -160,7 +161,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
 	if err := r.inst.Init(allGVAs); err != nil {
 		log.Printf("scraper[%s]: bind reader (init low GVAs): %v — staying idle", r.name, err)
-		r.broadcastStateUpdate(svc, PhaseIdle)
+		r.broadcastPoll(svc)
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -226,7 +227,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 		gs, tick, err := r.reader.ReadGameState()
 		if err != nil {
 			log.Printf("scraper[%s]: ready ReadGameState: %v", r.name, err)
-			r.broadcastStateUpdate(svc, PhaseReady)
+			r.broadcastPoll(svc)
 			r.sleepOrCancel(readyPollInterval)
 			continue
 		}
@@ -286,7 +287,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			r.publishGameData(snap)
 		}
 
-		r.broadcastStateUpdate(svc, PhaseReady)
+		r.broadcastPoll(svc)
 		r.sleepOrCancel(readyPollInterval)
 	}
 }
@@ -374,7 +375,7 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 		}
 
 		// One state_update per fresh engine tick (~30Hz).
-		r.broadcastStateUpdate(svc, PhaseLive)
+		r.broadcastPoll(svc)
 
 		events := r.reader.DetectEvents(tick, r.name, r.gameData, tickResult, r.state)
 		for _, ev := range events {
@@ -555,12 +556,17 @@ func (r *runner) sleepOrCancel(d time.Duration) {
 }
 
 // broadcast wraps a scraper.Envelope inside a websocket.Message and pushes
-// the serialised bytes to this runner's per-instance host room. M5 stage 5b:
-// the room is host:<name> (computed once at Manager.Start via the
-// rooms.RoomForInstance chokepoint and cached in r.hostRoom), replacing
-// the single shared "overlay" room from earlier stages.
+// the serialised bytes to the per-class room for this runner and the
+// envelope's type (host:<inst>:<class>). v2: routing is per-class — events
+// land on host:<inst>:event, state-class envelopes (if ever broadcast via
+// this generic path) land on host:<inst>:<class>.
 func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 	if svc == nil || svc.WS == nil {
+		return
+	}
+	room, err := rooms.RoomForInstanceClass(r.name, env.Type)
+	if err != nil {
+		log.Printf("scraper[%s]: cannot route envelope type %q: %v", r.name, env.Type, err)
 		return
 	}
 	envBytes, err := json.Marshal(env)
@@ -570,7 +576,7 @@ func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 	}
 	msg := websocket.Message{
 		Type:    "scraper",
-		Room:    r.hostRoom,
+		Room:    room,
 		Payload: envBytes,
 	}
 	msgBytes, err := json.Marshal(msg)
@@ -578,5 +584,5 @@ func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 		log.Printf("scraper[%s]: marshal message: %v", r.name, err)
 		return
 	}
-	svc.WS.SendToRoomRaw(r.hostRoom, msgBytes)
+	svc.WS.SendToRoomRaw(room, msgBytes)
 }

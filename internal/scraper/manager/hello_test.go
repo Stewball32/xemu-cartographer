@@ -24,10 +24,14 @@ func TestBuildHelloPayloadEmpty(t *testing.T) {
 		t.Fatal("server_time is zero, want now-ish")
 	}
 	wantClasses := []string{
-		envelopeTypeCurrentState,
-		envelopeTypeStateUpdate,
-		envelopeTypeEvent,
-		envelopeTypeEvents,
+		envelopeTypeXbox,
+		envelopeTypeScenario,
+		envelopeTypeGame,
+		envelopeTypeTick,
+		envelopeTypeObjects,
+		envelopeTypeDebug,
+		envelopeTypeSummary,
+		envelopeTypePreviousGame,
 	}
 	if len(p.Classes) != len(wantClasses) {
 		t.Fatalf("classes = %v (len %d), want %v (len %d)", p.Classes, len(p.Classes), wantClasses, len(wantClasses))

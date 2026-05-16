@@ -17,5 +17,6 @@ package scraper
 type JoinReplay interface {
 	JoinReplayMessages() [][]byte
 	JoinReplayForInstance(name string) [][]byte
+	JoinReplayForInstanceClass(name, class string) [][]byte
 	JoinReplayForHostAll() [][]byte
 }

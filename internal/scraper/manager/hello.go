@@ -58,10 +58,14 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 		ProtocolVersion: scraper.ProtocolVersion,
 		ServerTime:      time.Now(),
 		Classes: []string{
-			envelopeTypeCurrentState,
-			envelopeTypeStateUpdate,
-			envelopeTypeEvent,
-			envelopeTypeEvents,
+			envelopeTypeXbox,
+			envelopeTypeScenario,
+			envelopeTypeGame,
+			envelopeTypeTick,
+			envelopeTypeObjects,
+			envelopeTypeDebug,
+			envelopeTypeSummary,
+			envelopeTypePreviousGame,
 		},
 		Instances: instances,
 	}

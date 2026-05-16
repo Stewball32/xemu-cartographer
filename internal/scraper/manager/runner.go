@@ -11,6 +11,7 @@ import (
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -364,129 +365,6 @@ func (r *runner) maybeHeartbeatSummary() {
 	r.publishSummary()
 }
 
-// CurrentStatePayload is the per-instance "current_state" envelope payload —
-// a full atomic-cache-read snapshot of the runner's instanceCache. Sent on
-// join and on every phase transition. Consumers reconstruct the entire
-// instance view from a single payload of this shape without needing prior
-// history. State_update envelopes then carry the volatile-fields portion at
-// phase-appropriate cadence.
-type CurrentStatePayload struct {
-	Phase            Phase         `json:"phase"`
-	StartedAt        time.Time     `json:"started_at"`
-	TitleID          uint32        `json:"title_id"`
-	Title            string        `json:"title"`
-	XboxName         string        `json:"xbox_name"`
-	SerialNumber     string        `json:"serial_number,omitempty"`
-	MACAddress       string        `json:"mac_address,omitempty"`
-	VideoStandard    string        `json:"video_standard,omitempty"`
-	TimeZoneBias     int32         `json:"time_zone_bias,omitempty"`
-	TimeZoneStdName  string        `json:"time_zone_std_name,omitempty"`
-	TimeZoneDltName  string        `json:"time_zone_dlt_name,omitempty"`
-	XBETitleName     string        `json:"xbe_title_name,omitempty"`
-	XBEVersion       uint32        `json:"xbe_version,omitempty"`
-	XBEGameRegion    uint32        `json:"xbe_game_region,omitempty"`
-	XBEDiskNumber    uint32        `json:"xbe_disk_number,omitempty"`
-	XBEAllowedMedia  uint32        `json:"xbe_allowed_media,omitempty"`
-	KernelSystemTime time.Time     `json:"kernel_system_time,omitempty"`
-	KernelBootTime   time.Time     `json:"kernel_boot_time,omitempty"`
-	KernelUptime     time.Duration `json:"kernel_uptime_ns,omitempty"`
-
-	LastReadAt   time.Time            `json:"last_read_at"`
-	EngineTick   uint32               `json:"engine_tick"`
-	Iterations   uint64               `json:"iterations"`
-	GameData     *scraper.GameData    `json:"game_data,omitempty"`
-	LatestTick   *scraper.TickPayload `json:"latest_tick,omitempty"`
-	Events       []scraper.Envelope   `json:"events,omitempty"`
-	PreviousGame *previousGame        `json:"previous_game,omitempty"`
-}
-
-// StateUpdatePayload is the per-poll "state_update" envelope payload — the
-// volatile / tick-fields portion of the cache. Sent every successful poll
-// at phase-appropriate cadence: Idle ~3s (no per-phase data, just freshness),
-// Ready ~500ms (volatile lobby/menu game data), Live ~30Hz (tick payload +
-// engine tick). The top-level envelope's tick field is the engine tick in
-// Live and 0 outside Live (per the M5 brief's "Decisions made" section).
-type StateUpdatePayload struct {
-	Phase      Phase                `json:"phase"`
-	LastReadAt time.Time            `json:"last_read_at"`
-	Iterations uint64               `json:"iterations"`
-	EngineTick uint32               `json:"engine_tick,omitempty"`
-	Tick       *scraper.TickPayload `json:"tick,omitempty"`
-	Ready      *scraper.GameData    `json:"ready,omitempty"`
-}
-
-// buildCurrentStateEnvelope reads the instanceCache atomically and builds the
-// marshaled websocket.Message bytes for a current_state envelope addressed
-// to this runner's host:<name> room. Returns (nil, false) on marshal error
-// (logged). The caller is responsible for fanning the bytes out via
-// SendToRoomRaw or SendRaw.
-func (r *runner) buildCurrentStateEnvelope() ([]byte, bool) {
-	c := r.readCache()
-	payload := CurrentStatePayload{
-		Phase:            c.Phase,
-		StartedAt:        c.StartedAt,
-		TitleID:          c.TitleID,
-		Title:            c.Title,
-		XboxName:         c.XboxName,
-		SerialNumber:     c.SerialNumber,
-		MACAddress:       c.MACAddress,
-		VideoStandard:    c.VideoStandard,
-		TimeZoneBias:     c.TimeZoneBias,
-		TimeZoneStdName:  c.TimeZoneStdName,
-		TimeZoneDltName:  c.TimeZoneDltName,
-		XBETitleName:     c.XBETitleName,
-		XBEVersion:       c.XBEVersion,
-		XBEGameRegion:    c.XBEGameRegion,
-		XBEDiskNumber:    c.XBEDiskNumber,
-		XBEAllowedMedia:  c.XBEAllowedMedia,
-		KernelSystemTime: c.KernelSystemTime,
-		KernelBootTime:   c.KernelBootTime,
-		KernelUptime:     c.KernelUptime,
-		LastReadAt:       c.LastReadAt,
-		EngineTick:       c.EngineTick,
-		Iterations:       c.Iterations,
-		GameData:         c.GameData,
-		LatestTick:       c.LatestTick,
-		Events:           c.Events,
-		PreviousGame:     c.PreviousGame,
-	}
-	env := scraper.MakeEnvelope(envelopeTypeCurrentState, r.name, 0, c.EngineTick, payload)
-	return marshalRoomMessage(r.name, r.hostRoom, env)
-}
-
-// buildStateUpdateEnvelope reads the instanceCache atomically and builds the
-// marshaled websocket.Message bytes for a state_update envelope. The
-// envelope's top-level tick is c.EngineTick when phase==PhaseLive, otherwise
-// 0 (the brief's "Decisions made" rule). Phase-specific fields are
-// populated only in their phase: Tick in Live, Ready in PhaseReady; Idle
-// carries only the always-present freshness fields.
-//
-// includeReady piggybacks the cached GameData onto the Live payload so
-// cumulative scoring stays fresh on the WS stream. Ignored outside Live —
-// PhaseReady always includes Ready, PhaseIdle has no GameData to send.
-func (r *runner) buildStateUpdateEnvelope(phase Phase, includeReady bool) ([]byte, bool) {
-	c := r.readCache()
-	payload := StateUpdatePayload{
-		Phase:      phase,
-		LastReadAt: c.LastReadAt,
-		Iterations: c.Iterations,
-	}
-	var envTick uint32
-	switch phase {
-	case PhaseLive:
-		payload.EngineTick = c.EngineTick
-		payload.Tick = c.LatestTick
-		envTick = c.EngineTick
-		if includeReady {
-			payload.Ready = c.GameData
-		}
-	case PhaseReady:
-		payload.Ready = c.GameData
-	}
-	env := scraper.MakeEnvelope(envelopeTypeStateUpdate, r.name, 0, envTick, payload)
-	return marshalRoomMessage(r.name, r.hostRoom, env)
-}
-
 // marshalRoomMessage wraps env in websocket.Message{Type:"scraper", Room:room}
 // and returns the marshaled wire bytes. Logged-and-dropped on marshal error
 // (caller-visible via the (nil, false) return).
@@ -509,43 +387,127 @@ func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) 
 	return msgBytes, true
 }
 
-// broadcastCurrentState builds a current_state envelope and pushes it to
-// this runner's host:<name> room. Called on phase transitions (the loop
-// dispatcher) so the brief's ordering invariant — "current_state for a
-// transition reaches clients before any state_update tagged with the new
-// phase" — is satisfied by the runner being the single goroutine writer
-// for its room.
-func (r *runner) broadcastCurrentState(svc *guards.Services) {
-	if svc == nil || svc.WS == nil {
-		return
+// marshalClassEnvelope wraps a v2 class payload in an envelope addressed
+// to the per-instance per-class room ("host:<inst>:<class>"). Returns the
+// marshaled wire bytes + the resolved room name. (nil, "", false) on
+// validation or marshal error (logged).
+func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, string, bool) {
+	room, err := rooms.RoomForInstanceClass(r.name, class)
+	if err != nil {
+		log.Printf("scraper[%s]: cannot resolve room for class %q: %v", r.name, class, err)
+		return nil, "", false
 	}
-	msgBytes, ok := r.buildCurrentStateEnvelope()
-	if !ok {
-		return
-	}
-	svc.WS.SendToRoomRaw(r.hostRoom, msgBytes)
+	env := scraper.MakeEnvelope(class, r.name, 0, tick, payload)
+	msgBytes, ok := marshalRoomMessage(r.name, room, env)
+	return msgBytes, room, ok
 }
 
-// broadcastStateUpdate builds a state_update envelope and pushes it to
-// this runner's host:<name> room. Called once per successful poll iteration
-// in each phase function. Phase determines which optional payload fields
-// are populated (see StateUpdatePayload).
-//
-// During Live, GameData is piggybacked at readyBroadcastInterval cadence
-// (~1Hz) so cumulative scoring stays fresh on the WS stream without
-// inflating the 30Hz tick payload.
-func (r *runner) broadcastStateUpdate(svc *guards.Services, phase Phase) {
+// emitClass marshals and broadcasts a single v2 class envelope to the
+// per-class room. No-op on nil svc/WS (test harnesses) or marshal failure.
+func (r *runner) emitClass(svc *guards.Services, class string, tick uint32, payload any) {
 	if svc == nil || svc.WS == nil {
 		return
 	}
-	includeReady := false
-	if phase == PhaseLive && time.Since(r.lastReadyBroadcastAt) >= readyBroadcastInterval {
-		includeReady = true
-		r.lastReadyBroadcastAt = time.Now()
-	}
-	msgBytes, ok := r.buildStateUpdateEnvelope(phase, includeReady)
+	msgBytes, room, ok := r.marshalClassEnvelope(class, tick, payload)
 	if !ok {
 		return
 	}
-	svc.WS.SendToRoomRaw(r.hostRoom, msgBytes)
+	svc.WS.SendToRoomRaw(room, msgBytes)
+}
+
+// classEnvelopeMessages returns one marshaled-message-bytes per class that
+// has data to send, in dependency order (xbox → scenario → game →
+// previous_game → tick → objects → debug). Used both by the snapshot
+// broadcast and by per-class join replay.
+//
+// Returns (class-name, bytes) pairs so callers can route or filter.
+func (r *runner) classEnvelopeMessages() []classMessage {
+	c := r.readCache()
+	out := make([]classMessage, 0, 7)
+	add := func(class string, payload any) {
+		if payload == nil {
+			return
+		}
+		bytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
+		if !ok {
+			return
+		}
+		out = append(out, classMessage{Class: class, Bytes: bytes})
+	}
+	add("xbox", buildXboxPayload(&c))
+	if sp := buildScenarioPayload(&c); sp != nil {
+		add("scenario", *sp)
+	}
+	add("game", buildGamePayload(&c))
+	if pg := buildPreviousGamePayload(&c); pg != nil {
+		add("previous_game", *pg)
+	}
+	if tp := buildTickPayload(&c); tp != nil {
+		add("tick", *tp)
+	}
+	if op := buildObjectsPayload(&c); op != nil {
+		add("objects", *op)
+	}
+	if dp := buildDebugPayload(&c); dp != nil {
+		add("debug", *dp)
+	}
+	return out
+}
+
+// classMessage pairs a class name with its marshaled wire bytes. Used by
+// classEnvelopeMessages so callers can filter to a specific class (per-
+// class join replay) or fan everything out (snapshot broadcast).
+type classMessage struct {
+	Class string
+	Bytes []byte
+}
+
+// broadcastSnapshot emits every applicable per-class envelope for the
+// current cache state. Called on phase transitions so a transitioning
+// (or just-joined) client gets a complete view across all classes
+// before per-poll updates resume.
+//
+// Replaces v1 broadcastCurrentState — instead of one monolithic
+// current_state envelope to host:<name>, this fans out 1–7 envelopes
+// to per-class rooms (host:<name>:xbox, :scenario, :game, ...).
+func (r *runner) broadcastSnapshot(svc *guards.Services) {
+	if svc == nil || svc.WS == nil {
+		return
+	}
+	for _, m := range r.classEnvelopeMessages() {
+		room, err := rooms.RoomForInstanceClass(r.name, m.Class)
+		if err != nil {
+			continue
+		}
+		svc.WS.SendToRoomRaw(room, m.Bytes)
+	}
+}
+
+// broadcastPoll emits the volatile / per-poll classes — game (heartbeat
+// + change-driven) and, when live tick data exists, tick / objects /
+// debug. Called once per successful poll iteration in each phase
+// function. No phase argument needed in v2: the cache state itself
+// determines which classes have data to send.
+//
+// Replaces v1 broadcastStateUpdate. The 1 Hz GameData piggyback dance
+// is gone — game is always emitted on every poll, and the per-tick
+// stream (tick/objects/debug) only fires when there's tick data.
+func (r *runner) broadcastPoll(svc *guards.Services) {
+	if svc == nil || svc.WS == nil {
+		return
+	}
+	c := r.readCache()
+	r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	if c.LatestTick == nil {
+		return
+	}
+	if tp := buildTickPayload(&c); tp != nil {
+		r.emitClass(svc, "tick", c.EngineTick, *tp)
+	}
+	if op := buildObjectsPayload(&c); op != nil {
+		r.emitClass(svc, "objects", c.EngineTick, *op)
+	}
+	if dp := buildDebugPayload(&c); dp != nil {
+		r.emitClass(svc, "debug", c.EngineTick, *dp)
+	}
 }

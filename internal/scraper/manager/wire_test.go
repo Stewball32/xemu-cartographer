@@ -5,21 +5,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
 // newTestRunner builds a minimal *runner suitable for exercising the
-// envelope builders without standing up a real xemu instance or aggregator.
-// Tests prepare the cache directly under r.cacheMu (or via withCache), then
-// call buildCurrentStateEnvelope / buildStateUpdateEnvelope.
+// per-class envelope builders without standing up a real xemu instance
+// or aggregator. Tests prepare the cache directly under r.cacheMu (or
+// via withCache), then call the v2 build/broadcast methods.
 func newTestRunner(name string) *runner {
 	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil)
 }
 
-// decodeEnvelope unwraps a marshaled websocket.Message to its inner
-// scraper.Envelope so tests can assert on Type / Instance / Tick / Payload.
-func decodeEnvelope(t *testing.T, data []byte) (websocket.Message, scraper.Envelope) {
+// decodeClassEnvelope unwraps a marshaled websocket.Message to the inner
+// scraper.Envelope. Used by per-class assertions.
+func decodeClassEnvelope(t *testing.T, data []byte) (websocket.Message, scraper.Envelope) {
 	t.Helper()
 	var msg websocket.Message
 	if err := json.Unmarshal(data, &msg); err != nil {
@@ -32,290 +33,202 @@ func decodeEnvelope(t *testing.T, data []byte) (websocket.Message, scraper.Envel
 	return msg, env
 }
 
-// TestBuildCurrentStateEnvelopeIdle covers the bare cache shape that exists
-// before any reader has been bound. Phase + identity + freshness are
-// present; per-match data is absent.
-func TestBuildCurrentStateEnvelopeIdle(t *testing.T) {
+// TestClassEnvelopeMessagesIdle: a bare cache (no game data, no tick)
+// produces just the always-present classes — xbox and game. The
+// optional classes (scenario, tick, objects, debug, previous_game)
+// return nil from their adapters and are skipped.
+func TestClassEnvelopeMessagesIdle(t *testing.T) {
 	r := newTestRunner("alpha")
 	defer r.cancel()
-
-	now := time.Now()
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseIdle
 		c.TitleID = 0x9E115330
-		c.LastReadAt = now
-		c.Iterations = 5
 	})
 
-	bytes, ok := r.buildCurrentStateEnvelope()
-	if !ok {
-		t.Fatal("buildCurrentStateEnvelope: ok=false")
+	msgs := r.classEnvelopeMessages()
+	got := map[string]bool{}
+	for _, m := range msgs {
+		got[m.Class] = true
 	}
-	msg, env := decodeEnvelope(t, bytes)
-
-	if msg.Type != "scraper" {
-		t.Fatalf("websocket.Message.Type = %q, want %q", msg.Type, "scraper")
+	if !got["xbox"] || !got["game"] {
+		t.Fatalf("idle: want xbox + game, got %v", got)
 	}
-	if msg.Room != "host:alpha" {
-		t.Fatalf("websocket.Message.Room = %q, want %q", msg.Room, "host:alpha")
-	}
-	if env.Type != envelopeTypeCurrentState {
-		t.Fatalf("envelope type = %q, want %q", env.Type, envelopeTypeCurrentState)
-	}
-	if env.Instance != "alpha" {
-		t.Fatalf("envelope instance = %q, want %q", env.Instance, "alpha")
-	}
-	if env.Tick != 0 {
-		t.Fatalf("envelope tick = %d, want 0 (Idle)", env.Tick)
-	}
-
-	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
-	}
-	if p.Phase != PhaseIdle {
-		t.Fatalf("payload phase = %q, want %q", p.Phase, PhaseIdle)
-	}
-	if p.TitleID != 0x9E115330 {
-		t.Fatalf("payload title_id = %#x, want 0x9E115330", p.TitleID)
-	}
-	if p.Iterations != 5 {
-		t.Fatalf("payload iterations = %d, want 5", p.Iterations)
-	}
-	if p.GameData != nil {
-		t.Fatalf("payload game_data = %+v, want nil in Idle", p.GameData)
-	}
-	if p.LatestTick != nil {
-		t.Fatalf("payload latest_tick = %+v, want nil in Idle", p.LatestTick)
-	}
-	if p.PreviousGame != nil {
-		t.Fatalf("payload previous_game = %+v, want nil in Idle", p.PreviousGame)
+	for _, optional := range []string{"scenario", "tick", "objects", "debug", "previous_game"} {
+		if got[optional] {
+			t.Fatalf("idle: %q should not be present, got %v", optional, got)
+		}
 	}
 }
 
-// TestBuildCurrentStateEnvelopeLive covers the full-cache shape during an
-// in-progress match: GameData, LatestTick, and the engine tick all surface
-// on the envelope.
-func TestBuildCurrentStateEnvelopeLive(t *testing.T) {
+// TestClassEnvelopeMessagesLive: populated cache produces xbox +
+// scenario + game + tick + objects + debug. previous_game stays absent
+// (no Live → Ready capture yet).
+func TestClassEnvelopeMessagesLive(t *testing.T) {
 	r := newTestRunner("bravo")
 	defer r.cancel()
-
-	gd := &scraper.GameData{Map: "bloodgulch", Gametype: "slayer"}
-	tp := &scraper.TickPayload{PlayerCount: 4}
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
 		c.TitleID = 0x4D530004
 		c.Title = "Halo: Combat Evolved"
 		c.EngineTick = 1234
-		c.GameData = gd
-		c.LatestTick = tp
+		c.GameData = &scraper.GameData{Map: "bloodgulch", Gametype: "slayer"}
+		c.LatestTick = &scraper.TickPayload{
+			PlayerCount: 2,
+			Players: []scraper.TickPlayer{
+				{Index: 0, Alive: true, X: 1, Y: 2, Z: 3},
+			},
+		}
 	})
 
-	bytes, ok := r.buildCurrentStateEnvelope()
-	if !ok {
-		t.Fatal("buildCurrentStateEnvelope: ok=false")
+	msgs := r.classEnvelopeMessages()
+	got := map[string]bool{}
+	for _, m := range msgs {
+		got[m.Class] = true
 	}
-	_, env := decodeEnvelope(t, bytes)
+	for _, want := range []string{"xbox", "scenario", "game", "tick", "objects", "debug"} {
+		if !got[want] {
+			t.Fatalf("live: missing class %q (got %v)", want, got)
+		}
+	}
+	if got["previous_game"] {
+		t.Fatalf("live: previous_game should be absent until Live→Ready, got %v", got)
+	}
 
-	if env.Tick != 1234 {
-		t.Fatalf("envelope tick = %d, want 1234", env.Tick)
-	}
-
-	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
-	}
-	if p.Phase != PhaseLive {
-		t.Fatalf("payload phase = %q, want %q", p.Phase, PhaseLive)
-	}
-	if p.GameData == nil || p.GameData.Map != "bloodgulch" {
-		t.Fatalf("payload game_data = %+v, want bloodgulch slayer", p.GameData)
-	}
-	if p.LatestTick == nil || p.LatestTick.PlayerCount != 4 {
-		t.Fatalf("payload latest_tick = %+v, want PlayerCount=4", p.LatestTick)
-	}
-	if p.EngineTick != 1234 {
-		t.Fatalf("payload engine_tick = %d, want 1234", p.EngineTick)
+	// Spot-check one envelope: the tick envelope should have Type="tick"
+	// and route to host:bravo:tick.
+	for _, m := range msgs {
+		if m.Class != "tick" {
+			continue
+		}
+		msg, env := decodeClassEnvelope(t, m.Bytes)
+		if msg.Room != "host:bravo:tick" {
+			t.Fatalf("tick room = %q, want %q", msg.Room, "host:bravo:tick")
+		}
+		if env.Type != "tick" {
+			t.Fatalf("tick envelope type = %q, want %q", env.Type, "tick")
+		}
+		if env.V != scraper.ProtocolVersion {
+			t.Fatalf("tick envelope v = %d, want %d", env.V, scraper.ProtocolVersion)
+		}
+		if env.Instance != "bravo" {
+			t.Fatalf("tick envelope instance = %q, want %q", env.Instance, "bravo")
+		}
 	}
 }
 
-// TestBuildCurrentStateEnvelopeReadyWithPreviousGame covers the postgame
-// case: PreviousGame slot populated after a Live → Ready transition.
-func TestBuildCurrentStateEnvelopeReadyWithPreviousGame(t *testing.T) {
+// TestClassEnvelopeMessagesWithPreviousGame: previous_game appears when
+// the cache holds a captured previous game (Live → Ready transition).
+func TestClassEnvelopeMessagesWithPreviousGame(t *testing.T) {
 	r := newTestRunner("charlie")
 	defer r.cancel()
-
-	prev := &previousGame{
-		GameData: &scraper.GameData{Map: "wizard"},
-		EndedAt:  time.Now(),
-	}
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseReady
 		c.GameData = &scraper.GameData{Map: "wizard"}
-		c.PreviousGame = prev
+		c.PreviousGame = &previousGame{
+			GameData: &scraper.GameData{Map: "wizard"},
+			EndedAt:  time.Now(),
+		}
 	})
 
-	bytes, ok := r.buildCurrentStateEnvelope()
-	if !ok {
-		t.Fatal("buildCurrentStateEnvelope: ok=false")
+	got := map[string]bool{}
+	for _, m := range r.classEnvelopeMessages() {
+		got[m.Class] = true
 	}
-	_, env := decodeEnvelope(t, bytes)
-
-	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
-	}
-	if p.PreviousGame == nil {
-		t.Fatal("payload previous_game = nil, want populated in Ready postgame")
-	}
-	if p.PreviousGame.GameData == nil || p.PreviousGame.GameData.Map != "wizard" {
-		t.Fatalf("payload previous_game.game_data = %+v, want wizard", p.PreviousGame.GameData)
+	if !got["previous_game"] {
+		t.Fatalf("ready w/ previous_game: missing previous_game class, got %v", got)
 	}
 }
 
-// TestBuildStateUpdateEnvelopeIdle: Idle state_update carries no per-phase
-// payload; envelope tick is 0.
-func TestBuildStateUpdateEnvelopeIdle(t *testing.T) {
+// TestBroadcastSnapshotEmitsToPerClassRooms: broadcastSnapshot fans out
+// every applicable class to its host:<inst>:<class> room.
+func TestBroadcastSnapshotEmitsToPerClassRooms(t *testing.T) {
+	ws := &stubWS{}
+	svc := &guards.Services{WS: ws}
 	r := newTestRunner("alpha")
 	defer r.cancel()
-
-	r.withCache(func(c *instanceCache) {
-		c.Phase = PhaseIdle
-		c.Iterations = 7
-		c.EngineTick = 999 // should not leak to envelope tick outside Live
-	})
-
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseIdle, false)
-	if !ok {
-		t.Fatal("buildStateUpdateEnvelope: ok=false")
-	}
-	_, env := decodeEnvelope(t, bytes)
-
-	if env.Type != envelopeTypeStateUpdate {
-		t.Fatalf("envelope type = %q, want %q", env.Type, envelopeTypeStateUpdate)
-	}
-	if env.Tick != 0 {
-		t.Fatalf("envelope tick = %d, want 0 outside Live", env.Tick)
-	}
-
-	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
-	}
-	if p.Phase != PhaseIdle {
-		t.Fatalf("payload phase = %q, want %q", p.Phase, PhaseIdle)
-	}
-	if p.Iterations != 7 {
-		t.Fatalf("payload iterations = %d, want 7", p.Iterations)
-	}
-	if p.Tick != nil {
-		t.Fatalf("payload tick = %+v, want nil outside Live", p.Tick)
-	}
-	if p.Ready != nil {
-		t.Fatalf("payload ready = %+v, want nil outside Ready", p.Ready)
-	}
-	if p.EngineTick != 0 {
-		t.Fatalf("payload engine_tick = %d, want 0 outside Live", p.EngineTick)
-	}
-}
-
-// TestBuildStateUpdateEnvelopeReady: Ready state_update carries the cache's
-// GameData under .Ready; envelope tick remains 0.
-func TestBuildStateUpdateEnvelopeReady(t *testing.T) {
-	r := newTestRunner("alpha")
-	defer r.cancel()
-
-	gd := &scraper.GameData{Map: "sidewinder", Gametype: "ctf"}
-	r.withCache(func(c *instanceCache) {
-		c.Phase = PhaseReady
-		c.GameData = gd
-	})
-
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseReady, false)
-	if !ok {
-		t.Fatal("buildStateUpdateEnvelope: ok=false")
-	}
-	_, env := decodeEnvelope(t, bytes)
-
-	if env.Tick != 0 {
-		t.Fatalf("envelope tick = %d, want 0 in Ready", env.Tick)
-	}
-
-	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
-	}
-	if p.Phase != PhaseReady {
-		t.Fatalf("payload phase = %q, want %q", p.Phase, PhaseReady)
-	}
-	if p.Ready == nil || p.Ready.Map != "sidewinder" {
-		t.Fatalf("payload ready = %+v, want sidewinder ctf", p.Ready)
-	}
-	if p.Tick != nil {
-		t.Fatalf("payload tick = %+v, want nil in Ready", p.Tick)
-	}
-}
-
-// TestBuildStateUpdateEnvelopeLive: Live state_update carries the cache's
-// LatestTick + engine tick on the top-level envelope. With includeReady=false
-// the GameData is omitted (the per-tick high-frequency case); with
-// includeReady=true the cumulative scoring rides along (the 1Hz throttled
-// case driven by readyBroadcastInterval).
-func TestBuildStateUpdateEnvelopeLive(t *testing.T) {
-	r := newTestRunner("alpha")
-	defer r.cancel()
-
-	tp := &scraper.TickPayload{PlayerCount: 2}
-	gd := &scraper.GameData{Map: "bloodgulch", Gametype: "slayer"}
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
-		c.EngineTick = 4242
-		c.LatestTick = tp
-		c.GameData = gd
+		c.GameData = &scraper.GameData{Map: "bloodgulch"}
+		c.LatestTick = &scraper.TickPayload{}
 	})
 
-	// Per-tick frame: includeReady=false → no GameData on the wire.
-	bytes, ok := r.buildStateUpdateEnvelope(PhaseLive, false)
-	if !ok {
-		t.Fatal("buildStateUpdateEnvelope: ok=false")
-	}
-	_, env := decodeEnvelope(t, bytes)
+	r.broadcastSnapshot(svc)
 
-	if env.Tick != 4242 {
-		t.Fatalf("envelope tick = %d, want 4242 (engine tick) in Live", env.Tick)
+	sends := ws.snapshot()
+	if len(sends) == 0 {
+		t.Fatal("broadcastSnapshot: no WS sends recorded")
+	}
+	wantPrefixes := []string{
+		"host:alpha:xbox",
+		"host:alpha:scenario",
+		"host:alpha:game",
+		"host:alpha:tick",
+		"host:alpha:objects",
+		"host:alpha:debug",
+	}
+	got := map[string]bool{}
+	for _, s := range sends {
+		got[s.Room] = true
+	}
+	for _, want := range wantPrefixes {
+		if !got[want] {
+			t.Fatalf("broadcastSnapshot: missing room %q (got %v)", want, got)
+		}
+	}
+}
+
+// TestBroadcastPollGameAndTick: broadcastPoll always emits game; emits
+// tick / objects / debug only when LatestTick is set.
+func TestBroadcastPollGameAndTick(t *testing.T) {
+	ws := &stubWS{}
+	svc := &guards.Services{WS: ws}
+	r := newTestRunner("alpha")
+	defer r.cancel()
+
+	// Idle / no tick — only `game` should emit.
+	r.withCache(func(c *instanceCache) { c.Phase = PhaseIdle })
+	r.broadcastPoll(svc)
+	sends := ws.snapshot()
+	if len(sends) != 1 || sends[0].Room != "host:alpha:game" {
+		t.Fatalf("poll w/o tick: want one send to host:alpha:game, got %+v", sends)
 	}
 
-	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
+	// Now add a tick — game + tick + objects + debug all emit.
+	ws2 := &stubWS{}
+	svc2 := &guards.Services{WS: ws2}
+	r.withCache(func(c *instanceCache) {
+		c.Phase = PhaseLive
+		c.LatestTick = &scraper.TickPayload{}
+	})
+	r.broadcastPoll(svc2)
+	got := map[string]bool{}
+	for _, s := range ws2.snapshot() {
+		got[s.Room] = true
 	}
-	if p.Phase != PhaseLive {
-		t.Fatalf("payload phase = %q, want %q", p.Phase, PhaseLive)
+	for _, want := range []string{"host:alpha:game", "host:alpha:tick", "host:alpha:objects", "host:alpha:debug"} {
+		if !got[want] {
+			t.Fatalf("poll w/ tick: missing %q (got %v)", want, got)
+		}
 	}
-	if p.EngineTick != 4242 {
-		t.Fatalf("payload engine_tick = %d, want 4242", p.EngineTick)
-	}
-	if p.Tick == nil || p.Tick.PlayerCount != 2 {
-		t.Fatalf("payload tick = %+v, want PlayerCount=2", p.Tick)
-	}
-	if p.Ready != nil {
-		t.Fatalf("payload ready = %+v, want nil with includeReady=false", p.Ready)
-	}
+}
 
-	// Throttled 1Hz frame: includeReady=true → GameData piggybacks.
-	bytes, ok = r.buildStateUpdateEnvelope(PhaseLive, true)
-	if !ok {
-		t.Fatal("buildStateUpdateEnvelope (includeReady): ok=false")
-	}
-	_, env = decodeEnvelope(t, bytes)
+// TestBroadcastRoutesByClass: the generic broadcast() (used by the
+// haloce events package) routes by envelope.Type — an "event" envelope
+// lands on host:<inst>:event.
+func TestBroadcastRoutesByClass(t *testing.T) {
+	ws := &stubWS{}
+	svc := &guards.Services{WS: ws}
+	r := newTestRunner("alpha")
+	defer r.cancel()
 
-	if err := json.Unmarshal(env.Data, &p); err != nil {
-		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
+	env := scraper.MakeEnvelope("event", "alpha", 1, 42, map[string]any{"event_type": "death"})
+	r.broadcast(svc, env)
+
+	sends := ws.snapshot()
+	if len(sends) != 1 {
+		t.Fatalf("broadcast: want one send, got %d", len(sends))
 	}
-	if p.Tick == nil || p.Tick.PlayerCount != 2 {
-		t.Fatalf("payload tick = %+v, want PlayerCount=2", p.Tick)
-	}
-	if p.Ready == nil || p.Ready.Map != "bloodgulch" {
-		t.Fatalf("payload ready = %+v, want bloodgulch slayer with includeReady=true", p.Ready)
+	if sends[0].Room != "host:alpha:event" {
+		t.Fatalf("broadcast: routed to %q, want %q", sends[0].Room, "host:alpha:event")
 	}
 }

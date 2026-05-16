@@ -251,20 +251,20 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 	}
 	m.mu.Unlock()
 
-	out := make([][]byte, 0, len(runners))
+	out := make([][]byte, 0, len(runners)*4)
 	for _, r := range runners {
-		if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
-			out = append(out, msgBytes)
+		for _, m := range r.classEnvelopeMessages() {
+			out = append(out, m.Bytes)
 		}
 	}
 	return out
 }
 
-// JoinReplayForInstance returns the current_state replay bytes for a single
-// runner, or nil if the named runner doesn't exist (or its cache fails to
-// marshal). Used by the join_room handler when a client subscribes to
-// host:<name> so the overlay can render immediately rather than waiting
-// for the next state_update / phase transition.
+// JoinReplayForInstance returns one envelope per applicable v2 class for
+// a single runner, or nil if the named runner doesn't exist. Used by the
+// join_room handler when a client subscribes to host:<name> (no class
+// suffix — returns all classes) so a late joiner can render immediately
+// rather than waiting for the next per-class broadcast.
 func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	m.mu.Lock()
 	r, ok := m.runners[name]
@@ -272,8 +272,30 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
-		return [][]byte{msgBytes}
+	msgs := r.classEnvelopeMessages()
+	out := make([][]byte, 0, len(msgs))
+	for _, mm := range msgs {
+		out = append(out, mm.Bytes)
+	}
+	return out
+}
+
+// JoinReplayForInstanceClass returns the envelope for a single v2 class
+// of a single runner, or nil if the runner or class has no current data.
+// Used by the join_room handler when a client subscribes to
+// host:<name>:<class> so they get exactly the cached envelope for that
+// class — no extra classes they didn't ask for.
+func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	for _, mm := range r.classEnvelopeMessages() {
+		if mm.Class == class {
+			return [][]byte{mm.Bytes}
+		}
 	}
 	return nil
 }
