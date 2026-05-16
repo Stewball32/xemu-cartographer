@@ -5,9 +5,9 @@ import (
 	"log"
 	"sync"
 
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // Hub manages all connected WebSocket clients and rooms.
@@ -282,6 +282,17 @@ func (h *Hub) IsInRoom(userID string, room string) bool {
 		}
 	}
 	return false
+}
+
+// RoomHasMembers reports whether any client is currently joined to room.
+// Used by the scraper manager's demand model to skip expensive per-tick
+// reads (ReadTick / ReadGameData) when no client is subscribed to the
+// per-class room that would consume them. Capture policies layer on top
+// later (PRs 13–16) — this method is the WS-side input to that union.
+func (h *Hub) RoomHasMembers(room string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.rooms[room]) > 0
 }
 
 // UserRooms returns the rooms a user is currently in.

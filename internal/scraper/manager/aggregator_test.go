@@ -30,6 +30,7 @@ func (s *stubWS) SendToUserRaw(string, []byte) {}
 func (s *stubWS) IsConnected(string) bool      { return false }
 func (s *stubWS) IsInRoom(string, string) bool { return false }
 func (s *stubWS) UserRooms(string) []string    { return nil }
+func (s *stubWS) RoomHasMembers(string) bool   { return false }
 func (s *stubWS) SendToRoomRaw(room string, data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
