@@ -4,7 +4,7 @@
 	// show all.
 
 	import { SvelteSet } from 'svelte/reactivity';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildEventsTabVm } from './events-tab-vm';
 	import TypeFilter from './TypeFilter.svelte';
@@ -18,14 +18,16 @@
 
 	const ctx = useDebugContext();
 
-	const vm = $derived.by(() => buildEventsTabVm(name, scraperWS, selectedTypes));
+	const vm = $derived.by(() => buildEventsTabVm(name, scraperWSV2, selectedTypes));
 
-	// gameData fallback to the inspect snapshot so player chips render
-	// before the first WS current_state arrives.
-	const gameData = $derived(scraperWS.gameData[name] ?? ctx.inspect?.game_data ?? null);
-	const players = $derived(gameData?.players ?? []);
-	const isTeamGame = $derived(gameData?.is_team_game === true);
-	const latestTick = $derived(scraperWS.tickNumbers[name] ?? ctx.inspect?.tick);
+	// Player chips: roster comes from the v2 game class; fall back to the
+	// REST inspect snapshot so chips render before the first game envelope.
+	const v2Game = $derived(scraperWSV2.game[name] ?? null);
+	const players = $derived(v2Game?.players ?? ctx.inspect?.game_data?.players ?? []);
+	const isTeamGame = $derived(
+		v2Game?.config?.is_team_game ?? ctx.inspect?.game_data?.is_team_game === true
+	);
+	const latestTick = $derived(scraperWSV2.engineTick[name] ?? ctx.inspect?.tick);
 </script>
 
 <div class="flex flex-col gap-4">
