@@ -18,6 +18,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -83,6 +84,11 @@ func main() {
 		// discovery watcher, manual /api/admin/scraper/start) inherit the
 		// current snapshot. The hook bind keeps them in sync as operators
 		// edit policies through the PB dashboard.
+		//
+		// pb: sink scheme must register BEFORE the initial reload — a
+		// policy carrying "pb:game_events" loaded against an empty registry
+		// would error with "unknown scheme" and silently drop captures.
+		sinks.RegisterPBSink(app)
 		scrMgr.RegisterCapturePolicyHooks()
 		if err := scrMgr.ReloadCapturePolicies(); err != nil {
 			log.Printf("scraper: initial capture-policy load: %v", err)

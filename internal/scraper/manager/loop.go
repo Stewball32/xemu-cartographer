@@ -9,7 +9,6 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 )
 
@@ -579,15 +578,12 @@ func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 		log.Printf("scraper[%s]: marshal envelope (%s): %v", r.name, env.Type, err)
 		return
 	}
-	msg := websocket.Message{
-		Type:    "scraper",
-		Room:    room,
-		Payload: envBytes,
-	}
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("scraper[%s]: marshal message: %v", r.name, err)
+	msgBytes, ok := wrapRoomMessage(r.name, room, envBytes)
+	if !ok {
 		return
 	}
 	svc.WS.SendToRoomRaw(room, msgBytes)
+	if r.sinks != nil {
+		r.sinks.write(env.Type, envBytes)
+	}
 }

@@ -3,26 +3,51 @@ package sinks
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
+
+// Constructor builds a Sink for one parsed spec ("rest" is the part
+// after the "scheme:" prefix). vars is the per-runner substitution map
+// the caller passes through Parse — at present that's {instance}; PR
+// follow-ups may add {game_id}.
+type Constructor func(rest string, vars map[string]string) (Sink, error)
+
+var (
+	registryMu sync.RWMutex
+	registry   = map[string]Constructor{
+		"file": parseFile,
+	}
+)
+
+// Register installs a Constructor for the named scheme. Called once
+// at startup — file: registers in init() in this package; pb: registers
+// from a separate file (pb.go) that holds the PocketBase dependency,
+// so the sinks package itself stays free of PB imports for callers
+// that only need file:.
+//
+// Re-registering a scheme replaces the existing constructor. There's
+// no Unregister: schemes are append-only in practice.
+func Register(scheme string, c Constructor) {
+	registryMu.Lock()
+	registry[scheme] = c
+	registryMu.Unlock()
+}
 
 // Parse interprets a sink spec string (as stored in
 // capture_policies.sink) and returns the matching Sink.
 //
-// Recognised schemes:
-//
-//	file:<path>   — append-mode NDJSON file (FileSink)
+// Recognised schemes are looked up in the registry — file: ships with
+// the package; pb: is registered from internal/scraper/sinks/pb.go
+// when its RegisterPBSink helper is called by main.go.
 //
 // Empty spec → (nil, nil); the runner treats that as "no sink, just
-// broadcast". Unknown scheme → error, so a typo in a policy row fails
-// loudly at load time instead of silently dropping captures.
+// broadcast". Unknown scheme → error, so a typo or a missing
+// RegisterPBSink call fails loudly at policy-load time instead of
+// silently dropping captures.
 //
-// Path templates may reference the vars passed in via the vars map —
-// the recognised variable for PR 17 is {instance}. `{game_id}` is in
-// the design doc but requires game-boundary tracking and lands later.
-// Unknown placeholders are left as-is rather than erroring so a future
-// release can introduce new vars without breaking older policies.
-//
-// PR 18 adds the `pb:<collection>` scheme.
+// Path templates may reference vars by name as "{key}" — known keys
+// for PR 17 are {instance}. Unknown placeholders are left as-is so a
+// future release can introduce new vars without breaking older policies.
 func Parse(spec string, vars map[string]string) (Sink, error) {
 	if spec == "" {
 		return nil, nil
@@ -32,12 +57,14 @@ func Parse(spec string, vars map[string]string) (Sink, error) {
 		return nil, fmt.Errorf("sink: spec %q missing scheme prefix (file: or pb:)", spec)
 	}
 	scheme, rest := spec[:idx], spec[idx+1:]
-	switch scheme {
-	case "file":
-		return NewFileSink(expandVars(rest, vars)), nil
-	default:
+
+	registryMu.RLock()
+	ctor, ok := registry[scheme]
+	registryMu.RUnlock()
+	if !ok {
 		return nil, fmt.Errorf("sink: unknown scheme %q in %q", scheme, spec)
 	}
+	return ctor(rest, vars)
 }
 
 // expandVars replaces every "{key}" in s with vars[key]. Missing keys
@@ -48,4 +75,9 @@ func expandVars(s string, vars map[string]string) string {
 		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
+}
+
+// parseFile is the built-in constructor for the file: scheme.
+func parseFile(rest string, vars map[string]string) (Sink, error) {
+	return NewFileSink(expandVars(rest, vars)), nil
 }
