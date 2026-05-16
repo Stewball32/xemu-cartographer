@@ -29,7 +29,7 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { ChevronDownIcon } from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildGameVm } from './game-vm';
 	import GameInfoSection from './GameInfoSection.svelte';
@@ -44,7 +44,7 @@
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
-	const vm = $derived.by(() => buildGameVm(name, scraperWS, ctx));
+	const vm = $derived.by(() => buildGameVm(name, scraperWSV2, ctx));
 
 	type SectionId =
 		| 'game_info'
