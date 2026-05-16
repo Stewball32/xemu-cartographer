@@ -1,0 +1,451 @@
+import { browser } from '$app/environment';
+import { SvelteSet } from 'svelte/reactivity';
+
+import type {
+	AnyEvent,
+	DebugPayload,
+	EnvelopeTypeV2,
+	EnvelopeV2,
+	GamePayload,
+	HelloPayloadV2,
+	HostSummaryV2,
+	ObjectsPayload,
+	PreviousGamePayload,
+	ScenarioPayload,
+	SummaryPayload,
+	TickPayloadV2,
+	XboxPayload
+} from '$lib/types/scraper-v2';
+import {
+	PROTOCOL_VERSION_V2,
+	SUMMARY_ROOM,
+	isDebugEnv,
+	isEventEnv,
+	isEventsReplyEnv,
+	isGameEnv,
+	isHelloEnv,
+	isObjectsEnv,
+	isPreviousGameEnv,
+	isScenarioEnv,
+	isSummaryEnv,
+	isTickEnv,
+	isXboxEnv,
+	roomForInstanceClass
+} from '$lib/types/scraper-v2';
+import { wsBaseURL } from '$lib/utils/api-base';
+
+const reconnectDelays = [1000, 2000, 4000, 8000, 15000, 30000];
+const MAX_EVENTS_PER_INSTANCE = 100;
+
+/** Outer WS message wrapper. Server sets type="scraper" and stuffs the
+ * inner v2 envelope into payload as raw JSON; SvelteKit's JSON.parse
+ * already lifts it to an object. */
+interface WSMessage {
+	type: string;
+	payload?: unknown;
+}
+
+function buildURL(token: string): string {
+	return `${wsBaseURL()}/api/ws?token=${encodeURIComponent(token)}`;
+}
+
+function createScraperWSV2() {
+	let ws: WebSocket | null = null;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let attempt = 0;
+	let manuallyClosed = false;
+	let currentToken = '';
+
+	let connected = $state(false);
+	let lastError = $state<string | null>(null);
+
+	// Per-class per-instance latest payload. The runner emits at most one
+	// envelope per (instance, class) per poll, and the join-replay path
+	// re-delivers the latest cached envelope, so each slot holds the
+	// freshest snapshot the client has seen.
+	let xbox = $state<Record<string, XboxPayload | null>>({});
+	let scenario = $state<Record<string, ScenarioPayload | null>>({});
+	let game = $state<Record<string, GamePayload | null>>({});
+	let tick = $state<Record<string, TickPayloadV2 | null>>({});
+	let objects = $state<Record<string, ObjectsPayload | null>>({});
+	let debug = $state<Record<string, DebugPayload | null>>({});
+	let previousGame = $state<Record<string, PreviousGamePayload | null>>({});
+
+	// Per-class receive timestamps (epoch ms) for staleness UI.
+	let xboxAt = $state<Record<string, number>>({});
+	let scenarioAt = $state<Record<string, number>>({});
+	let gameAt = $state<Record<string, number>>({});
+	let tickAt = $state<Record<string, number>>({});
+	let objectsAt = $state<Record<string, number>>({});
+	let debugAt = $state<Record<string, number>>({});
+
+	// Rolling per-instance event log; newest first, capped at
+	// MAX_EVENTS_PER_INSTANCE. Backfilled by request_events (events_reply
+	// envelope). The events class join-replay path does NOT redeliver past
+	// events, so the live stream is the primary source.
+	let events = $state<Record<string, AnyEvent[]>>({});
+
+	// Cross-instance summary cache from host:summary. hostList preserves
+	// receive order from the most recent SummaryPayload so the dashboard
+	// renders deterministically.
+	let hostSummaries = $state<Record<string, HostSummaryV2>>({});
+	let hostList = $state<string[]>([]);
+
+	// Hello + per-instance started_at for runner-restart detection.
+	let hello = $state<HelloPayloadV2 | null>(null);
+	let instanceStartedAt = $state<Record<string, string>>({});
+
+	// Most recent engine tick observed per instance, updated by every
+	// envelope kind that carries one. UIs prefer this over per-class tickAt
+	// timestamps when they want a live "engine pulse" counter.
+	let engineTick = $state<Record<string, number>>({});
+
+	// Rooms the user/component has asked to be in. Persisted across
+	// reconnects: on a fresh socket we replay every intent to the server.
+	// SvelteSet so consumers can reactively watch what's joined.
+	const intendedRooms = new SvelteSet<string>();
+
+	// Per-connection set of rooms we've actually sent join_room for. Empty
+	// on reconnect; ensureSubscribed walks intendedRooms to re-establish.
+	let liveJoins = new SvelteSet<string>();
+
+	function clearReconnect() {
+		if (reconnectTimer !== null) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+	}
+
+	function scheduleReconnect() {
+		if (manuallyClosed) return;
+		const delay = reconnectDelays[Math.min(attempt, reconnectDelays.length - 1)];
+		attempt++;
+		clearReconnect();
+		reconnectTimer = setTimeout(() => {
+			reconnectTimer = null;
+			open(currentToken);
+		}, delay);
+	}
+
+	function sendJSON(value: unknown): boolean {
+		if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+		ws.send(JSON.stringify(value));
+		return true;
+	}
+
+	function sendJoin(room: string) {
+		if (liveJoins.has(room)) return;
+		if (!sendJSON({ type: 'join_room', room })) return;
+		liveJoins.add(room);
+	}
+
+	function sendLeave(room: string) {
+		if (!liveJoins.has(room)) return;
+		if (!sendJSON({ type: 'leave_room', room })) return;
+		liveJoins.delete(room);
+	}
+
+	/** Subscribe to one (instance, class) room. Idempotent. Re-joined on
+	 * reconnect via the intendedRooms set. Pass class === undefined to
+	 * subscribe to host:summary (the multi-instance dashboard feed). */
+	function subscribe(instance: string, cls: EnvelopeTypeV2): void {
+		const room = roomForInstanceClass(instance, cls);
+		intendedRooms.add(room);
+		sendJoin(room);
+	}
+
+	function subscribeSummary(): void {
+		intendedRooms.add(SUMMARY_ROOM);
+		sendJoin(SUMMARY_ROOM);
+	}
+
+	function unsubscribe(instance: string, cls: EnvelopeTypeV2): void {
+		const room = roomForInstanceClass(instance, cls);
+		intendedRooms.delete(room);
+		sendLeave(room);
+	}
+
+	function unsubscribeSummary(): void {
+		intendedRooms.delete(SUMMARY_ROOM);
+		sendLeave(SUMMARY_ROOM);
+	}
+
+	/** Bulk helper — subscribe to several classes for one instance in one
+	 * pass. Typical use from a debug page: classes = ['xbox', 'scenario',
+	 * 'game', 'tick', 'objects', 'debug', 'previous_game']. */
+	function subscribeInstance(instance: string, classes: EnvelopeTypeV2[]): void {
+		for (const cls of classes) subscribe(instance, cls);
+	}
+
+	function unsubscribeInstance(instance: string, classes: EnvelopeTypeV2[]): void {
+		for (const cls of classes) unsubscribe(instance, cls);
+	}
+
+	function requestEvents(opts?: { sinceTick?: number; types?: string[] }): boolean {
+		const payload: { since_tick?: number; types?: string[] } = {};
+		if (opts?.sinceTick !== undefined && opts.sinceTick > 0) {
+			payload.since_tick = opts.sinceTick;
+		}
+		if (opts?.types && opts.types.length > 0) {
+			payload.types = opts.types;
+		}
+		const msg: { type: string; payload?: typeof payload } = { type: 'request_events' };
+		if (Object.keys(payload).length > 0) msg.payload = payload;
+		return sendJSON(msg);
+	}
+
+	function setSlot<T>(
+		store: Record<string, T | null>,
+		atStore: Record<string, number>,
+		key: string,
+		value: T,
+		now: number
+	): [Record<string, T | null>, Record<string, number>] {
+		return [
+			{ ...store, [key]: value },
+			{ ...atStore, [key]: now }
+		];
+	}
+
+	function applyHello(payload: HelloPayloadV2) {
+		if (payload.protocol_version !== PROTOCOL_VERSION_V2) {
+			console.warn(
+				`scraper protocol version mismatch: server=${payload.protocol_version}, client=${PROTOCOL_VERSION_V2}`
+			);
+		}
+		// Restart detection: started_at advances on runner restart, so
+		// previously-cached per-(instance, class) state is stale and the
+		// component should clear/refetch. Today we log; future PRs may
+		// invalidate cached seq tracking via this hook.
+		for (const inst of payload.instances) {
+			const prev = instanceStartedAt[inst.name];
+			if (prev && prev !== inst.started_at) {
+				console.warn(
+					`scraper runner ${inst.name} restarted (started_at: ${prev} → ${inst.started_at})`
+				);
+			}
+		}
+		const next: Record<string, string> = {};
+		for (const inst of payload.instances) next[inst.name] = inst.started_at;
+		instanceStartedAt = next;
+		hello = payload;
+	}
+
+	function applySummary(payload: SummaryPayload) {
+		const next: Record<string, HostSummaryV2> = {};
+		const order: string[] = [];
+		for (const h of payload.hosts) {
+			next[h.instance] = h;
+			order.push(h.instance);
+		}
+		hostSummaries = next;
+		hostList = order;
+	}
+
+	function handleEnvelope(env: EnvelopeV2) {
+		if (isHelloEnv(env)) {
+			applyHello(env.data);
+			return;
+		}
+		if (isSummaryEnv(env)) {
+			applySummary(env.data);
+			return;
+		}
+
+		const now = Date.now();
+		if (env.instance && typeof env.tick === 'number' && env.tick > 0) {
+			engineTick = { ...engineTick, [env.instance]: env.tick };
+		}
+
+		if (isXboxEnv(env)) {
+			[xbox, xboxAt] = setSlot(xbox, xboxAt, env.instance, env.data, now);
+		} else if (isScenarioEnv(env)) {
+			[scenario, scenarioAt] = setSlot(scenario, scenarioAt, env.instance, env.data, now);
+		} else if (isGameEnv(env)) {
+			[game, gameAt] = setSlot(game, gameAt, env.instance, env.data, now);
+		} else if (isTickEnv(env)) {
+			[tick, tickAt] = setSlot(tick, tickAt, env.instance, env.data, now);
+		} else if (isObjectsEnv(env)) {
+			[objects, objectsAt] = setSlot(objects, objectsAt, env.instance, env.data, now);
+		} else if (isDebugEnv(env)) {
+			[debug, debugAt] = setSlot(debug, debugAt, env.instance, env.data, now);
+		} else if (isPreviousGameEnv(env)) {
+			previousGame = { ...previousGame, [env.instance]: env.data };
+		} else if (isEventEnv(env)) {
+			const prev = events[env.instance] ?? [];
+			const next = [env.data, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
+			events = { ...events, [env.instance]: next };
+		} else if (isEventsReplyEnv(env)) {
+			// Backfill: events_reply.data.events is oldest-first (backend
+			// OQ7). Merge into the local newest-first log keyed by (seq,
+			// tick, event_type) so a resync after a brief disconnect doesn't
+			// double-append events received both live and via the reply.
+			const existing = events[env.instance] ?? [];
+			const seen = new SvelteSet<string>();
+			for (const e of existing) seen.add(`${e.seq}|${e.tick}|${e.event_type}`);
+			const merged = [...existing];
+			for (let i = env.data.events.length - 1; i >= 0; i--) {
+				const inner = env.data.events[i].data as AnyEvent | undefined;
+				if (!inner) continue;
+				const key = `${inner.seq}|${inner.tick}|${inner.event_type}`;
+				if (seen.has(key)) continue;
+				seen.add(key);
+				let idx = 0;
+				while (idx < merged.length && merged[idx].tick > inner.tick) idx++;
+				merged.splice(idx, 0, inner);
+			}
+			events = { ...events, [env.instance]: merged.slice(0, MAX_EVENTS_PER_INSTANCE) };
+		}
+	}
+
+	function open(token: string) {
+		if (!browser) return;
+		currentToken = token;
+		manuallyClosed = false;
+		try {
+			ws = new WebSocket(buildURL(token));
+		} catch (err) {
+			lastError = err instanceof Error ? err.message : String(err);
+			scheduleReconnect();
+			return;
+		}
+
+		ws.onopen = () => {
+			connected = true;
+			attempt = 0;
+			lastError = null;
+			liveJoins = new SvelteSet<string>();
+			// Re-establish every intended room on the fresh socket. Order
+			// doesn't matter — the backend ignores duplicates and the
+			// join-replay path is per-room idempotent.
+			for (const room of intendedRooms) sendJoin(room);
+		};
+
+		ws.onmessage = (e) => {
+			try {
+				const msg = JSON.parse(e.data) as WSMessage;
+				if (msg.type === 'scraper' && msg.payload) {
+					handleEnvelope(msg.payload as EnvelopeV2);
+				} else if (msg.type === 'error') {
+					const errPayload = msg.payload as { code?: string; message?: string } | undefined;
+					lastError = errPayload?.message ?? 'websocket error';
+				}
+			} catch (err) {
+				lastError = err instanceof Error ? err.message : String(err);
+			}
+		};
+
+		ws.onerror = () => {
+			lastError = 'websocket error';
+		};
+
+		ws.onclose = () => {
+			connected = false;
+			ws = null;
+			liveJoins = new SvelteSet<string>();
+			if (!manuallyClosed) scheduleReconnect();
+		};
+	}
+
+	function connect(token: string) {
+		if (ws) return;
+		open(token);
+	}
+
+	function disconnect() {
+		manuallyClosed = true;
+		clearReconnect();
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+		connected = false;
+	}
+
+	return {
+		get connected() {
+			return connected;
+		},
+		get lastError() {
+			return lastError;
+		},
+		get hello() {
+			return hello;
+		},
+		get instanceStartedAt() {
+			return instanceStartedAt;
+		},
+		get engineTick() {
+			return engineTick;
+		},
+		get intendedRooms() {
+			return intendedRooms;
+		},
+
+		// Per-class payload slots.
+		get xbox() {
+			return xbox;
+		},
+		get scenario() {
+			return scenario;
+		},
+		get game() {
+			return game;
+		},
+		get tick() {
+			return tick;
+		},
+		get objects() {
+			return objects;
+		},
+		get debug() {
+			return debug;
+		},
+		get previousGame() {
+			return previousGame;
+		},
+		get events() {
+			return events;
+		},
+
+		// Per-class receive timestamps.
+		get xboxAt() {
+			return xboxAt;
+		},
+		get scenarioAt() {
+			return scenarioAt;
+		},
+		get gameAt() {
+			return gameAt;
+		},
+		get tickAt() {
+			return tickAt;
+		},
+		get objectsAt() {
+			return objectsAt;
+		},
+		get debugAt() {
+			return debugAt;
+		},
+
+		// host:summary feed.
+		get hostSummaries() {
+			return hostSummaries;
+		},
+		get hostList() {
+			return hostList;
+		},
+
+		connect,
+		disconnect,
+		subscribe,
+		subscribeSummary,
+		subscribeInstance,
+		unsubscribe,
+		unsubscribeSummary,
+		unsubscribeInstance,
+		requestEvents
+	};
+}
+
+export const scraperWSV2 = createScraperWSV2();
