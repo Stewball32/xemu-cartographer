@@ -96,7 +96,25 @@ export type ScoreProbe = Record<string, unknown>;
 //                       carrying EventsResponsePayload (oldest-first).
 // Backend constants: internal/scraper/manager/loop.go envelopeType* +
 // internal/scraper/manager/events.go envelopeTypeEvents.
-export type EnvelopeType = 'current_state' | 'state_update' | 'event' | 'events';
+export type EnvelopeType = 'current_state' | 'state_update' | 'event' | 'events' | 'hello';
+
+// HelloPayload mirrors internal/scraper/manager/hello.go HelloPayload — the
+// data carried by the server→client `hello` envelope sent on WebSocket
+// connect, before any other scraper traffic. Lets the client validate
+// protocol compatibility and detect runner restarts (by comparing per-
+// instance started_at against any cached value).
+export interface HelloPayload {
+	protocol_version: number;
+	server_time: string;
+	classes: string[];
+	instances: HelloInstance[];
+}
+
+// HelloInstance is one entry in HelloPayload.instances.
+export interface HelloInstance {
+	name: string;
+	started_at: string;
+}
 
 // Reserved aggregate-room name; mirrors backend rooms.HostAllRoom.
 export const HOST_ALL_ROOM = 'host:all';
@@ -824,4 +842,8 @@ export function isEventsReply(
 	env: Envelope
 ): env is Envelope<EventsResponsePayload> & { type: 'events' } {
 	return env.type === 'events';
+}
+
+export function isHello(env: Envelope): env is Envelope<HelloPayload> & { type: 'hello' } {
+	return env.type === 'hello';
 }

@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
@@ -21,13 +19,15 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"      // self-registering Halo: CE GameReader
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"  // self-registering WS handlers
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"     // self-registering WS room types
+	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 )
 
 func main() {
@@ -149,7 +149,7 @@ func main() {
 		hub = ws.NewHub(app)
 		go hub.Run()
 		ws.SetInstance(hub)
-		se.Router.GET("/api/ws", ws.NewHandler(hub, app))
+		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
 		svc.WS = hub
 		hub.SetServices(svc)
 

@@ -6,6 +6,7 @@ import type {
 	Envelope,
 	EventsResponsePayload,
 	GameData,
+	HelloPayload,
 	HostSummary,
 	Phase,
 	PreviousGameInfo,
@@ -16,9 +17,11 @@ import type {
 import {
 	HOST_ALL_ROOM,
 	HOST_ROOM_PREFIX,
+	PROTOCOL_VERSION,
 	isCurrentState,
 	isEvent,
 	isEventsReply,
+	isHello,
 	isStateUpdate
 } from '$lib/types/scraper';
 import { wsBaseURL } from '$lib/utils/api-base';
@@ -78,6 +81,16 @@ function createScraperWS() {
 	// applyStateUpdate refreshes those two fields on the existing snapshot
 	// without re-issuing identity / EEPROM / XBE / kernel data.
 	let snapshots = $state<Record<string, CurrentStateSnapshot>>({});
+	// Most recent hello envelope from the server. Sent on connect, before any
+	// other scraper traffic — see internal/scraper/manager/hello.go.
+	let hello = $state<HelloPayload | null>(null);
+	// Per-instance started_at from the most recent hello (or any game-class
+	// envelope, once those carry it in v2). Lets the client detect that a
+	// runner restarted between connections by comparing against the cached
+	// value — see atlas/new_json/04-ground-up-rebuild.md §7. Today the action
+	// on restart-detected is just a console warning; PR 16 (per-class seq
+	// tracking) will use this to invalidate cached state.
+	let instanceStartedAt = $state<Record<string, string>>({});
 	let lastError = $state<string | null>(null);
 
 	// Per-connection set of host:* rooms we've already sent join_room for.
@@ -271,7 +284,41 @@ function createScraperWS() {
 		lastEventsReplyPhase = { ...lastEventsReplyPhase, [name]: payload.phase };
 	}
 
+	function applyHello(payload: HelloPayload) {
+		if (payload.protocol_version !== PROTOCOL_VERSION) {
+			console.warn(
+				`scraper protocol version mismatch: server=${payload.protocol_version}, client=${PROTOCOL_VERSION}`
+			);
+		}
+		// Per-instance restart detection: started_at advancing across hellos
+		// means the runner restarted, so any previously-cached per-class state
+		// for that instance should be considered stale. Today we just log;
+		// PR 16 (per-class seq tracking) will plumb this into actual cache
+		// invalidation.
+		for (const inst of payload.instances) {
+			const prev = instanceStartedAt[inst.name];
+			if (prev && prev !== inst.started_at) {
+				console.warn(
+					`scraper runner ${inst.name} restarted (started_at: ${prev} → ${inst.started_at})`
+				);
+			}
+		}
+		const next: Record<string, string> = {};
+		for (const inst of payload.instances) {
+			next[inst.name] = inst.started_at;
+		}
+		instanceStartedAt = next;
+		hello = payload;
+	}
+
 	function handleEnvelope(env: Envelope) {
+		// hello arrives first on connect and carries no instance field. Handle
+		// it before the host:all branch so the empty-string instance doesn't
+		// fall into the tickNumbers[""] write below.
+		if (isHello(env)) {
+			applyHello(env.payload);
+			return;
+		}
 		// host:all summary feed has env.instance === "all". Distinguishable
 		// from per-instance envelopes (which carry the runner's name) without
 		// a dedicated wire-type — see backend aggregator.marshalEnvelope.
@@ -440,6 +487,12 @@ function createScraperWS() {
 		},
 		get snapshots() {
 			return snapshots;
+		},
+		get hello() {
+			return hello;
+		},
+		get instanceStartedAt() {
+			return instanceStartedAt;
 		},
 		get lastError() {
 			return lastError;

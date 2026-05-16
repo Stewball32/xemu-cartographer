@@ -1,9 +1,12 @@
 package manager
 
 import (
+	"encoding/json"
+	"log"
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
 // envelopeTypeHello is the wire type for the server→client hello envelope.
@@ -61,5 +64,48 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 			envelopeTypeEvents,
 		},
 		Instances: instances,
+	}
+}
+
+// HelloEnvelopeBytes builds the marshaled wire bytes for a hello envelope —
+// the websocket.Message wrapper plus the inner scraper.Envelope plus the
+// HelloPayload — ready to enqueue on a single client's send channel.
+// Returns (nil, false) on marshal error (logged); the caller is responsible
+// for delivery.
+//
+// The hello envelope's instance field is empty (hello is not per-instance)
+// and its tick is 0. The payload's Instances list carries the per-instance
+// metadata clients use for restart detection.
+func (m *Manager) HelloEnvelopeBytes() ([]byte, bool) {
+	payload := m.BuildHelloPayload()
+	env := scraper.MakeEnvelope(envelopeTypeHello, "", 0, payload)
+	envBytes, err := json.Marshal(env)
+	if err != nil {
+		log.Printf("manager: marshal hello envelope: %v", err)
+		return nil, false
+	}
+	msg := websocket.Message{
+		Type:    "scraper",
+		Payload: envBytes,
+	}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("manager: marshal hello message: %v", err)
+		return nil, false
+	}
+	return msgBytes, true
+}
+
+// SendHelloOn is a websocket.ConnectHook compatible signature. Plug it into
+// websocket.NewHandler so every fresh client gets a hello envelope before
+// any other scraper traffic flows.
+//
+//	se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
+//
+// Builds a fresh hello on each call so server_time and the instances list
+// reflect the moment-of-connect state rather than a cached snapshot.
+func (m *Manager) SendHelloOn(send func(data []byte)) {
+	if msgBytes, ok := m.HelloEnvelopeBytes(); ok {
+		send(msgBytes)
 	}
 }
