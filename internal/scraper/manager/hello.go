@@ -78,7 +78,7 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 // metadata clients use for restart detection.
 func (m *Manager) HelloEnvelopeBytes() ([]byte, bool) {
 	payload := m.BuildHelloPayload()
-	env := scraper.MakeEnvelope(envelopeTypeHello, "", 0, payload)
+	env := scraper.MakeEnvelope(envelopeTypeHello, "", 0, 0, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("manager: marshal hello envelope: %v", err)

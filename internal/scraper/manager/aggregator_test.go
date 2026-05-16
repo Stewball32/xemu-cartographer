@@ -25,11 +25,11 @@ type roomSend struct {
 	Data []byte
 }
 
-func (s *stubWS) BroadcastRaw([]byte)             {}
-func (s *stubWS) SendToUserRaw(string, []byte)    {}
-func (s *stubWS) IsConnected(string) bool          { return false }
-func (s *stubWS) IsInRoom(string, string) bool     { return false }
-func (s *stubWS) UserRooms(string) []string        { return nil }
+func (s *stubWS) BroadcastRaw([]byte)          {}
+func (s *stubWS) SendToUserRaw(string, []byte) {}
+func (s *stubWS) IsConnected(string) bool      { return false }
+func (s *stubWS) IsInRoom(string, string) bool { return false }
+func (s *stubWS) UserRooms(string) []string    { return nil }
 func (s *stubWS) SendToRoomRaw(room string, data []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -131,7 +131,7 @@ func TestAggregatorRemovedEvicts(t *testing.T) {
 		t.Fatalf("aggregator envelope type = %q, want %q", env.Type, envelopeTypeCurrentState)
 	}
 	var summaries []hostSummary
-	if err := json.Unmarshal(env.Payload, &summaries); err != nil {
+	if err := json.Unmarshal(env.Data, &summaries); err != nil {
 		t.Fatalf("unmarshal []hostSummary: %v", err)
 	}
 	for _, s := range summaries {
@@ -194,7 +194,7 @@ func TestAggregatorFullSnapshotEachBroadcast(t *testing.T) {
 		t.Fatalf("aggregator envelope instance = %q, want %q", env.Instance, "all")
 	}
 	var summaries []hostSummary
-	if err := json.Unmarshal(env.Payload, &summaries); err != nil {
+	if err := json.Unmarshal(env.Data, &summaries); err != nil {
 		t.Fatalf("unmarshal []hostSummary: %v", err)
 	}
 	if len(summaries) != 2 {

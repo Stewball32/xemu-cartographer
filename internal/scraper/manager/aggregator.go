@@ -164,7 +164,7 @@ func (a *aggregator) joinReplay() [][]byte {
 // host:all summary feed and per-instance host:<name> streams.
 func (a *aggregator) marshalEnvelope() ([]byte, bool) {
 	summaries := a.snapshot()
-	env := scraper.MakeEnvelope(envelopeTypeCurrentState, "all", 0, summaries)
+	env := scraper.MakeEnvelope(envelopeTypeCurrentState, "all", 0, 0, summaries)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("aggregator: marshal envelope: %v", err)

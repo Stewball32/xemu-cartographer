@@ -70,7 +70,7 @@ func TestBuildCurrentStateEnvelopeIdle(t *testing.T) {
 	}
 
 	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
 	}
 	if p.Phase != PhaseIdle {
@@ -122,7 +122,7 @@ func TestBuildCurrentStateEnvelopeLive(t *testing.T) {
 	}
 
 	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
 	}
 	if p.Phase != PhaseLive {
@@ -162,7 +162,7 @@ func TestBuildCurrentStateEnvelopeReadyWithPreviousGame(t *testing.T) {
 	_, env := decodeEnvelope(t, bytes)
 
 	var p CurrentStatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal CurrentStatePayload: %v", err)
 	}
 	if p.PreviousGame == nil {
@@ -199,7 +199,7 @@ func TestBuildStateUpdateEnvelopeIdle(t *testing.T) {
 	}
 
 	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
 	}
 	if p.Phase != PhaseIdle {
@@ -242,7 +242,7 @@ func TestBuildStateUpdateEnvelopeReady(t *testing.T) {
 	}
 
 	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
 	}
 	if p.Phase != PhaseReady {
@@ -286,7 +286,7 @@ func TestBuildStateUpdateEnvelopeLive(t *testing.T) {
 	}
 
 	var p StateUpdatePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
 	}
 	if p.Phase != PhaseLive {
@@ -309,7 +309,7 @@ func TestBuildStateUpdateEnvelopeLive(t *testing.T) {
 	}
 	_, env = decodeEnvelope(t, bytes)
 
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal StateUpdatePayload: %v", err)
 	}
 	if p.Tick == nil || p.Tick.PlayerCount != 2 {

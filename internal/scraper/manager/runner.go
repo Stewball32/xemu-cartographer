@@ -450,7 +450,7 @@ func (r *runner) buildCurrentStateEnvelope() ([]byte, bool) {
 		Events:           c.Events,
 		PreviousGame:     c.PreviousGame,
 	}
-	env := scraper.MakeEnvelope(envelopeTypeCurrentState, r.name, c.EngineTick, payload)
+	env := scraper.MakeEnvelope(envelopeTypeCurrentState, r.name, 0, c.EngineTick, payload)
 	return marshalRoomMessage(r.name, r.hostRoom, env)
 }
 
@@ -483,7 +483,7 @@ func (r *runner) buildStateUpdateEnvelope(phase Phase, includeReady bool) ([]byt
 	case PhaseReady:
 		payload.Ready = c.GameData
 	}
-	env := scraper.MakeEnvelope(envelopeTypeStateUpdate, r.name, envTick, payload)
+	env := scraper.MakeEnvelope(envelopeTypeStateUpdate, r.name, 0, envTick, payload)
 	return marshalRoomMessage(r.name, r.hostRoom, env)
 }
 

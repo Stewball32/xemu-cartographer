@@ -1,6 +1,9 @@
 package scraper
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // GameState describes the current state of the game engine.
 type GameState string
@@ -60,25 +63,50 @@ const (
 )
 
 // ProtocolVersion is the wire-protocol version carried on every Envelope.
-// Bumps on any breaking payload change. Clients can branch or warn instead of
-// silently mis-parsing. See atlas/new_json/04-ground-up-rebuild.md §8 for the
-// versioning + handshake design; this is PR 1 of that rollout.
-const ProtocolVersion uint8 = 1
+// Bumps on any breaking payload change. Clients validate at hello time
+// (internal/scraper/manager/hello.go) and can warn / refuse to consume
+// envelopes carrying a mismatched version.
+//
+// v2 (PR 4 of the rebuild — atlas/new_json/04-ground-up-rebuild.md §3): adds
+// `seq` (uint64, monotonic per (instance, type), instance-lifetime) and `ts`
+// (server send time, RFC3339); renames the legacy `payload` field to `data`.
+// The v1 wire shape is gone — this is an alpha-stage break per project
+// scope, not a backward-compatible upgrade.
+const ProtocolVersion uint8 = 2
 
 // Envelope is the top-level wrapper for every WebSocket message.
+//
+// Field order is the same as the JSON serialization order so the bytes on
+// the wire read in a natural sequence: version, kind, scope, sequence,
+// engine tick, send time, then the type-specific payload.
 type Envelope struct {
 	V        uint8           `json:"v"`
 	Type     string          `json:"type"`
 	Instance string          `json:"instance"`
+	Seq      uint64          `json:"seq"`
 	Tick     uint32          `json:"tick"`
-	Payload  json.RawMessage `json:"payload"`
+	Ts       time.Time       `json:"ts"`
+	Data     json.RawMessage `json:"data"`
 }
 
 // MakeEnvelope serialises a payload into an Envelope. Ignores marshal errors
 // (caller controls the payload type).
-func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
+//
+// `seq` is monotonic per (instance, type), instance-lifetime — callers hold
+// the counter (per-runner in manager.runner, per-aggregator in the host:all
+// aggregator) and pass the next value here. `ts` is captured automatically
+// at construction time as the canonical server send time.
+func MakeEnvelope(msgType, instance string, seq uint64, tick uint32, payload any) Envelope {
 	b, _ := json.Marshal(payload)
-	return Envelope{V: ProtocolVersion, Type: msgType, Instance: instance, Tick: tick, Payload: b}
+	return Envelope{
+		V:        ProtocolVersion,
+		Type:     msgType,
+		Instance: instance,
+		Seq:      seq,
+		Tick:     tick,
+		Ts:       time.Now(),
+		Data:     b,
+	}
 }
 
 // -------------------------------------------------------------------

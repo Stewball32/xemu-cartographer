@@ -15,7 +15,7 @@ import (
 // Test helpers must match runtime emit shape so filterEvents covers the
 // same code path real events take.
 func makeEvent(tick uint32, typ string) scraper.Envelope {
-	return scraper.MakeEnvelope("event", "smoke", tick, map[string]any{
+	return scraper.MakeEnvelope("event", "smoke", 0, tick, map[string]any{
 		"event_type": typ,
 	})
 }
@@ -175,7 +175,7 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	}
 
 	var payload EventsResponsePayload
-	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+	if err := json.Unmarshal(env.Data, &payload); err != nil {
 		t.Fatalf("unmarshal EventsResponsePayload: %v", err)
 	}
 	if payload.Phase != PhaseLive {
@@ -208,7 +208,7 @@ func decodeEventsReply(t *testing.T, data []byte) EventsResponsePayload {
 		t.Fatalf("envelope.type = %q, want %q", env.Type, envelopeTypeEvents)
 	}
 	var p EventsResponsePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal EventsResponsePayload: %v", err)
 	}
 	return p

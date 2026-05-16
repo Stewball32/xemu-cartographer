@@ -14,6 +14,7 @@ package events
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
@@ -36,15 +37,19 @@ type Context struct {
 }
 
 // emit wraps a payload into an "event" envelope using the context's tick /
-// instance fields.
+// instance fields. Seq is a 0 placeholder — the real per-(instance, type)
+// counter lands when runner emission is rewritten in a later v2 PR.
+// Ts is captured automatically by the Envelope constructor here.
 func (c *Context) emit(payload any) scraper.Envelope {
 	b, _ := json.Marshal(payload)
 	return scraper.Envelope{
 		V:        scraper.ProtocolVersion,
 		Type:     "event",
 		Instance: c.Instance,
+		Seq:      0,
 		Tick:     c.Tick,
-		Payload:  b,
+		Ts:       time.Now(),
+		Data:     b,
 	}
 }
 

@@ -128,7 +128,7 @@ func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 	}
 
 	var payload HelloPayload
-	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+	if err := json.Unmarshal(env.Data, &payload); err != nil {
 		t.Fatalf("unmarshal HelloPayload: %v", err)
 	}
 	if payload.ProtocolVersion != scraper.ProtocolVersion {
