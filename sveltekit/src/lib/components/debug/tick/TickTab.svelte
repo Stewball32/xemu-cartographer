@@ -24,7 +24,7 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { ChevronDownIcon } from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildTickVm } from './tick-vm';
 	import EngineFlagsSection from './EngineFlagsSection.svelte';
@@ -40,7 +40,7 @@
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
-	const vm = $derived.by(() => buildTickVm(name, scraperWS, ctx));
+	const vm = $derived.by(() => buildTickVm(name, scraperWSV2, ctx));
 
 	type SectionId =
 		| 'game_globals'
