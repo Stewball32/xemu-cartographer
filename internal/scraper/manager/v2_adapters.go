@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"encoding/json"
 	"math"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
@@ -55,6 +56,30 @@ func safeFloat(f float32) float32 {
 		return 0
 	}
 	return f
+}
+
+// safeMapAny returns a copy of m with un-marshalable values dropped.
+// Used to sanitize the StateInputs / ScoreProbe map[string]any fields
+// in DebugPayload — those carry plugin-defined typed structs whose
+// float fields may contain NaN from uninitialised memory reads. One
+// NaN in one nested probe value would otherwise null the whole debug
+// payload (same root cause as safeFloat, different shape — we can't
+// recurse into arbitrary struct types without reflection).
+//
+// Returns nil if m is nil. Dropped keys are silently omitted — the
+// debug envelope's job is best-effort, not lossless.
+func safeMapAny(m map[string]any) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if _, err := json.Marshal(v); err != nil {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // vec3 builds a Vec3 from flat float32s, sanitizing each component.
@@ -493,26 +518,26 @@ func buildDebugPayload(c *instanceCache) *DebugPayload {
 	src := c.LatestTick
 	p := &DebugPayload{
 		Players:     make([]DebugPlayer, 0, len(src.Players)),
-		StateInputs: c.StateInputs,
-		ScoreProbe:  c.ScoreProbe,
+		StateInputs: safeMapAny(c.StateInputs),
+		ScoreProbe:  safeMapAny(c.ScoreProbe),
 	}
 	for _, tp := range src.Players {
 		dp := DebugPlayer{Index: tp.Index}
 		if tp.Extended != nil {
 			dp.Extended = &DebugPlayerExtended{
 				Legs: DebugLegRotation{
-					Pitch: tp.Extended.LegsPitch,
-					Yaw:   tp.Extended.LegsYaw,
-					Roll:  tp.Extended.LegsRoll,
+					Pitch: safeFloat(tp.Extended.LegsPitch),
+					Yaw:   safeFloat(tp.Extended.LegsYaw),
+					Roll:  safeFloat(tp.Extended.LegsRoll),
 				},
 				Airborne:      tp.Extended.Airborne != 0,
 				AirborneTicks: tp.Extended.AirborneTicks,
 				IdleTicks:     tp.Extended.IdleTicks,
 				StateFlags:    tp.Extended.StateFlags,
-				Stunned:       tp.Extended.Stunned,
+				Stunned:       safeFloat(tp.Extended.Stunned),
 				AimAssistSphere: &DebugSphere{
 					Center: vec3(tp.Extended.AimAssistSphereX, tp.Extended.AimAssistSphereY, tp.Extended.AimAssistSphereZ),
-					Radius: tp.Extended.AimAssistSphereRadius,
+					Radius: safeFloat(tp.Extended.AimAssistSphereRadius),
 				},
 			}
 		}
@@ -529,8 +554,8 @@ func buildDebugPayload(c *instanceCache) *DebugPayload {
 					Jump:   tp.UpdateQueue.Buttons.Jump,
 					Fire:   tp.UpdateQueue.Buttons.Fire,
 				},
-				DesiredYaw:   tp.UpdateQueue.DesiredYaw,
-				DesiredPitch: tp.UpdateQueue.DesiredPitch,
+				DesiredYaw:   safeFloat(tp.UpdateQueue.DesiredYaw),
+				DesiredPitch: safeFloat(tp.UpdateQueue.DesiredPitch),
 			}
 		}
 		p.Players = append(p.Players, dp)
