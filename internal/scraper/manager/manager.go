@@ -30,6 +30,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
@@ -52,6 +53,16 @@ type Manager struct {
 	runners map[string]*runner
 
 	agg *aggregator
+
+	// policyMu guards policies. Held separately from mu so the loader
+	// can update the Manager-level snapshot without contending with
+	// Start/Stop on the runners map. reloadMu serialises full reloads
+	// — only one ReloadCapturePolicies pass runs at a time so a slow
+	// FindAllRecords can't race with a fast one and leave runners on
+	// stale slices.
+	policyMu sync.RWMutex
+	policies []capture.Policy
+	reloadMu sync.Mutex
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -125,6 +136,12 @@ func (m *Manager) Start(name, sock string) error {
 	}
 	m.runners[name] = r
 	m.mu.Unlock()
+
+	// Hand the runner the Manager's current capture-policy snapshot so
+	// its first tick already has the right demand evaluation. A reload
+	// firing concurrently re-pushes (last write wins); the worst case
+	// is a single tick on a slightly stale slice.
+	r.setPolicies(m.getCapturePolicies())
 
 	// Seed the aggregator immediately so host:all subscribers see a fresh
 	// Idle entry without waiting for the runner's first heartbeat tick.

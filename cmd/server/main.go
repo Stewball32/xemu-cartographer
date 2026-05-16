@@ -78,6 +78,16 @@ func main() {
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
 
+		// Capture-policy loader: read the persisted (instance, class) rows
+		// now so runners started immediately after this (auto-start via the
+		// discovery watcher, manual /api/admin/scraper/start) inherit the
+		// current snapshot. The hook bind keeps them in sync as operators
+		// edit policies through the PB dashboard.
+		scrMgr.RegisterCapturePolicyHooks()
+		if err := scrMgr.ReloadCapturePolicies(); err != nil {
+			log.Printf("scraper: initial capture-policy load: %v", err)
+		}
+
 		// Containers (optional): start podman manager + socket watcher when
 		// CONTAINERS_ENABLED=true. The route group registers itself as a
 		// no-op when Manager is nil, so a fresh checkout boots cleanly.
