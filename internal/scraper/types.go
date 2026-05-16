@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"encoding/json"
+	"log"
 	"time"
 )
 
@@ -63,15 +64,22 @@ type Envelope struct {
 	Data     json.RawMessage `json:"data"`
 }
 
-// MakeEnvelope serialises a payload into an Envelope. Ignores marshal errors
-// (caller controls the payload type).
+// MakeEnvelope serialises a payload into an Envelope.
 //
 // `seq` is monotonic per (instance, type), instance-lifetime — callers hold
 // the counter (per-runner in manager.runner, per-aggregator in the host:all
 // aggregator) and pass the next value here. `ts` is captured automatically
 // at construction time as the canonical server send time.
+//
+// Marshal failure (e.g. a NaN float in the payload) is logged and the
+// envelope's Data is left empty (wire shows `data: null`). The original
+// "_" silent drop hid a payload-loss bug that took live-traffic
+// inspection to find; the log line is the cheap fix.
 func MakeEnvelope(msgType, instance string, seq uint64, tick uint32, payload any) Envelope {
-	b, _ := json.Marshal(payload)
+	b, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("scraper: MakeEnvelope marshal %q payload: %v", msgType, err)
+	}
 	return Envelope{
 		V:        ProtocolVersion,
 		Type:     msgType,

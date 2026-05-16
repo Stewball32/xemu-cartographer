@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"math"
+
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
 
@@ -36,25 +38,44 @@ func optUint32(v uint32) *uint32 {
 	return &v
 }
 
-// vec3 builds a Vec3 from flat float32s.
-func vec3(x, y, z float32) scraper.Vec3 {
-	return scraper.Vec3{X: x, Y: y, Z: z}
+// safeFloat replaces NaN / ±Inf with 0. encoding/json refuses to marshal
+// either and returns an error; in our pipeline that error gets dropped in
+// MakeEnvelope and the resulting envelope wire-bytes show `data: null` —
+// a silent payload-loss bug we hit in PR 9 verification when bones
+// included NaN floats (Halo CE memory regions for bones contain NaN for
+// some player states: just-spawned, in-vehicle, etc.).
+//
+// Sanitizing at the adapter layer keeps the bug from propagating to the
+// wire. Real values pass through unchanged; junk values become explicit
+// zeros that consumers can recognise (vs the all-or-nothing data: null
+// failure mode).
+func safeFloat(f float32) float32 {
+	d := float64(f)
+	if math.IsNaN(d) || math.IsInf(d, 0) {
+		return 0
+	}
+	return f
 }
 
-// vec3FromXYZ converts a non-nil *scraper.XYZ to Vec3.
+// vec3 builds a Vec3 from flat float32s, sanitizing each component.
+func vec3(x, y, z float32) scraper.Vec3 {
+	return scraper.Vec3{X: safeFloat(x), Y: safeFloat(y), Z: safeFloat(z)}
+}
+
+// vec3FromXYZ converts a non-nil *scraper.XYZ to Vec3 with sanitization.
 func vec3FromXYZ(p *scraper.XYZ) scraper.Vec3 {
 	if p == nil {
 		return scraper.Vec3{}
 	}
-	return *p
+	return vec3(p.X, p.Y, p.Z)
 }
 
-// vec3PtrFromXYZ converts *scraper.XYZ to *Vec3 (nil-safe).
+// vec3PtrFromXYZ converts *scraper.XYZ to *Vec3 (nil-safe, sanitized).
 func vec3PtrFromXYZ(p *scraper.XYZ) *scraper.Vec3 {
 	if p == nil {
 		return nil
 	}
-	v := *p
+	v := vec3(p.X, p.Y, p.Z)
 	return &v
 }
 

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -227,4 +228,65 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// TestSafeFloatRejectsNaNAndInf: regression for the live-server bug where
+// bone floats containing NaN (Halo CE memory regions sometimes hold NaN
+// for in-vehicle / just-spawned players) caused json.Marshal of the
+// whole DebugPayload to fail, dropping the entire envelope's data to
+// null on the wire. safeFloat in v2_adapters.go neutralises this.
+func TestSafeFloatRejectsNaNAndInf(t *testing.T) {
+	cases := []struct {
+		name string
+		in   float32
+		want float32
+	}{
+		{"finite", 3.14, 3.14},
+		{"zero", 0, 0},
+		{"NaN", float32(math.NaN()), 0},
+		{"+Inf", float32(math.Inf(1)), 0},
+		{"-Inf", float32(math.Inf(-1)), 0},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := safeFloat(tt.in)
+			if got != tt.want {
+				t.Fatalf("safeFloat(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDebugMarshalSurvivesNaNBone: end-to-end regression — a NaN bone
+// no longer torpedoes the whole DebugPayload marshal. The wire bytes
+// are non-empty and the bone's NaN coordinate appears as 0.
+func TestDebugMarshalSurvivesNaNBone(t *testing.T) {
+	c := &instanceCache{
+		LatestTick: &scraper.TickPayload{
+			Players: []scraper.TickPlayer{{
+				Index: 0,
+				Bones: []scraper.TickBone{{
+					Index: 0,
+					X:     float32(math.NaN()),
+					Y:     2,
+					Z:     3,
+				}},
+			}},
+		},
+	}
+	dp := buildDebugPayload(c)
+	if dp == nil {
+		t.Fatal("dp nil")
+	}
+	b, err := json.Marshal(*dp)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if len(b) == 0 {
+		t.Fatal("marshal returned empty bytes")
+	}
+	// The NaN X should be sanitized to 0.
+	if !contains(string(b), `"pos":{"x":0,"y":2,"z":3}`) {
+		t.Fatalf("expected NaN-X sanitized to 0; got: %s", b)
+	}
 }
