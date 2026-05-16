@@ -40,6 +40,7 @@ type Context struct {
 func (c *Context) emit(payload any) scraper.Envelope {
 	b, _ := json.Marshal(payload)
 	return scraper.Envelope{
+		V:        scraper.ProtocolVersion,
 		Type:     "event",
 		Instance: c.Instance,
 		Tick:     c.Tick,

@@ -115,8 +115,15 @@ export interface WSMessage {
 	payload?: unknown;
 }
 
+// PROTOCOL_VERSION is the wire-protocol version carried on every Envelope.
+// Bumps on any breaking payload change so a client can branch or warn instead
+// of silently mis-parsing. See atlas/new_json/04-ground-up-rebuild.md §8 for
+// the versioning + handshake design; this is PR 1 of that rollout.
+export const PROTOCOL_VERSION = 1;
+
 // Inner scraper envelope. Payload shape depends on type.
 export interface Envelope<P = unknown> {
+	v: number;
 	type: EnvelopeType;
 	instance: string;
 	tick: number;

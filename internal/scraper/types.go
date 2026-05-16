@@ -59,8 +59,15 @@ const (
 	EventPlayerTeamChanged = "player_team_changed"
 )
 
+// ProtocolVersion is the wire-protocol version carried on every Envelope.
+// Bumps on any breaking payload change. Clients can branch or warn instead of
+// silently mis-parsing. See atlas/new_json/04-ground-up-rebuild.md §8 for the
+// versioning + handshake design; this is PR 1 of that rollout.
+const ProtocolVersion uint8 = 1
+
 // Envelope is the top-level wrapper for every WebSocket message.
 type Envelope struct {
+	V        uint8           `json:"v"`
 	Type     string          `json:"type"`
 	Instance string          `json:"instance"`
 	Tick     uint32          `json:"tick"`
@@ -71,7 +78,7 @@ type Envelope struct {
 // (caller controls the payload type).
 func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
 	b, _ := json.Marshal(payload)
-	return Envelope{Type: msgType, Instance: instance, Tick: tick, Payload: b}
+	return Envelope{V: ProtocolVersion, Type: msgType, Instance: instance, Tick: tick, Payload: b}
 }
 
 // -------------------------------------------------------------------
