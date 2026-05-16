@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import {
@@ -28,7 +28,7 @@
 		WifiIcon,
 		ZapIcon
 	} from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import StatTile, { type StatRow } from '../shared/StatTile.svelte';
 	import { buildXboxVm } from './xbox-vm';
@@ -37,8 +37,19 @@
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
-	const xboxVm = $derived.by(() => buildXboxVm(name, scraperWS, ctx.inspect));
-	const runtimeVm = $derived.by(() => buildRuntimeVm(name, scraperWS, ctx));
+	const xboxVm = $derived.by(() => buildXboxVm(name, scraperWSV2, ctx.inspect));
+	const runtimeVm = $derived.by(() => buildRuntimeVm(name, scraperWSV2, ctx));
+
+	// The Cross-instance summary section reads hostSummaries[name] which
+	// only populates when the page is subscribed to host:summary. The
+	// debug page entry-point doesn't subscribe (it's per-instance), so we
+	// opt in here for the lifetime of the SystemTab.
+	$effect(() => {
+		scraperWSV2.subscribeSummary();
+	});
+	onDestroy(() => {
+		scraperWSV2.unsubscribeSummary();
+	});
 
 	type SectionId =
 		| 'identity'
@@ -206,7 +217,7 @@
 		<Accordion.ItemContent class="pb-3">
 			{#if !xboxVm.identity}
 				<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
-					no current_state envelope yet — waiting for first read
+					no xbox-class envelope yet — waiting for first read
 				</div>
 			{:else}
 				{@const id = xboxVm.identity}
@@ -416,7 +427,7 @@
 		<Accordion.ItemContent class="pb-3">
 			{#if !runtimeVm.lifecycle}
 				<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
-					no current_state envelope yet
+					no game-class envelope yet
 				</div>
 			{:else}
 				{@const life = runtimeVm.lifecycle}

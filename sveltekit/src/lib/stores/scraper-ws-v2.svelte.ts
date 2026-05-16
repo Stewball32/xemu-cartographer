@@ -100,6 +100,13 @@ function createScraperWSV2() {
 	// timestamps when they want a live "engine pulse" counter.
 	let engineTick = $state<Record<string, number>>({});
 
+	// Tracking for the request_events backfill round-trip. UIs surface
+	// "events reply received Xs ago" + the runner's phase at reply time
+	// so an empty event list can be attributed correctly (no events vs.
+	// not Live yet vs. filtered out).
+	let lastEventsReplyAt = $state<Record<string, number>>({});
+	let lastEventsReplyPhase = $state<Record<string, string>>({});
+
 	// Rooms the user/component has asked to be in. Persisted across
 	// reconnects: on a fresh socket we replay every intent to the server.
 	// SvelteSet so consumers can reactively watch what's joined.
@@ -295,6 +302,8 @@ function createScraperWSV2() {
 				merged.splice(idx, 0, inner);
 			}
 			events = { ...events, [env.instance]: merged.slice(0, MAX_EVENTS_PER_INSTANCE) };
+			lastEventsReplyAt = { ...lastEventsReplyAt, [env.instance]: now };
+			lastEventsReplyPhase = { ...lastEventsReplyPhase, [env.instance]: env.data.phase };
 		}
 	}
 
@@ -434,6 +443,14 @@ function createScraperWSV2() {
 		},
 		get hostList() {
 			return hostList;
+		},
+
+		// request_events backfill timestamps/phase.
+		get lastEventsReplyAt() {
+			return lastEventsReplyAt;
+		},
+		get lastEventsReplyPhase() {
+			return lastEventsReplyPhase;
 		},
 
 		connect,

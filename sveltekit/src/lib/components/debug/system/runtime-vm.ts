@@ -1,13 +1,15 @@
-// View-model for the Runtime tab — the "stuff that doesn't fit Game / Tick /
-// Xbox" bucket: WS connection state, runner lifecycle counters, cross-instance
-// summary entry, and envelope freshness ages. Pure TS; reactivity is wired by
-// $derived.by() at the call site.
+// View-model for the System tab's runtime sections — WS connection state,
+// runner lifecycle counters, cross-instance summary entry, envelope
+// freshness ages. Reads from scraperWSV2 with inspect-endpoint fallbacks
+// for the first-paint window before v2 envelopes flow.
+//
+// Pure TS; reactivity is wired at the call site via $derived.by().
 
-import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 import type { DebugContext } from '../context';
-import type { HostSummary, Phase } from '$lib/types/scraper';
+import type { GamePayload, HostSummaryV2, PhaseV2 } from '$lib/types/scraper-v2';
 
-type ScraperWS = typeof scraperWS;
+type ScraperWSV2 = typeof scraperWSV2;
 
 export type RuntimeVm = {
 	// Connection.
@@ -15,21 +17,22 @@ export type RuntimeVm = {
 	lastError: string | null;
 
 	// Lifecycle.
-	phase: Phase;
+	phase: PhaseV2;
 	startedAt: string | undefined;
 	runnerUptimeStr: string;
 	lastReadStr: string;
 	engineTick: number | undefined;
 	iterations: number | undefined;
 
-	// Cross-instance summary entry.
-	hostSummary: HostSummary | null;
+	// Cross-instance summary entry (populated when the page subscribes
+	// to host:summary — SystemTab does so on mount).
+	hostSummary: HostSummaryV2 | null;
 
 	// Envelope freshness.
 	gameDataStr: string;
 	tickStr: string;
 	lastEventsReplyStr: string;
-	lastEventsReplyPhase: Phase | undefined;
+	lastEventsReplyPhase: PhaseV2 | undefined;
 	hostSummaryReadStr: string;
 
 	connection: Record<string, unknown>;
@@ -60,25 +63,32 @@ function formatUptime(ms: number | undefined): string {
 	return days > 0 ? `${days}d ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`;
 }
 
-export function buildRuntimeVm(name: string, ws: ScraperWS, ctx: DebugContext): RuntimeVm {
-	const snap = ws.snapshots[name] ?? null;
-	const phase: Phase = ws.phases[name] ?? ctx.inspect?.phase ?? 'idle';
-	const startedAt = snap?.started_at ?? ctx.inspect?.started_at;
+export function buildRuntimeVm(name: string, ws: ScraperWSV2, ctx: DebugContext): RuntimeVm {
+	const game: GamePayload | null = ws.game[name] ?? null;
+
+	// Phase + started_at + counters come from the game class in v2 (v1's
+	// CurrentStateSnapshot was a per-instance bag; v2 splits responsibilities
+	// by class).
+	const phase: PhaseV2 = game?.phase ?? (ctx.inspect?.phase as PhaseV2 | undefined) ?? 'idle';
+	const startedAt = game?.started_at ?? ctx.inspect?.started_at;
 	const startedAtMs = parseIsoMs(startedAt);
 	const runnerUptimeStr = startedAtMs !== undefined ? formatUptime(ctx.now - startedAtMs) : '—';
-	const lastReadAtMs = parseIsoMs(ws.lastReadAt[name] ?? ctx.inspect?.last_read_at);
+	const lastReadAtIso = game?.last_read_at ?? ctx.inspect?.last_read_at;
+	const lastReadAtMs = parseIsoMs(lastReadAtIso);
 	const lastReadStr = ctx.relativeTime(lastReadAtMs);
-	const engineTick = snap?.engine_tick ?? ctx.inspect?.tick;
-	const iterations = snap?.iterations ?? ctx.inspect?.ticks;
+	const engineTick = game?.engine_tick ?? ws.engineTick[name] ?? ctx.inspect?.tick;
+	const iterations = game?.iterations ?? ctx.inspect?.ticks;
 
-	const hostSummary: HostSummary | null = ws.hostSummaries[name] ?? null;
+	const hostSummary: HostSummaryV2 | null = ws.hostSummaries[name] ?? null;
 	const hostSummaryReadMs = parseIsoMs(hostSummary?.last_successful_read_at);
 	const hostSummaryReadStr = ctx.relativeTime(hostSummaryReadMs);
 
-	const gameDataStr = ctx.relativeTime(ws.gameDataAt[name]);
-	const tickStr = ctx.relativeTime(ws.ticksAt[name]);
+	// Game-class envelopes fire on every poll; tick-class on every poll
+	// during Live. The per-class At maps are the freshness source.
+	const gameDataStr = ctx.relativeTime(ws.gameAt[name]);
+	const tickStr = ctx.relativeTime(ws.tickAt[name]);
 	const lastEventsReplyStr = ctx.relativeTime(ws.lastEventsReplyAt[name]);
-	const lastEventsReplyPhase = ws.lastEventsReplyPhase[name];
+	const lastEventsReplyPhase = ws.lastEventsReplyPhase[name] as PhaseV2 | undefined;
 
 	const connection: Record<string, unknown> = {
 		ws_connected: ws.connected ? 'connected' : 'disconnected',
@@ -89,7 +99,7 @@ export function buildRuntimeVm(name: string, ws: ScraperWS, ctx: DebugContext): 
 		phase,
 		started_at: startedAt ?? '—',
 		runner_uptime: runnerUptimeStr,
-		last_read_at: ws.lastReadAt[name] ?? '—',
+		last_read_at: lastReadAtIso ?? '—',
 		last_read_age: lastReadStr,
 		engine_tick: engineTick ?? '—',
 		iterations: iterations ?? '—'

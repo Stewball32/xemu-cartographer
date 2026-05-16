@@ -1,14 +1,15 @@
-// View-model for the Xbox tab — pure TS so reactivity is set up via
-// $derived.by() at the call site (XboxTab.svelte). Mirrors the runner's
-// system-snapshot pass (internal/scraper/manager/loop.go runSystemSnapshot)
-// by sourcing every field from CurrentStateSnapshot + ScraperInspect, then
-// formatting raw integers (bitfields, FILETIME, MAC bytes, time-zone bias
-// minutes) into a single Record<string, unknown> per section.
+// View-model for the System tab's Xbox sections. Sources every field from
+// scraperWSV2.xbox[name] (v2 XboxPayload — title + EEPROM + XBE cert +
+// kernel clock) with fall-back to the 3 s HTTP-poll inspect endpoint
+// while the first xbox-class envelope is in flight.
+//
+// Pure TS; reactivity is wired at the call site via $derived.by().
 
-import { scraperWS } from '$lib/stores/scraper-ws.svelte';
-import type { CurrentStateSnapshot, ScraperInspect } from '$lib/types/scraper';
+import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
+import type { GamePayload, XboxPayload } from '$lib/types/scraper-v2';
+import type { ScraperInspect } from '$lib/types/scraper';
 
-type ScraperWS = typeof scraperWS;
+type ScraperWSV2 = typeof scraperWSV2;
 
 // XBE game-region bitfield masks — mirror internal/scraper/xbox/offsets.go.
 const XBE_REGION_NTSC_US = 0x00000001;
@@ -67,12 +68,14 @@ function formatTimeZoneBias(minutes: number | undefined): string {
 
 function formatMac(raw: string | undefined): string {
 	if (!raw) return '—';
-	// Backend MAC field is the 12-char hex string built from 6 raw bytes
-	// (internal/scraper/xbox/mac.go formats it without separators). Split into
-	// colon-separated pairs for readability — if the length doesn't match,
-	// pass through unchanged so a future format change is still visible.
-	if (raw.length !== 12 || !/^[0-9A-Fa-f]+$/.test(raw)) return raw;
-	return raw.match(/.{2}/g)!.join(':').toUpperCase();
+	// v2 backend (internal/scraper/xbox/mac.go) already returns colon-separated
+	// pairs like "00:50:f2:96:b6:6f". The v1 inspect endpoint may still hand
+	// over a raw 12-char hex string, so fall back to that case.
+	if (raw.includes(':')) return raw.toUpperCase();
+	if (raw.length === 12 && /^[0-9A-Fa-f]+$/.test(raw)) {
+		return raw.match(/.{2}/g)!.join(':').toUpperCase();
+	}
+	return raw;
 }
 
 function formatRegion(region: number | undefined): string {
@@ -99,9 +102,22 @@ function formatAllowedMedia(media: number | undefined): string {
 	return parts.length > 0 ? `${parts.join(',')} (${hex8(media)})` : hex8(media);
 }
 
-function formatUptime(ns: number | undefined): string {
-	if (ns === undefined || !Number.isFinite(ns) || ns < 0) return '—';
-	let s = Math.floor(ns / 1_000_000_000);
+// formatUptime accepts either seconds (v2 — XboxKernel.uptime_seconds)
+// or nanoseconds (v1 inspect endpoint — kernel_uptime_ns), preferring the
+// first non-undefined argument. Lets the migration cross over without
+// losing the inspect fallback.
+function formatUptime(
+	seconds: number | undefined,
+	nsFallback: number | undefined = undefined
+): string {
+	let s: number;
+	if (seconds !== undefined && Number.isFinite(seconds) && seconds >= 0) {
+		s = Math.floor(seconds);
+	} else if (nsFallback !== undefined && Number.isFinite(nsFallback) && nsFallback >= 0) {
+		s = Math.floor(nsFallback / 1_000_000_000);
+	} else {
+		return '—';
+	}
 	const days = Math.floor(s / 86400);
 	s -= days * 86400;
 	const hh = Math.floor(s / 3600)
@@ -133,17 +149,18 @@ function compact(record: Record<string, unknown>): Record<string, unknown> | nul
 	return Object.fromEntries(entries);
 }
 
-export function buildXboxVm(name: string, ws: ScraperWS, inspect: ScraperInspect | null): XboxVm {
-	// CurrentStateSnapshot is broadcast on every phase transition; the REST
-	// inspect snapshot fills in identity fields before the first WS payload
-	// arrives so the tab isn't a blank "no data" wall on first paint.
-	const snap: CurrentStateSnapshot | null = ws.snapshots[name] ?? null;
+export function buildXboxVm(name: string, ws: ScraperWSV2, inspect: ScraperInspect | null): XboxVm {
+	const xbox: XboxPayload | null = ws.xbox[name] ?? null;
+	const game: GamePayload | null = ws.game[name] ?? null;
 
-	const titleIdNum = snap?.title_id ?? inspect?.title_id;
-	const titleStr = snap?.title || inspect?.title || '';
-	const xboxName = snap?.xbox_name || inspect?.xbox_name || '';
-	const xbeName = snap?.xbe_title_name || inspect?.xbe_title_name || '';
-
+	// Identity is sourced from xbox class (title / xbox_name / xbe) plus the
+	// runner's started_at from the game class. The inspect fallback keeps
+	// the section populated before the first xbox-class envelope arrives.
+	const titleIdNum = xbox?.title_id ?? inspect?.title_id;
+	const titleStr = xbox?.title || inspect?.title || '';
+	const xboxName = xbox?.name || inspect?.xbox_name || '';
+	const xbeName = xbox?.xbe?.title_name || inspect?.xbe_title_name || '';
+	const startedAt = game?.started_at ?? inspect?.started_at;
 	const identity = compact({
 		title: titleStr || '—',
 		title_id:
@@ -152,13 +169,13 @@ export function buildXboxVm(name: string, ws: ScraperWS, inspect: ScraperInspect
 				: '—',
 		xbe_title_name: xbeName || '—',
 		xbox_name: xboxName || '—',
-		started_at: formatIsoLocal(snap?.started_at ?? inspect?.started_at)
+		started_at: formatIsoLocal(startedAt)
 	});
 
-	const xbeVersion = snap?.xbe_version ?? inspect?.xbe_version;
-	const xbeRegion = snap?.xbe_game_region ?? inspect?.xbe_game_region;
-	const xbeDisk = snap?.xbe_disk_number ?? inspect?.xbe_disk_number;
-	const xbeMedia = snap?.xbe_allowed_media ?? inspect?.xbe_allowed_media;
+	const xbeVersion = xbox?.xbe?.version ?? inspect?.xbe_version;
+	const xbeRegion = xbox?.xbe?.game_region ?? inspect?.xbe_game_region;
+	const xbeDisk = xbox?.xbe?.disk_number ?? inspect?.xbe_disk_number;
+	const xbeMedia = xbox?.xbe?.allowed_media ?? inspect?.xbe_allowed_media;
 	const xbeCert = compact({
 		xbe_version: xbeVersion !== undefined ? `${hex8(xbeVersion)} (${xbeVersion >>> 0})` : '—',
 		xbe_game_region: formatRegion(xbeRegion),
@@ -166,12 +183,12 @@ export function buildXboxVm(name: string, ws: ScraperWS, inspect: ScraperInspect
 		xbe_allowed_media: formatAllowedMedia(xbeMedia)
 	});
 
-	const serial = snap?.serial_number ?? inspect?.serial_number;
-	const mac = snap?.mac_address ?? inspect?.mac_address;
-	const video = snap?.video_standard ?? inspect?.video_standard;
-	const tzBias = snap?.time_zone_bias ?? inspect?.time_zone_bias;
-	const tzStd = snap?.time_zone_std_name ?? inspect?.time_zone_std_name;
-	const tzDlt = snap?.time_zone_dlt_name ?? inspect?.time_zone_dlt_name;
+	const serial = xbox?.serial_number ?? inspect?.serial_number;
+	const mac = xbox?.mac_address ?? inspect?.mac_address;
+	const video = xbox?.video_standard ?? inspect?.video_standard;
+	const tzBias = xbox?.time_zone?.bias_minutes ?? inspect?.time_zone_bias;
+	const tzStd = xbox?.time_zone?.std_name ?? inspect?.time_zone_std_name;
+	const tzDlt = xbox?.time_zone?.dlt_name ?? inspect?.time_zone_dlt_name;
 	const eeprom = compact({
 		serial_number: serial || '—',
 		mac_address: formatMac(mac),
@@ -181,13 +198,13 @@ export function buildXboxVm(name: string, ws: ScraperWS, inspect: ScraperInspect
 		time_zone_dlt_name: tzDlt || '—'
 	});
 
-	const sysTime = snap?.kernel_system_time ?? inspect?.kernel_system_time;
-	const bootTime = snap?.kernel_boot_time ?? inspect?.kernel_boot_time;
-	const uptimeNs = snap?.kernel_uptime_ns ?? inspect?.kernel_uptime_ns;
+	const sysTime = xbox?.kernel?.system_time ?? inspect?.kernel_system_time;
+	const bootTime = xbox?.kernel?.boot_time ?? inspect?.kernel_boot_time;
+	const uptimeSec = xbox?.kernel?.uptime_seconds;
 	const kernelClock = compact({
 		kernel_system_time: formatIsoLocal(sysTime),
 		kernel_boot_time: formatIsoLocal(bootTime),
-		kernel_uptime: formatUptime(uptimeNs)
+		kernel_uptime: formatUptime(uptimeSec, inspect?.kernel_uptime_ns)
 	});
 
 	return { identity, xbeCert, eeprom, kernelClock };
