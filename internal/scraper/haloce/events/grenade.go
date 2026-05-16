@@ -2,8 +2,9 @@ package events
 
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
-// detectGrenade emits grenade_thrown when a player's frag or plasma count
-// drops while alive.
+// detectGrenade emits player_update (kind=grenade_thrown) when a player's
+// frag or plasma count drops while alive. Only fires for alive players —
+// dropping grenades on death is not a throw.
 func detectGrenade(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
 
@@ -13,21 +14,27 @@ func detectGrenade(ctx *Context) []scraper.Envelope {
 		if !tp.Alive {
 			continue
 		}
+		player := playerRefByIndex(ctx.Snap, idx)
+		pos := vec3FromTickPlayer(tp)
 
 		if prevFrags := ctx.State.PrevFrags[idx]; tp.Frags < prevFrags {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type":      scraper.EventGrenadeThrown,
-				"player":          idx,
-				"kind":            "frag",
-				"frags_remaining": tp.Frags,
+			remaining := tp.Frags
+			out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+				Kind:        scraper.PlayerUpdateKindGrenadeThrown,
+				Player:      player,
+				Pos:         &pos,
+				GrenadeType: scraper.GrenadeFrag,
+				Remaining:   &remaining,
 			}))
 		}
 		if prevPlasmas := ctx.State.PrevPlasmas[idx]; tp.Plasmas < prevPlasmas {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type":        scraper.EventGrenadeThrown,
-				"player":            idx,
-				"kind":              "plasma",
-				"plasmas_remaining": tp.Plasmas,
+			remaining := tp.Plasmas
+			out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+				Kind:        scraper.PlayerUpdateKindGrenadeThrown,
+				Player:      player,
+				Pos:         &pos,
+				GrenadeType: scraper.GrenadePlasma,
+				Remaining:   &remaining,
 			}))
 		}
 	}

@@ -2,11 +2,13 @@ package events
 
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
-// detectItem emits the four item-related events:
-//   - item_picked_up:   power-item world → held
-//   - item_dropped:     power-item held → world
-//   - item_spawned:     power-item respawning → world
-//   - item_depleted:    per-player weapon ammo / energy zero-crossing
+// detectItem emits the four item-related events under the v2 consolidated
+// taxonomy:
+//
+//	player_update kind=item_picked_up  power-item world → held
+//	player_update kind=item_dropped    power-item held → world
+//	game_update   kind=item_spawned    power-item respawning → world (no player)
+//	player_update kind=item_depleted   per-player weapon ammo/energy zero
 //
 // Power-item events compare the current PowerItems status array against
 // state.PrevPowerItemStatus / PrevPowerItemHeldBy. Item-depleted is per
@@ -19,6 +21,7 @@ func detectItem(ctx *Context) []scraper.Envelope {
 	for _, ip := range ctx.Result.InternalPlayers {
 		idx := ip.Index
 		tp := findTickPlayer(ctx.Result.Payload.Players, idx)
+		player := playerRefByIndex(ctx.Snap, idx)
 		for _, w := range tp.Weapons {
 			key := idx*4 + w.Slot
 			if w.IsEnergy {
@@ -28,21 +31,21 @@ func detectItem(ctx *Context) []scraper.Envelope {
 					cur = *w.Charge
 				}
 				if prev > 0.01 && cur <= 0.01 {
-					out = append(out, ctx.emit(map[string]any{
-						"event_type": scraper.EventItemDepleted,
-						"player":     idx,
-						"tag":        w.Tag,
-						"kind":       "energy",
+					out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+						Kind:   scraper.PlayerUpdateKindItemDepleted,
+						Player: player,
+						Item:   &scraper.ItemRef{Tag: w.Tag},
+						Cause:  scraper.ItemDepletionEnergy,
 					}))
 				}
 			} else if w.AmmoMag != nil && w.AmmoPack != nil {
 				prevAmmo := ctx.State.PrevWeaponAmmo[key]
 				if prevAmmo > 0 && *w.AmmoMag == 0 && *w.AmmoPack == 0 {
-					out = append(out, ctx.emit(map[string]any{
-						"event_type": scraper.EventItemDepleted,
-						"player":     idx,
-						"tag":        w.Tag,
-						"kind":       "ammo",
+					out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+						Kind:   scraper.PlayerUpdateKindItemDepleted,
+						Player: player,
+						Item:   &scraper.ItemRef{Tag: w.Tag},
+						Cause:  scraper.ItemDepletionAmmo,
 					}))
 				}
 			}
@@ -61,43 +64,48 @@ func detectItem(ctx *Context) []scraper.Envelope {
 		if !hasSpawn {
 			continue
 		}
+		spawnID := pi.SpawnID
 
 		// item_picked_up: world → held
 		if prevStatus == "world" && pi.Status == "held" && pi.HeldBy != nil {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type": scraper.EventItemPickedUp,
-				"spawn_id":   pi.SpawnID,
-				"player":     *pi.HeldBy,
-				"tag":        spawn.Tag,
+			tp := findTickPlayer(ctx.Result.Payload.Players, *pi.HeldBy)
+			pos := vec3FromTickPlayer(tp)
+			out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+				Kind:   scraper.PlayerUpdateKindItemPickedUp,
+				Player: playerRefByIndex(ctx.Snap, *pi.HeldBy),
+				Pos:    &pos,
+				Item:   &scraper.ItemRef{SpawnID: &spawnID, Tag: spawn.Tag},
 			}))
 		}
 
-		// item_dropped: held → world
+		// item_dropped: held → world. pos is where the item landed.
 		if prevStatus == "held" && pi.Status == "world" {
 			prevHolder := ctx.State.PrevPowerItemHeldBy[pi.SpawnID]
-			payload := map[string]any{
-				"event_type": scraper.EventItemDropped,
-				"spawn_id":   pi.SpawnID,
-				"tag":        spawn.Tag,
+			event := scraper.PlayerUpdateEvent{
+				Kind: scraper.PlayerUpdateKindItemDropped,
+				Item: &scraper.ItemRef{SpawnID: &spawnID, Tag: spawn.Tag},
 			}
 			if prevHolder >= 0 {
-				payload["player"] = prevHolder
+				event.Player = playerRefByIndex(ctx.Snap, prevHolder)
 			}
 			if pi.WorldPos != nil {
-				payload["x"] = pi.WorldPos.X
-				payload["y"] = pi.WorldPos.Y
-				payload["z"] = pi.WorldPos.Z
+				event.Pos = vec3Ptr(pi.WorldPos.X, pi.WorldPos.Y, pi.WorldPos.Z)
 			}
-			out = append(out, ctx.emit(payload))
+			out = append(out, ctx.emitPlayerUpdate(event))
 		}
 
-		// item_spawned: respawning → world
+		// item_spawned: respawning → world. No player; this is a world event.
 		if prevStatus == "respawning" && pi.Status == "world" {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type": scraper.EventItemSpawned,
-				"spawn_id":   pi.SpawnID,
-				"tag":        spawn.Tag,
-			}))
+			event := scraper.GameUpdateEvent{
+				Kind: scraper.GameUpdateKindItemSpawned,
+				Item: &scraper.ItemRef{SpawnID: &spawnID, Tag: spawn.Tag},
+			}
+			if pi.WorldPos != nil {
+				event.Pos = vec3Ptr(pi.WorldPos.X, pi.WorldPos.Y, pi.WorldPos.Z)
+			} else {
+				event.Pos = vec3Ptr(spawn.X, spawn.Y, spawn.Z)
+			}
+			out = append(out, ctx.emitGameUpdate(event))
 		}
 	}
 	return out

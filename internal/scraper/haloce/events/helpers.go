@@ -97,3 +97,70 @@ func gamePlayerByIndex(snap scraper.GameData) map[int]scraper.GamePlayer {
 	}
 	return out
 }
+
+// playerRefFromGame builds a v2 PlayerRef from a GamePlayer. Used by event
+// detectors to denormalize roster identity (name, team, armor_color) onto
+// emitted events so the event log alone is sufficient for analytics across
+// later roster changes.
+func playerRefFromGame(p scraper.GamePlayer) scraper.PlayerRef {
+	return scraper.PlayerRef{
+		Index:      p.Index,
+		Name:       p.Name,
+		Team:       p.Team,
+		ArmorColor: p.ArmorColor,
+	}
+}
+
+// playerRefByIndex returns a PlayerRef for idx, looking up identity in the
+// game-data snapshot. When idx isn't in the roster (race during a join /
+// leave), returns a partial ref with only Index set; the caller can check
+// Name == "" to detect this.
+func playerRefByIndex(snap scraper.GameData, idx int) scraper.PlayerRef {
+	for _, p := range snap.Players {
+		if p.Index == idx {
+			return playerRefFromGame(p)
+		}
+	}
+	return scraper.PlayerRef{Index: idx}
+}
+
+// vec3FromTickPlayer builds a v2 Vec3 position from a TickPlayer's flat
+// X/Y/Z fields. Convenience wrapper so detectors don't repeat the
+// conversion at every emit site.
+func vec3FromTickPlayer(tp scraper.TickPlayer) scraper.Vec3 {
+	return scraper.Vec3{X: tp.X, Y: tp.Y, Z: tp.Z}
+}
+
+// vec3Ptr returns &Vec3{x,y,z}. Useful for optional pos fields on event
+// payloads (PlayerUpdateEvent.Pos, GameUpdateEvent.Pos).
+func vec3Ptr(x, y, z float32) *scraper.Vec3 {
+	v := scraper.Vec3{X: x, Y: y, Z: z}
+	return &v
+}
+
+// playerRefPtr returns &p — convenience for optional PlayerRef fields
+// (DeathEvent.Killer, DamageEvent.Dealer, GameUpdateEvent.Player).
+func playerRefPtr(p scraper.PlayerRef) *scraper.PlayerRef {
+	return &p
+}
+
+// vehicleRefPtr returns &v — convenience for optional VehicleRef fields.
+func vehicleRefPtr(v scraper.VehicleRef) *scraper.VehicleRef {
+	return &v
+}
+
+// itemRefPtr returns &i — convenience for optional ItemRef fields.
+func itemRefPtr(i scraper.ItemRef) *scraper.ItemRef {
+	return &i
+}
+
+// intPtr / uint16Ptr / uint8Ptr / int16Ptr / int32Ptr / uint32Ptr are
+// generic-numeric pointer helpers for PlayerUpdateEvent / GameUpdateEvent
+// fields that are pointer-typed so zero-valued numerics don't get dropped
+// by `omitempty`.
+func intPtr(v int) *int          { return &v }
+func int16Ptr(v int16) *int16    { return &v }
+func int32Ptr(v int32) *int32    { return &v }
+func uint8Ptr(v uint8) *uint8    { return &v }
+func uint16Ptr(v uint16) *uint16 { return &v }
+func uint32Ptr(v uint32) *uint32 { return &v }

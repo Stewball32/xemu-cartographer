@@ -2,8 +2,18 @@ package events
 
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
-// detectDamage emits damage and melee events. Both share the damage-table
-// helpers, so they live in one file.
+// detectDamage emits damage events under the v2 consolidated taxonomy:
+//
+//	damage kind=hit    HP-loss tick (gunfire, splash, fall, etc.)
+//	damage kind=melee  melee strike
+//
+// Both share the damage-table helpers and the dealer→victim positional
+// enrichment.
+//
+// Weapon attribution and melee damage amount aren't yet wired through —
+// they require additional lookups (held weapon at strike time, damage
+// from the matching damage-table entry). Today these emit with
+// Weapon="" / Amount=0 for melee; improvement tracked separately.
 func detectDamage(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
 
@@ -12,37 +22,47 @@ func detectDamage(ctx *Context) []scraper.Envelope {
 		tp := findTickPlayer(ctx.Result.Payload.Players, idx)
 		prevAlive := ctx.State.PrevAlive[idx]
 
-		// --- damage ---
+		// --- hit damage (HP loss) ---
 		prevHP := ctx.State.PrevHealth[idx] + ctx.State.PrevShields[idx]
 		currHP := tp.Health + tp.Shields
 		if tp.Alive && prevAlive && (prevHP-currHP) > 0.01 {
 			dealerIdx := findRecentDealerInDamageTable(ip, ctx.Tick)
-			payload := map[string]any{
-				"event_type": scraper.EventDamage,
-				"receiver":   idx,
-				"amount":     prevHP - currHP,
+			event := scraper.DamageEvent{
+				Kind:      scraper.DamageKindHit,
+				Victim:    playerRefByIndex(ctx.Snap, idx),
+				VictimPos: vec3FromTickPlayer(tp),
+				Amount:    prevHP - currHP,
 			}
 			if dealerIdx >= 0 {
-				payload["dealer"] = dealerIdx
+				dealer := playerRefByIndex(ctx.Snap, dealerIdx)
+				dealerTP := findTickPlayer(ctx.Result.Payload.Players, dealerIdx)
+				dealerPos := vec3FromTickPlayer(dealerTP)
+				event.Dealer = &dealer
+				event.DealerPos = &dealerPos
 			}
-			out = append(out, ctx.emit(payload))
+			out = append(out, ctx.emitDamage(event))
 		}
 
-		// --- melee ---
+		// --- melee strike ---
 		// Fires when melee_damage_tick equals melee_remaining (both non-zero)
 		// and melee_remaining changed since the previous tick.
 		if ip.MeleeDamageTick > 0 && ip.MeleeDamageTick == ip.MeleeRemaining {
 			prevMeleeRem := ctx.State.PrevMeleeRemaining[idx]
 			if ip.MeleeRemaining != prevMeleeRem {
 				victimIdx := findMeleeVictim(idx, ctx.Result.InternalPlayers, ctx.Tick)
-				payload := map[string]any{
-					"event_type": scraper.EventMelee,
-					"player":     idx,
+				if victimIdx < 0 {
+					continue
 				}
-				if victimIdx >= 0 {
-					payload["victim"] = victimIdx
-				}
-				out = append(out, ctx.emit(payload))
+				victimTP := findTickPlayer(ctx.Result.Payload.Players, victimIdx)
+				dealer := playerRefByIndex(ctx.Snap, idx)
+				dealerPos := vec3FromTickPlayer(tp)
+				out = append(out, ctx.emitDamage(scraper.DamageEvent{
+					Kind:      scraper.DamageKindMelee,
+					Dealer:    &dealer,
+					DealerPos: &dealerPos,
+					Victim:    playerRefByIndex(ctx.Snap, victimIdx),
+					VictimPos: vec3FromTickPlayer(victimTP),
+				}))
 			}
 		}
 	}

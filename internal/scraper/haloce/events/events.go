@@ -40,6 +40,11 @@ type Context struct {
 // instance fields. Seq is a 0 placeholder — the real per-(instance, type)
 // counter lands when runner emission is rewritten in a later v2 PR.
 // Ts is captured automatically by the Envelope constructor here.
+//
+// All five typed emit helpers below (emitDeath, emitDamage, emitMedal,
+// emitPlayerUpdate, emitGameUpdate) delegate here after populating
+// EventCommon — detectors should prefer the typed helpers for compile-time
+// shape checking.
 func (c *Context) emit(payload any) scraper.Envelope {
 	b, _ := json.Marshal(payload)
 	return scraper.Envelope{
@@ -51,6 +56,49 @@ func (c *Context) emit(payload any) scraper.Envelope {
 		Ts:       time.Now(),
 		Data:     b,
 	}
+}
+
+// common builds the EventCommon block embedded into every v2 event payload.
+// Seq is a 0 placeholder until per-(instance, type) seq tracking lands.
+func (c *Context) common(eventType string) scraper.EventCommon {
+	return scraper.EventCommon{
+		Seq:       0,
+		Tick:      c.Tick,
+		At:        time.Now(),
+		EventType: eventType,
+	}
+}
+
+// emitDeath fills the EventCommon block and emits a DeathEvent envelope.
+func (c *Context) emitDeath(e scraper.DeathEvent) scraper.Envelope {
+	e.EventCommon = c.common(scraper.EventTypeDeath)
+	return c.emit(e)
+}
+
+// emitDamage fills the EventCommon block and emits a DamageEvent envelope.
+func (c *Context) emitDamage(e scraper.DamageEvent) scraper.Envelope {
+	e.EventCommon = c.common(scraper.EventTypeDamage)
+	return c.emit(e)
+}
+
+// emitMedal fills the EventCommon block and emits a MedalEvent envelope.
+func (c *Context) emitMedal(e scraper.MedalEvent) scraper.Envelope {
+	e.EventCommon = c.common(scraper.EventTypeMedal)
+	return c.emit(e)
+}
+
+// emitPlayerUpdate fills the EventCommon block and emits a PlayerUpdateEvent
+// envelope. The caller sets Kind plus the kind-specific optional fields.
+func (c *Context) emitPlayerUpdate(e scraper.PlayerUpdateEvent) scraper.Envelope {
+	e.EventCommon = c.common(scraper.EventTypePlayerUpdate)
+	return c.emit(e)
+}
+
+// emitGameUpdate fills the EventCommon block and emits a GameUpdateEvent
+// envelope. The caller sets Kind plus the kind-specific optional fields.
+func (c *Context) emitGameUpdate(e scraper.GameUpdateEvent) scraper.Envelope {
+	e.EventCommon = c.common(scraper.EventTypeGameUpdate)
+	return c.emit(e)
 }
 
 // Detector emits zero or more envelopes for one change-detection concern

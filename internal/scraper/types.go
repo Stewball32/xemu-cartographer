@@ -29,38 +29,12 @@ type StateInputs map[string]any
 // game when authoritative offsets are still being worked out.
 type ScoreProbe map[string]any
 
-// Event type constants.
-const (
-	EventKill           = "kill"
-	EventDeath          = "death"
-	EventSpawn          = "spawn"
-	EventDamage         = "damage"
-	EventMelee          = "melee"
-	EventTeamKill       = "team_kill"
-	EventItemPickedUp   = "item_picked_up"
-	EventItemDropped    = "item_dropped"
-	EventItemSpawned    = "item_spawned"
-	EventItemDepleted   = "item_depleted"
-	EventGrenadeThrown  = "grenade_thrown"
-	EventPowerupPickup  = "powerup_picked_up"
-	EventPowerupExpired = "powerup_expired"
-	EventMultikill      = "multikill"
-	EventKillStreak     = "kill_streak"
-	EventScore          = "score"
-	EventVehicleEntered = "vehicle_entered"
-	EventVehicleExited  = "vehicle_exited"
-	EventPlayerQuit     = "player_quit"
-	EventGameStart      = "game_start"
-	EventGameEnd        = "game_end"
-
-	// Roster + team-score change events (Part D of the caching refactor).
-	// Emitted only when the relevant GameData field diff vs the
-	// previous tick is non-zero.
-	EventTeamScore         = "team_score"
-	EventPlayerJoined      = "player_joined"
-	EventPlayerLeft        = "player_left"
-	EventPlayerTeamChanged = "player_team_changed"
-)
+// v1 event type constants are gone — the v2 taxonomy uses 5 top-level
+// event_types with kind/cause discriminators. See event_payloads.go for
+// the new constants (EventTypeDeath, EventTypeDamage, EventTypeMedal,
+// EventTypePlayerUpdate, EventTypeGameUpdate) and the kind/cause sets
+// (DeathCause*, DamageKind*, MedalKind*, PlayerUpdateKind*,
+// GameUpdateKind*, PowerupActiveCamouflage, etc.).
 
 // ProtocolVersion is the wire-protocol version carried on every Envelope.
 // Bumps on any breaking payload change. Clients validate at hello time

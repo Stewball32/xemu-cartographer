@@ -3,10 +3,22 @@ package events
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
 // detectKillChain handles every event hanging off the player's Alive flip:
-// death, the killer's kill (with team_kill / score / multikill / kill_streak
-// follow-ons), and respawn. Grouped together because they share the
-// prev-vs-current Alive transition trigger and because kill attribution
-// requires comparing kill counters across all players in this single tick.
+// death (with attributed killer when known, including team-kill detection),
+// the killer's score update (player_update kind=score), milestone medals
+// (multikill / kill_streak), and respawn (player_update kind=spawn).
+//
+// Grouped together because they share the prev-vs-current Alive transition
+// trigger and because kill attribution requires comparing kill counters
+// across all players in this single tick.
+//
+// v2 consolidation: the v1 separate `kill` and `team_kill` events are
+// folded into the death event's Killer + TeamKill / Cause fields. The v1
+// `score` event becomes a player_update with kind=score; `multikill` and
+// `kill_streak` become medals; `spawn` becomes a player_update.
+//
+// Weapon attribution on death is not yet wired through — death weapon
+// requires correlating the damage-table entry with the killer's selected
+// weapon at kill time. Today emits with Weapon="".
 func detectKillChain(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
 	snapByIdx := gamePlayerByIndex(ctx.Snap)
@@ -18,13 +30,8 @@ func detectKillChain(ctx *Context) []scraper.Envelope {
 
 		// --- death ---
 		if prevAlive && !tp.Alive {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type":       scraper.EventDeath,
-				"player":           idx,
-				"respawn_in_ticks": ip.RespawnTimer,
-			}))
-
-			// --- kill (find who killed this player) ---
+			// Find killer: prefer kill-counter advancement, fall back to
+			// the damage-table's most-recent dealer.
 			killerIdx := -1
 			for _, other := range ctx.Result.InternalPlayers {
 				if other.Index == idx {
@@ -40,73 +47,85 @@ func detectKillChain(ctx *Context) []scraper.Envelope {
 				killerIdx = findKillerInDamageTable(ip, ctx.Tick)
 			}
 
-			if killerIdx >= 0 {
-				out = append(out, ctx.emit(map[string]any{
-					"event_type": scraper.EventKill,
-					"killer":     killerIdx,
-					"victim":     idx,
-				}))
+			event := scraper.DeathEvent{
+				Victim:         playerRefByIndex(ctx.Snap, idx),
+				VictimPos:      vec3FromTickPlayer(tp),
+				Cause:          scraper.DeathCauseUnknown,
+				RespawnInTicks: ip.RespawnTimer,
+			}
 
-				// --- team_kill ---
+			if killerIdx >= 0 {
+				killer := playerRefByIndex(ctx.Snap, killerIdx)
+				killerTP := findTickPlayer(ctx.Result.Payload.Players, killerIdx)
+				killerPos := vec3FromTickPlayer(killerTP)
+				event.Killer = &killer
+				event.KillerPos = &killerPos
+				event.Cause = scraper.DeathCauseKill
+
+				// team-kill detection
 				killerSnap, killerOk := snapByIdx[killerIdx]
 				victimSnap, victimOk := snapByIdx[idx]
 				if killerOk && victimOk && ctx.Snap.IsTeamGame && killerSnap.Team == victimSnap.Team {
-					out = append(out, ctx.emit(map[string]any{
-						"event_type": scraper.EventTeamKill,
-						"killer":     killerIdx,
-						"victim":     idx,
-					}))
+					event.TeamKill = true
+					event.Cause = scraper.DeathCauseBetrayal
 				}
+			}
+			out = append(out, ctx.emitDeath(event))
 
-				// --- score / multikill / kill_streak ---
+			// --- score + medals for the killer ---
+			if killerIdx >= 0 {
 				killerIP := findInternal(ctx.Result.InternalPlayers, killerIdx)
 				if killerIP != nil {
-					out = append(out, ctx.emit(map[string]any{
-						"event_type":  scraper.EventScore,
-						"player":      killerIdx,
-						"kills":       killerIP.Kills,
-						"deaths":      killerIP.Deaths,
-						"assists":     killerIP.Assists,
-						"kill_streak": killerIP.KillStreak,
-						"multikill":   killerIP.Multikill,
+					kills := killerIP.Kills
+					deaths := killerIP.Deaths
+					assists := killerIP.Assists
+					killStreak := killerIP.KillStreak
+					multikill := killerIP.Multikill
+					out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+						Kind:       scraper.PlayerUpdateKindScore,
+						Player:     playerRefByIndex(ctx.Snap, killerIdx),
+						Kills:      &kills,
+						Deaths:     &deaths,
+						Assists:    &assists,
+						KillStreak: &killStreak,
+						Multikill:  &multikill,
 					}))
 
 					prevMK := ctx.State.PrevMultikill[killerIdx]
 					if killerIP.Multikill > prevMK && killerIP.Multikill > 1 {
-						out = append(out, ctx.emit(map[string]any{
-							"event_type": scraper.EventMultikill,
-							"player":     killerIdx,
-							"count":      killerIP.Multikill,
+						out = append(out, ctx.emitMedal(scraper.MedalEvent{
+							Kind:   scraper.MedalKindMultikill,
+							Player: playerRefByIndex(ctx.Snap, killerIdx),
+							Count:  killerIP.Multikill,
 						}))
 					}
 					prevKS := ctx.State.PrevKillStreak[killerIdx]
 					if killerIP.KillStreak > prevKS {
-						out = append(out, ctx.emit(map[string]any{
-							"event_type": scraper.EventKillStreak,
-							"player":     killerIdx,
-							"count":      killerIP.KillStreak,
+						out = append(out, ctx.emitMedal(scraper.MedalEvent{
+							Kind:   scraper.MedalKindKillStreak,
+							Player: playerRefByIndex(ctx.Snap, killerIdx),
+							Count:  killerIP.KillStreak,
 						}))
 					}
 				}
 			}
 		}
 
-		// --- spawn ---
+		// --- spawn (dead → alive) ---
 		if !prevAlive && tp.Alive {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type": scraper.EventSpawn,
-				"player":     idx,
-				"x":          tp.X,
-				"y":          tp.Y,
-				"z":          tp.Z,
+			pos := vec3FromTickPlayer(tp)
+			out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+				Kind:   scraper.PlayerUpdateKindSpawn,
+				Player: playerRefByIndex(ctx.Snap, idx),
+				Pos:    &pos,
 			}))
 		}
 	}
 	return out
 }
 
-// updateKillChainPrev records this tick's Alive / kill-counter / multikill /
-// kill-streak values so the next tick's detector can diff against them.
+// updateKillChainPrev records this tick's Alive / kill-counter / multikill
+// / kill-streak values so the next tick's detector can diff against them.
 func updateKillChainPrev(state *scraper.TickState, result scraper.TickResult) {
 	for _, tp := range result.Payload.Players {
 		state.PrevAlive[tp.Index] = tp.Alive

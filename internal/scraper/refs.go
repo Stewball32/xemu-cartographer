@@ -37,13 +37,16 @@ type PlayerRef struct {
 }
 
 // ItemRef carries identity-only references to a world item (power-item
-// spawn, weapon, etc.). Position is a peer field on the carrying event when
-// relevant.
+// spawn, weapon, etc.). Position is a peer field on the carrying event
+// when relevant.
 //
-// SpawnID is `omitempty` because some items aren't tied to a scenario spawn
-// (e.g. weapons dropped on death have no spawn_id).
+// SpawnID is a pointer (with omitempty) because some items aren't tied to
+// a scenario spawn (e.g. weapons dropped on death have no spawn_id) AND
+// spawn_id 0 is a valid index for the first power-item spawn — an int
+// with omitempty would drop the valid zero, a pointer disambiguates
+// "absent" from "zero".
 type ItemRef struct {
-	SpawnID int    `json:"spawn_id,omitempty"`
+	SpawnID *int   `json:"spawn_id,omitempty"`
 	Tag     string `json:"tag"`
 }
 
