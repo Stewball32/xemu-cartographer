@@ -18,6 +18,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - golangci-lint sweep across `internal/`: explicitly drop ignored `Close()` errors, return wrapped errors on `fmt.Fprintln` writes, drop dead helpers (`playerRefPtr`, `vehicleRefPtr`, `itemRefPtr`, `intPtr` and friends, `strPtr`, `vec3FromXYZ`, `readyBroadcastInterval`, test-only `fakeReader`), and document `//nolint:unused` registration scaffolding.
 - `internal/scraper/haloce/events/vehicle.go`: rewrite `!(prevAlive && tp.Alive)` as `!prevAlive || !tp.Alive` for staticcheck.
+- Regenerated PocketBase TypeScript types to include the `capture_policies` and `game_events` collections introduced in earlier v2-31 / v2-18 commits.
 
 ### Deprecated
 
