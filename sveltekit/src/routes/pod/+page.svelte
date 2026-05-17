@@ -19,7 +19,7 @@
 	import { adminGet, adminPost, adminDelete } from '$lib/utils/admin-api';
 	import { confirmToast, describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
@@ -304,7 +304,7 @@
 	const rows = $derived<Row[]>([
 		...containers.map<Row>((c) => {
 			const sc = scrapers[c.name] ?? null;
-			const summary = scraperWS.hostSummaries[c.name];
+			const summary = scraperWSV2.hostSummaries[c.name];
 			return {
 				name: c.name,
 				source: 'container',
@@ -318,7 +318,7 @@
 			};
 		}),
 		...orphans.map<Row>((o) => {
-			const summary = scraperWS.hostSummaries[o.name];
+			const summary = scraperWSV2.hostSummaries[o.name];
 			return {
 				name: o.name,
 				source: 'orphan',
@@ -373,12 +373,20 @@
 	onMount(() => {
 		loadAll();
 		startPolling();
-		if (auth.token) scraperWS.connect(auth.token);
+		if (auth.token) {
+			scraperWSV2.connect(auth.token);
+			// Pod listing renders one badge per row from the host:summary feed
+			// — subscribe so the aggregator's coalesced broadcasts populate
+			// scraperWSV2.hostSummaries. Unsubscribed runners on per-instance
+			// classes are fine; the listing only uses summary data.
+			scraperWSV2.subscribeSummary();
+		}
 	});
 
 	onDestroy(() => {
 		stopPolling();
-		scraperWS.disconnect();
+		scraperWSV2.unsubscribeSummary();
+		scraperWSV2.disconnect();
 	});
 </script>
 
