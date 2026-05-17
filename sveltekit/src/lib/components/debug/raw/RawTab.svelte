@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { SegmentedControl } from '@skeletonlabs/skeleton-svelte';
 	import { CopyIcon } from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { toaster } from '$lib/stores/toaster';
 	import CodeBlock from '$lib/components/ui/CodeBlock.svelte';
 	import { useDebugContext } from '../context.js';
@@ -11,7 +11,7 @@
 
 	const ctx = useDebugContext();
 	let source = $state<RawSource>('inspect');
-	const vm = $derived.by(() => buildRawVm(name, source, ctx.inspect, scraperWS));
+	const vm = $derived.by(() => buildRawVm(name, source, ctx.inspect, scraperWSV2));
 
 	async function copyJson() {
 		const json = vm.displayJson;
@@ -64,7 +64,7 @@
 			<div class="text-surface-500-400 p-6 text-center text-sm">
 				{source === 'inspect'
 					? 'No inspect snapshot yet — wait for the next 3s poll once a scraper is attached.'
-					: 'No live WS state yet — wait for the first current_state envelope.'}
+					: 'No live WS state yet — wait for the first per-class envelope.'}
 			</div>
 		{:else}
 			<CodeBlock code={vm.displayJson} copyable={false} classes="m-0" />
