@@ -13,6 +13,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Container images now tagged with both `:VERSION` and `:latest`.
 - ADR-0001 documents the single-source-of-truth version pipeline (git tag → ldflags → `internal/version` → `/api/version` → frontend `PUBLIC_APP_VERSION`).
 - Standard `task test` / `task fmt` / `task lint` targets matching the template's Taskfile convention.
+- Overview debug tab: Handshake section surfacing the v2 hello envelope (`protocol_version`, `server_time`, advertised classes, known instances).
+- Placeholder debug tabs for `container`, `debug`, `objects`, `scenario`, `summary` so the tab strip reflects the planned M6c structure (M06).
 
 ### Changed
 

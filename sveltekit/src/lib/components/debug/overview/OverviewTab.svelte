@@ -22,6 +22,7 @@
 	// Section IDs — driven by which content is visible. Keep in priority
 	// order (top-of-page first).
 	type SectionId =
+		| 'handshake'
 		| 'server'
 		| 'game'
 		| 'leaderboard'
@@ -53,7 +54,7 @@
 	}
 
 	const visibleSections = $derived.by<SectionId[]>(() => {
-		const visible: SectionId[] = ['server'];
+		const visible: SectionId[] = ['handshake', 'server'];
 		if (vm.gameData) visible.push('game');
 		if (vm.scoreRows.length > 0 || vm.playerScoreTiles.length > 0) visible.push('leaderboard');
 		visible.push('roster');
@@ -99,6 +100,41 @@
 {/snippet}
 
 <Accordion value={openSections} onValueChange={(e) => onAccordionChange(e.value)} multiple>
+	<Accordion.Item value="handshake">
+		<Accordion.ItemTrigger
+			class="group flex w-full items-center justify-between gap-2 py-2 text-left"
+		>
+			{@render trigger(
+				'Handshake',
+				scraperWSV2.hello ? `protocol v${scraperWSV2.hello.protocol_version}` : 'no hello yet'
+			)}
+			<Accordion.ItemIndicator>
+				<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
+			</Accordion.ItemIndicator>
+		</Accordion.ItemTrigger>
+		<Accordion.ItemContent class="pb-3">
+			{#if scraperWSV2.hello}
+				{@const h = scraperWSV2.hello}
+				<dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+					<dt class="text-surface-500-400">protocol_version</dt>
+					<dd>{h.protocol_version}</dd>
+					<dt class="text-surface-500-400">server_time</dt>
+					<dd class="font-mono">{h.server_time}</dd>
+					<dt class="text-surface-500-400">classes ({h.classes.length})</dt>
+					<dd>{h.classes.length === 0 ? '—' : h.classes.join(', ')}</dd>
+					<dt class="text-surface-500-400">instances ({h.instances.length})</dt>
+					<dd>
+						{h.instances.length === 0 ? '—' : h.instances.map((i) => i.name).join(', ')}
+					</dd>
+				</dl>
+			{:else}
+				<div class="text-surface-500-400 card preset-tonal p-3 text-sm">
+					no hello envelope received yet
+				</div>
+			{/if}
+		</Accordion.ItemContent>
+	</Accordion.Item>
+
 	<Accordion.Item value="server">
 		<Accordion.ItemTrigger
 			class="group flex w-full items-center justify-between gap-2 py-2 text-left"

@@ -35,3 +35,9 @@ Existing tabs (Overview / Game / Tick / Events / Probe / Raw JSON) in [sveltekit
 - **Probe tab.** Audit the existing probe outputs (`BuildScoreProbe`, `LastStateInputs`) and add probes for any field cluster currently untrusted.
 
 Smoke test: 4-instance system-link match (same harness as M5 5c+5d+5e smoke), walk every tab on every instance, log any field that displays empty/zero/garbage and create offset-investigation follow-ups for M19.
+
+## Log
+
+_Append-only. Never edit past entries; add a new dated line._
+
+- 2026-05-17: M6c — Overview tab gains a Handshake section showing the v2 hello envelope (protocol/classes/instances). Placeholder tabs added for `container`, `debug`, `objects`, `scenario`, and `summary` so the debug page's tab strip matches the planned envelope-class taxonomy.
