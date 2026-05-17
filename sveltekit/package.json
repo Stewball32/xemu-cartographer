@@ -52,11 +52,5 @@
 	},
 	"dependencies": {
 		"pocketbase": "^0.26.8"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild",
-			"sqlite3"
-		]
 	}
 }

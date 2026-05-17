@@ -11,6 +11,16 @@ Before writing or reviewing code that touches a third-party library where the AP
 - **Skeleton UI v4** — [sveltekit/docs/skeleton-llms.txt](sveltekit/docs/skeleton-llms.txt) is a table of contents of Skeleton's official docs (components, theming, Tailwind v4 integration). Read it first to locate the right page, then WebFetch the specific page under `https://www.skeleton.dev/` (e.g. `https://www.skeleton.dev/docs/svelte/framework-components/app-bar.md`, `https://www.skeleton.dev/docs/svelte/tailwind-components/buttons`). Always use the **Svelte** section, not React.
 - **SvelteKit, PocketBase JS SDK, Disgo, Tailwind v4** — WebFetch the official docs site (`kit.svelte.dev`, `pocketbase.io/docs`, `disgo.dev`, `tailwindcss.com`) rather than inventing an API.
 
+## Project meta-docs
+
+[`docs/README.md`](docs/README.md) is the source of truth for the project's meta-docs convention. Follow it when adding planning, status, or decision documents.
+
+- New milestone → copy [`docs/milestones/_template.md`](docs/milestones/_template.md) to `docs/milestones/M??-kebab-name.md`, then add a row to `docs/milestones/README.md`.
+- New decision → copy [`docs/decisions/_template.md`](docs/decisions/_template.md) to `docs/decisions/????-kebab-name.md`, then add a row to `docs/decisions/README.md`. ADRs are immutable once Accepted — supersede with a new ADR rather than editing.
+- Update [`docs/STATUS.md`](docs/STATUS.md) whenever the "Now" set of work changes.
+- Add user-visible changes to `CHANGELOG.md` under `[Unreleased]`; cut a versioned section when shipping (SemVer, Keep-a-Changelog format).
+- Dates are always absolute (`YYYY-MM-DD`). Milestone `Log` sections and the ADR index are append-only.
+
 ## Development Commands
 
 ```sh
@@ -201,6 +211,7 @@ The scraper manager is special: it holds `*guards.Services` and broadcasts to pe
 - **Dev DB is ephemeral:** Air compiles the server to `tmp/server.exe` and `clean_on_exit = true` wipes `tmp/` on exit — including `tmp/pb_data/` where PocketBase stores its dev database. This is intentional: each `task dev` session starts with a clean slate. TypeScript type generation (`task typegen`) therefore uses `--url` mode against the live server rather than reading the DB file directly.
 - **`atlas/` directory:** Snapshots of predecessor projects (`HaloCaster`, `xemu-cartographer-legacy`) kept as porting reference. **Treat every artifact here as unverified** — offsets, patterns, and APIs must be re-confirmed against current xemu/library behavior before being copied into the live tree. Not part of the build, not imported, not modified. When in doubt, read `atlas/README.md` first. Contents are gitignored (local-only) by default.
 - **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main`. **frontend** runs `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...` and `go build` (note: **not** `go test`); **e2e** downloads the built `pb_public/` and runs Playwright. Backend unit tests are local-only — run `go test ./...` before pushing scraper/podman/proxy changes.
+- **pnpm pinned to v10:** both `Containerfile` (`corepack prepare pnpm@10`) and `.github/workflows/ci.yml` (`pnpm/action-setup` `version: 10`). Don't bump to `latest` — pnpm v11 raises `ERR_PNPM_IGNORED_BUILDS` during `--frozen-lockfile` installs even when packages are listed in `onlyBuiltDependencies`. The dep build-script allowlist is authoritative in `sveltekit/pnpm-workspace.yaml` (pnpm v10+ ignores a `pnpm` block in `package.json`), and the `Containerfile`'s frontend stage must copy this file into the build context.
 
 ## Containers (xemu + browser pairs)
 

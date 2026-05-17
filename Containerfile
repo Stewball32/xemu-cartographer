@@ -1,8 +1,8 @@
 # Stage 1: Build SvelteKit frontend
 FROM node:22-alpine AS frontend
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
-COPY sveltekit/package.json sveltekit/pnpm-lock.yaml ./
+COPY sveltekit/package.json sveltekit/pnpm-lock.yaml sveltekit/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY sveltekit/ ./
 RUN pnpm build
