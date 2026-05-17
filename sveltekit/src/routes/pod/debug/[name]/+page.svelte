@@ -9,7 +9,7 @@
 		TagIcon,
 		WifiIcon
 	} from '@lucide/svelte';
-	import { Tabs, Switch } from '@skeletonlabs/skeleton-svelte';
+	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import type { EnvelopeTypeV2 } from '$lib/types/scraper-v2';
@@ -21,15 +21,17 @@
 	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
+	import ContainerTab from '$lib/components/debug/container/ContainerTab.svelte';
+	import XboxTab from '$lib/components/debug/xbox/XboxTab.svelte';
+	import ScenarioTab from '$lib/components/debug/scenario/ScenarioTab.svelte';
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
-	import SystemTab from '$lib/components/debug/system/SystemTab.svelte';
+	import ObjectsTab from '$lib/components/debug/objects/ObjectsTab.svelte';
+	import DebugTab from '$lib/components/debug/debug/DebugTab.svelte';
 	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
-	import RawTab from '$lib/components/debug/raw/RawTab.svelte';
-	import LogsTab from '$lib/components/debug/logs/LogsTab.svelte';
-	import ControlsTab from '$lib/components/debug/controls/ControlsTab.svelte';
-	import { setDebugContext } from '$lib/components/debug/context.js';
+	import SummaryTab from '$lib/components/debug/summary/SummaryTab.svelte';
+	import { setDebugContext, type ViewMode } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
 
 	let { data } = $props();
@@ -39,18 +41,33 @@
 	let inspect = $state<ScraperInspect | null>(null);
 	let inspectAt = $state<number | undefined>(undefined);
 	let now = $state(Date.now());
-	let showAll = $state(false);
+
+	// Shared formatted/raw view preference for any tab that supports both
+	// (currently xbox; scenario/game/etc. will adopt the same pattern).
+	// Persisted under one page-level key so the choice carries across tabs.
+	const VIEW_MODE_KEY = 'debug.view';
+	let viewMode = $state<ViewMode>('pretty');
+	function setViewMode(next: ViewMode) {
+		viewMode = next;
+		try {
+			localStorage.setItem(VIEW_MODE_KEY, next);
+		} catch {
+			// ignore
+		}
+	}
 
 	const TAB_VALUES = [
 		'overview',
+		'container',
+		'xbox',
+		'scenario',
 		'game',
 		'tick',
-		'system',
-		'postgame',
+		'objects',
+		'debug',
+		'previous_game',
 		'events',
-		'raw',
-		'logs',
-		'controls'
+		'summary'
 	] as const;
 	type TabValue = (typeof TAB_VALUES)[number];
 	const TAB_SET = new Set<string>(TAB_VALUES);
@@ -89,12 +106,13 @@
 		get inspectAt() {
 			return inspectAt;
 		},
-		get showAll() {
-			return showAll;
-		},
 		get now() {
 			return now;
 		},
+		get viewMode() {
+			return viewMode;
+		},
+		setViewMode,
 		relativeTime
 	});
 
@@ -125,8 +143,8 @@
 
 	onMount(() => {
 		try {
-			const saved = localStorage.getItem('debug.showAll');
-			if (saved !== null) showAll = saved === 'true';
+			const raw = localStorage.getItem(VIEW_MODE_KEY);
+			if (raw === 'pretty' || raw === 'json') viewMode = raw;
 		} catch {
 			// localStorage unavailable; keep default.
 		}
@@ -143,14 +161,6 @@
 		// records intent if the socket isn't open yet and replays on
 		// connect via the store's intendedRooms set (PR 20).
 		scraperWSV2.subscribeInstance(name, DEBUG_CLASSES);
-	});
-
-	$effect(() => {
-		try {
-			localStorage.setItem('debug.showAll', String(showAll));
-		} catch {
-			// ignore
-		}
 	});
 
 	onDestroy(() => {
@@ -218,14 +228,16 @@
 
 	const tabs = [
 		{ value: 'overview', label: 'Overview' },
+		{ value: 'container', label: 'Container' },
+		{ value: 'xbox', label: 'Xbox' },
+		{ value: 'scenario', label: 'Scenario' },
 		{ value: 'game', label: 'Game' },
 		{ value: 'tick', label: 'Tick' },
-		{ value: 'system', label: 'System' },
-		{ value: 'postgame', label: 'Postgame' },
+		{ value: 'objects', label: 'Objects' },
+		{ value: 'debug', label: 'Debug' },
+		{ value: 'previous_game', label: 'Previous Game' },
 		{ value: 'events', label: 'Events' },
-		{ value: 'raw', label: 'Raw' },
-		{ value: 'logs', label: 'Logs' },
-		{ value: 'controls', label: 'Controls' }
+		{ value: 'summary', label: 'Summary' }
 	];
 </script>
 
@@ -239,17 +251,6 @@
 	</div>
 	<PageHeader title={name}>
 		{#snippet actions()}
-			<label class="flex items-center gap-2 text-xs">
-				<Switch
-					checked={showAll}
-					onCheckedChange={(d) => (showAll = d.checked)}
-					name="debug-show-all"
-				>
-					<Switch.Control><Switch.Thumb /></Switch.Control>
-					<Switch.HiddenInput />
-				</Switch>
-				<span>Show all data</span>
-			</label>
 			<button type="button" class="btn preset-tonal btn-sm" onclick={exportAnnotations}>
 				Export annotations
 			</button>
@@ -315,13 +316,15 @@
 
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
+		<Tabs.Content value="container" class="pt-4"><ContainerTab {name} /></Tabs.Content>
+		<Tabs.Content value="xbox" class="pt-4"><XboxTab {name} /></Tabs.Content>
+		<Tabs.Content value="scenario" class="pt-4"><ScenarioTab {name} /></Tabs.Content>
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
-		<Tabs.Content value="system" class="pt-4"><SystemTab {name} /></Tabs.Content>
-		<Tabs.Content value="postgame" class="pt-4"><PostgameTab {name} /></Tabs.Content>
+		<Tabs.Content value="objects" class="pt-4"><ObjectsTab {name} /></Tabs.Content>
+		<Tabs.Content value="debug" class="pt-4"><DebugTab {name} /></Tabs.Content>
+		<Tabs.Content value="previous_game" class="pt-4"><PostgameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
-		<Tabs.Content value="raw" class="pt-4"><RawTab {name} /></Tabs.Content>
-		<Tabs.Content value="logs" class="pt-4"><LogsTab {name} /></Tabs.Content>
-		<Tabs.Content value="controls" class="pt-4"><ControlsTab {name} /></Tabs.Content>
+		<Tabs.Content value="summary" class="pt-4"><SummaryTab {name} /></Tabs.Content>
 	</TabsResponsive>
 </div>

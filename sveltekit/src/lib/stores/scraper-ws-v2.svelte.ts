@@ -64,6 +64,11 @@ function createScraperWSV2() {
 	// re-delivers the latest cached envelope, so each slot holds the
 	// freshest snapshot the client has seen.
 	let xbox = $state<Record<string, XboxPayload | null>>({});
+	// Full envelope (not just payload) for the xbox class — the Xbox debug
+	// tab's envelope-stats header surfaces seq/tick/ts/v straight from the
+	// wire. Kept as a parallel slot so existing consumers of `xbox` (which
+	// only need the payload) stay unchanged.
+	let xboxEnvelope = $state<Record<string, EnvelopeV2<XboxPayload> | null>>({});
 	let scenario = $state<Record<string, ScenarioPayload | null>>({});
 	let game = $state<Record<string, GamePayload | null>>({});
 	let tick = $state<Record<string, TickPayloadV2 | null>>({});
@@ -266,6 +271,7 @@ function createScraperWSV2() {
 
 		if (isXboxEnv(env)) {
 			[xbox, xboxAt] = setSlot(xbox, xboxAt, env.instance, env.data, now);
+			xboxEnvelope = { ...xboxEnvelope, [env.instance]: env };
 		} else if (isScenarioEnv(env)) {
 			[scenario, scenarioAt] = setSlot(scenario, scenarioAt, env.instance, env.data, now);
 		} else if (isGameEnv(env)) {
@@ -394,6 +400,9 @@ function createScraperWSV2() {
 		// Per-class payload slots.
 		get xbox() {
 			return xbox;
+		},
+		get xboxEnvelope() {
+			return xboxEnvelope;
 		},
 		get scenario() {
 			return scenario;

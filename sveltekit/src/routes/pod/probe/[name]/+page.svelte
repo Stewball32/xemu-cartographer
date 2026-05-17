@@ -38,9 +38,6 @@
 		get inspectAt() {
 			return inspectAt;
 		},
-		get showAll() {
-			return true;
-		},
 		get now() {
 			return now;
 		},
