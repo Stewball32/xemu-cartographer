@@ -174,7 +174,7 @@ func rewriteKioskHTML(resp *http.Response, base string) error {
 			return fmt.Errorf("kiosk proxy: gzip reader: %w", err)
 		}
 		body, err = io.ReadAll(gr)
-		gr.Close()
+		_ = gr.Close()
 		if err != nil {
 			return fmt.Errorf("kiosk proxy: gzip read: %w", err)
 		}
@@ -184,7 +184,7 @@ func rewriteKioskHTML(resp *http.Response, base string) error {
 			return fmt.Errorf("kiosk proxy: read body: %w", err)
 		}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	injection := []byte(`<base href="` + base + `">` + permissionsPolyfillScript)
 	if i := bytes.Index(bytes.ToLower(body), []byte("<head>")); i != -1 {

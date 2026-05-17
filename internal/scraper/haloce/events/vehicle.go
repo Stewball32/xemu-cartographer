@@ -18,7 +18,7 @@ func detectVehicle(ctx *Context) []scraper.Envelope {
 		idx := ip.Index
 		tp := findTickPlayer(ctx.Result.Payload.Players, idx)
 		prevAlive := ctx.State.PrevAlive[idx]
-		if !(prevAlive && tp.Alive) {
+		if !prevAlive || !tp.Alive {
 			continue
 		}
 		prevParent := ctx.State.PrevParentObject[idx]

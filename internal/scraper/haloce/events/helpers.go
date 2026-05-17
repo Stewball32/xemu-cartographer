@@ -137,30 +137,3 @@ func vec3Ptr(x, y, z float32) *scraper.Vec3 {
 	v := scraper.Vec3{X: x, Y: y, Z: z}
 	return &v
 }
-
-// playerRefPtr returns &p — convenience for optional PlayerRef fields
-// (DeathEvent.Killer, DamageEvent.Dealer, GameUpdateEvent.Player).
-func playerRefPtr(p scraper.PlayerRef) *scraper.PlayerRef {
-	return &p
-}
-
-// vehicleRefPtr returns &v — convenience for optional VehicleRef fields.
-func vehicleRefPtr(v scraper.VehicleRef) *scraper.VehicleRef {
-	return &v
-}
-
-// itemRefPtr returns &i — convenience for optional ItemRef fields.
-func itemRefPtr(i scraper.ItemRef) *scraper.ItemRef {
-	return &i
-}
-
-// intPtr / uint16Ptr / uint8Ptr / int16Ptr / int32Ptr / uint32Ptr are
-// generic-numeric pointer helpers for PlayerUpdateEvent / GameUpdateEvent
-// fields that are pointer-typed so zero-valued numerics don't get dropped
-// by `omitempty`.
-func intPtr(v int) *int          { return &v }
-func int16Ptr(v int16) *int16    { return &v }
-func int32Ptr(v int32) *int32    { return &v }
-func uint8Ptr(v uint8) *uint8    { return &v }
-func uint16Ptr(v uint16) *uint16 { return &v }
-func uint32Ptr(v uint32) *uint32 { return &v }

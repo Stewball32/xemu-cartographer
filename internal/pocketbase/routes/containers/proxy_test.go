@@ -38,7 +38,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 		if err != nil {
 			t.Fatalf("gzip reader: %v", err)
 		}
-		defer gr.Close()
+		defer func() { _ = gr.Close() }()
 		body, err = io.ReadAll(gr)
 		if err != nil {
 			t.Fatalf("gunzip: %v", err)

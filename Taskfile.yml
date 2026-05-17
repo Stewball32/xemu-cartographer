@@ -70,6 +70,24 @@ tasks:
     sources: ["cmd/**/*.go", "internal/**/*.go", "go.mod", "go.sum"]
     generates: ["bin/server"]
 
+  test:
+    desc: Run Go tests and frontend type-check
+    cmds:
+      - go test ./...
+      - cd sveltekit && pnpm check
+
+  fmt:
+    desc: Format Go and frontend code
+    cmds:
+      - go fmt ./...
+      - cd sveltekit && pnpm format
+
+  lint:
+    desc: Lint Go and frontend code
+    cmds:
+      - golangci-lint run --build-tags=dev ./cmd/... ./internal/...
+      - cd sveltekit && pnpm lint
+
   clean:
     desc: Remove build artifacts
     cmds:

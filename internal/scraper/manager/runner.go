@@ -373,14 +373,6 @@ func (r *runner) publishTick(tp scraper.TickPayload) {
 // occupies the aggregator's input channel.
 const summaryHeartbeatInterval = time.Second
 
-// readyBroadcastInterval bounds how often Live state_update envelopes
-// include the full GameData payload. The 30Hz tick stream carries volatile
-// per-frame state in TickPayload; cumulative scoring (kills/deaths/assists,
-// team scores) lives on GameData and is refreshed by the runner every tick
-// but only changes on score events. 1Hz keeps overlay rosters in sync
-// without inflating the high-frequency stream.
-const readyBroadcastInterval = time.Second
-
 // publishSummary derives a hostSummary from the current cache and posts it
 // to the aggregator. Loop-goroutine only (lastSummaryPushAt is unsynchronised).
 // No-op when r.agg is nil (tests with injected runners).

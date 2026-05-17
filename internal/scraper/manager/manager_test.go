@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
 
 // TestManagerSatisfiesInterface verifies that *Manager structurally implements
@@ -53,31 +52,6 @@ func TestStartRequiresNameAndSock(t *testing.T) {
 		t.Fatal(`Start with name containing ":": want error, got nil`)
 	}
 }
-
-// fakeReader is a no-op GameReader used to inject a runner without standing up
-// a real xemu instance. Only Title() is exercised by InstanceState; console
-// name comes from the runner's xbox/* system snapshot, not from the plugin.
-type fakeReader struct{ title string }
-
-func (f *fakeReader) LowGVAs() []uint32                                 { return nil }
-func (f *fakeReader) ReadGameState() (scraper.GameState, uint32, error) { return "", 0, nil }
-func (f *fakeReader) LastStateInputs() scraper.StateInputs              { return nil }
-func (f *fakeReader) BuildScoreProbe() scraper.ScoreProbe               { return nil }
-func (f *fakeReader) ReadGameData() (scraper.GameData, error) {
-	return scraper.GameData{}, nil
-}
-func (f *fakeReader) ReadReadyState() (scraper.GameData, error) {
-	return scraper.GameData{}, nil
-}
-func (f *fakeReader) ReadTick([]scraper.PowerItemSpawn, *scraper.TickState) (scraper.TickResult, error) {
-	return scraper.TickResult{}, nil
-}
-func (f *fakeReader) DetectEvents(uint32, string, scraper.GameData, scraper.TickResult, *scraper.TickState) []scraper.Envelope {
-	return nil
-}
-func (f *fakeReader) OnStateChange(prev, next scraper.GameState) error { return nil }
-func (f *fakeReader) NewTickState() *scraper.TickState                 { return scraper.NewTickState() }
-func (f *fakeReader) Title() string                                    { return f.title }
 
 func TestInstanceState(t *testing.T) {
 	m := New(nil)

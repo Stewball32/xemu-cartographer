@@ -63,7 +63,7 @@ func (inst *Instance) Init(lowGVAs []uint32) error {
 // the instance so the stale fd does not linger.
 func (inst *Instance) Close() {
 	if inst.Mem != nil && inst.Mem.file != nil {
-		inst.Mem.file.Close()
+		_ = inst.Mem.file.Close()
 		inst.Mem = nil
 	}
 }

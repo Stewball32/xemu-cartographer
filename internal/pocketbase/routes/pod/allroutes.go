@@ -13,6 +13,7 @@ var Group *router.RouterGroup[*core.RequestEvent]
 
 var registry []func()
 
+//nolint:unused // registration scaffolding for the documented route pattern (CLAUDE.md)
 func register(fn func()) {
 	registry = append(registry, fn)
 }

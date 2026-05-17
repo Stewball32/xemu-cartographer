@@ -12,8 +12,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `/api/version` endpoint returning the git-tag-derived version, short commit, and build date.
 - Container images now tagged with both `:VERSION` and `:latest`.
 - ADR-0001 documents the single-source-of-truth version pipeline (git tag → ldflags → `internal/version` → `/api/version` → frontend `PUBLIC_APP_VERSION`).
+- Standard `task test` / `task fmt` / `task lint` targets matching the template's Taskfile convention.
 
 ### Changed
+
+- golangci-lint sweep across `internal/`: explicitly drop ignored `Close()` errors, return wrapped errors on `fmt.Fprintln` writes, drop dead helpers (`playerRefPtr`, `vehicleRefPtr`, `itemRefPtr`, `intPtr` and friends, `strPtr`, `vec3FromXYZ`, `readyBroadcastInterval`, test-only `fakeReader`), and document `//nolint:unused` registration scaffolding.
+- `internal/scraper/haloce/events/vehicle.go`: rewrite `!(prevAlive && tp.Alive)` as `!prevAlive || !tp.Alive` for staticcheck.
 
 ### Deprecated
 

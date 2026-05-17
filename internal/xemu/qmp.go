@@ -23,24 +23,29 @@ func newQMPClient(sockPath string) (*qmpClient, error) {
 	c := &qmpClient{conn: conn, scanner: bufio.NewScanner(conn)}
 	// Read greeting banner.
 	if !c.scanner.Scan() {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("no QMP banner from %s", sockPath)
 	}
 	// Negotiate capabilities (required before any command).
-	fmt.Fprintln(conn, `{"execute":"qmp_capabilities"}`)
+	if _, err := fmt.Fprintln(conn, `{"execute":"qmp_capabilities"}`); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("send qmp_capabilities to %s: %w", sockPath, err)
+	}
 	if !c.scanner.Scan() {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("no capabilities response from %s", sockPath)
 	}
 	return c, nil
 }
 
-func (c *qmpClient) close() { c.conn.Close() }
+func (c *qmpClient) close() { _ = c.conn.Close() }
 
 // hmp sends a Human Monitor Protocol command and returns the trimmed return string.
 func (c *qmpClient) hmp(cmd string) (string, error) {
 	req := fmt.Sprintf(`{"execute":"human-monitor-command","arguments":{"command-line":%q}}`, cmd)
-	fmt.Fprintln(c.conn, req)
+	if _, err := fmt.Fprintln(c.conn, req); err != nil {
+		return "", fmt.Errorf("send %q: %w", cmd, err)
+	}
 	if !c.scanner.Scan() {
 		return "", fmt.Errorf("no response for %q", cmd)
 	}

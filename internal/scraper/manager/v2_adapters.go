@@ -87,14 +87,6 @@ func vec3(x, y, z float32) scraper.Vec3 {
 	return scraper.Vec3{X: safeFloat(x), Y: safeFloat(y), Z: safeFloat(z)}
 }
 
-// vec3FromXYZ converts a non-nil *scraper.XYZ to Vec3 with sanitization.
-func vec3FromXYZ(p *scraper.XYZ) scraper.Vec3 {
-	if p == nil {
-		return scraper.Vec3{}
-	}
-	return vec3(p.X, p.Y, p.Z)
-}
-
 // vec3PtrFromXYZ converts *scraper.XYZ to *Vec3 (nil-safe, sanitized).
 func vec3PtrFromXYZ(p *scraper.XYZ) *scraper.Vec3 {
 	if p == nil {

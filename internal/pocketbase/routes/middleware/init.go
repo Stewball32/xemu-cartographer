@@ -4,6 +4,7 @@ import "github.com/pocketbase/pocketbase/core"
 
 var globalInits []func(se *core.ServeEvent)
 
+//nolint:unused // registration scaffolding for the documented middleware pattern (CLAUDE.md)
 func registerGlobal(fn func(se *core.ServeEvent)) {
 	globalInits = append(globalInits, fn)
 }
