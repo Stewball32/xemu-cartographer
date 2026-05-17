@@ -25,4 +25,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+### Fixed
+
+- `apiBaseURL()` now honors the page's `https:` protocol in dev (was hardcoded `http`).
+
 ### Security

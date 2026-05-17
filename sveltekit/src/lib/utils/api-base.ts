@@ -14,7 +14,8 @@ import { PUBLIC_PB_PORT } from '$env/static/public';
 export function apiBaseURL(): string {
 	if (!dev) return '';
 	if (typeof window === 'undefined') return `http://localhost:${PUBLIC_PB_PORT}`;
-	return `http://${window.location.hostname}:${PUBLIC_PB_PORT}`;
+	const proto = window.location.protocol === 'https:' ? 'https' : 'http';
+	return `${proto}://${window.location.hostname}:${PUBLIC_PB_PORT}`;
 }
 
 export function wsBaseURL(): string {
