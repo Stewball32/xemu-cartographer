@@ -1,4 +1,4 @@
-import { BoxIcon, SettingsIcon, UsersIcon } from '@lucide/svelte';
+import { BoxIcon, FilmIcon, SettingsIcon, UsersIcon } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
 export interface NavLink {
@@ -26,7 +26,15 @@ export const mainGroups: NavGroup[] = [
 	{
 		label: 'Admin',
 		adminOnly: true,
-		links: [{ label: 'Pod', href: '/pod/', icon: BoxIcon, showInBar: true }]
+		links: [
+			{ label: 'Pod', href: '/pod/', icon: BoxIcon, showInBar: true },
+			{
+				label: 'Capture',
+				href: '/capture-policies/',
+				icon: FilmIcon,
+				showInBar: false
+			}
+		]
 	}
 ];
 

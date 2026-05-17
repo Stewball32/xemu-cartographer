@@ -26,8 +26,14 @@ func init() {
 // Schema only — the Go resolver, hot-reload hook, and demand wiring land in
 // later PRs (14–16).
 func registerCapturePoliciesCollection(app *pocketbase.PocketBase) error {
-	if collectionExists(app, "capture_policies") {
-		return nil
+	// Reconcile-not-skip: if the collection already exists from a prior
+	// boot, refresh its rules (so a rule change in this file takes effect
+	// without needing the operator to wipe pb_data). Fields and indexes
+	// stay as previously persisted — schema migrations should go through
+	// app.MigrationsLoader, but rule tweaks are safe to overwrite.
+	if existing, err := app.FindCollectionByNameOrId("capture_policies"); err == nil {
+		setCapturePolicyRules(existing)
+		return app.Save(existing)
 	}
 
 	collection := core.NewBaseCollection("capture_policies")
@@ -82,13 +88,22 @@ func registerCapturePoliciesCollection(app *pocketbase.PocketBase) error {
 	// (instance, class), so the most-specific lookup is deterministic.
 	collection.AddIndex("idx_capture_policies_instance_class_unique", true, "instance, class", "")
 
-	// Admin-only — managed via the PB dashboard or a future
-	// /api/admin/capture-policies/* surface. No direct REST CRUD.
-	collection.ListRule = nil
-	collection.ViewRule = nil
-	collection.CreateRule = nil
-	collection.UpdateRule = nil
-	collection.DeleteRule = nil
+	setCapturePolicyRules(collection)
 
 	return app.Save(collection)
+}
+
+// setCapturePolicyRules gates CRUD on users.isAdmin so the SvelteKit
+// admin page can manage rows via the standard PB JS SDK
+// (pb.collection('capture_policies')...). PB superusers bypass these
+// rules automatically — the rule eval only runs for the regular users
+// auth collection, where it admits the same operator class as the
+// RequireAdmin middleware on the /api/admin/* routes.
+func setCapturePolicyRules(c *core.Collection) {
+	adminRule := "@request.auth.isAdmin = true"
+	c.ListRule = &adminRule
+	c.ViewRule = &adminRule
+	c.CreateRule = &adminRule
+	c.UpdateRule = &adminRule
+	c.DeleteRule = &adminRule
 }
