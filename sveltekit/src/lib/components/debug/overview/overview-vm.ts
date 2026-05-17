@@ -1,23 +1,33 @@
-// View-model for the overview tab: shapes the live scraperWS store + the
-// 3s HTTP-poll inspect snapshot into a single object the OverviewTab and its
-// children can render. Plain-TS so the file isn't a runes module — the
-// reactivity is established at the call site by wrapping in $derived.by().
+// View-model for the overview tab. Sources the v2 store (per-class
+// payloads from PR 20) and projects into the v1 shapes the section
+// components still consume:
+//   - gameData ← v2ToV1GameData(game, scenario)
+//   - tick     ← v2ToV1Tick(tick, objects, game)
+//   - events   ← v2 AnyEvent[] wrapped in v1 Envelope shape
+//   - previousGame ← v2ToV1PreviousGame(previous_game)
+//
+// Plain-TS so reactivity is established at the call site by wrapping
+// in $derived.by().
 
-import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 import type { DebugContext } from '../context';
 import type {
 	Envelope,
-	GamePlayer,
 	GameData,
+	GamePlayer,
 	Phase,
 	PreviousGameInfo,
 	StateInputs,
 	TeamScore,
 	TickPayload
 } from '$lib/types/scraper';
+import type { AnyEvent } from '$lib/types/scraper-v2';
+import { v2ToV1GameData } from '../game/game-vm';
+import { v2ToV1Tick } from '../tick/tick-vm';
+import { v2ToV1PreviousGame } from '../postgame/postgame-vm';
 import { teamAccent, teamLabel } from '../shared/util';
 
-type ScraperWS = typeof scraperWS;
+type ScraperWSV2 = typeof scraperWSV2;
 
 export type ScoreRow = {
 	label: string;
@@ -97,21 +107,55 @@ export function buildPlayerScoreTiles(gameData: GameData | null): PlayerScoreTil
 		}));
 }
 
-export function buildOverviewVm(name: string, ws: ScraperWS, ctx: DebugContext): OverviewVm {
-	const gameData = ws.gameData[name] ?? ctx.inspect?.game_data ?? null;
-	const tick = ws.ticks[name] ?? ctx.inspect?.latest_tick ?? null;
-	const events = ws.events[name] ?? ctx.inspect?.recent_events ?? [];
-	const stateInputs = ctx.inspect?.state_inputs ?? null;
-	const phase: Phase = ws.phases[name] ?? ctx.inspect?.phase ?? 'idle';
-	const previousGame =
-		ws.previousGames[name] !== undefined
-			? ws.previousGames[name]
-			: (ctx.inspect?.previous_game ?? null);
-	const gameDataAtMs = ws.gameDataAt[name] ?? ctx.inspectAt;
-	const tickAtMs = ws.ticksAt[name];
-	const lastReadAtMs = parseIsoMs(ws.lastReadAt[name] ?? ctx.inspect?.last_read_at);
+// Wrap a v2 event payload as a v1 Envelope so RecentEvents/EventTile
+// (already migrated in PR 25 to v2-aware summarizeEvent) keeps reading
+// env.payload.event_type / env.tick.
+function v2EventToV1(ev: AnyEvent, instance: string): Envelope {
+	return {
+		v: 2,
+		type: 'event',
+		instance,
+		tick: ev.tick,
+		payload: ev as unknown as Record<string, unknown>
+	};
+}
+
+export function buildOverviewVm(name: string, ws: ScraperWSV2, ctx: DebugContext): OverviewVm {
+	const v2Game = ws.game[name] ?? null;
+	const v2Scenario = ws.scenario[name] ?? null;
+	const v2Tick = ws.tick[name] ?? null;
+	const v2Objects = ws.objects[name] ?? null;
+	const v2Prev = ws.previousGame[name] ?? null;
+	const v2Events = ws.events[name] ?? [];
+
+	const projectedGame = v2ToV1GameData(v2Game, v2Scenario);
+	const gameData = projectedGame ?? ctx.inspect?.game_data ?? null;
+
+	const projectedTick = v2ToV1Tick(v2Tick, v2Objects, v2Game);
+	const tick = projectedTick ?? ctx.inspect?.latest_tick ?? null;
+
+	const events: Envelope[] =
+		v2Events.length > 0
+			? v2Events.map((ev) => v2EventToV1(ev, name))
+			: (ctx.inspect?.recent_events ?? []);
+
+	// state_inputs is part of the debug class on v2 (alongside score_probe).
+	// The debug tab subscribes to it; the overview tab keeps the inspect
+	// fallback so the diagnostic grid renders without forcing a debug-class
+	// subscription on the overview page.
+	const stateInputs =
+		(ws.debug[name]?.state_inputs as StateInputs | undefined) ?? ctx.inspect?.state_inputs ?? null;
+
+	const phase: Phase = ((v2Game?.phase ?? ctx.inspect?.phase) as Phase | undefined) ?? 'idle';
+
+	const projectedPrev = v2ToV1PreviousGame(v2Prev);
+	const previousGame = projectedPrev ?? ctx.inspect?.previous_game ?? null;
+
+	const gameDataAtMs = ws.gameAt[name] ?? ws.scenarioAt[name] ?? ctx.inspectAt;
+	const tickAtMs = ws.tickAt[name];
+	const lastReadAtMs = parseIsoMs(v2Game?.last_read_at ?? ctx.inspect?.last_read_at);
 	const previousGameEndedAtMs = parseIsoMs(previousGame?.ended_at);
-	const tickValue = ws.tickNumbers[name] ?? ctx.inspect?.tick;
+	const tickValue = ws.engineTick[name] ?? ctx.inspect?.tick;
 	const playerCount = gameData?.players?.length;
 
 	return {
@@ -139,6 +183,6 @@ export function buildOverviewVm(name: string, ws: ScraperWS, ctx: DebugContext):
 		wsConnected: ws.connected,
 		lastEventsReplyAtMs: ws.lastEventsReplyAt[name],
 		lastEventsReplyStr: ctx.relativeTime(ws.lastEventsReplyAt[name]),
-		lastEventsReplyPhase: ws.lastEventsReplyPhase[name]
+		lastEventsReplyPhase: ws.lastEventsReplyPhase[name] as Phase | undefined
 	};
 }

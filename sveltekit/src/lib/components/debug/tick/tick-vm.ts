@@ -256,7 +256,7 @@ function v2NetworkToV1(n: GameNetwork | null | undefined): TickNetwork | null {
 	};
 }
 
-function v2ToV1Tick(
+export function v2ToV1Tick(
 	tick: TickPayloadV2 | null,
 	objects: ObjectsPayload | null,
 	game: GamePayload | null

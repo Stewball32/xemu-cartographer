@@ -3,7 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { Accordion } from '@skeletonlabs/skeleton-svelte';
 	import { ChevronDownIcon } from '@lucide/svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import { useDebugContext } from '../context.js';
 	import { buildOverviewVm } from './overview-vm';
 	import ScraperStatusStrip from './ScraperStatusStrip.svelte';
@@ -17,7 +17,7 @@
 	let { name }: { name: string } = $props();
 
 	const ctx = useDebugContext();
-	const vm = $derived.by(() => buildOverviewVm(name, scraperWS, ctx));
+	const vm = $derived.by(() => buildOverviewVm(name, scraperWSV2, ctx));
 
 	// Section IDs — driven by which content is visible. Keep in priority
 	// order (top-of-page first).

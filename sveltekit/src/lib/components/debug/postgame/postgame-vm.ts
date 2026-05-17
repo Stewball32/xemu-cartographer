@@ -247,7 +247,7 @@ export function buildPlayerTotals(gameData: GameData | null): {
 // envelope list) into the v1 PreviousGameInfo shape PostgameTab still
 // expects. Returns null when the runner hasn't published a previous_game
 // envelope yet (the tab renders its EmptyState).
-function v2ToV1PreviousGame(payload: PreviousGamePayload | null): PreviousGameInfo | null {
+export function v2ToV1PreviousGame(payload: PreviousGamePayload | null): PreviousGameInfo | null {
 	if (!payload) return null;
 	const gameData = v2ToV1GameData(payload.game, null);
 	const events: Envelope[] = (payload.events ?? []).map(v2EnvelopeToV1);
