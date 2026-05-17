@@ -43,19 +43,6 @@ const readyTitleCheckInterval = 10
 // still being validated against real Halo CE → dashboard transitions.
 const liveReadFailureLimit = 30
 
-// Wire envelope type strings (M5 stage 5c). current_state carries a full
-// instanceCache snapshot — emitted on join + every phase transition.
-// state_update carries the volatile / tick-fields portion of the cache —
-// emitted every successful poll iteration in all three phases at phase-
-// appropriate cadence (Idle ~3s, Ready ~500ms, Live ~30Hz). event remains
-// the per-instance Live event stream. These constants are the only
-// sanctioned source of those strings — any other reference is a leak.
-const (
-	envelopeTypeCurrentState = "current_state"
-	envelopeTypeStateUpdate  = "state_update"
-	envelopeTypeEvent        = "event"
-)
-
 // loop is the per-runner tick goroutine. Started by Manager.Start, exits when
 // ctx is cancelled (Manager.Stop). Always closes the xemu instance and
 // signals done on exit, even on panic, so Manager.Stop's <-r.done unblocks.

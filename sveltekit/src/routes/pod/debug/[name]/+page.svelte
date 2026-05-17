@@ -186,12 +186,9 @@
 		toaster.success({ title: 'Cleared', description: `${name} annotations` });
 	}
 
-	// Header-only derivations — sub-components below still read from the
-	// legacy scraperWS store and will be migrated in PRs 22+ as each tab
-	// gets its own pass. The v1 store is non-functional against the v2
-	// backend (the v1 envelope types don't match what the server emits),
-	// so sub-tabs render whatever the 3 s HTTP-poll inspect endpoint
-	// supplies until they migrate.
+	// Header-only derivations from the v2 store. Sub-tabs source their own
+	// fields from scraperWSV2 (each tab's vm projects via v2→v1 adapters
+	// where the section components still consume v1 shapes).
 	const v2Game = $derived(scraperWSV2.game[name] ?? null);
 	const v2Tick = $derived(scraperWSV2.tick[name] ?? null);
 	const gameData = $derived(inspect?.game_data ?? null);

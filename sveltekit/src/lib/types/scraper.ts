@@ -86,179 +86,21 @@ export type StateInputs = Record<string, number | boolean | string | null>;
 // can spot which raw value matches what they see in-game.
 export type ScoreProbe = Record<string, unknown>;
 
-// Envelope wire types (M5 stage 5c/5d):
-//   - "current_state"  full instanceCache (per-instance) or hostsCache list (host:all);
-//                       sent on join + every phase transition.
-//   - "state_update"   per-poll volatile fields at phase-appropriate cadence
-//                       (Idle ~3s, Ready ~500ms, Live ~30Hz).
-//   - "event"          single live event during Live.
-//   - "events"         plural — addressed reply to a request_events message
-//                       carrying EventsResponsePayload (oldest-first).
-// Backend constants: internal/scraper/manager/loop.go envelopeType* +
-// internal/scraper/manager/events.go envelopeTypeEvents.
-export type EnvelopeType = 'current_state' | 'state_update' | 'event' | 'events' | 'hello';
-
-// HelloPayload mirrors internal/scraper/manager/hello.go HelloPayload — the
-// data carried by the server→client `hello` envelope sent on WebSocket
-// connect, before any other scraper traffic. Lets the client validate
-// protocol compatibility and detect runner restarts (by comparing per-
-// instance started_at against any cached value).
-export interface HelloPayload {
-	protocol_version: number;
-	server_time: string;
-	classes: string[];
-	instances: HelloInstance[];
-}
-
-// HelloInstance is one entry in HelloPayload.instances.
-export interface HelloInstance {
-	name: string;
-	started_at: string;
-}
-
-// Reserved aggregate-room name; mirrors backend rooms.HostAllRoom.
-export const HOST_ALL_ROOM = 'host:all';
-// Per-instance host room prefix; backend rooms.HostRoomPrefix + ":".
-export const HOST_ROOM_PREFIX = 'host:';
-
-// Outer WebSocket Message wrapper. M5 stage 5b: scraper broadcasts set
-// type="scraper", room="host:<instance>" (per-instance) or room="host:all"
-// (cross-instance summary feed), and payload=<Envelope as JSON>. The
-// envelope's instance field disambiguates the two — "all" indicates the
-// host:all summary feed, anything else is per-instance.
-export interface WSMessage {
-	type: string;
-	room?: string;
-	target?: string;
-	payload?: unknown;
-}
-
-// PROTOCOL_VERSION is the wire-protocol version carried on every Envelope.
-// Bumps on any breaking payload change so a client can branch or warn instead
-// of silently mis-parsing. See atlas/new_json/04-ground-up-rebuild.md §8 for
-// the versioning + handshake design; this is PR 1 of that rollout.
-export const PROTOCOL_VERSION = 1;
-
-// Inner scraper envelope. Payload shape depends on type.
+// Envelope is the legacy v1 wrapper shape used by debug-tab components
+// that haven't been rewritten to read v2 types natively. The vms in
+// internal/scraper/manager/{game,tick,postgame,overview}-vm project v2
+// per-class envelopes into this shape so the section components keep
+// rendering. New code should consume EnvelopeV2 from $lib/types/scraper-v2.
+//
+// `type` is left untyped here ("event" is the only value any consumer
+// actually inspects post-migration); rather than re-export the v1
+// discriminator union we let TS accept any string.
 export interface Envelope<P = unknown> {
 	v: number;
-	type: EnvelopeType;
+	type: string;
 	instance: string;
 	tick: number;
 	payload: P;
-}
-
-// hostSummary entry in the host:all aggregate cache. Mirrors
-// internal/scraper/manager/aggregator.go hostSummary.
-export interface HostSummary {
-	instance: string;
-	phase: Phase;
-	title: string;
-	map: string;
-	gametype: string;
-	score_summary: string;
-	last_successful_read_at: string;
-}
-
-// CurrentStatePayload mirrors internal/scraper/manager/runner.go
-// CurrentStatePayload — the per-instance "current_state" envelope payload.
-// Sent on join_room reply + every phase transition. Carries a full atomic
-// read of the runner's instanceCache so a fresh subscriber can render
-// without prior history.
-export interface CurrentStatePayload {
-	phase: Phase;
-	started_at: string;
-	title_id: number;
-	title: string;
-	xbox_name: string;
-	last_read_at: string;
-	engine_tick: number;
-	iterations: number;
-
-	// EEPROM-derived system info. Title-agnostic, populated by the runner's
-	// runSystemSnapshot pass; omitempty on the wire until first successful read.
-	serial_number?: string;
-	mac_address?: string;
-	video_standard?: string;
-	time_zone_bias?: number;
-	time_zone_std_name?: string;
-	time_zone_dlt_name?: string;
-
-	// XBE certificate fields. Populated by the same system-snapshot pass; the
-	// kernel maps the running XBE header at a fixed GVA so these refresh on
-	// XBE swaps within one snapshot tick.
-	xbe_title_name?: string;
-	xbe_version?: number;
-	xbe_game_region?: number;
-	xbe_disk_number?: number;
-	xbe_allowed_media?: number;
-
-	// Kernel clock. system_time is wall-clock UTC; boot_time is when the guest
-	// booted; uptime_ns is nanoseconds since boot. All three are read together.
-	kernel_system_time?: string;
-	kernel_boot_time?: string;
-	kernel_uptime_ns?: number;
-
-	game_data?: GameData | null;
-	latest_tick?: TickPayload | null;
-	events?: Envelope[];
-	previous_game?: PreviousGameInfo | null;
-}
-
-// CurrentStateSnapshot is the slow-moving portion of a CurrentStatePayload —
-// identity, EEPROM, XBE certificate, and kernel-clock fields plus the two
-// counters (engine_tick / iterations) that the runner advances on every poll.
-// Stored separately from gameData / latestTick / events / previousGame so the
-// Xbox tab and Runtime tab can render the whole snapshot without dragging the
-// hot per-tick payload through the same reactive read.
-export interface CurrentStateSnapshot {
-	started_at: string;
-	title_id: number;
-	title: string;
-	xbox_name: string;
-	engine_tick: number;
-	iterations: number;
-
-	serial_number?: string;
-	mac_address?: string;
-	video_standard?: string;
-	time_zone_bias?: number;
-	time_zone_std_name?: string;
-	time_zone_dlt_name?: string;
-
-	xbe_title_name?: string;
-	xbe_version?: number;
-	xbe_game_region?: number;
-	xbe_disk_number?: number;
-	xbe_allowed_media?: number;
-
-	kernel_system_time?: string;
-	kernel_boot_time?: string;
-	kernel_uptime_ns?: number;
-}
-
-// StateUpdatePayload mirrors internal/scraper/manager/runner.go
-// StateUpdatePayload — the per-poll volatile-fields envelope. Phase-specific
-// fields are populated only in their phase: Idle carries freshness only,
-// Ready carries `ready` (volatile lobby/menu game data), Live carries
-// `engine_tick` + `tick`.
-export interface StateUpdatePayload {
-	phase: Phase;
-	last_read_at: string;
-	iterations: number;
-	engine_tick?: number;
-	tick?: TickPayload | null;
-	ready?: GameData | null;
-}
-
-// EventsResponsePayload mirrors internal/scraper/manager/events.go
-// EventsResponsePayload — addressed reply to request_events. Events are
-// oldest-first per backend OQ7. Phase + since_tick are echoed so the
-// requester can reconcile the reply against an outstanding request.
-export interface EventsResponsePayload {
-	phase: Phase;
-	since_tick: number;
-	events: Envelope[];
 }
 
 export interface TeamScore {
@@ -818,32 +660,4 @@ export interface TickProjectile {
 	rotation_axis_z: number;
 	rotation_sine: number;
 	rotation_cosine: number;
-}
-
-// Type guards for narrowing Envelope by type. Each guard discriminates on
-// the `type` literal so an if/else chain narrows the union exhaustively.
-export function isCurrentState(
-	env: Envelope
-): env is Envelope<CurrentStatePayload> & { type: 'current_state' } {
-	return env.type === 'current_state';
-}
-
-export function isStateUpdate(
-	env: Envelope
-): env is Envelope<StateUpdatePayload> & { type: 'state_update' } {
-	return env.type === 'state_update';
-}
-
-export function isEvent(env: Envelope): env is Envelope & { type: 'event' } {
-	return env.type === 'event';
-}
-
-export function isEventsReply(
-	env: Envelope
-): env is Envelope<EventsResponsePayload> & { type: 'events' } {
-	return env.type === 'events';
-}
-
-export function isHello(env: Envelope): env is Envelope<HelloPayload> & { type: 'hello' } {
-	return env.type === 'hello';
 }
