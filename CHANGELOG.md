@@ -28,6 +28,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Xbox debug tab is now a pure view of the `xbox` envelope: dropped the leftover runtime/transport sections (Connection / Lifecycle / Cross-instance summary / Envelope freshness) that mixed transport state with envelope contents.
 - `DebugContext` gains optional `viewMode` + `setViewMode`; the probe page no longer needs to opt in.
 - Scenario debug tab migrated from a placeholder to the full xbox Pretty/JSON pattern: envelope-stats header + Pretty Accordion (`top-level`, `fog`, `memory_regions`, `object_types`, `player_spawns`, `power_item_spawns`, `tag_defs`) with always-rendered tiles + `DataTable` lists, plus a `TreeView`-driven JSON view scoped to the selected node. WS v2 store now exposes `scenarioEnvelope[instance]` alongside the existing payload-only `scenario[instance]` (M06).
+- Tick debug tab rewritten on the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`) with the Pretty/JSON Switch, Pretty view as an Accordion of five sections that mirror the JSON shape (`players` / `power_items` / `ctf_flags` / `game_globals` / `locals`) with every field always rendered, and a JSON view that pairs a Skeleton `TreeView` with a scoped `CodeBlock`. The v2→v1 tick projection that fed the legacy v1 sections moved into `overview-vm.ts` (the only remaining consumer) so `tick-vm.ts` is now a pure formatter (M06). WS v2 store exposes `tickEnvelope[instance]` alongside the existing payload-only `tick[instance]` slot.
 
 ### Deprecated
 
