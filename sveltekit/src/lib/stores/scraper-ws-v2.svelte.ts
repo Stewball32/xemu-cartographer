@@ -89,6 +89,12 @@ function createScraperWSV2() {
 	let tickEnvelope = $state<Record<string, EnvelopeV2<TickPayloadV2> | null>>({});
 	let objects = $state<Record<string, ObjectsPayload | null>>({});
 	let debug = $state<Record<string, DebugPayload | null>>({});
+	// Full envelope (not just payload) for the debug class — the Debug tab's
+	// envelope-stats header surfaces seq/tick/ts/v straight from the wire and
+	// the JSON view walks the full envelope shape. Kept as a parallel slot so
+	// existing consumers of `debug` (which only need the payload) stay
+	// unchanged.
+	let debugEnvelope = $state<Record<string, EnvelopeV2<DebugPayload> | null>>({});
 	let previousGame = $state<Record<string, PreviousGamePayload | null>>({});
 	// Full envelope (not just payload) for the objects class — the Objects
 	// debug tab's envelope-stats header surfaces seq/tick/ts/v straight
@@ -306,6 +312,7 @@ function createScraperWSV2() {
 			objectsEnvelope = { ...objectsEnvelope, [env.instance]: env };
 		} else if (isDebugEnv(env)) {
 			[debug, debugAt] = setSlot(debug, debugAt, env.instance, env.data, now);
+			debugEnvelope = { ...debugEnvelope, [env.instance]: env };
 		} else if (isPreviousGameEnv(env)) {
 			previousGame = { ...previousGame, [env.instance]: env.data };
 		} else if (isEventEnv(env)) {
@@ -451,6 +458,9 @@ function createScraperWSV2() {
 		},
 		get debug() {
 			return debug;
+		},
+		get debugEnvelope() {
+			return debugEnvelope;
 		},
 		get previousGame() {
 			return previousGame;
