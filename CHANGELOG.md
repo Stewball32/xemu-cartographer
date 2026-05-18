@@ -18,6 +18,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Xbox debug tab: envelope-stats header (`seq`, `tick`, `received`, `v`, `instance`), Pretty/JSON view toggle (Skeleton `Switch` with `LayoutGrid`/`Braces` icons), and a JSON view with Skeleton `TreeView` navigation + scoped `CodeBlock` (selecting a node returns the envelope wrapped down to that path) (M06).
 - Page-level `viewMode` preference on the debug page (Pretty / JSON), persisted to `localStorage['debug.view']` so the choice carries across tabs that opt into the same toggle (M06).
 - WS v2 store exposes `xboxEnvelope[instance]` (full `EnvelopeV2<XboxPayload>` including `seq`/`tick`/`ts`/`v`) alongside the existing payload-only `xbox[instance]` slot.
+- Events debug tab: envelope-stats header (`latest seq`, `latest tick`, `received`, `event_type`, `logged`) with the same Pretty/JSON `Switch` as the Xbox tab; new JSON view pairs a Skeleton `TreeView` walking the rolling event log envelope-by-envelope with a scoped `CodeBlock` (M06).
 
 ### Changed
 
