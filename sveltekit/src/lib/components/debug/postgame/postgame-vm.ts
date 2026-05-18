@@ -22,7 +22,7 @@ import type {
 	PreviousGameInfo,
 	TeamScore
 } from '$lib/types/scraper';
-import { v2ToV1GameData } from '../game/game-vm';
+import { v2ToV1GameData } from '../shared/v2-to-v1-game';
 import { fmtPct, teamAccent, teamLabel } from '../shared/util';
 
 type ScraperWSV2 = typeof scraperWSV2;
