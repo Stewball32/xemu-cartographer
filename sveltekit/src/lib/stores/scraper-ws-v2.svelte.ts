@@ -70,6 +70,11 @@ function createScraperWSV2() {
 	// only need the payload) stay unchanged.
 	let xboxEnvelope = $state<Record<string, EnvelopeV2<XboxPayload> | null>>({});
 	let scenario = $state<Record<string, ScenarioPayload | null>>({});
+	// Full envelope (not just payload) for the scenario class — the Scenario
+	// debug tab's envelope-stats header surfaces seq/tick/ts/v straight from
+	// the wire. Kept as a parallel slot so existing consumers of `scenario`
+	// (which only need the payload) stay unchanged.
+	let scenarioEnvelope = $state<Record<string, EnvelopeV2<ScenarioPayload> | null>>({});
 	let game = $state<Record<string, GamePayload | null>>({});
 	let tick = $state<Record<string, TickPayloadV2 | null>>({});
 	let objects = $state<Record<string, ObjectsPayload | null>>({});
@@ -274,6 +279,7 @@ function createScraperWSV2() {
 			xboxEnvelope = { ...xboxEnvelope, [env.instance]: env };
 		} else if (isScenarioEnv(env)) {
 			[scenario, scenarioAt] = setSlot(scenario, scenarioAt, env.instance, env.data, now);
+			scenarioEnvelope = { ...scenarioEnvelope, [env.instance]: env };
 		} else if (isGameEnv(env)) {
 			[game, gameAt] = setSlot(game, gameAt, env.instance, env.data, now);
 		} else if (isTickEnv(env)) {
@@ -406,6 +412,9 @@ function createScraperWSV2() {
 		},
 		get scenario() {
 			return scenario;
+		},
+		get scenarioEnvelope() {
+			return scenarioEnvelope;
 		},
 		get game() {
 			return game;

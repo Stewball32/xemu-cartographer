@@ -26,6 +26,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Regenerated PocketBase TypeScript types to include the `capture_policies` and `game_events` collections introduced in earlier v2-31 / v2-18 commits.
 - Xbox debug tab is now a pure view of the `xbox` envelope: dropped the leftover runtime/transport sections (Connection / Lifecycle / Cross-instance summary / Envelope freshness) that mixed transport state with envelope contents.
 - `DebugContext` gains optional `viewMode` + `setViewMode`; the probe page no longer needs to opt in.
+- Scenario debug tab migrated from a placeholder to the full xbox Pretty/JSON pattern: envelope-stats header + Pretty Accordion (`top-level`, `fog`, `memory_regions`, `object_types`, `player_spawns`, `power_item_spawns`, `tag_defs`) with always-rendered tiles + `DataTable` lists, plus a `TreeView`-driven JSON view scoped to the selected node. WS v2 store now exposes `scenarioEnvelope[instance]` alongside the existing payload-only `scenario[instance]` (M06).
 
 ### Deprecated
 
