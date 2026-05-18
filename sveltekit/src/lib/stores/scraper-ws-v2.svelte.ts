@@ -90,6 +90,11 @@ function createScraperWSV2() {
 	let objects = $state<Record<string, ObjectsPayload | null>>({});
 	let debug = $state<Record<string, DebugPayload | null>>({});
 	let previousGame = $state<Record<string, PreviousGamePayload | null>>({});
+	// Full envelope (not just payload) for the objects class — the Objects
+	// debug tab's envelope-stats header surfaces seq/tick/ts/v straight
+	// from the wire. Kept as a parallel slot so existing consumers of
+	// `objects` (which only need the payload) stay unchanged.
+	let objectsEnvelope = $state<Record<string, EnvelopeV2<ObjectsPayload> | null>>({});
 
 	// Per-class receive timestamps (epoch ms) for staleness UI.
 	let xboxAt = $state<Record<string, number>>({});
@@ -298,6 +303,7 @@ function createScraperWSV2() {
 			tickEnvelope = { ...tickEnvelope, [env.instance]: env };
 		} else if (isObjectsEnv(env)) {
 			[objects, objectsAt] = setSlot(objects, objectsAt, env.instance, env.data, now);
+			objectsEnvelope = { ...objectsEnvelope, [env.instance]: env };
 		} else if (isDebugEnv(env)) {
 			[debug, debugAt] = setSlot(debug, debugAt, env.instance, env.data, now);
 		} else if (isPreviousGameEnv(env)) {
@@ -451,6 +457,9 @@ function createScraperWSV2() {
 		},
 		get events() {
 			return events;
+		},
+		get objectsEnvelope() {
+			return objectsEnvelope;
 		},
 
 		// Per-class receive timestamps.
