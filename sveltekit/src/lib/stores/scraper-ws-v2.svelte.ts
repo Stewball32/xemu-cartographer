@@ -101,6 +101,12 @@ function createScraperWSV2() {
 	// from the wire. Kept as a parallel slot so existing consumers of
 	// `objects` (which only need the payload) stay unchanged.
 	let objectsEnvelope = $state<Record<string, EnvelopeV2<ObjectsPayload> | null>>({});
+	// Full envelope (not just payload) for the previous_game class — the
+	// Previous-Game debug tab's envelope-stats header surfaces seq/tick/ts/v
+	// straight from the wire, and its JSON view walks the whole envelope.
+	// Kept as a parallel slot so existing consumers of `previousGame`
+	// (payload-only) stay unchanged.
+	let previousGameEnvelope = $state<Record<string, EnvelopeV2<PreviousGamePayload> | null>>({});
 
 	// Per-class receive timestamps (epoch ms) for staleness UI.
 	let xboxAt = $state<Record<string, number>>({});
@@ -315,6 +321,7 @@ function createScraperWSV2() {
 			debugEnvelope = { ...debugEnvelope, [env.instance]: env };
 		} else if (isPreviousGameEnv(env)) {
 			previousGame = { ...previousGame, [env.instance]: env.data };
+			previousGameEnvelope = { ...previousGameEnvelope, [env.instance]: env };
 		} else if (isEventEnv(env)) {
 			const prev = events[env.instance] ?? [];
 			const next = [env.data, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
@@ -464,6 +471,9 @@ function createScraperWSV2() {
 		},
 		get previousGame() {
 			return previousGame;
+		},
+		get previousGameEnvelope() {
+			return previousGameEnvelope;
 		},
 		get events() {
 			return events;

@@ -40,7 +40,7 @@ import type {
 	TickWeaponV2
 } from '$lib/types/scraper-v2';
 import { v2ToV1GameData } from '../shared/v2-to-v1-game';
-import { v2ToV1PreviousGame } from '../postgame/postgame-vm';
+import { v2ToV1PreviousGame } from '../shared/previous-game-adapter';
 import { teamAccent, teamLabel } from '../shared/util';
 
 // Tick v2→v1 projection — kept colocated with the overview VM (the only
