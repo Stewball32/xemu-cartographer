@@ -1,180 +1,144 @@
-// View-model for the Game tab. Sources data from the v2 game-class +
-// scenario-class envelopes (scraperWSV2.game[name] + .scenario[name])
-// and projects them back into the v1 GameData shape the existing
-// section components (FogSection, PowerItemsSection, SpawnsSection,
-// MachinesSection, ObjectTypesSection, TagCacheSection, PlayersSection)
-// still consume. Inspect-endpoint fallback preserves the first-paint
-// behaviour while the first envelope is in flight.
+// Pretty-view VM for the Game debug tab — formats the GamePayload into
+// section records that mirror the envelope's JSON shape (top-level scalars
+// + config + team_scores + players + machines + network). Every field is
+// always present; payloads missing a field render as '—' so the Pretty
+// view exposes the expected envelope structure even before the first
+// read.
 //
-// The v1→v2 shape projection is contained to v2ToV1GameData() below —
-// when sub-sections individually migrate to read v2 types directly, the
-// adapter shrinks and eventually disappears.
-//
-// Plain TS; reactivity is wired at the call site via $derived.by().
+// Pure TS; reactivity is wired at the call site via $derived.by().
 
-import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
-import type { DebugContext } from '../context';
-import type { GamePayload, ScenarioPayload } from '$lib/types/scraper-v2';
-import type {
-	GameData,
-	GameMachine,
-	GamePlayer,
-	PowerItemSpawn,
-	StaticCachePtrs,
-	StaticFog,
-	StaticObjectType,
-	StaticPlayerSpawn,
-	TeamScore
-} from '$lib/types/scraper';
-import { teamAccent, teamLabel } from '../shared/util';
-import { buildPlayerTotals, type PlayerTotalRow } from '../postgame/postgame-vm';
+import type { GamePayload } from '$lib/types/scraper-v2';
 
-type ScraperWSV2 = typeof scraperWSV2;
-
-export type GameScoreRow = {
-	team: number;
-	label: string;
-	value: number;
-	limit: number;
-	accent: { bg: string; dot: string };
-};
-
-export type GameVm = {
-	gameData: GameData | null;
-	tickValue: number | undefined;
-	scoreRows: GameScoreRow[];
-	players: GamePlayer[];
-	playerSpawns: StaticPlayerSpawn[];
-	powerItemSpawns: PowerItemSpawn[];
-	machines: GameMachine[];
-	fog: StaticFog | null;
-	objectTypes: StaticObjectType[];
-	tagCache: StaticCachePtrs | null;
-	isTeamGame: boolean;
-	playerTotalsByTeam: Array<{ team: number; rows: PlayerTotalRow[] }>;
-	playerTotalsFlat: PlayerTotalRow[];
-};
-
-export function buildScoreRows(gameData: GameData | null): GameScoreRow[] {
-	if (!gameData || gameData.is_team_game !== true) return [];
-	const limit = gameData.score_limit ?? 0;
-	const teamScores: TeamScore[] = gameData.team_scores ?? [];
-	return teamScores.map((ts) => ({
-		team: ts.team,
-		label: teamLabel(ts.team),
-		value: ts.score,
-		limit,
-		accent: teamAccent(ts.team)
-	}));
+// One tile's display state + the raw value (passed through StatTile's
+// `title` prop so hovering a formatted tile reveals the underlying
+// wire value).
+export interface FieldDisplay {
+	display: string;
+	raw: string;
+	present: boolean;
 }
 
-//
-// the v1 GameData shape the GameTab's section components still expect.
-// Returns null when neither v2 envelope has arrived (the tab's empty-
-// state UI then shows "waiting for first read").
-//
-// Shape differences handled here:
-//   - v2 GamePayload.config nests gametype/variant_name/is_team_game/
-//     score_limit/time_limit_ticks; v1 flattens onto GameData.
-//   - v2 ScenarioPowerItemSpawn nests pos and renames spawn_interval_ticks
-//     → interval_ticks.
-//   - v2 ScenarioPlayerSpawn nests pos and replaces gametype_0..3 + unk_0
-//     with a gametypes uint8[] array.
-//   - v2 ScenarioFog nests color: {r,g,b}; v1 flattens to color_r/g/b.
-//   - v2 ScenarioMemoryRegions nests each region as {base,size}; v1
-//     flattens to <region>_base / <region>_size pairs and (mis-)names
-//     the holder tag_cache.
-export function v2ToV1GameData(
-	game: GamePayload | null,
-	scenario: ScenarioPayload | null
-): GameData | null {
-	if (!game && !scenario) return null;
-	const playerSpawns: StaticPlayerSpawn[] =
-		scenario?.player_spawns?.map((s) => ({
-			index: s.index,
-			x: s.pos.x,
-			y: s.pos.y,
-			z: s.pos.z,
-			facing: s.facing,
-			team_index: s.team_index,
-			bsp_index: s.bsp_index,
-			unk_0: 0,
-			gametype_0: s.gametypes?.[0] ?? 0,
-			gametype_1: s.gametypes?.[1] ?? 0,
-			gametype_2: s.gametypes?.[2] ?? 0,
-			gametype_3: s.gametypes?.[3] ?? 0
-		})) ?? [];
-	const powerItemSpawns: PowerItemSpawn[] =
-		scenario?.power_item_spawns?.map((p) => ({
-			spawn_id: p.spawn_id,
-			tag: p.tag,
-			spawn_interval_ticks: p.interval_ticks,
-			x: p.pos.x,
-			y: p.pos.y,
-			z: p.pos.z
-		})) ?? [];
-	const fog: StaticFog | null = scenario?.fog
-		? {
-				color_r: scenario.fog.color.r,
-				color_g: scenario.fog.color.g,
-				color_b: scenario.fog.color.b,
-				max_density: scenario.fog.max_density,
-				atmo_min_dist: scenario.fog.atmo_min_dist,
-				atmo_max_dist: scenario.fog.atmo_max_dist
-			}
-		: null;
-	const tagCache: StaticCachePtrs | null = scenario?.memory_regions
-		? {
-				game_state_base: scenario.memory_regions.game_state.base,
-				game_state_size: scenario.memory_regions.game_state.size,
-				tag_cache_base: scenario.memory_regions.tag_cache.base,
-				tag_cache_size: scenario.memory_regions.tag_cache.size,
-				texture_cache_base: scenario.memory_regions.texture_cache.base,
-				texture_cache_size: scenario.memory_regions.texture_cache.size,
-				sound_cache_base: scenario.memory_regions.sound_cache.base,
-				sound_cache_size: scenario.memory_regions.sound_cache.size
-			}
-		: null;
-	return {
-		map: scenario?.map ?? '',
-		gametype: game?.config?.gametype ?? '',
-		variant_name: game?.config?.variant_name,
-		is_team_game: game?.config?.is_team_game ?? false,
-		score_limit: game?.config?.score_limit ?? 0,
-		time_limit_ticks: game?.config?.time_limit_ticks ?? 0,
-		team_scores: game?.team_scores ?? null,
-		players: game?.players ?? null,
-		power_item_spawns: powerItemSpawns,
-		machines: game?.machines ?? null,
-		game_difficulty: scenario?.game_difficulty ?? 0,
-		player_spawns: playerSpawns,
-		fog,
-		object_types: scenario?.object_types ?? null,
-		tag_cache: tagCache
+export interface GamePrettyVm {
+	topLevel: {
+		phase: FieldDisplay;
+		started_at: FieldDisplay;
+		last_read_at: FieldDisplay;
+		engine_tick: FieldDisplay;
+		iterations: FieldDisplay;
+	};
+	config: {
+		gametype: FieldDisplay;
+		variant_name: FieldDisplay;
+		is_team_game: FieldDisplay;
+		score_limit: FieldDisplay;
+		time_limit_ticks: FieldDisplay;
+	};
+	teamScores: GameTeamScoreRow[];
+	players: GamePlayerRow[];
+	machines: GameMachineRow[];
+	network: {
+		'countdown.active': FieldDisplay;
+		'countdown.paused': FieldDisplay;
+		'countdown.seconds_to_start': FieldDisplay;
+		'client.machine_index': FieldDisplay;
+		'client.average_ping': FieldDisplay;
+		'client.packets_sent': FieldDisplay;
 	};
 }
 
-export function buildGameVm(name: string, ws: ScraperWSV2, ctx: DebugContext): GameVm {
-	const game = ws.game[name] ?? null;
-	const scenario = ws.scenario[name] ?? null;
-	const projected = v2ToV1GameData(game, scenario);
-	const gameData = projected ?? ctx.inspect?.game_data ?? null;
-	const tickValue = ws.engineTick[name] ?? ctx.inspect?.tick;
-	const totals = buildPlayerTotals(gameData);
+// Row shapes for the DataTable sections. Keep them flat strings/booleans
+// so the table's default formatter handles missing values uniformly.
+export interface GameTeamScoreRow {
+	team: number;
+	score: number;
+}
+
+export interface GamePlayerRow {
+	index: number;
+	name: string;
+	team: number;
+	armor_color: number;
+	score: number;
+	kills: number;
+	deaths: number;
+	assists: number;
+	ctf_score: number;
+	team_kills: number;
+	suicides: number;
+	kill_streak: number;
+	multikill: number;
+	shots_fired: number;
+	shots_hit: number;
+	is_local: boolean | null;
+	local_index: number | null;
+	machine_index: number | null;
+	controller_index: number | null;
+}
+
+export interface GameMachineRow {
+	index: number;
+	name: string;
+	is_local: boolean | null;
+}
+
+function field(display: string, raw: string | undefined, present: boolean): FieldDisplay {
+	return { display, raw: raw ?? '—', present };
+}
+
+function fieldStr(value: string | undefined): FieldDisplay {
+	const v = value ?? '';
+	return field(v || '—', v || undefined, v.length > 0);
+}
+
+function fieldBool(value: boolean | undefined | null): FieldDisplay {
+	if (value === undefined || value === null) return field('—', undefined, false);
+	return field(value ? 'true' : 'false', String(value), true);
+}
+
+function fieldInt(value: number | undefined | null): FieldDisplay {
+	if (value === undefined || value === null) return field('—', undefined, false);
+	const s = String(value);
+	return field(s, s, true);
+}
+
+function formatIsoLocal(iso: string | undefined): FieldDisplay {
+	if (!iso) return field('—', undefined, false);
+	const t = Date.parse(iso);
+	if (!Number.isFinite(t)) return field(iso, iso, true);
+	return field(`${new Date(t).toLocaleString()} (${iso})`, iso, true);
+}
+
+export function buildGamePrettyVm(payload: GamePayload | null): GamePrettyVm {
+	const cfg = payload?.config ?? null;
+	const net = payload?.network ?? null;
+	const countdown = net?.countdown ?? null;
+	const client = net?.client ?? null;
 
 	return {
-		gameData,
-		tickValue,
-		scoreRows: buildScoreRows(gameData),
-		players: gameData?.players ?? [],
-		playerSpawns: gameData?.player_spawns ?? [],
-		powerItemSpawns: gameData?.power_item_spawns ?? [],
-		machines: gameData?.machines ?? [],
-		fog: gameData?.fog ?? null,
-		objectTypes: gameData?.object_types ?? [],
-		tagCache: gameData?.tag_cache ?? null,
-		isTeamGame: gameData?.is_team_game === true,
-		playerTotalsByTeam: totals.byTeam,
-		playerTotalsFlat: totals.flat
+		topLevel: {
+			phase: fieldStr(payload?.phase),
+			started_at: formatIsoLocal(payload?.started_at),
+			last_read_at: formatIsoLocal(payload?.last_read_at),
+			engine_tick: fieldInt(payload?.engine_tick),
+			iterations: fieldInt(payload?.iterations)
+		},
+		config: {
+			gametype: fieldStr(cfg?.gametype),
+			variant_name: fieldStr(cfg?.variant_name),
+			is_team_game: fieldBool(cfg?.is_team_game),
+			score_limit: fieldInt(cfg?.score_limit),
+			time_limit_ticks: fieldInt(cfg?.time_limit_ticks)
+		},
+		teamScores: payload?.team_scores ?? [],
+		players: payload?.players ?? [],
+		machines: payload?.machines ?? [],
+		network: {
+			'countdown.active': fieldBool(countdown?.active),
+			'countdown.paused': fieldBool(countdown?.paused),
+			'countdown.seconds_to_start': fieldInt(countdown?.seconds_to_start),
+			'client.machine_index': fieldInt(client?.machine_index),
+			'client.average_ping': fieldInt(client?.average_ping),
+			'client.packets_sent': fieldInt(client?.packets_sent)
+		}
 	};
 }

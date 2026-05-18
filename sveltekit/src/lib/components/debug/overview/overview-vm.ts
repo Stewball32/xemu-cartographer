@@ -22,7 +22,7 @@ import type {
 	TickPayload
 } from '$lib/types/scraper';
 import type { AnyEvent } from '$lib/types/scraper-v2';
-import { v2ToV1GameData } from '../game/game-vm';
+import { v2ToV1GameData } from '../shared/v2-to-v1-game';
 import { v2ToV1Tick } from '../tick/tick-vm';
 import { v2ToV1PreviousGame } from '../postgame/postgame-vm';
 import { teamAccent, teamLabel } from '../shared/util';
