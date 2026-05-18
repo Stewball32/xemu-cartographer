@@ -45,3 +45,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Claude Code (local-only state + agent worktrees)
+/.claude/
