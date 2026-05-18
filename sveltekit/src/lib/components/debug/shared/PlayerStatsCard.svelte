@@ -12,7 +12,7 @@
 	// the parent's responsibility (PlayersSection / PlayerTotalsSection wrap
 	// the card), matching the existing PlayerCard pattern.
 
-	import type { PlayerTotalRow } from '../postgame/postgame-vm';
+	import type { PlayerTotalRow } from './player-totals';
 	import FieldTile, { type FieldRow } from './FieldTile.svelte';
 	import { armorLabel } from './util';
 

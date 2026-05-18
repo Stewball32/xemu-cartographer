@@ -28,7 +28,7 @@
 	import TickTab from '$lib/components/debug/tick/TickTab.svelte';
 	import ObjectsTab from '$lib/components/debug/objects/ObjectsTab.svelte';
 	import DebugTab from '$lib/components/debug/debug/DebugTab.svelte';
-	import PostgameTab from '$lib/components/debug/postgame/PostgameTab.svelte';
+	import PreviousGameTab from '$lib/components/debug/previous_game/PreviousGameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
 	import SummaryTab from '$lib/components/debug/summary/SummaryTab.svelte';
 	import { setDebugContext, type ViewMode } from '$lib/components/debug/context.js';
@@ -323,7 +323,7 @@
 		<Tabs.Content value="tick" class="pt-4"><TickTab {name} /></Tabs.Content>
 		<Tabs.Content value="objects" class="pt-4"><ObjectsTab {name} /></Tabs.Content>
 		<Tabs.Content value="debug" class="pt-4"><DebugTab {name} /></Tabs.Content>
-		<Tabs.Content value="previous_game" class="pt-4"><PostgameTab {name} /></Tabs.Content>
+		<Tabs.Content value="previous_game" class="pt-4"><PreviousGameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
 		<Tabs.Content value="summary" class="pt-4"><SummaryTab {name} /></Tabs.Content>
 	</TabsResponsive>
