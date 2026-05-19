@@ -48,5 +48,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `apiBaseURL()` now honors the page's `https:` protocol in dev (was hardcoded `http`).
 - Envelope `seq` no longer hardcoded to `0`. New per-(instance, class) counter on the runner (`seqByClass` + `seqMu`) bumps each `marshalClassEnvelope` call, so clients can detect drops / out-of-order delivery / retransmits (M06).
+- `xbox.name` now resolves for every observed container shape (dashboard-idle and in-game alike). `xbox.ReadConsoleName` swaps its old 8-byte `00 00 00 00 30 53 11 9E` anchor for a 12-byte `NICK` header anchor (`4B 43 49 4E 01 00 00 00 00 00 00 00`) and dispatches on the 4-byte record tag at NICK+12 — type A (`04 00 53 4D`, observed on Halo containers) or type B (`30 53 11 9E`, canonical `NICKNAME.XBN`, observed on UnleashX-booted containers). Triangulated against four live containers (Whicker / Cupid / Crazy / charr) (M06).
 
 ### Security
