@@ -47,5 +47,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - `apiBaseURL()` now honors the page's `https:` protocol in dev (was hardcoded `http`).
+- Envelope `seq` no longer hardcoded to `0`. New per-(instance, class) counter on the runner (`seqByClass` + `seqMu`) bumps each `marshalClassEnvelope` call, so clients can detect drops / out-of-order delivery / retransmits (M06).
 
 ### Security

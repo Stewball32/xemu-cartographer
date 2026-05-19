@@ -187,6 +187,14 @@ type runner struct {
 	cacheMu sync.Mutex
 	cache   instanceCache
 
+	// seqMu guards seqByClass. Each envelope class has its own
+	// monotonically-increasing per-(instance, class) sequence number so
+	// clients can detect drops / out-of-order delivery / retransmits.
+	// Map starts empty on newRunner — no reset on Manager.Start because
+	// the runner is recreated each time.
+	seqMu      sync.Mutex
+	seqByClass map[string]uint64
+
 	// policyMu guards policies. Replaced wholesale by setPolicies so
 	// readers under policies() get a stable snapshot without holding
 	// the lock for the resolve loop. nil until the Manager wires in
@@ -219,8 +227,20 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 			Phase:     PhaseIdle,
 			StartedAt: now,
 		},
-		sinks: newSinkManager(name),
+		seqByClass: map[string]uint64{},
+		sinks:      newSinkManager(name),
 	}
+}
+
+// nextSeq returns and bumps the per-class sequence counter for this
+// runner. Goroutine-safe via seqMu. Counters start at 0; the first
+// envelope of a given class ships seq=0, the second seq=1, etc.
+func (r *runner) nextSeq(class string) uint64 {
+	r.seqMu.Lock()
+	defer r.seqMu.Unlock()
+	seq := r.seqByClass[class]
+	r.seqByClass[class] = seq + 1
+	return seq
 }
 
 // getPolicies returns a stable snapshot of the runner's current capture
@@ -442,7 +462,7 @@ func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([
 		log.Printf("scraper[%s]: cannot resolve room for class %q: %v", r.name, class, err)
 		return nil, nil, "", false
 	}
-	env := scraper.MakeEnvelope(class, r.name, 0, tick, payload)
+	env := scraper.MakeEnvelope(class, r.name, r.nextSeq(class), tick, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("scraper[%s]: marshal envelope (%s): %v", r.name, class, err)
