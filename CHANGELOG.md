@@ -19,6 +19,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Page-level `viewMode` preference on the debug page (Pretty / JSON), persisted to `localStorage['debug.view']` so the choice carries across tabs that opt into the same toggle (M06).
 - WS v2 store exposes `xboxEnvelope[instance]` (full `EnvelopeV2<XboxPayload>` including `seq`/`tick`/`ts`/`v`) alongside the existing payload-only `xbox[instance]` slot.
 - Events debug tab: envelope-stats header (`latest seq`, `latest tick`, `received`, `event_type`, `logged`) with the same Pretty/JSON `Switch` as the Xbox tab; new JSON view pairs a Skeleton `TreeView` walking the rolling event log envelope-by-envelope with a scoped `CodeBlock` (M06).
+- New v2 `probe` envelope class — on-demand only, request/reply via `request_probe` WS handler (mirrors `request_events`). Carries `state_inputs` + `score_probe` from the active `GameReader` plugin's `LastStateInputs` + `BuildScoreProbe` methods. Frontend exposes `scraperWSV2.probe[name]` + `lastProbeReplyAt[name]` + `requestProbe(instance)`; the standalone Probe page (`/pod/probe/<name>/`) consumes it with a Refresh button + "refreshed Ns ago" indicator. Reader access serialised through the runner loop via a buffered `probeReqCh` so reader-cache state stays loop-only (no race with the WS handler goroutine) (M06).
 
 ### Changed
 
@@ -34,6 +35,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Objects debug tab migrated from the placeholder shell to the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`), Accordion Pretty view with `summary`/`objects`/`projectiles` sections (DataTables for the two arrays, count tiles in the summary), and a Skeleton `TreeView` + scoped `CodeBlock` JSON view. WS v2 store exposes `objectsEnvelope[instance]` alongside the payload-only `objects[instance]` slot (M06).
 - Previous-Game debug tab rewritten on the same xbox Pretty/JSON pattern (envelope-stats header + Accordion sections mirroring the JSON shape: `top-level` / `game` / `events`). Events render as a sortable `DataTable` over each envelope's `seq`/`tick`/`ts`/`type`/`data.event_type`. The `postgame/` folder is gone — renamed to `previous_game/` to match the envelope class — and the WS v2 store now exposes `previousGameEnvelope[instance]` alongside the existing payload-only `previousGame[instance]` slot (M06).
 - Shared helpers extracted out of the retired `postgame/postgame-vm.ts`: `PlayerTotalRow` + `buildPlayerTotalRow` + `buildPlayerTotals` moved to `debug/shared/player-totals.ts`, and the v2→v1 `v2ToV1PreviousGame` adapter moved to `debug/shared/previous-game-adapter.ts` (consumed by the Overview tab's previous-match section).
+- `debug` envelope shrinks to just `players` — `state_inputs` and `score_probe` moved to the new on-demand `probe` envelope so `BuildScoreProbe()` no longer runs per-tick (~30 Hz of memory-region sampling work, regardless of whether anyone was watching). The Debug tab loses those two Accordion sections; the standalone Probe page is the canonical view (M06).
+- `/api/admin/scraper/{name}/inspect` returns empty `state_inputs` / `score_probe` maps for v1 wire-shape stability — the cache fields are gone; clients that want live probe data should use the new `request_probe` WS path.
 
 ### Deprecated
 
@@ -41,8 +44,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `SystemTab.svelte`, `runtime-vm.ts`, and the old per-tab `xbox-vm.ts` under `sveltekit/src/lib/components/debug/system/` (folder removed entirely — superseded by `debug/xbox/`).
 - Unused `showAll` getter from the probe page's `DebugContext` wiring.
-
-### Fixed
+- `state_inputs` + `score_probe` fields on the `debug` envelope (and on `DebugPayload` / `instanceCache`) — both moved to the new on-demand `probe` envelope (see Added).
 
 ### Fixed
 

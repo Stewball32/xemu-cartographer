@@ -12,15 +12,17 @@ import (
 // understood: known-semantic fields under `extended`, undecoded offsets
 // under `raw` keyed by hex offset.
 //
+// state_inputs / score_probe used to ride on this envelope; both moved
+// to the on-demand probe class (see probe.go) so probe work doesn't
+// run per-tick.
+//
 // See atlas/new_json/04-ground-up-rebuild.md §6 (`debug`) and §10 (the
 // raw convention).
 const envelopeTypeDebug = "debug"
 
 // DebugPayload is the data for a debug-class envelope.
 type DebugPayload struct {
-	Players     []DebugPlayer       `json:"players"`
-	StateInputs scraper.StateInputs `json:"state_inputs"`
-	ScoreProbe  scraper.ScoreProbe  `json:"score_probe"`
+	Players []DebugPlayer `json:"players"`
 }
 
 type DebugPlayer struct {

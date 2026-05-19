@@ -11,6 +11,7 @@ import type {
 	HostSummaryV2,
 	ObjectsPayload,
 	PreviousGamePayload,
+	ProbePayload,
 	ScenarioPayload,
 	SummaryPayload,
 	TickPayloadV2,
@@ -26,6 +27,7 @@ import {
 	isHelloEnv,
 	isObjectsEnv,
 	isPreviousGameEnv,
+	isProbeEnv,
 	isScenarioEnv,
 	isSummaryEnv,
 	isTickEnv,
@@ -96,6 +98,13 @@ function createScraperWSV2() {
 	// unchanged.
 	let debugEnvelope = $state<Record<string, EnvelopeV2<DebugPayload> | null>>({});
 	let previousGame = $state<Record<string, PreviousGamePayload | null>>({});
+
+	// Probe envelopes are request/reply only — populated by requestProbe()
+	// + the matching `probe` envelope from the server. Never broadcast
+	// alongside the per-tick classes. Mirror the EventsReply pattern:
+	// payload slot + timestamp for "fetched Xs ago" UI.
+	let probe = $state<Record<string, ProbePayload | null>>({});
+	let lastProbeReplyAt = $state<Record<string, number>>({});
 	// Full envelope (not just payload) for the objects class — the Objects
 	// debug tab's envelope-stats header surfaces seq/tick/ts/v straight
 	// from the wire. Kept as a parallel slot so existing consumers of
@@ -238,6 +247,17 @@ function createScraperWSV2() {
 		return sendJSON(msg);
 	}
 
+	/** requestProbe asks the server to run the active GameReader's
+	 * LastStateInputs + BuildScoreProbe for the named instance and reply
+	 * with a `probe`-class envelope. Probe values are intentionally
+	 * never broadcast — running BuildScoreProbe per-tick (its old home
+	 * on the debug envelope) was wasted memory-read work whenever the
+	 * probe page wasn't open. The reply lands in `probe[instance]` and
+	 * `lastProbeReplyAt[instance]`. */
+	function requestProbe(instance: string): boolean {
+		return sendJSON({ type: 'request_probe', payload: { instance } });
+	}
+
 	function setSlot<T>(
 		store: Record<string, T | null>,
 		atStore: Record<string, number>,
@@ -322,6 +342,12 @@ function createScraperWSV2() {
 		} else if (isPreviousGameEnv(env)) {
 			previousGame = { ...previousGame, [env.instance]: env.data };
 			previousGameEnvelope = { ...previousGameEnvelope, [env.instance]: env };
+		} else if (isProbeEnv(env)) {
+			// Probe replies are one-shot answers to requestProbe — store
+			// the latest payload + timestamp so the probe page can show
+			// "fetched Xs ago" and re-render when a new reply arrives.
+			probe = { ...probe, [env.instance]: env.data };
+			lastProbeReplyAt = { ...lastProbeReplyAt, [env.instance]: now };
 		} else if (isEventEnv(env)) {
 			const prev = events[env.instance] ?? [];
 			const next = [env.data, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
@@ -475,6 +501,12 @@ function createScraperWSV2() {
 		get previousGameEnvelope() {
 			return previousGameEnvelope;
 		},
+		get probe() {
+			return probe;
+		},
+		get lastProbeReplyAt() {
+			return lastProbeReplyAt;
+		},
 		get events() {
 			return events;
 		},
@@ -526,7 +558,8 @@ function createScraperWSV2() {
 		unsubscribe,
 		unsubscribeSummary,
 		unsubscribeInstance,
-		requestEvents
+		requestEvents,
+		requestProbe
 	};
 }
 

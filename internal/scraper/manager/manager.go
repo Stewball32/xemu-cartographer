@@ -234,12 +234,17 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 	}
 
 	return scraperiface.InspectState{
-		Info:         info,
-		Running:      true,
-		Phase:        string(c.Phase),
-		LastReadAt:   c.LastReadAt,
-		StateInputs:  c.StateInputs,
-		ScoreProbe:   c.ScoreProbe,
+		Info:       info,
+		Running:    true,
+		Phase:      string(c.Phase),
+		LastReadAt: c.LastReadAt,
+		// state_inputs / score_probe moved off the per-tick cache when
+		// probe split out as its own on-demand envelope class. The
+		// fields stay on InspectState for v1 wire-shape stability but
+		// always render as empty maps — clients that want live probe
+		// data now use the request_probe WS handler (see probe.go).
+		StateInputs:  scraper.StateInputs{},
+		ScoreProbe:   scraper.ScoreProbe{},
 		GameData:     c.GameData,
 		LatestTick:   c.LatestTick,
 		RecentEvents: c.Events,

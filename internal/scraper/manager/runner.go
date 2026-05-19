@@ -91,12 +91,10 @@ type instanceCache struct {
 	Iterations uint64
 
 	// Match data — populated in Ready and Live, dropped on Ready→Idle.
-	GameState   scraper.GameState
-	StateInputs scraper.StateInputs
-	ScoreProbe  scraper.ScoreProbe
-	GameData    *scraper.GameData
-	LatestTick  *scraper.TickPayload
-	Events      []scraper.Envelope // newest-first; bounded by recentEventsCap
+	GameState  scraper.GameState
+	GameData   *scraper.GameData
+	LatestTick *scraper.TickPayload
+	Events     []scraper.Envelope // newest-first; bounded by recentEventsCap
 
 	// Just-ended match. Populated on Live→Ready transition (deferred so a
 	// panic / ctx-cancel mid-match still moves the data); dropped on
@@ -195,6 +193,14 @@ type runner struct {
 	seqMu      sync.Mutex
 	seqByClass map[string]uint64
 
+	// probeReqCh serialises probe requests through the loop goroutine so
+	// reader methods (LastStateInputs, BuildScoreProbe) stay loop-only.
+	// Buffered cap=4 to absorb small bursts; over-cap requests block
+	// briefly on the sender (the request_probe WS handler, which has its
+	// own 2s timeout). drainProbeRequests services this queue at the
+	// end of each tick — see loop.go.
+	probeReqCh chan probeRequest
+
 	// policyMu guards policies. Replaced wholesale by setPolicies so
 	// readers under policies() get a stable snapshot without holding
 	// the lock for the resolve loop. nil until the Manager wires in
@@ -228,6 +234,7 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 			StartedAt: now,
 		},
 		seqByClass: map[string]uint64{},
+		probeReqCh: make(chan probeRequest, 4),
 		sinks:      newSinkManager(name),
 	}
 }
@@ -342,24 +349,12 @@ func (r *runner) pushEvent(env scraper.Envelope) {
 }
 
 // publishGameState mirrors the loop's most recent ReadGameState result
-// into the cache (used by both Ready and Live phases).
-func (r *runner) publishGameState(gs scraper.GameState, si scraper.StateInputs, sp scraper.ScoreProbe) {
+// into the cache (used by both Ready and Live phases). state_inputs and
+// score_probe used to be cached here for the per-tick debug envelope;
+// they're now fetched on-demand via Manager.ProbeReply (see probe.go).
+func (r *runner) publishGameState(gs scraper.GameState) {
 	r.cacheMu.Lock()
 	r.cache.GameState = gs
-	if si != nil {
-		cp := make(scraper.StateInputs, len(si))
-		for k, v := range si {
-			cp[k] = v
-		}
-		r.cache.StateInputs = cp
-	}
-	if sp != nil {
-		cp := make(scraper.ScoreProbe, len(sp))
-		for k, v := range sp {
-			cp[k] = v
-		}
-		r.cache.ScoreProbe = cp
-	}
 	r.cacheMu.Unlock()
 }
 

@@ -60,14 +60,14 @@ func safeFloat(f float32) float32 {
 
 // safeMapAny returns a copy of m with un-marshalable values dropped.
 // Used to sanitize the StateInputs / ScoreProbe map[string]any fields
-// in DebugPayload — those carry plugin-defined typed structs whose
+// in ProbePayload — those carry plugin-defined typed structs whose
 // float fields may contain NaN from uninitialised memory reads. One
-// NaN in one nested probe value would otherwise null the whole debug
+// NaN in one nested probe value would otherwise null the whole probe
 // payload (same root cause as safeFloat, different shape — we can't
 // recurse into arbitrary struct types without reflection).
 //
 // Returns nil if m is nil. Dropped keys are silently omitted — the
-// debug envelope's job is best-effort, not lossless.
+// probe envelope's job is best-effort, not lossless.
 func safeMapAny(m map[string]any) map[string]any {
 	if m == nil {
 		return nil
@@ -501,17 +501,16 @@ func buildObjectsPayload(c *instanceCache) *ObjectsPayload {
 
 // buildDebugPayload returns nil when no tick has been read. Includes the
 // 66-field extended block per player, bones, and update_queue — opt-in
-// per the demand model (PR 11). state_inputs / score_probe come from the
-// cache directly (set by the runner's publishGameState).
+// per the demand model (PR 11). state_inputs / score_probe moved off this
+// envelope onto the on-demand probe class (see probe.go) so probe work
+// stops running per-tick.
 func buildDebugPayload(c *instanceCache) *DebugPayload {
 	if c.LatestTick == nil {
 		return nil
 	}
 	src := c.LatestTick
 	p := &DebugPayload{
-		Players:     make([]DebugPlayer, 0, len(src.Players)),
-		StateInputs: safeMapAny(c.StateInputs),
-		ScoreProbe:  safeMapAny(c.ScoreProbe),
+		Players: make([]DebugPlayer, 0, len(src.Players)),
 	}
 	for _, tp := range src.Players {
 		dp := DebugPlayer{Index: tp.Index}

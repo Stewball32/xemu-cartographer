@@ -77,18 +77,11 @@ export interface PlayerVm {
 	raw: RawVm;
 }
 
-export interface KvVm {
-	count: number;
-	entries: Array<[string, unknown]>;
-}
-
 export interface DebugPrettyVm {
 	players: {
 		count: number;
 		rows: PlayerVm[];
 	};
-	state_inputs: KvVm;
-	score_probe: KvVm;
 }
 
 export type NullableState = 'present' | 'null' | 'missing';
@@ -210,21 +203,12 @@ function buildPlayerVm(p: DebugPlayer): PlayerVm {
 	};
 }
 
-function buildKvVm(record: Record<string, unknown> | undefined): KvVm {
-	if (!record) return { count: 0, entries: [] };
-	const entries = Object.entries(record);
-	entries.sort(([a], [b]) => a.localeCompare(b));
-	return { count: entries.length, entries };
-}
-
 export function buildDebugPrettyVm(payload: DebugPayload | null): DebugPrettyVm {
 	const players = payload?.players ?? [];
 	return {
 		players: {
 			count: players.length,
 			rows: players.map(buildPlayerVm)
-		},
-		state_inputs: buildKvVm(payload?.state_inputs),
-		score_probe: buildKvVm(payload?.score_probe)
+		}
 	};
 }

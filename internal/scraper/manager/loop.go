@@ -223,13 +223,18 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			continue
 		}
 		r.recordIteration(tick)
-		r.publishGameState(gs, r.reader.LastStateInputs(), r.reader.BuildScoreProbe())
+		r.publishGameState(gs)
 
 		// Refresh xbox/* system values (console name, etc.) — throttled so
 		// the cost is bounded regardless of phase poll cadence. Picks up
 		// renames the user did via the dashboard between matches and any
 		// late-arriving heap state from a freshly-loaded XBE.
 		r.runSystemSnapshot()
+
+		// Service any pending probe requests from request_probe handlers
+		// before the next sleep — probe readers (BuildScoreProbe) must
+		// run on the loop goroutine for reader-cache thread safety.
+		r.drainProbeRequests()
 
 		// State-transition handling within Ready — refresh the cache via the
 		// thorough ReadGameData path so static + cached scenario data is
@@ -317,13 +322,16 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 		}
 		r.liveReadFailures = 0
 		r.recordIteration(tick)
-		r.publishGameState(gs, r.reader.LastStateInputs(), r.reader.BuildScoreProbe())
+		r.publishGameState(gs)
 
 		// Refresh xbox/* system values during long matches (throttled, ~3s
 		// minimum spacing). Renames are unreachable from in-match, but a
 		// late-binding kernel record on a host that booted straight into
 		// gameplay still gets a chance to land.
 		r.runSystemSnapshot()
+
+		// Service any pending probe requests — see runReady for rationale.
+		r.drainProbeRequests()
 
 		if gs != scraper.GameStateInGame {
 			log.Printf("scraper[%s]: state in_game → %s tick=%d — live → ready", r.name, gs, tick)
@@ -414,8 +422,6 @@ func (r *runner) releaseReader() {
 	r.withCache(func(c *instanceCache) {
 		c.Title = ""
 		c.GameState = ""
-		c.StateInputs = nil
-		c.ScoreProbe = nil
 		c.GameData = nil
 		c.LatestTick = nil
 		c.Events = nil

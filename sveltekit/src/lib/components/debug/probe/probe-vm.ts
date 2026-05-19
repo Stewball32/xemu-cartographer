@@ -1,15 +1,18 @@
-// View-model for the Probe tab: shapes the inspect snapshot's free-form
-// score_probe and state_inputs maps into sorted entry lists, plus a shared
-// formatProbeValue helper used by both views. Plain-TS so the file isn't a
-// runes module — reactivity is set up at the call site with $derived.by().
+// View-model for the Probe tab: shapes the v2 probe-envelope payload's
+// free-form score_probe and state_inputs maps into sorted entry lists,
+// plus a shared formatProbeValue helper used by both views. Plain-TS
+// so the file isn't a runes module — reactivity is set up at the call
+// site with $derived.by().
 //
-// score_probe is a Record<string, unknown> dumped by GameReader.BuildScoreProbe
-// (every candidate address the plugin reads). state_inputs is a Record of the
-// per-tick state-classification inputs LastStateInputs() returns (booleans /
-// pointers / mode strings). Both are intentionally untyped on the wire so a
-// human can spot which raw value matches what's on-screen.
+// Source is `scraperWSV2.probe[name]` — populated by requestProbe()
+// (request/reply, never broadcast). score_probe is the bag dumped by
+// the GameReader plugin's BuildScoreProbe (every candidate address it
+// reads); state_inputs is the per-tick state-classification inputs
+// LastStateInputs() returns (booleans / pointers / mode strings).
+// Both are intentionally untyped on the wire so a human can spot
+// which raw value matches what's on-screen.
 
-import type { DebugContext } from '../context';
+import type { ProbePayload } from '$lib/types/scraper-v2';
 import type { ScoreProbe, StateInputs } from '$lib/types/scraper';
 
 // Pointer-shaped numbers (Xbox VAs 0x80000000+ or large addresses) render as
@@ -31,9 +34,9 @@ function sortedEntries(rec: Record<string, unknown> | null | undefined): ProbeEn
 	return Object.entries(rec).sort(([a], [b]) => a.localeCompare(b));
 }
 
-export function buildProbeVm(ctx: DebugContext): ProbeVm {
-	const scoreProbe = ctx.inspect?.score_probe ?? null;
-	const stateInputs = ctx.inspect?.state_inputs ?? null;
+export function buildProbeVm(payload: ProbePayload | null): ProbeVm {
+	const scoreProbe = (payload?.score_probe ?? null) as ScoreProbe | null;
+	const stateInputs = (payload?.state_inputs ?? null) as StateInputs | null;
 	return {
 		scoreProbe,
 		stateInputs,

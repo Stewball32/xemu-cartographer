@@ -413,12 +413,15 @@ export function buildOverviewVm(name: string, ws: ScraperWSV2, ctx: DebugContext
 			? v2Events.map((ev) => v2EventToV1(ev, name))
 			: (ctx.inspect?.recent_events ?? []);
 
-	// state_inputs is part of the debug class on v2 (alongside score_probe).
-	// The debug tab subscribes to it; the overview tab keeps the inspect
-	// fallback so the diagnostic grid renders without forcing a debug-class
-	// subscription on the overview page.
-	const stateInputs =
-		(ws.debug[name]?.state_inputs as StateInputs | undefined) ?? ctx.inspect?.state_inputs ?? null;
+	// state_inputs used to ride on the debug envelope; it moved to the
+	// on-demand probe envelope so probe work doesn't run per-tick. The
+	// overview tab can no longer surface it inline without requesting a
+	// probe reply per render — fall back to inspect (always nil now,
+	// since the v1 inspect endpoint also stopped populating probe
+	// fields). The StateInputsGrid section will follow this VM to nil
+	// and either render an empty state or be removed entirely in the
+	// next overview-tab pass.
+	const stateInputs: StateInputs | null = ctx.inspect?.state_inputs ?? null;
 
 	const phase: Phase = ((v2Game?.phase ?? ctx.inspect?.phase) as Phase | undefined) ?? 'idle';
 

@@ -29,8 +29,10 @@
 	// Section ids match the JSON-shape group names so an operator who
 	// collapses one here keeps it collapsed across reloads. Persisted
 	// alongside the other tabs' collapse keys (debug.xbox.collapsed etc.).
-	type SectionId = 'players' | 'state_inputs' | 'score_probe';
-	const ALL_SECTIONS: readonly SectionId[] = ['players', 'state_inputs', 'score_probe'];
+	// state_inputs / score_probe used to live here; both moved to the
+	// on-demand probe envelope (see /pod/probe/<name>/).
+	type SectionId = 'players';
+	const ALL_SECTIONS: readonly SectionId[] = ['players'];
 
 	let collapsedSections = $state(new SvelteSet<string>());
 
@@ -284,34 +286,6 @@
 					{/each}
 				</div>
 			{/if}
-		</Accordion.ItemContent>
-	</Accordion.Item>
-
-	<Accordion.Item value="state_inputs">
-		<Accordion.ItemTrigger
-			class="group flex w-full items-center justify-between gap-2 py-2 text-left"
-		>
-			{@render sectionHeader('state_inputs', vm.state_inputs.count)}
-			<Accordion.ItemIndicator>
-				<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
-			</Accordion.ItemIndicator>
-		</Accordion.ItemTrigger>
-		<Accordion.ItemContent class="pb-3">
-			{@render kvTiles(vm.state_inputs.entries)}
-		</Accordion.ItemContent>
-	</Accordion.Item>
-
-	<Accordion.Item value="score_probe">
-		<Accordion.ItemTrigger
-			class="group flex w-full items-center justify-between gap-2 py-2 text-left"
-		>
-			{@render sectionHeader('score_probe', vm.score_probe.count)}
-			<Accordion.ItemIndicator>
-				<ChevronDownIcon class="size-4 transition group-data-[state=open]:rotate-180" />
-			</Accordion.ItemIndicator>
-		</Accordion.ItemTrigger>
-		<Accordion.ItemContent class="pb-3">
-			{@render kvTiles(vm.score_probe.entries)}
 		</Accordion.ItemContent>
 	</Accordion.Item>
 </Accordion>

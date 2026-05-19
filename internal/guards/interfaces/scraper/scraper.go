@@ -8,5 +8,6 @@ type Service interface {
 	Inspect
 	JoinReplay
 	EventsReply
+	ProbeReply
 	State
 }

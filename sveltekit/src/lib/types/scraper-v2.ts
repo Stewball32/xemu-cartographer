@@ -29,6 +29,7 @@ export type EnvelopeTypeV2 =
 	| 'tick'
 	| 'objects'
 	| 'debug'
+	| 'probe'
 	| 'summary'
 	| 'previous_game'
 	| 'event'
@@ -479,10 +480,25 @@ export interface Projectile {
 
 export interface DebugPayload {
 	players: DebugPlayer[];
-	/** Free-form plugin-defined probe inputs. Halo: CE keys include
+}
+
+// =============================================================================
+// probe class — on-demand probe values, request/reply only
+// =============================================================================
+
+/** Probe is the developer scratch space for finding/debugging memory
+ * values. Never broadcast — emitted only in reply to a request_probe
+ * WS message. Both fields are populated by the active GameReader
+ * plugin's LastStateInputs / BuildScoreProbe methods on the runner
+ * loop goroutine. */
+export interface ProbePayload {
+	/** Free-form plugin-defined state inputs. Halo: CE keys include
 	 * main_menu, initialized, active, paused, engine_running, etc. */
 	state_inputs: Record<string, unknown>;
-	/** Plugin-defined gametype / score probes. */
+	/** Plugin-defined gametype / score probes — six top-level keys for
+	 * Halo: CE (gametype_candidates, team_scores_raw, score_limits_raw,
+	 * per_player_score_tables, per_player_static_struct,
+	 * per_player_biped_regions). */
 	score_probe: Record<string, unknown>;
 }
 
@@ -750,6 +766,9 @@ export function isTickEnv(e: EnvelopeV2): e is EnvelopeV2<TickPayloadV2> & { typ
 }
 export function isObjectsEnv(e: EnvelopeV2): e is EnvelopeV2<ObjectsPayload> & { type: 'objects' } {
 	return e.type === 'objects';
+}
+export function isProbeEnv(e: EnvelopeV2): e is EnvelopeV2<ProbePayload> & { type: 'probe' } {
+	return e.type === 'probe';
 }
 export function isDebugEnv(e: EnvelopeV2): e is EnvelopeV2<DebugPayload> & { type: 'debug' } {
 	return e.type === 'debug';
