@@ -3,7 +3,8 @@
 	import { useDebugContext } from '../context.js';
 	import XboxStatsHeader from './XboxStatsHeader.svelte';
 	import XboxPretty from './XboxPretty.svelte';
-	import XboxJson from './XboxJson.svelte';
+	import JsonView from '../shared/JsonView.svelte';
+	import { V2_ENVELOPE_SHAPE } from '../shared/json-scope';
 
 	let { name }: { name: string } = $props();
 
@@ -26,6 +27,6 @@
 	{#if viewMode === 'pretty'}
 		<XboxPretty {payload} />
 	{:else}
-		<XboxJson {envelope} />
+		<JsonView {envelope} shape={V2_ENVELOPE_SHAPE} />
 	{/if}
 </div>

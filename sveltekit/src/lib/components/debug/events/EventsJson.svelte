@@ -3,12 +3,13 @@
 	import { TreeView, createTreeViewCollection } from '@skeletonlabs/skeleton-svelte';
 	import type { AnyEvent } from '$lib/types/scraper-v2';
 	import CodeBlock from '$lib/components/ui/CodeBlock.svelte';
-	import { buildTreeRoot, scopeAtPath, type XNode } from './json-scope';
+	import { buildTreeRoot, scopeAtPath, EVENT_SHAPE, type XNode } from '../shared/json-scope';
 
 	// Rolling log of event envelopes (newest first per the v2 WS store).
 	let { events, instance }: { events: AnyEvent[]; instance: string } = $props();
 
 	let selectedValue = $state<string[]>([]);
+	let expandedValue = $state<string[]>([]);
 
 	// Tree value scheme: every event lives under a top-level `event:<idx>`
 	// node — the index is the position in the newest-first rolling log so
@@ -26,7 +27,7 @@
 	function buildLogTree(items: EventEntry[]): XNode {
 		const root: XNode = { id: '', name: 'events log', children: [] };
 		for (const e of items) {
-			const child = buildTreeRoot(e.event);
+			const child = buildTreeRoot(e.event, EVENT_SHAPE);
 			// Hoist the per-event tree under a stable id; remap descendant ids
 			// so selection round-trips through scopeAtPath via the parent id
 			// prefix.
@@ -56,8 +57,35 @@
 		if (instance !== lastInstance) {
 			lastInstance = instance;
 			selectedValue = [];
+			expandedValue = [];
 		}
 	});
+
+	function toggleIn(arr: string[], v: string): string[] {
+		return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+	}
+
+	// Intercept tree-row clicks in capture phase so plain clicks toggle selection
+	// (Zag's default is replace-on-click, with toggle gated behind ctrl/cmd —
+	// not discoverable for a debug inspector). Chevron clicks route to expansion
+	// instead so the operator can navigate without disturbing selection.
+	function handleTreeClick(event: MouseEvent) {
+		const target = event.target as HTMLElement;
+		const valueEl = target.closest('[data-value]') as HTMLElement | null;
+		if (!valueEl) return;
+		const value = valueEl.getAttribute('data-value');
+		if (!value) return;
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const isChevron = !!target.closest('[data-part="branch-indicator"]');
+		const isBranch = valueEl.hasAttribute('data-state');
+		if (isChevron && isBranch) {
+			expandedValue = toggleIn(expandedValue, value);
+		} else {
+			selectedValue = toggleIn(selectedValue, value);
+		}
+	}
 
 	const collection = $derived.by(() =>
 		createTreeViewCollection<XNode>({
@@ -67,20 +95,31 @@
 		})
 	);
 
-	// Scope: the first selected id always starts with the event-entry id
-	// (`event:<idx>`). Resolve the matching event, strip the prefix, then
-	// reuse the per-event scopeAtPath so the CodeBlock shows the
-	// envelope-rooted slice (or the whole event if no inner path is selected).
+	// Scope: every selected id starts with the event-entry id (`event:<idx>`).
+	// Group selections by entry so multi-select within one event composes via
+	// the shared scopeAtPath, while across-entry selections stay grouped per
+	// entry (the user can still see which event each slice came from).
 	const scoped = $derived.by<unknown>(() => {
-		const id = selectedValue[0];
-		if (!id || events.length === 0) return entries[0]?.event ?? null;
-		const dot = id.indexOf('.');
-		const entryId = dot >= 0 ? id.slice(0, dot) : id;
-		const innerPath = dot >= 0 ? id.slice(dot + 1) : '';
-		const match = entries.find((e) => e.nodeId === entryId);
-		if (!match) return null;
-		const inner = innerPath ? scopeAtPath(match.event, [innerPath]) : match.event;
-		return { [match.nodeId]: inner };
+		if (events.length === 0) return null;
+		if (selectedValue.length === 0) return entries[0]?.event ?? null;
+
+		const byEntry: Record<string, string[]> = {};
+		for (const id of selectedValue) {
+			const dot = id.indexOf('.');
+			const entryId = dot >= 0 ? id.slice(0, dot) : id;
+			const innerPath = dot >= 0 ? id.slice(dot + 1) : '';
+			const list = byEntry[entryId] ?? [];
+			if (innerPath) list.push(innerPath);
+			byEntry[entryId] = list;
+		}
+
+		const out: Record<string, unknown> = {};
+		for (const [entryId, paths] of Object.entries(byEntry)) {
+			const match = entries.find((e) => e.nodeId === entryId);
+			if (!match) continue;
+			out[entryId] = paths.length > 0 ? scopeAtPath(match.event, paths, EVENT_SHAPE) : match.event;
+		}
+		return out;
 	});
 	const codeText = $derived(JSON.stringify(scoped === undefined ? null : scoped, null, 2));
 
@@ -122,7 +161,7 @@
 {/snippet}
 
 <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_2fr]">
-	<div class="flex flex-col gap-2 card preset-tonal p-3">
+	<div class="flex flex-col gap-2 card preset-tonal p-3" onclickcapture={handleTreeClick}>
 		<div class="flex items-center justify-between gap-2">
 			<div class="text-surface-700-200 text-xs font-semibold tracking-wide uppercase">tree</div>
 			<button
@@ -139,8 +178,11 @@
 		{:else}
 			<TreeView
 				{collection}
+				selectionMode="multiple"
 				{selectedValue}
+				{expandedValue}
 				onSelectionChange={(d) => (selectedValue = d.selectedValue)}
+				onExpandedChange={(d) => (expandedValue = d.expandedValue)}
 			>
 				<TreeView.Tree class="flex flex-col gap-0.5">
 					{#each collection.rootNode.children ?? [] as node, index (node.id)}
@@ -148,6 +190,7 @@
 					{/each}
 				</TreeView.Tree>
 			</TreeView>
+			<div class="text-surface-500-400 text-xs">click name to toggle · click ▸ to expand</div>
 		{/if}
 	</div>
 
@@ -155,9 +198,11 @@
 		<div class="flex items-center justify-between gap-2">
 			<div class="text-surface-700-200 text-xs font-semibold tracking-wide uppercase">
 				json
-				{#if selectedValue.length > 0}
+				{#if selectedValue.length === 1}
+					<span class="text-surface-500-400 font-mono normal-case">· {selectedValue[0]}</span>
+				{:else if selectedValue.length > 1}
 					<span class="text-surface-500-400 font-mono normal-case">
-						· {selectedValue[0]}
+						· {selectedValue.length} paths
 					</span>
 				{/if}
 			</div>

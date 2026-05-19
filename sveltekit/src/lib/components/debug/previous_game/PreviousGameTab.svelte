@@ -3,7 +3,8 @@
 	import { useDebugContext } from '../context.js';
 	import PreviousGameStatsHeader from './PreviousGameStatsHeader.svelte';
 	import PreviousGamePretty from './PreviousGamePretty.svelte';
-	import PreviousGameJson from './PreviousGameJson.svelte';
+	import JsonView from '../shared/JsonView.svelte';
+	import { V2_ENVELOPE_SHAPE } from '../shared/json-scope';
 
 	let { name }: { name: string } = $props();
 
@@ -26,6 +27,6 @@
 	{#if viewMode === 'pretty'}
 		<PreviousGamePretty {payload} />
 	{:else}
-		<PreviousGameJson {envelope} />
+		<JsonView {envelope} shape={V2_ENVELOPE_SHAPE} />
 	{/if}
 </div>

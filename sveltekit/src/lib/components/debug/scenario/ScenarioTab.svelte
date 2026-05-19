@@ -3,7 +3,8 @@
 	import { useDebugContext } from '../context.js';
 	import ScenarioStatsHeader from './ScenarioStatsHeader.svelte';
 	import ScenarioPretty from './ScenarioPretty.svelte';
-	import ScenarioJson from './ScenarioJson.svelte';
+	import JsonView from '../shared/JsonView.svelte';
+	import { V2_ENVELOPE_SHAPE } from '../shared/json-scope';
 
 	let { name }: { name: string } = $props();
 
@@ -26,6 +27,6 @@
 	{#if viewMode === 'pretty'}
 		<ScenarioPretty {payload} />
 	{:else}
-		<ScenarioJson {envelope} />
+		<JsonView {envelope} shape={V2_ENVELOPE_SHAPE} />
 	{/if}
 </div>

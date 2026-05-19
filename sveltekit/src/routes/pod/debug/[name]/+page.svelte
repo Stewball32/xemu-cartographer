@@ -235,9 +235,9 @@
 		{ value: 'tick', label: 'Tick' },
 		{ value: 'objects', label: 'Objects' },
 		{ value: 'debug', label: 'Debug' },
-		{ value: 'previous_game', label: 'Previous Game' },
-		{ value: 'events', label: 'Events' },
-		{ value: 'summary', label: 'Summary' }
+		{ value: 'previous_game', label: 'Previous' },
+		{ value: 'events', label: 'Events' }
+		// { value: 'summary', label: 'Summary' }
 	];
 </script>
 
@@ -325,6 +325,6 @@
 		<Tabs.Content value="debug" class="pt-4"><DebugTab {name} /></Tabs.Content>
 		<Tabs.Content value="previous_game" class="pt-4"><PreviousGameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
-		<Tabs.Content value="summary" class="pt-4"><SummaryTab {name} /></Tabs.Content>
+		<!-- <Tabs.Content value="summary" class="pt-4"><SummaryTab {name} /></Tabs.Content> -->
 	</TabsResponsive>
 </div>

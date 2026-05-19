@@ -3,7 +3,8 @@
 	import { useDebugContext } from '../context.js';
 	import TickStatsHeader from './TickStatsHeader.svelte';
 	import TickPretty from './TickPretty.svelte';
-	import TickJson from './TickJson.svelte';
+	import JsonView from '../shared/JsonView.svelte';
+	import { V2_ENVELOPE_SHAPE } from '../shared/json-scope';
 
 	let { name }: { name: string } = $props();
 
@@ -26,6 +27,6 @@
 	{#if viewMode === 'pretty'}
 		<TickPretty {payload} />
 	{:else}
-		<TickJson {envelope} />
+		<JsonView {envelope} shape={V2_ENVELOPE_SHAPE} />
 	{/if}
 </div>

@@ -1,35 +1,79 @@
 <script lang="ts">
 	import { ChevronRightIcon, FileJsonIcon, FolderIcon } from '@lucide/svelte';
 	import { TreeView, createTreeViewCollection } from '@skeletonlabs/skeleton-svelte';
-	import type { DebugPayload, EnvelopeV2 } from '$lib/types/scraper-v2';
 	import CodeBlock from '$lib/components/ui/CodeBlock.svelte';
-	import { buildTreeRoot, scopeAtPath, type XNode } from './json-scope';
+	import { buildTreeRoot, scopeAtPath, type EnvelopeShape, type XNode } from './json-scope';
 
-	let { envelope }: { envelope: EnvelopeV2<DebugPayload> | null } = $props();
+	let {
+		envelope,
+		shape,
+		resetKey
+	}: {
+		envelope: unknown | null;
+		shape: EnvelopeShape;
+		// When this string changes, the selection clears. Default keys on
+		// envelope identity (instance + protocol version) so a runner restart
+		// or a shape switch doesn't leave dangling node ids in selectedValue.
+		resetKey?: string;
+	} = $props();
 
 	let selectedValue = $state<string[]>([]);
+	let expandedValue = $state<string[]>([]);
 
-	// Reset the selection when the envelope identity changes (e.g. a runner
-	// restart re-keys the tree); otherwise a stale selectedValue points at
-	// an id that no longer exists in the new collection.
-	const envelopeKey = $derived(envelope ? `${envelope.instance}|${envelope.v}` : '');
-	let lastEnvelopeKey = $state('');
+	const computedResetKey = $derived.by(() => {
+		if (resetKey !== undefined) return resetKey;
+		if (envelope && typeof envelope === 'object') {
+			const env = envelope as Record<string, unknown>;
+			const inst = typeof env.instance === 'string' ? env.instance : '';
+			const v = typeof env.v === 'number' ? env.v : '';
+			return `${inst}|${v}`;
+		}
+		return '';
+	});
+	let lastResetKey = $state('');
 	$effect(() => {
-		if (envelopeKey !== lastEnvelopeKey) {
-			lastEnvelopeKey = envelopeKey;
+		if (computedResetKey !== lastResetKey) {
+			lastResetKey = computedResetKey;
 			selectedValue = [];
+			expandedValue = [];
 		}
 	});
+
+	function toggleIn(arr: string[], v: string): string[] {
+		return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+	}
+
+	// Intercept tree-row clicks in capture phase so plain clicks toggle selection
+	// (Zag's default is replace-on-click, with toggle gated behind ctrl/cmd —
+	// not discoverable for a debug inspector). Chevron clicks route to expansion
+	// instead so the operator can navigate without disturbing selection.
+	function handleTreeClick(event: MouseEvent) {
+		const target = event.target as HTMLElement;
+		const valueEl = target.closest('[data-value]') as HTMLElement | null;
+		if (!valueEl) return;
+		const value = valueEl.getAttribute('data-value');
+		if (!value) return;
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const isChevron = !!target.closest('[data-part="branch-indicator"]');
+		const isBranch = valueEl.hasAttribute('data-state');
+		if (isChevron && isBranch) {
+			expandedValue = toggleIn(expandedValue, value);
+		} else {
+			selectedValue = toggleIn(selectedValue, value);
+		}
+	}
 
 	const collection = $derived.by(() =>
 		createTreeViewCollection<XNode>({
 			nodeToValue: (n) => n.id,
 			nodeToString: (n) => n.name,
-			rootNode: buildTreeRoot(envelope)
+			rootNode: buildTreeRoot(envelope, shape)
 		})
 	);
 
-	const scoped = $derived(scopeAtPath(envelope, selectedValue));
+	const scoped = $derived(scopeAtPath(envelope, selectedValue, shape));
 	const codeText = $derived(JSON.stringify(scoped === undefined ? null : scoped, null, 2));
 
 	function reset() {
@@ -70,7 +114,7 @@
 {/snippet}
 
 <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_2fr]">
-	<div class="flex flex-col gap-2 card preset-tonal p-3">
+	<div class="flex flex-col gap-2 card preset-tonal p-3" onclickcapture={handleTreeClick}>
 		<div class="flex items-center justify-between gap-2">
 			<div class="text-surface-700-200 text-xs font-semibold tracking-wide uppercase">tree</div>
 			<button
@@ -87,8 +131,11 @@
 		{:else}
 			<TreeView
 				{collection}
+				selectionMode="multiple"
 				{selectedValue}
+				{expandedValue}
 				onSelectionChange={(d) => (selectedValue = d.selectedValue)}
+				onExpandedChange={(d) => (expandedValue = d.expandedValue)}
 			>
 				<TreeView.Tree class="flex flex-col gap-0.5">
 					{#each collection.rootNode.children ?? [] as node, index (node.id)}
@@ -96,6 +143,7 @@
 					{/each}
 				</TreeView.Tree>
 			</TreeView>
+			<div class="text-surface-500-400 text-xs">click name to toggle · click ▸ to expand</div>
 		{/if}
 	</div>
 
@@ -103,9 +151,11 @@
 		<div class="flex items-center justify-between gap-2">
 			<div class="text-surface-700-200 text-xs font-semibold tracking-wide uppercase">
 				json
-				{#if selectedValue.length > 0}
+				{#if selectedValue.length === 1}
+					<span class="text-surface-500-400 font-mono normal-case">· {selectedValue[0]}</span>
+				{:else if selectedValue.length > 1}
 					<span class="text-surface-500-400 font-mono normal-case">
-						· {selectedValue[0]}
+						· {selectedValue.length} paths
 					</span>
 				{/if}
 			</div>
