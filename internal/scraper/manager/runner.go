@@ -178,6 +178,17 @@ type runner struct {
 	// Loop-goroutine only; no mutex needed.
 	lastReadyBroadcastAt time.Time
 
+	// lastScenarioFingerprint tracks the most recently emitted scenario
+	// class envelope's observable fingerprint (counts of scenario-derived
+	// GameData fields). Used by maybeEmitScenario to re-broadcast the
+	// scenario class when scenarioStaticCache fills lazily after the
+	// Ready→Live broadcastSnapshot already shipped an empty envelope.
+	// broadcastSnapshot updates it to match its own emission so the
+	// downstream maybeEmitScenario call is a no-op (no double-emit on
+	// phase transitions). Reset to zero in releaseReader so the next
+	// match starts clean. Loop-goroutine only; no mutex needed.
+	lastScenarioFingerprint scenarioFingerprint
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -541,10 +552,16 @@ type classMessage struct {
 // Replaces v1 broadcastCurrentState — instead of one monolithic
 // current_state envelope to host:<name>, this fans out 1–7 envelopes
 // to per-class rooms (host:<name>:xbox, :scenario, :game, ...).
+//
+// Also snapshots lastScenarioFingerprint so the very-next maybeEmitScenario
+// (called from runReady/runLive immediately after this transition) doesn't
+// double-emit the same scenario class we just shipped.
 func (r *runner) broadcastSnapshot(svc *guards.Services) {
 	if svc == nil || svc.WS == nil {
 		return
 	}
+	c := r.readCache()
+	r.lastScenarioFingerprint = computeScenarioFingerprint(c.GameData)
 	for _, m := range r.classEnvelopeMessages() {
 		room, err := rooms.RoomForInstanceClass(r.name, m.Class)
 		if err != nil {

@@ -258,6 +258,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 				snap.GameState = gs
 				r.gameData = snap
 				r.publishGameData(snap)
+				r.maybeEmitScenario(svc)
 				r.publishSummary()
 				prevState = gs
 			}
@@ -281,6 +282,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
+			r.maybeEmitScenario(svc)
 		}
 
 		r.broadcastPoll(svc)
@@ -371,6 +373,7 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
+			r.maybeEmitScenario(svc)
 		}
 
 		// One state_update per fresh engine tick (~30Hz).
@@ -419,6 +422,7 @@ func (r *runner) releaseReader() {
 	r.gameData = scraper.GameData{}
 	r.powerItemsInitialised = false
 	r.liveReadFailures = 0
+	r.lastScenarioFingerprint = 0
 	r.withCache(func(c *instanceCache) {
 		c.Title = ""
 		c.GameState = ""
