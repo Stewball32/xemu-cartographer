@@ -86,13 +86,12 @@ const (
 // Active read path — direct value globals (low GVA, value-at-address)
 // ----------------------------------------------------------------------
 const (
-	AddrGameConnection     uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
-	AddrIsTeamGame         uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
-	AddrMainMenuActive     uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
-	AddrGameCanScore       uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
-	AddrMultiplayerMapName uint32 = 0x2E37CD // null-term ASCII — halocaster.py:1892
-	AddrGlobalStageName    uint32 = 0x2FAC20 // null-term ASCII (host only) — halocaster.py:1891
-	AddrVariant            uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
+	AddrGameConnection  uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
+	AddrIsTeamGame      uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
+	AddrMainMenuActive  uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
+	AddrGameCanScore    uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
+	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII (host only) — halocaster.py:1891
+	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
 )
 
 // ----------------------------------------------------------------------
@@ -144,7 +143,6 @@ var AllLowGVAs = []uint32{
 	AddrIsTeamGame,
 	AddrMainMenuActive,
 	AddrGameCanScore,
-	AddrMultiplayerMapName,
 	AddrGlobalStageName,
 	AddrVariant,
 	// Score bases

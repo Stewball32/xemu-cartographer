@@ -84,7 +84,7 @@ func (r *Reader) ensureScenarioStatic() {
 		return
 	}
 
-	r.scenarioCache.MapName = r.readLowString(AddrMultiplayerMapName, 32)
+	r.scenarioCache.MapName = r.readScenarioTagName()
 	r.scenarioCache.GameDifficulty = r.readGameDifficulty()
 	r.scenarioCache.PlayerSpawns = r.readPlayerSpawns()
 	r.scenarioCache.Fog = r.readFog()

@@ -207,7 +207,7 @@ func (r *Reader) composeGameData() scraper.GameData {
 		out.TagCache = r.scenarioCache.TagCache
 		out.PowerItemSpawns = r.composePowerItemSpawns()
 	} else {
-		out.Map = r.readLowString(AddrMultiplayerMapName, 32)
+		out.Map = r.readScenarioTagName()
 	}
 
 	return out
@@ -1292,6 +1292,55 @@ func (r *Reader) readTagName(tagIdx int16) (string, error) {
 	name := r.readHighString(namePtr)
 	r.tagNameCache[tagIdx] = name
 	return name, nil
+}
+
+// scenarioTagScanLimit caps the tag-instance walk in readScenarioTagName.
+// Halo: CE scenarios typically expose ~600 tags; the scenario tag is at
+// index 0 in every known scenario, so the loop almost always wins on the
+// first iteration. The bound exists only so a stale tagInstBase can't run
+// away.
+const scenarioTagScanLimit = 1024
+
+// readScenarioTagName returns the active scenario tag's name (the map
+// path, e.g. "levels\\test\\downrush\\downrush") by walking the tag
+// instance array for the entry whose data_ptr matches the global
+// scenario pointer. Replaces the halocaster.py-era AddrMultiplayerMapName
+// (0x2E37CD) low-GVA read, which returned "" for active matches on the
+// Xbox build.
+//
+// Self-resolves r.tagInstBase via DerefLowPtr if not yet cached so it
+// works from the Ready phase (before ReadTick's ensureBases pass runs).
+// Returns "" when either base pointer isn't reachable yet (early
+// pregame) or no tag entry matches inside the scan limit.
+func (r *Reader) readScenarioTagName() string {
+	if r.tagInstBase < HighGVAThreshold {
+		base, err := r.inst.DerefLowPtr(AddrGlobalTagInstancesPtr)
+		if err != nil || base < HighGVAThreshold {
+			return ""
+		}
+		r.tagInstBase = base
+	}
+	scenarioBase, err := r.inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	if err != nil || scenarioBase < HighGVAThreshold {
+		return ""
+	}
+	mem := r.inst.Mem
+	for i := uint32(0); i < scenarioTagScanLimit; i++ {
+		entry := r.tagInstBase + i*uint32(TagInstStride)
+		dataPtr, err := mem.ReadU32(entry + OffTagDataPtr)
+		if err != nil {
+			return ""
+		}
+		if dataPtr != scenarioBase {
+			continue
+		}
+		namePtr, err := mem.ReadU32(entry + OffTagNamePtr)
+		if err != nil || namePtr < HighGVAThreshold {
+			return ""
+		}
+		return r.readHighString(namePtr)
+	}
+	return ""
 }
 
 func (r *Reader) readHighString(gva uint32) string {
