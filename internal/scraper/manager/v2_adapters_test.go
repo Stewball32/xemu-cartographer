@@ -166,6 +166,44 @@ func TestTickAdapterConvertsPlayer(t *testing.T) {
 	}
 }
 
+// TestScenarioGametypesMarshalsAsArray: regression for the wire bug
+// where ScenarioPlayerSpawn.Gametypes was `[]uint8` and Go's encoding/json
+// marshaled it as a base64 string (e.g. "DQABAA==") instead of a JSON
+// number array. Fixed-size `[4]uint8` is not subject to that special case.
+func TestScenarioGametypesMarshalsAsArray(t *testing.T) {
+	c := &instanceCache{GameData: &scraper.GameData{
+		Map: "levels\\test\\pat_chillout\\chillout",
+		PlayerSpawns: []scraper.StaticPlayerSpawn{{
+			Index: 0,
+			X:     1, Y: 2, Z: 3,
+			Facing:    0,
+			TeamIndex: 0,
+			BspIndex:  0,
+			Gametype0: 13,
+			Gametype1: 0,
+			Gametype2: 1,
+			Gametype3: 0,
+		}},
+	}}
+	sp := buildScenarioPayload(c)
+	if sp == nil || len(sp.PlayerSpawns) != 1 {
+		t.Fatalf("buildScenarioPayload returned %+v, want 1 spawn", sp)
+	}
+	if sp.PlayerSpawns[0].Gametypes != [4]uint8{13, 0, 1, 0} {
+		t.Fatalf("Gametypes = %v, want [13 0 1 0]", sp.PlayerSpawns[0].Gametypes)
+	}
+	b, err := json.Marshal(sp)
+	if err != nil {
+		t.Fatalf("marshal scenario: %v", err)
+	}
+	if !contains(string(b), `"gametypes":[13,0,1,0]`) {
+		t.Fatalf("expected gametypes as JSON number array, got: %s", b)
+	}
+	if contains(string(b), `"gametypes":"`) {
+		t.Fatalf("gametypes marshaled as a string (base64 regression): %s", b)
+	}
+}
+
 // TestObjectsAdapterPromotesOwnerSentinels: 0xFFFFFFFF (no-owner
 // sentinel) becomes nil; real owner refs become pointers.
 func TestObjectsAdapterPromotesOwnerSentinels(t *testing.T) {

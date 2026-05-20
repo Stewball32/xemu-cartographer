@@ -196,9 +196,14 @@ func (r *Reader) composeGameData() scraper.GameData {
 	r.fillPlayerScores(out.Players, gametypeID)
 	out.TimeLimitTicks = 0 // no verified address
 
-	// Scenario-static data — fall through to live reads if cache hasn't filled
-	// yet (e.g. very early pregame when the scenario pointer is still null).
-	if r.scenarioCache != nil && r.scenarioCache.Filled {
+	// Scenario-static data — copy whatever has populated in the cache,
+	// independent of Filled. Filled is the re-read optimization flag (only
+	// flips once every critical reader has produced data); it must not gate
+	// the wire output, or fields that did populate (e.g. PlayerSpawns, Fog)
+	// get dropped just because ObjectTypes / PowerSpawnsScenario haven't
+	// filled yet. Fall back to a live readScenarioTagName when the cache
+	// hasn't gotten started or Map is still empty.
+	if r.scenarioCache != nil {
 		out.Map = r.scenarioCache.MapName
 		out.GameDifficulty = r.scenarioCache.GameDifficulty
 		out.PlayerSpawns = r.scenarioCache.PlayerSpawns
@@ -206,7 +211,8 @@ func (r *Reader) composeGameData() scraper.GameData {
 		out.ObjectTypes = r.scenarioCache.ObjectTypes
 		out.TagCache = r.scenarioCache.TagCache
 		out.PowerItemSpawns = r.composePowerItemSpawns()
-	} else {
+	}
+	if out.Map == "" {
 		out.Map = r.readScenarioTagName()
 	}
 

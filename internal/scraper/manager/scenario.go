@@ -61,7 +61,7 @@ type ScenarioPlayerSpawn struct {
 	Facing    float32      `json:"facing"`
 	TeamIndex uint8        `json:"team_index"`
 	BspIndex  uint8        `json:"bsp_index"`
-	Gametypes []uint8      `json:"gametypes"`
+	Gametypes [4]uint8     `json:"gametypes"`
 }
 
 type ScenarioPowerItemSpawn struct {

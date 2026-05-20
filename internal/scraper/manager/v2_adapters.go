@@ -199,7 +199,7 @@ func buildScenarioPayload(c *instanceCache) *ScenarioPayload {
 			Facing:    ps.Facing,
 			TeamIndex: ps.TeamIndex,
 			BspIndex:  ps.BspIndex,
-			Gametypes: []uint8{ps.Gametype0, ps.Gametype1, ps.Gametype2, ps.Gametype3},
+			Gametypes: [4]uint8{ps.Gametype0, ps.Gametype1, ps.Gametype2, ps.Gametype3},
 		})
 	}
 	for _, pis := range gd.PowerItemSpawns {
