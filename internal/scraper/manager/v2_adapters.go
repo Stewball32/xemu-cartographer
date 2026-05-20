@@ -207,6 +207,7 @@ func buildScenarioPayload(c *instanceCache) *ScenarioPayload {
 			SpawnID:       pis.SpawnID,
 			Tag:           pis.Tag,
 			IntervalTicks: pis.SpawnIntervalTicks,
+			GametypeMask:  pis.GametypeMask,
 			Pos:           vec3(pis.X, pis.Y, pis.Z),
 		})
 	}

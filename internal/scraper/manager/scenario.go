@@ -68,6 +68,7 @@ type ScenarioPowerItemSpawn struct {
 	SpawnID       int          `json:"spawn_id"`
 	Tag           string       `json:"tag"`
 	IntervalTicks int16        `json:"interval_ticks"`
+	GametypeMask  uint8        `json:"gametype_mask"` // u8 bitmask of which gametypes this placement applies to; 0 = no gametype constraint
 	Pos           scraper.Vec3 `json:"pos"`
 }
 

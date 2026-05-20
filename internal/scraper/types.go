@@ -247,6 +247,7 @@ type PowerItemSpawn struct {
 	SpawnID            int     `json:"spawn_id"`
 	Tag                string  `json:"tag"`
 	SpawnIntervalTicks int16   `json:"spawn_interval_ticks"`
+	GametypeMask       uint8   `json:"gametype_mask"` // u8 bitmask of which gametypes this placement applies to
 	X                  float32 `json:"x"`
 	Y                  float32 `json:"y"`
 	Z                  float32 `json:"z"`

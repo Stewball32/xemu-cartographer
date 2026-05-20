@@ -1,6 +1,10 @@
 package haloce
 
-import "github.com/Stewball32/xemu-cartographer/internal/scraper"
+import (
+	"log"
+
+	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+)
 
 // readPlayerSpawns walks the scenario's player-spawn array and returns one
 // StaticPlayerSpawn per entry. Reads at game-data read time only (scenario data is
@@ -89,58 +93,103 @@ func (r *Reader) readFog() *scraper.StaticFog {
 }
 
 // objectTypeDefMaxScan caps how many entries we'll walk in the
-// object-type-definition array. The engine has ~30-40 types in practice;
-// cap conservatively to avoid runaway reads if the range bounds are bogus.
+// object-type-definition array. The engine has 11 types on Xbox; cap a bit
+// higher in case a different build adds entries, and to bound runaway
+// reads if the range bounds ever land on garbage.
 const objectTypeDefMaxScan = 64
 
-// readObjectTypes walks the engine's object-type-def array between
-// RefAddrObjectTypeDefRangeLo/Hi and returns one StaticObjectType per
-// non-null entry. Static for the engine session.
+// haloceObjectTypeNames is the canonical name per type_index, in the
+// order Halo CE's engine stores them. Hardcoded because the per-type
+// struct's +0x00 field is a self-pointer/vtable on Xbox (no string
+// pointer, no fourcc), and the type-table order is fixed by the engine.
+var haloceObjectTypeNames = [11]string{
+	"biped",
+	"vehicle",
+	"weapon",
+	"equipment",
+	"garbage",
+	"projectile",
+	"scenery",
+	"machine",
+	"control",
+	"light_fixture",
+	"placeholder",
+}
+
+// readObjectTypes walks the engine's object-type-def array (at
+// RefAddrObjectTypeDefArray, length = (RangeHi - Array) / 4 = 11 on Xbox)
+// and returns one StaticObjectType per non-null entry. Static for the
+// engine session.
 //
-// Source: OffObjTypeDef* + RefAddrObjectTypeDef* constants.
+// Halocaster.py:344's RefAddrObjectTypeDefRangeLo was previously read as
+// a u32 pointer alongside Hi to compute the array count, but on Xbox both
+// addresses are literal array bounds, not pointers — Lo (= 0x1FC0D0) lands
+// inside a string region containing "object\0…" and dereferencing it gave
+// nonsense. Count is now computed from the constants directly; Lo deleted.
+//
+// Per-entry field at OffObjTypeDefClassFourcc is the engine's 4-char class
+// tag stored in reverse byte order (e.g. memory 'd','p','i','b' → "bipd"),
+// not a string pointer as halocaster.py believed.
+//
+// One-shot diagnostic log fires on the first call per Reader (M19) to
+// surface which gate trips when the result is empty.
 func (r *Reader) readObjectTypes() []scraper.StaticObjectType {
 	inst := r.inst
 	mem := inst.Mem
 
-	loHVA, err := inst.LowHVA(RefAddrObjectTypeDefRangeLo)
-	if err != nil {
-		return nil
-	}
-	hiHVA, err := inst.LowHVA(RefAddrObjectTypeDefRangeHi)
-	if err != nil {
-		return nil
-	}
-	arrayHVA, err := inst.LowHVA(RefAddrObjectTypeDefArray)
-	if err != nil {
-		return nil
-	}
-
-	loVal, _ := mem.ReadU32At(loHVA)
-	hiVal, _ := mem.ReadU32At(hiHVA)
-	if hiVal <= loVal {
-		return nil
-	}
-	count := int((hiVal - loVal) / 4)
-	if count <= 0 {
-		return nil
-	}
+	count := int((RefAddrObjectTypeDefRangeHi - RefAddrObjectTypeDefArray) / 4)
 	if count > objectTypeDefMaxScan {
 		count = objectTypeDefMaxScan
+	}
+	var filteredByPtr, kept int
+	gate := "ok"
+	defer func() {
+		if r.loggedObjectTypesDiag {
+			return
+		}
+		r.loggedObjectTypesDiag = true
+		log.Printf("scraper[%s]: readObjectTypes diag: gate=%s count=%d filteredByPtr=%d kept=%d",
+			r.name, gate, count, filteredByPtr, kept)
+	}()
+
+	arrayHVA, err := inst.LowHVA(RefAddrObjectTypeDefArray)
+	if err != nil {
+		gate = "LowHVA(Array)"
+		return nil
 	}
 
 	out := make([]scraper.StaticObjectType, 0, count)
 	for i := 0; i < count; i++ {
 		entryHVA := arrayHVA + int64(i)*4
 		typeDefPtr, _ := mem.ReadU32At(entryHVA)
-		if typeDefPtr < HighGVAThreshold {
+		if typeDefPtr == 0 {
+			filteredByPtr++
 			continue
 		}
-		stringPtr, _ := mem.ReadU32(typeDefPtr + OffObjTypeDefStringPtr)
-		datumSize, _ := mem.ReadU16(typeDefPtr + OffObjTypeDefDatumSize)
+
+		// Type-def structs live in the engine's .data section at LOW GVA
+		// (typically 0x001Fxxxx, in the same low-memory page as the array).
+		// mem.ReadU32(gva) assumes high GVA; for low GVAs we must translate
+		// via QMP (cached after the first call by lowHVAs).
+		var typeDefHVA int64
+		if typeDefPtr >= HighGVAThreshold {
+			typeDefHVA = mem.HighGVA(typeDefPtr)
+		} else {
+			hva, err := inst.LowHVA(typeDefPtr)
+			if err != nil {
+				hva, err = inst.RefreshLowHVA(typeDefPtr)
+			}
+			if err != nil {
+				filteredByPtr++
+				continue
+			}
+			typeDefHVA = hva
+		}
+		datumSize, _ := mem.ReadU16At(typeDefHVA + int64(OffObjTypeDefDatumSize))
 
 		name := ""
-		if stringPtr >= HighGVAThreshold {
-			name = r.readHighString(stringPtr)
+		if i < len(haloceObjectTypeNames) {
+			name = haloceObjectTypeNames[i]
 		}
 
 		out = append(out, scraper.StaticObjectType{
@@ -148,6 +197,10 @@ func (r *Reader) readObjectTypes() []scraper.StaticObjectType {
 			Name:      name,
 			DatumSize: datumSize,
 		})
+		kept++
+	}
+	if kept == 0 {
+		gate = "allFilteredByPtr"
 	}
 	return out
 }

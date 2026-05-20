@@ -1,6 +1,7 @@
 package haloce
 
 import (
+	"log"
 	"math"
 	"strings"
 
@@ -37,6 +38,13 @@ type Reader struct {
 	// most recent ReadGameState call. Surfaced via LastStateInputs for the
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
+
+	// Diagnostic one-shot flags for the two readers under offset investigation
+	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
+	// empty on Xbox builds). Set true after the first call logs its raw
+	// pointer/count values so the log doesn't flood at 30Hz.
+	loggedObjectTypesDiag bool
+	loggedPowerSpawnsDiag bool
 }
 
 // NewReader creates a Reader for the given instance.
@@ -240,6 +248,7 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 			SpawnID:            sp.SpawnID,
 			Tag:                sp.Tag,
 			SpawnIntervalTicks: sp.SpawnIntervalTicks,
+			GametypeMask:       sp.GametypeMask,
 			X:                  sp.X,
 			Y:                  sp.Y,
 			Z:                  sp.Z,
@@ -1127,43 +1136,75 @@ func (r *Reader) readPowerItemStatus(
 // is filled separately by readPowerInitialOIDs once world objects exist.
 //
 // Returns nil if the scenario isn't loaded yet.
+//
+// One-shot diagnostic log fires on the first call per Reader (M19
+// 2026-05-18) to surface which gate drops every candidate item:
+// scenarioBase/ensureBases failures, itemCount/firstItemAddr cache
+// gates, or per-item filters (negative tag index / empty tag name /
+// non-positive respawn interval).
 func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 	inst := r.inst
 	mem := inst.Mem
 
-	scenarioBase, err := inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	var scenarioBase, firstItemAddr uint32
+	var itemCount int32
+	var emptyHandle, emptyTagName, nonPowerInterval, kept int
+	gate := "ok"
+	defer func() {
+		if r.loggedPowerSpawnsDiag {
+			return
+		}
+		r.loggedPowerSpawnsDiag = true
+		log.Printf("scraper[%s]: readPowerSpawnScenarios diag: gate=%s scenarioBase=0x%08X tagInstBase=0x%08X itemCount=%d firstItemAddr=0x%08X emptyHandle=%d emptyName=%d nonPower=%d kept=%d",
+			r.name, gate, scenarioBase, r.tagInstBase, itemCount, firstItemAddr,
+			emptyHandle, emptyTagName, nonPowerInterval, kept)
+	}()
+
+	var err error
+	scenarioBase, err = inst.DerefLowPtr(AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
+		gate = "scenarioBase"
 		return nil
 	}
 	if err := r.ensureBases(); err != nil {
+		gate = "ensureBases"
 		return nil
 	}
 
-	itemCount, _ := mem.ReadS32(scenarioBase + OffScenarioItemCount)
+	itemCount, _ = mem.ReadS32(scenarioBase + OffScenarioItemCount)
 	if itemCount <= 0 {
+		gate = "itemCount<=0"
 		return nil
 	}
-	firstItemAddr, _ := mem.ReadU32(scenarioBase + OffScenarioItemFirst)
+	firstItemAddr, _ = mem.ReadU32(scenarioBase + OffScenarioItemFirst)
 	if firstItemAddr < HighGVAThreshold {
+		gate = "firstItemAddr"
 		return nil
 	}
 
 	var spawns []scenarioPowerSpawn
 	for i := int32(0); i < itemCount; i++ {
 		itemAddr := firstItemAddr + uint32(i)*ScenarioItemStride
-		tagIdxRaw, _ := mem.ReadS32(itemAddr + OffScenItemTagIndex)
-		if tagIdxRaw < 0 {
+		// The field at +0x5C is a u32 tag HANDLE (high16=salt, low16=index)
+		// — not an s32 index as halocaster.py:648 claimed. Salt bits often
+		// have the high bit set, so reading as signed gave -1 for every item.
+		handle, _ := mem.ReadU32(itemAddr + OffScenItemTagIndex)
+		if handle == HandleEmpty {
+			emptyHandle++
 			continue
 		}
-		tagIdx := int16(tagIdxRaw)
+		tagIdx := int16(handle & HandleIndexMask)
 		tagName, err := r.readTagName(tagIdx)
 		if err != nil || tagName == "" {
+			emptyTagName++
 			continue
 		}
-		interval := r.readSpawnInterval(tagIdx)
+		interval := r.readSpawnInterval(itemAddr, tagIdx)
 		if interval <= 0 {
+			nonPowerInterval++
 			continue // not a power item
 		}
+		gametypeMask, _ := mem.ReadU8(itemAddr + OffScenItemGameType)
 		x, _ := mem.ReadF32(itemAddr + OffScenItemX)
 		y, _ := mem.ReadF32(itemAddr + OffScenItemY)
 		z, _ := mem.ReadF32(itemAddr + OffScenItemZ)
@@ -1172,10 +1213,15 @@ func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 			SpawnID:            len(spawns),
 			Tag:                tagName,
 			SpawnIntervalTicks: interval,
+			GametypeMask:       gametypeMask,
 			X:                  x,
 			Y:                  y,
 			Z:                  z,
 		})
+		kept++
+	}
+	if kept == 0 {
+		gate = "allItemsFiltered"
 	}
 	return spawns
 }
@@ -1260,22 +1306,36 @@ func (r *Reader) findTagIndex(name string) (int16, error) {
 	return -1, nil
 }
 
-func (r *Reader) readSpawnInterval(tagIdx int16) int16 {
+// readSpawnInterval returns the effective respawn interval for a scenario
+// item placement, in TICKS. Source data on Xbox is in seconds; we multiply
+// by TicksPerSecond so the rest of the scraper (RespawnTimer, event
+// detection) stays in tick units.
+//
+// Resolution order matches the Halo CE engine: prefer the per-placement
+// override at scenario_item+0x0E; fall back to the itmc tag's default at
+// tag_data+0x0C. Returns 0 only when both are zero (non-respawning item).
+//
+// halocaster.py:655's chain (tag_data+0x14 → ptr → +0x0C) was PC-only —
+// on Xbox the itmc body is inlined into the tag_data buffer with no
+// indirection step.
+func (r *Reader) readSpawnInterval(itemAddr uint32, tagIdx int16) int16 {
+	mem := r.inst.Mem
+	if v, _ := mem.ReadS16(itemAddr + OffScenItemSpawnTime); v > 0 {
+		return int16(uint32(v) * TicksPerSecond)
+	}
 	if r.tagInstBase < HighGVAThreshold {
 		return 0
 	}
-	mem := r.inst.Mem
 	tagInstEntry := r.tagInstBase + uint32(TagInstStride)*uint32(uint16(tagIdx))
 	tagDataPtr, _ := mem.ReadU32(tagInstEntry + OffTagDataPtr)
 	if tagDataPtr < HighGVAThreshold {
 		return 0
 	}
-	intervalTablePtr, _ := mem.ReadU32(tagDataPtr + OffTagRespawnIntervalOff)
-	if intervalTablePtr < HighGVAThreshold {
+	seconds, _ := mem.ReadS16(tagDataPtr + OffTagItmcSpawnTime)
+	if seconds <= 0 {
 		return 0
 	}
-	interval, _ := mem.ReadS16(intervalTablePtr + OffTagRespawnInterval)
-	return interval
+	return int16(uint32(seconds) * TicksPerSecond)
 }
 
 // -------------------------------------------------------------------

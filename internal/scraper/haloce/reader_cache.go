@@ -25,6 +25,7 @@ type scenarioPowerSpawn struct {
 	SpawnID            int
 	Tag                string
 	SpawnIntervalTicks int16
+	GametypeMask       uint8 // u8 bitmask at scenario_item+0x04; which gametypes this placement applies to
 	X, Y, Z            float32
 }
 

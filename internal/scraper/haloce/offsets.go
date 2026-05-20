@@ -182,7 +182,6 @@ var AllLowGVAs = []uint32{
 	RefAddrObjectDatumSize,
 	RefAddrUnitDatumSize,
 	RefAddrItemDatumSize,
-	RefAddrObjectTypeDefRangeLo,
 	RefAddrObjectTypeDefRangeHi,
 	RefAddrDefaultFramerate,
 	RefAddrRefreshRate,
@@ -421,19 +420,31 @@ const (
 // Scenario item spawn offsets (at *AddrGlobalScenarioPtr)
 // ----------------------------------------------------------------------
 const (
-	OffScenarioItemCount   uint32 = 900  // s32 — halocaster.py:631
-	OffScenarioItemFirst   uint32 = 904  // u32 — halocaster.py:632
-	ScenarioItemStride            = 144  // bytes per entry — halocaster.py:641
-	OffScenItemUnknownAttr uint32 = 0x0E // s16 (HC uses as filter) — halocaster.py:642
-	OffScenItemGameType    uint32 = 0x04 // u8 gametype-restricted spawn flag — halocaster.py:663
-	OffScenItemTagIndex    uint32 = 0x5C // s32 tag index (-1 if empty) — halocaster.py:648
-	OffScenItemX           uint32 = 0x40 // f32 — halocaster.py:664
-	OffScenItemY           uint32 = 0x44 // f32 — halocaster.py:665
-	OffScenItemZ           uint32 = 0x48 // f32 — halocaster.py:666
-	// Spawn interval lookup: read_u32(tagDataPtr + OffTagDataPtr) → base; read_s16(base + 0x0C)
-	OffTagRespawnIntervalOff uint32 = 0x14 // u32 at tag_data → pointer to interval table — halocaster.py:655
-	OffTagRespawnInterval    uint32 = 0x0C // s16 within interval table
+	OffScenarioItemCount uint32 = 900 // s32 — halocaster.py:631
+	OffScenarioItemFirst uint32 = 904 // u32 — halocaster.py:632
+	ScenarioItemStride          = 144 // bytes per entry — halocaster.py:641
+	// OffScenItemSpawnTime is the per-placement respawn time override in
+	// seconds (s16). 0 = inherit the itmc tag's default. halocaster.py:642
+	// called this "unknown_item_attribute" because PC used it as a filter,
+	// but on Xbox the engine reads it as the placement's spawn_time override
+	// per Bungie's ScenarioItemPlacement struct.
+	OffScenItemSpawnTime uint32 = 0x0E
+	OffScenItemGameType  uint32 = 0x04 // u8 gametype-restricted spawn flag — halocaster.py:663
+	OffScenItemTagIndex  uint32 = 0x5C // u32 tag HANDLE (high16=salt, low16=index); 0xFFFFFFFF=empty — halocaster.py:648 was wrong about s32-index
+	OffScenItemX         uint32 = 0x40 // f32 — halocaster.py:664
+	OffScenItemY         uint32 = 0x44 // f32 — halocaster.py:665
+	OffScenItemZ         uint32 = 0x48 // f32 — halocaster.py:666
+	// OffTagItmcSpawnTime is the itmc tag's default spawn_time in seconds
+	// (s16), read directly out of tag_data. halocaster.py:655 used a
+	// PC-only indirection chain (tag_data+0x14 → ptr → +0x0C) which doesn't
+	// exist on Xbox — the itmc body is inlined into the tag_data buffer.
+	OffTagItmcSpawnTime uint32 = 0x0C
 )
+
+// TicksPerSecond is Halo CE Xbox's fixed engine tick rate. Used to convert
+// seconds-valued fields (respawn times stored in itmc tags / scenario
+// placements) into the tick units used by the rest of the scraper.
+const TicksPerSecond uint32 = 30
 
 // ----------------------------------------------------------------------
 // Common sentinel / magic values used across reads
@@ -493,12 +504,11 @@ const (
 	RefAddrFogParams               uint32 = 0x2FC8A8 // halocaster.py:864,867 — fog_params base
 	RefAddrGlobalVariant           uint32 = 0x2F90A8 // halocaster.py:1187 — global_variant container
 	RefAddrGlobalRandomSeed        uint32 = 0x2E3648 // halocaster.py:1932 — u32 RNG seed
-	RefAddrObjectTypeDefArray      uint32 = 0x1FCB78 // halocaster.py:734,742 — u32[] table of object-type def pointers
+	RefAddrObjectTypeDefArray      uint32 = 0x1FCB78 // halocaster.py:734,742 — u32[] table of object-type def pointers (inclusive start)
 	RefAddrObjectDatumSize         uint32 = 0x1FC0E0 // halocaster.py:765 — u16 base object struct size
 	RefAddrUnitDatumSize           uint32 = 0x1FC188 // halocaster.py:766 — u16 unit subclass size
 	RefAddrItemDatumSize           uint32 = 0x1FC380 // halocaster.py:767 — u16 item subclass size
-	RefAddrObjectTypeDefRangeLo    uint32 = 0x1FC0D0 // halocaster.py:344 — object-type defs cache range start
-	RefAddrObjectTypeDefRangeHi    uint32 = 0x1FCBA4 // halocaster.py:344 — object-type defs cache range end
+	RefAddrObjectTypeDefRangeHi    uint32 = 0x1FCBA4 // exclusive end of the object-type-def array; count = (Hi - Array) / 4 (= 11 on Xbox)
 	RefAddrDefaultFramerate        uint32 = 0xBB648  // halocaster.py:2139 — engine config (cosmetic)
 	RefAddrRefreshRate             uint32 = 0x1F8C98 // halocaster.py:2140 — engine config (cosmetic)
 )
@@ -722,7 +732,12 @@ const (
 // HC:732-746
 // ============================================================================
 const (
-	OffObjTypeDefStringPtr uint32 = 0x00 // u32 → null-terminated type name — halocaster.py:736
+	// halocaster.py:736 thought +0x00 was a u32 string pointer to the human
+	// type name. On Xbox the value at +0x00 looks like a self-pointer or
+	// vtable (it matches the struct's own GVA), not a fourcc and not a
+	// string. The string-pointer field was likely stripped on Xbox along
+	// with other debug strings. We hardcode names instead — see
+	// haloceObjectTypeNames in reader_static.go.
 	OffObjTypeDefDatumSize uint32 = 0x08 // u16 — halocaster.py:744
 )
 
