@@ -1,15 +1,18 @@
 <script lang="ts">
+	import { RotateCcwIcon } from '@lucide/svelte';
 	import { KEYSYM } from '$lib/utils/vnc-keyboard';
 
 	let {
 		disabled = false,
 		onPress,
 		onRelease,
+		onReset,
 		class: extraClass = ''
 	}: {
 		disabled?: boolean;
 		onPress?: (sym: number) => void;
 		onRelease?: (sym: number) => void;
+		onReset?: () => void;
 		class?: string;
 	} = $props();
 
@@ -71,7 +74,7 @@
 </script>
 
 <div class="flex flex-col gap-3 select-none {extraClass}">
-	<!-- Top bar: LB LT | Back Start | RT RB -->
+	<!-- Top bar: LB LT | Reset | RT RB -->
 	<div class="flex items-center justify-between gap-2">
 		<div class="flex gap-1">
 			<button
@@ -92,22 +95,18 @@
 			>
 		</div>
 		<div class="flex gap-1">
-			<button
-				class="btn btn-sm {buttonClass('BackSpace', 'gray')}"
-				{disabled}
-				onpointerdown={(e) => handlePointerDown(e, 'BackSpace')}
-				onpointerup={(e) => handlePointerUp(e, 'BackSpace')}
-				onpointercancel={(e) => handlePointerUp(e, 'BackSpace')}
-				onlostpointercapture={(e) => handlePointerUp(e, 'BackSpace')}>Back</button
-			>
-			<button
-				class="btn btn-sm {buttonClass('Return', 'gray')}"
-				{disabled}
-				onpointerdown={(e) => handlePointerDown(e, 'Return')}
-				onpointerup={(e) => handlePointerUp(e, 'Return')}
-				onpointercancel={(e) => handlePointerUp(e, 'Return')}
-				onlostpointercapture={(e) => handlePointerUp(e, 'Return')}>Start</button
-			>
+			{#if onReset}
+				<button
+					type="button"
+					class="btn preset-tonal-warning btn-sm"
+					{disabled}
+					onclick={onReset}
+					title="Send Ctrl+R to xemu — soft reset to dashboard"
+				>
+					<RotateCcwIcon class="size-4" />
+					<span>Reset</span>
+				</button>
+			{/if}
 		</div>
 		<div class="flex gap-1">
 			<button
@@ -214,7 +213,7 @@
 		</div>
 	</div>
 
-	<!-- Bottom: Left stick + Right stick (L3 / R3 in centers) -->
+	<!-- Bottom: Left stick | Back Start | Right stick -->
 	<div class="flex items-center justify-between gap-2">
 		<div class="grid grid-cols-3 grid-rows-3 gap-1">
 			<div></div>
@@ -261,6 +260,25 @@
 				onlostpointercapture={(e) => handlePointerUp(e, 'd')}>L↓</button
 			>
 			<div></div>
+		</div>
+
+		<div class="flex gap-1">
+			<button
+				class="btn btn-sm {buttonClass('BackSpace', 'gray')}"
+				{disabled}
+				onpointerdown={(e) => handlePointerDown(e, 'BackSpace')}
+				onpointerup={(e) => handlePointerUp(e, 'BackSpace')}
+				onpointercancel={(e) => handlePointerUp(e, 'BackSpace')}
+				onlostpointercapture={(e) => handlePointerUp(e, 'BackSpace')}>Back</button
+			>
+			<button
+				class="btn btn-sm {buttonClass('Return', 'gray')}"
+				{disabled}
+				onpointerdown={(e) => handlePointerDown(e, 'Return')}
+				onpointerup={(e) => handlePointerUp(e, 'Return')}
+				onpointercancel={(e) => handlePointerUp(e, 'Return')}
+				onlostpointercapture={(e) => handlePointerUp(e, 'Return')}>Start</button
+			>
 		</div>
 
 		<div class="grid grid-cols-3 grid-rows-3 gap-1">

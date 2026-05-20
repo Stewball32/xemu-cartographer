@@ -4,7 +4,7 @@
 	import { adminGet, adminPost, AdminFetchError } from '$lib/utils/admin-api';
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { confirmToast, toastPromise } from '$lib/stores/toaster';
+	import { confirmToast, toastPromise, toaster } from '$lib/stores/toaster';
 	import KioskFrame from '$lib/components/kiosk/KioskFrame.svelte';
 	import XboxController from '$lib/components/kiosk/XboxController.svelte';
 	import { VNCKeyboard } from '$lib/utils/vnc-keyboard';
@@ -137,6 +137,19 @@
 			busyAction = null;
 			await loadDetail();
 		}
+	}
+
+	async function handleVMReset() {
+		if (!vnc) return;
+		const ok = await confirmToast({
+			type: 'warning',
+			title: 'Reset to dashboard?',
+			description: `${name} — sends Ctrl+R to xemu; current play session will be lost.`,
+			confirmLabel: 'Reset'
+		});
+		if (!ok) return;
+		vnc.sendChord(['Control_L', 'r']);
+		toaster.info({ title: 'Reset', description: 'Sent Ctrl+R to xemu' });
 	}
 
 	// No /restart endpoint on the backend — emulate with stop + start.
@@ -298,6 +311,7 @@
 					disabled={!vncConnected}
 					onPress={(sym) => vnc?.sendKey(sym, true)}
 					onRelease={(sym) => vnc?.sendKey(sym, false)}
+					onReset={handleVMReset}
 				/>
 			</div>
 		</div>

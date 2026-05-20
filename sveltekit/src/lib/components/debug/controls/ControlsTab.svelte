@@ -105,20 +105,6 @@
 		setTimeout(() => vnc?.sendKey(sym, false), 60);
 	}
 
-	function sendVNCChord(keys: string[]) {
-		if (!vnc) return;
-		const syms: number[] = [];
-		for (const k of keys) {
-			const sym = KEYSYM[k];
-			if (sym == null) return;
-			syms.push(sym);
-		}
-		for (const sym of syms) vnc.sendKey(sym, true);
-		setTimeout(() => {
-			for (let i = syms.length - 1; i >= 0; i--) vnc?.sendKey(syms[i], false);
-		}, 60);
-	}
-
 	async function handleStart() {
 		busyAction = 'start';
 		status = 'loading';
@@ -183,7 +169,7 @@
 	}
 
 	function onResetVM() {
-		sendVNCChord(['Control_L', 'r']);
+		vnc?.sendChord(['Control_L', 'r']);
 		toaster.info({ title: 'Reset', description: 'Sent Ctrl+R to VM' });
 	}
 
