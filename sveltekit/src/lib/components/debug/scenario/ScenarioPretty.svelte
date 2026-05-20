@@ -102,6 +102,11 @@
 		return g.join(', ');
 	}
 
+	function fmtGametypeMask(m: number | undefined | null): string {
+		if (m === undefined || m === null || !Number.isFinite(m)) return '—';
+		return `0x${(m >>> 0).toString(16).toUpperCase().padStart(2, '0')}`;
+	}
+
 	const objectTypeGroups: DataColumnGroup<ScenarioObjectType>[] = [
 		{
 			columns: [
@@ -162,6 +167,13 @@
 				{ key: 'spawn_id', label: 'spawn_id', align: 'right' },
 				{ key: 'tag', label: 'tag' },
 				{ key: 'interval_ticks', label: 'interval_ticks', align: 'right' },
+				{
+					key: 'gametype_mask',
+					label: 'gametype_mask',
+					align: 'right',
+					sortAccessor: (r) => r.gametype_mask ?? null,
+					format: (r) => fmtGametypeMask(r.gametype_mask)
+				},
 				{
 					key: 'pos.x',
 					label: 'pos.x',

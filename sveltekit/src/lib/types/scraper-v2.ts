@@ -209,6 +209,14 @@ export interface ScenarioPowerItemSpawn {
 	spawn_id: number;
 	tag: string;
 	interval_ticks: number;
+	/** u8 bitmask of which gametypes this placement applies to; 0 = no
+	 * gametype constraint. The same physical position may appear in
+	 * multiple rows with different `gametype_mask` + `interval_ticks`
+	 * because Halo CE stores per-gametype variants of placements (e.g.
+	 * CTF rocket at 30s respawn vs Slayer rocket at 120s respawn, same
+	 * coords). Bit-to-gametype mapping is not yet confirmed — see the
+	 * 2026-05-19 planning entry in docs/milestones/M19-robustness-offsets.md. */
+	gametype_mask: number;
 	pos: Vec3;
 }
 

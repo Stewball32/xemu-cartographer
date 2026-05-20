@@ -139,6 +139,7 @@ export interface PowerItemSpawn {
 	spawn_id: number;
 	tag: string;
 	spawn_interval_ticks: number;
+	gametype_mask: number;
 	x: number;
 	y: number;
 	z: number;

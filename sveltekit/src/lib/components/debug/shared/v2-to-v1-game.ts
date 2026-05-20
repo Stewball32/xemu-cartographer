@@ -51,6 +51,7 @@ export function v2ToV1GameData(
 			spawn_id: p.spawn_id,
 			tag: p.tag,
 			spawn_interval_ticks: p.interval_ticks,
+			gametype_mask: p.gametype_mask ?? 0,
 			x: p.pos.x,
 			y: p.pos.y,
 			z: p.pos.z
