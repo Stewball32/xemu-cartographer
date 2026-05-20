@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.6.0] - 2026-05-20
+
+### Added
+
 - `/api/version` endpoint returning the git-tag-derived version, short commit, and build date.
 - Container images now tagged with both `:VERSION` and `:latest`.
 - ADR-0001 documents the single-source-of-truth version pipeline (git tag → ldflags → `internal/version` → `/api/version` → frontend `PUBLIC_APP_VERSION`).
@@ -22,6 +36,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Halo CE scraper: one-shot diagnostic log lines on the first call per Reader for `readObjectTypes` and `readPowerSpawnScenarios` (gate-tripped + raw pointer/count counters). Makes future offset drift loud without flooding logs at 30Hz (M19).
 - Events debug tab: envelope-stats header (`latest seq`, `latest tick`, `received`, `event_type`, `logged`) with the same Pretty/JSON `Switch` as the Xbox tab; new JSON view pairs a Skeleton `TreeView` walking the rolling event log envelope-by-envelope with a scoped `CodeBlock` (M06).
 - New v2 `probe` envelope class — on-demand only, request/reply via `request_probe` WS handler (mirrors `request_events`). Carries `state_inputs` + `score_probe` from the active `GameReader` plugin's `LastStateInputs` + `BuildScoreProbe` methods. Frontend exposes `scraperWSV2.probe[name]` + `lastProbeReplyAt[name]` + `requestProbe(instance)`; the standalone Probe page (`/pod/probe/<name>/`) consumes it with a Refresh button + "refreshed Ns ago" indicator. Reader access serialised through the runner loop via a buffered `probeReqCh` so reader-cache state stays loop-only (no race with the WS handler goroutine) (M06).
+- Kiosk Xbox controller gains a Reset button (warning-toned, RotateCcw icon) that sends Ctrl+R as a VNC chord to soft-reset xemu back to the dashboard. New shared `VNCKeyboard.sendChord(keys, holdMs)` helper consolidates chord behavior; `ControlsTab` now calls it instead of duplicating the chord logic. Back/Start move down next to the analog sticks (M06).
+- New `/pod/[name]/` landing page — per-pod hub with a `StatTile` strip (websockets, scraper phase, xbox, title, map, variant) sourced from `scraperWSV2.{hostSummaries,xbox,game}`, a podman container detail card (status, ports, scraper attached — the data the placeholder Container debug tab was meant to surface), three large navigation tiles to View / Debug / Probe, and Start / Stop / Delete actions (M06).
 
 ### Changed
 
@@ -39,6 +55,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Shared helpers extracted out of the retired `postgame/postgame-vm.ts`: `PlayerTotalRow` + `buildPlayerTotalRow` + `buildPlayerTotals` moved to `debug/shared/player-totals.ts`, and the v2→v1 `v2ToV1PreviousGame` adapter moved to `debug/shared/previous-game-adapter.ts` (consumed by the Overview tab's previous-match section).
 - `debug` envelope shrinks to just `players` — `state_inputs` and `score_probe` moved to the new on-demand `probe` envelope so `BuildScoreProbe()` no longer runs per-tick (~30 Hz of memory-region sampling work, regardless of whether anyone was watching). The Debug tab loses those two Accordion sections; the standalone Probe page is the canonical view (M06).
 - `/api/admin/scraper/{name}/inspect` returns empty `state_inputs` / `score_probe` maps for v1 wire-shape stability — the cache fields are gone; clients that want live probe data should use the new `request_probe` WS path.
+- Pod route hierarchy reshaped to `/pod/[name]/{view,debug,probe}/` (was `/pod/{view,debug,probe}/[name]/`). The instance name is now the parent path segment so per-pod state can hang off `/pod/[name]/` cleanly. `/pod/+page.svelte` simplifies: View/Debug/Probe per-row buttons removed (navigation funnels through the new `/pod/[name]/` hub), row click routes to `/pod/[name]/`, Start/Stop/Delete stay as row actions. Sub-page "Back" links point at the per-pod hub rather than all the way back to `/pod/`. Playwright specs + mock helpers bulk-updated to the new URLs (M06).
 
 ### Deprecated
 
@@ -47,6 +64,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `SystemTab.svelte`, `runtime-vm.ts`, and the old per-tab `xbox-vm.ts` under `sveltekit/src/lib/components/debug/system/` (folder removed entirely — superseded by `debug/xbox/`).
 - Unused `showAll` getter from the probe page's `DebugContext` wiring.
 - `state_inputs` + `score_probe` fields on the `debug` envelope (and on `DebugPayload` / `instanceCache`) — both moved to the new on-demand `probe` envelope (see Added).
+- Placeholder `ContainerTab` and `SummaryTab` debug components (and their unused `TabPlaceholder` shell) — Container's intended purpose (podman details) is absorbed into the new `/pod/[name]/` landing page; Summary's intended purpose (cross-instance host:summary view) is covered by `/pod/+page.svelte` which already reads from `scraperWSV2.hostSummaries`. The `container` / `summary` entries are gone from the debug-page tab strip too (M06).
 
 ### Fixed
 

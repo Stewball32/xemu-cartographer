@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-17
+> **Last updated:** 2026-05-20
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -14,11 +14,10 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Now
 
-- [ ] [M06 — Frontend polish (theme + auth-refresh fix + debug revamp)](milestones/M06-frontend-polish.md)
+- [ ] [M07 — Identity schemas: gamertags + teams](milestones/M07-identity-schemas.md)
 
 ## Next
 
-- M07 — Identity schemas: gamertags + teams
 - M08 — Roles + permissions
 - M09 — Match-aware kiosk view
 - M10 — Overlay revamp + new browser sources

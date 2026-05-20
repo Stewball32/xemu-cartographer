@@ -10,7 +10,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M03  | [Container lifecycle (Podman)](M03-container-lifecycle.md)                                  | Done        |
 | M04  | [SvelteKit overlay + container management UI](M04-frontend-overlay-ui.md)                   | Done        |
 | M05  | [Scraper & WebSocket phase model + cache refactor](M05-phase-model-refactor.md)             | Done        |
-| M06  | [Frontend polish (theme + auth-refresh fix + debug revamp)](M06-frontend-polish.md)         | In progress |
+| M06  | [Frontend polish (theme + auth-refresh fix + debug revamp)](M06-frontend-polish.md)         | Done        |
 | M07  | [Identity schemas: gamertags + teams](M07-identity-schemas.md)                              | Planned     |
 | M08  | [Roles + permissions](M08-roles-permissions.md)                                             | Planned     |
 | M09  | [Match-aware kiosk view](M09-match-aware-kiosk.md)                                          | Planned     |
