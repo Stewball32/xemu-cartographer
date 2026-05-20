@@ -9,14 +9,14 @@ import { screenshotPodRoute } from '../helpers/screenshot';
 // (no envelope received yet) — we still assert the section headings exist
 // because they're always present in the Pretty view, and we still exercise
 // the Pretty/JSON Switch + TreeView shell to catch render-time regressions.
-test('debug-debug: /pod/debug/[name]/#debug renders envelope-stats header + Pretty sections + JSON view', async ({
+test('debug-debug: /pod/[name]/debug/#debug renders envelope-stats header + Pretty sections + JSON view', async ({
 	page
 }) => {
 	await installPodMocks(page);
 	await loginAsAdmin(page);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/pod/debug/${MOCK_INSTANCE_LIVE}/#debug`);
+	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#debug`);
 	await page.waitForLoadState('networkidle');
 
 	// Skeleton Tabs keeps every tabpanel in the DOM, only the selected one is
@@ -46,5 +46,5 @@ test('debug-debug: /pod/debug/[name]/#debug renders envelope-stats header + Pret
 	// "no envelope to walk" empty-state copy is fine to assert.
 	await expect(debugPanel.getByText(/no envelope to walk/i).first()).toBeVisible();
 
-	await screenshotPodRoute(page, `/pod/debug/${MOCK_INSTANCE_LIVE}/#debug`, 'debug-debug');
+	await screenshotPodRoute(page, `/pod/${MOCK_INSTANCE_LIVE}/debug/#debug`, 'debug-debug');
 });

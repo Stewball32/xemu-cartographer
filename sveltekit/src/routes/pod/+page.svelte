@@ -3,12 +3,9 @@
 	import {
 		ArrowDownIcon,
 		ArrowUpIcon,
-		BugIcon,
 		EraserIcon,
-		EyeIcon,
 		LoaderIcon,
 		PlayIcon,
-		RadarIcon,
 		RefreshCwIcon,
 		SearchIcon,
 		SquareIcon,
@@ -490,16 +487,12 @@
 		{:else}
 			{#each sortedFilteredRows as row (`${row.source}:${row.name}`)}
 				{@const rowBusy = busy[row.name] ?? null}
-				<!-- Sibling units own /pod/view/[name], /pod/debug/[name], and
-					/pod/probe/[name]; until those routes exist they aren't in the
-					typed route map, so the hrefs stay as plain strings. -->
-				<!-- eslint-disable svelte/no-navigation-without-resolve -->
 				<Card size="sm">
 					<div class="flex flex-col gap-3">
 						<div class="flex items-start justify-between gap-2">
 							<div class="min-w-0">
 								<a
-									href="/pod/view/{row.name}/"
+									href={resolve('/pod/[name]', { name: row.name })}
 									class="block truncate font-semibold hover:underline"
 								>
 									{row.name}
@@ -529,32 +522,8 @@
 								<div class="text-surface-500-400 mt-1 font-mono">{row.score_summary}</div>
 							{/if}
 						</div>
-						<div class="grid grid-cols-3 gap-2">
-							<a
-								href="/pod/view/{row.name}/"
-								class="btn min-h-11 justify-center preset-tonal"
-								aria-label="View"
-							>
-								<EyeIcon class="size-4" />
-								<span>View</span>
-							</a>
-							<a
-								href="/pod/debug/{row.name}/"
-								class="btn min-h-11 justify-center preset-tonal"
-								aria-label="Debug"
-							>
-								<BugIcon class="size-4" />
-								<span>Debug</span>
-							</a>
-							<a
-								href="/pod/probe/{row.name}/"
-								class="btn min-h-11 justify-center preset-tonal"
-								aria-label="Probe"
-							>
-								<RadarIcon class="size-4" />
-								<span>Probe</span>
-							</a>
-							{#if row.source === 'container'}
+						{#if row.source === 'container'}
+							<div class="grid grid-cols-2 gap-2">
 								{#if row.status === 'running'}
 									<button
 										type="button"
@@ -588,7 +557,7 @@
 								{/if}
 								<button
 									type="button"
-									class="col-span-2 btn min-h-11 justify-center preset-tonal-error"
+									class="btn min-h-11 justify-center preset-tonal-error"
 									aria-label="Delete"
 									onclick={() => handleDelete(row.name)}
 									disabled={rowBusy !== null}
@@ -600,9 +569,8 @@
 									{/if}
 									<span>Delete</span>
 								</button>
-							{/if}
-						</div>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</div>
+						{/if}
 					</div>
 				</Card>
 			{/each}
@@ -637,90 +605,60 @@
 		{/snippet}
 		{#snippet actionsCell({ row }: { row: Row })}
 			{@const rowBusy = busy[row.name] ?? null}
-			<!-- eslint-disable svelte/no-navigation-without-resolve -->
 			<div
 				role="presentation"
-				class="inline-flex flex-wrap items-center justify-end gap-3"
+				class="inline-flex items-center justify-end gap-1"
 				onclick={(e) => e.stopPropagation()}
 				onkeydown={(e) => e.stopPropagation()}
 			>
-				<div class="inline-flex gap-1">
-					<a
-						href="/pod/view/{row.name}/"
-						class="btn-icon preset-tonal btn-sm"
-						aria-label="View"
-						title="View"
-					>
-						<EyeIcon class="size-4" />
-					</a>
-					<a
-						href="/pod/debug/{row.name}/"
-						class="btn-icon preset-tonal btn-sm"
-						aria-label="Debug"
-						title="Debug"
-					>
-						<BugIcon class="size-4" />
-					</a>
-					<a
-						href="/pod/probe/{row.name}/"
-						class="btn-icon preset-tonal btn-sm"
-						aria-label="Probe"
-						title="Probe"
-					>
-						<RadarIcon class="size-4" />
-					</a>
-				</div>
 				{#if row.source === 'container'}
-					<div class="inline-flex gap-1">
-						{#if row.status === 'running'}
-							<button
-								type="button"
-								class="btn-icon preset-tonal-warning btn-sm"
-								aria-label="Stop"
-								title="Stop"
-								onclick={() => handleStop(row.name)}
-								disabled={rowBusy !== null}
-							>
-								{#if rowBusy === 'stop'}
-									<LoaderIcon class="size-4 animate-spin" />
-								{:else}
-									<SquareIcon class="size-4" />
-								{/if}
-							</button>
-						{:else}
-							<button
-								type="button"
-								class="btn-icon preset-tonal-success btn-sm"
-								aria-label="Start"
-								title="Start"
-								onclick={() => handleStart(row.name)}
-								disabled={rowBusy !== null}
-							>
-								{#if rowBusy === 'start'}
-									<LoaderIcon class="size-4 animate-spin" />
-								{:else}
-									<PlayIcon class="size-4" />
-								{/if}
-							</button>
-						{/if}
+					{#if row.status === 'running'}
 						<button
 							type="button"
-							class="btn-icon preset-tonal-error btn-sm"
-							aria-label="Delete"
-							title="Delete"
-							onclick={() => handleDelete(row.name)}
+							class="btn-icon preset-tonal-warning btn-sm"
+							aria-label="Stop"
+							title="Stop"
+							onclick={() => handleStop(row.name)}
 							disabled={rowBusy !== null}
 						>
-							{#if rowBusy === 'delete'}
+							{#if rowBusy === 'stop'}
 								<LoaderIcon class="size-4 animate-spin" />
 							{:else}
-								<Trash2Icon class="size-4" />
+								<SquareIcon class="size-4" />
 							{/if}
 						</button>
-					</div>
+					{:else}
+						<button
+							type="button"
+							class="btn-icon preset-tonal-success btn-sm"
+							aria-label="Start"
+							title="Start"
+							onclick={() => handleStart(row.name)}
+							disabled={rowBusy !== null}
+						>
+							{#if rowBusy === 'start'}
+								<LoaderIcon class="size-4 animate-spin" />
+							{:else}
+								<PlayIcon class="size-4" />
+							{/if}
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="btn-icon preset-tonal-error btn-sm"
+						aria-label="Delete"
+						title="Delete"
+						onclick={() => handleDelete(row.name)}
+						disabled={rowBusy !== null}
+					>
+						{#if rowBusy === 'delete'}
+							<LoaderIcon class="size-4 animate-spin" />
+						{:else}
+							<Trash2Icon class="size-4" />
+						{/if}
+					</button>
 				{/if}
 			</div>
-			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{/snippet}
 
 		<Card size="flush" class="overflow-x-auto">
@@ -763,7 +701,7 @@
 				sort={sortState}
 				onSortChange={(s) => (sortState = s)}
 				secondarySort={{ key: 'name', dir: 'asc' }}
-				onRowClick={(row) => goto(resolve('/pod/view/[name]', { name: row.name }))}
+				onRowClick={(row) => goto(resolve('/pod/[name]', { name: row.name }))}
 				loading={loading && filteredRows.length === 0}
 				emptyMessage={filter
 					? 'No matches for that filter.'

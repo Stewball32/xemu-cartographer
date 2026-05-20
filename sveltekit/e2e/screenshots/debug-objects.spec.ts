@@ -9,12 +9,12 @@ import { screenshotPodRoute } from '../helpers/screenshot';
 // header tiles + Pretty section headings render, flips the Pretty/JSON
 // Switch and asserts the TreeView mounts, then snapshots all viewports.
 
-test('debug-objects: /pod/debug/[name]/#objects renders Pretty + JSON views', async ({ page }) => {
+test('debug-objects: /pod/[name]/debug/#objects renders Pretty + JSON views', async ({ page }) => {
 	await installPodMocks(page);
 	await loginAsAdmin(page);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/pod/debug/${MOCK_INSTANCE_LIVE}/#objects`);
+	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#objects`);
 	await page.waitForLoadState('networkidle');
 
 	// Skeleton Tabs renders every Tabs.Content in the DOM (hidden tabs are
@@ -48,5 +48,5 @@ test('debug-objects: /pod/debug/[name]/#objects renders Pretty + JSON views', as
 	await expect(panel.getByText('no envelope to walk')).toBeVisible();
 
 	// Snapshot all three viewports (mobile / tablet / desktop).
-	await screenshotPodRoute(page, `/pod/debug/${MOCK_INSTANCE_LIVE}/#objects`, 'debug-objects');
+	await screenshotPodRoute(page, `/pod/${MOCK_INSTANCE_LIVE}/debug/#objects`, 'debug-objects');
 });

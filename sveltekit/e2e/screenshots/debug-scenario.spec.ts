@@ -26,7 +26,7 @@ test('debug-scenario: Pretty/JSON tab renders headings + tree on mocked instance
 	await loginAsAdmin(page);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/pod/debug/${MOCK_INSTANCE_LIVE}/#scenario`);
+	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#scenario`);
 	await page.waitForLoadState('networkidle');
 
 	// Skeleton Tabs.Content keeps every panel mounted but hides inactive

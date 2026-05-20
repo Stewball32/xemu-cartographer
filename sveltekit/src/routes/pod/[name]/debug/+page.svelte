@@ -21,7 +21,6 @@
 	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
-	import ContainerTab from '$lib/components/debug/container/ContainerTab.svelte';
 	import XboxTab from '$lib/components/debug/xbox/XboxTab.svelte';
 	import ScenarioTab from '$lib/components/debug/scenario/ScenarioTab.svelte';
 	import GameTab from '$lib/components/debug/game/GameTab.svelte';
@@ -30,7 +29,6 @@
 	import DebugTab from '$lib/components/debug/debug/DebugTab.svelte';
 	import PreviousGameTab from '$lib/components/debug/previous_game/PreviousGameTab.svelte';
 	import EventsTab from '$lib/components/debug/events/EventsTab.svelte';
-	import SummaryTab from '$lib/components/debug/summary/SummaryTab.svelte';
 	import { setDebugContext, type ViewMode } from '$lib/components/debug/context.js';
 	import { fetchDebugDetail } from '$lib/components/debug/refresh.js';
 
@@ -58,7 +56,6 @@
 
 	const TAB_VALUES = [
 		'overview',
-		'container',
 		'xbox',
 		'scenario',
 		'game',
@@ -66,8 +63,7 @@
 		'objects',
 		'debug',
 		'previous_game',
-		'events',
-		'summary'
+		'events'
 	] as const;
 	type TabValue = (typeof TAB_VALUES)[number];
 	const TAB_SET = new Set<string>(TAB_VALUES);
@@ -228,7 +224,6 @@
 
 	const tabs = [
 		{ value: 'overview', label: 'Overview' },
-		{ value: 'container', label: 'Container' },
 		{ value: 'xbox', label: 'Xbox' },
 		{ value: 'scenario', label: 'Scenario' },
 		{ value: 'game', label: 'Game' },
@@ -237,17 +232,16 @@
 		{ value: 'debug', label: 'Debug' },
 		{ value: 'previous_game', label: 'Previous' },
 		{ value: 'events', label: 'Events' }
-		// { value: 'summary', label: 'Summary' }
 	];
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
 	<div class="flex items-center justify-between gap-2">
-		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/')}>
+		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/[name]', { name })}>
 			<ArrowLeftIcon class="size-4" />
-			Back to pods
+			Back to pod
 		</a>
-		<a class="btn preset-tonal btn-sm" href={resolve(`/pod/probe/${name}/`)}>Probe →</a>
+		<a class="btn preset-tonal btn-sm" href={resolve('/pod/[name]/probe', { name })}>Probe →</a>
 	</div>
 	<PageHeader title={name}>
 		{#snippet actions()}
@@ -310,13 +304,12 @@
 	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-3 text-sm">
 			No scraper attached for this instance. Start it from
-			<a class="anchor" href={resolve('/pod/view/[name]', { name })}>/pod/view/{name}/</a>.
+			<a class="anchor" href={resolve('/pod/[name]/view', { name })}>/pod/[name]/view/</a>.
 		</div>
 	{/if}
 
 	<TabsResponsive value={topTab} onValueChange={setTab} items={tabs} ariaLabel="Debug tabs">
 		<Tabs.Content value="overview" class="pt-4"><OverviewTab {name} /></Tabs.Content>
-		<Tabs.Content value="container" class="pt-4"><ContainerTab {name} /></Tabs.Content>
 		<Tabs.Content value="xbox" class="pt-4"><XboxTab {name} /></Tabs.Content>
 		<Tabs.Content value="scenario" class="pt-4"><ScenarioTab {name} /></Tabs.Content>
 		<Tabs.Content value="game" class="pt-4"><GameTab {name} /></Tabs.Content>
@@ -325,6 +318,5 @@
 		<Tabs.Content value="debug" class="pt-4"><DebugTab {name} /></Tabs.Content>
 		<Tabs.Content value="previous_game" class="pt-4"><PreviousGameTab {name} /></Tabs.Content>
 		<Tabs.Content value="events" class="pt-4"><EventsTab {name} /></Tabs.Content>
-		<!-- <Tabs.Content value="summary" class="pt-4"><SummaryTab {name} /></Tabs.Content> -->
 	</TabsResponsive>
 </div>

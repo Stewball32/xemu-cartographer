@@ -12,7 +12,7 @@ export type DebugContext = {
 	readonly inspectAt: number | undefined;
 	readonly now: number;
 	/** Optional so pages that don't host Pretty/JSON-capable tabs (e.g.
-	 * /pod/probe/) can skip wiring these up; tab consumers default to
+	 * /pod/[name]/probe/) can skip wiring these up; tab consumers default to
 	 * 'pretty' + a no-op setter when absent. */
 	readonly viewMode?: ViewMode;
 	setViewMode?: (next: ViewMode) => void;

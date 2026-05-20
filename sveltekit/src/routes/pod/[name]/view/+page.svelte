@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { ArrowLeftIcon, LoaderIcon, PlayIcon, RotateCwIcon, SquareIcon } from '@lucide/svelte';
+	import { resolve } from '$app/paths';
 	import { adminGet, adminPost, AdminFetchError } from '$lib/utils/admin-api';
 	import { apiBaseURL, wsBaseURL } from '$lib/utils/api-base';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -267,10 +268,11 @@
 	{/snippet}
 
 	<header class="flex flex-wrap items-center gap-2">
-		<!-- /pod/ landing page lands in Unit 1; until then the typed `resolve()` -->
-		<!-- helper rejects the path, so the back link uses a string literal. -->
-		<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-		<a href="/pod/" class="btn-icon preset-tonal" aria-label="Back to pods">
+		<a
+			href={resolve('/pod/[name]', { name })}
+			class="btn-icon preset-tonal"
+			aria-label="Back to pod"
+		>
 			<ArrowLeftIcon class="size-4" />
 		</a>
 		<h1 class="h3 lg:h2">{name}</h1>
@@ -284,8 +286,7 @@
 	{#if !detail && !loading}
 		<div class="card preset-tonal p-3 text-sm">
 			No container record for <code>{name}</code>. Create one on
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-			<a class="anchor" href="/pod/">/pod/</a>.
+			<a class="anchor" href={resolve('/pod/')}>/pod/</a>.
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3 lg:grid lg:grid-cols-[2fr_1fr] lg:gap-4">

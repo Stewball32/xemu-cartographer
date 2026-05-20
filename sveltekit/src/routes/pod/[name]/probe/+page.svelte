@@ -127,18 +127,13 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
-	<!-- Sibling /pod/ routes are scaffolded in parallel units (M7 Unit 2 + 4) —
-	     use string hrefs until those route files land so resolve()'s typed
-	     route table doesn't reject them. -->
-	<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-	<a class="flex items-center gap-1 anchor text-sm" href="/pod/">
+	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/[name]', { name })}>
 		<ArrowLeftIcon class="size-4" />
-		Back to pods
+		Back to pod
 	</a>
 	<PageHeader title={name} description="Address hunting — live diagnostics + ad-hoc memory probes.">
 		{#snippet actions()}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-			<a class="btn preset-tonal btn-sm" href="/pod/debug/{name}/">
+			<a class="btn preset-tonal btn-sm" href={resolve('/pod/[name]/debug', { name })}>
 				<BugIcon class="size-4" />
 				<span>Debug page</span>
 			</a>
@@ -154,7 +149,7 @@
 		{#if !inspect}
 			<div class="card preset-tonal p-3 text-sm">
 				No scraper attached for this instance. Start it from
-				<a class="anchor" href={resolve('/pod/view/[name]', { name })}>/pod/view/{name}/</a>.
+				<a class="anchor" href={resolve('/pod/[name]/view', { name })}>/pod/[name]/view/</a>.
 			</div>
 		{:else}
 			<ProbeTab {name} />

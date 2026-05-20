@@ -30,7 +30,7 @@
 	// collapses one here keeps it collapsed across reloads. Persisted
 	// alongside the other tabs' collapse keys (debug.xbox.collapsed etc.).
 	// state_inputs / score_probe used to live here; both moved to the
-	// on-demand probe envelope (see /pod/probe/<name>/).
+	// on-demand probe envelope (see /pod/[name]/probe/).
 	type SectionId = 'players';
 	const ALL_SECTIONS: readonly SectionId[] = ['players'];
 
