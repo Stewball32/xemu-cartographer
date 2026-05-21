@@ -1446,21 +1446,3 @@ func (r *Reader) ensureBases() error {
 	}
 	return nil
 }
-
-// readLowString reads a null-terminated ASCII string from a cached low GVA host VA.
-func (r *Reader) readLowString(lowGVA uint32, maxLen int) string {
-	hva, err := r.inst.LowHVA(lowGVA)
-	if err != nil {
-		return ""
-	}
-	b, err := r.inst.Mem.ReadBytesAt(hva, maxLen)
-	if err != nil {
-		return ""
-	}
-	for i, c := range b {
-		if c == 0 {
-			return string(b[:i])
-		}
-	}
-	return string(b)
-}
