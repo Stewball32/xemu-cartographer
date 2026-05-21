@@ -571,6 +571,7 @@ export interface HostSummaryV2 {
 	instance: string;
 	phase: PhaseV2;
 	title: string;
+	xbe_title_name: string;
 	map: string;
 	gametype: string;
 	score_summary: string;

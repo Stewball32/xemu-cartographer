@@ -24,6 +24,7 @@ type hostSummary struct {
 	Instance             string    `json:"instance"`
 	Phase                Phase     `json:"phase"`
 	Title                string    `json:"title"`
+	XBETitleName         string    `json:"xbe_title_name"`
 	Map                  string    `json:"map"`
 	Gametype             string    `json:"gametype"`
 	ScoreSummary         string    `json:"score_summary"`
@@ -210,6 +211,7 @@ func summaryFromCache(name string, c *instanceCache) hostSummary {
 		Instance:             name,
 		Phase:                c.Phase,
 		Title:                c.Title,
+		XBETitleName:         c.XBETitleName,
 		LastSuccessfulReadAt: c.LastReadAt,
 	}
 	if c.GameData != nil {

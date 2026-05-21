@@ -2,6 +2,7 @@
 	import AnnotationPill from '$lib/components/debug/shared/AnnotationPill.svelte';
 	import JsonTree from '$lib/components/ui/JsonTree.svelte';
 	import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from '@lucide/svelte';
+	import type { SvelteSet } from 'svelte/reactivity';
 	import type { DataColumn, DataColumnGroup, Density, SortDir, SortState } from './data-table';
 
 	let {
@@ -19,6 +20,9 @@
 		sort,
 		onSortChange,
 		onRowClick,
+		selectable = false,
+		selected,
+		selectableRow,
 		class: extraClass = ''
 	}: {
 		rows: ReadonlyArray<T> | null | undefined;
@@ -35,6 +39,9 @@
 		sort?: SortState;
 		onSortChange?: (s: SortState) => void;
 		onRowClick?: (row: T) => void;
+		selectable?: boolean;
+		selected?: SvelteSet<string> | SvelteSet<number>;
+		selectableRow?: (row: T) => boolean;
 		class?: string;
 	} = $props();
 
@@ -158,18 +165,80 @@
 			onRowClick(row);
 		}
 	}
+
+	const selectionOn = $derived(selectable && !!selected);
+
+	function keyOf(row: T, idx: number): string | number {
+		return rowKey ? rowKey(row, idx) : idx;
+	}
+
+	const selectableVisibleKeys = $derived.by<(string | number)[]>(() => {
+		if (!selectionOn) return [];
+		const keys: (string | number)[] = [];
+		for (let i = 0; i < sortedRows.length; i++) {
+			const row = sortedRows[i];
+			if (selectableRow && !selectableRow(row)) continue;
+			keys.push(keyOf(row, i));
+		}
+		return keys;
+	});
+
+	const headerAllSelected = $derived.by<boolean>(() => {
+		if (!selectionOn || selectableVisibleKeys.length === 0) return false;
+		// SvelteSet is generic; coerce key for has() type compat
+		const s = selected as unknown as Set<string | number>;
+		for (const k of selectableVisibleKeys) if (!s.has(k)) return false;
+		return true;
+	});
+
+	const headerSomeSelected = $derived.by<boolean>(() => {
+		if (!selectionOn || selectableVisibleKeys.length === 0) return false;
+		const s = selected as unknown as Set<string | number>;
+		for (const k of selectableVisibleKeys) if (s.has(k)) return true;
+		return false;
+	});
+
+	const headerIndeterminate = $derived(headerSomeSelected && !headerAllSelected);
+
+	let headerCheckboxEl: HTMLInputElement | undefined = $state(undefined);
+	$effect(() => {
+		if (headerCheckboxEl) headerCheckboxEl.indeterminate = headerIndeterminate;
+	});
+
+	function toggleAll() {
+		if (!selectionOn) return;
+		const s = selected as unknown as Set<string | number>;
+		if (headerAllSelected) {
+			for (const k of selectableVisibleKeys) s.delete(k);
+		} else {
+			for (const k of selectableVisibleKeys) s.add(k);
+		}
+	}
+
+	function toggleRow(key: string | number) {
+		if (!selectionOn) return;
+		const s = selected as unknown as Set<string | number>;
+		if (s.has(key)) s.delete(key);
+		else s.add(key);
+	}
 </script>
 
 {#if loading && (!rows || rows.length === 0)}
 	<div class="-mx-3 overflow-x-auto sm:mx-0 {extraClass}">
 		<table class="w-full {textSize}" aria-busy="true">
 			<colgroup>
+				{#if selectionOn}
+					<col class="w-10" />
+				{/if}
 				{#each allCols as col (col.key)}
 					<col class={col.width ?? ''} />
 				{/each}
 			</colgroup>
 			<thead>
 				<tr class="bg-surface-100-900">
+					{#if selectionOn}
+						<th class="{padCls} w-10"></th>
+					{/if}
 					{#each allCols as col (col.key)}
 						<th class="{padCls} text-left font-medium">{col.label ?? col.key}</th>
 					{/each}
@@ -178,6 +247,9 @@
 			<tbody>
 				{#each Array(loadingRows), ri (ri)}
 					<tr class="border-t border-surface-200-800">
+						{#if selectionOn}
+							<td class={padCls}></td>
+						{/if}
 						{#each allCols as col (col.key)}
 							<td class="{padCls} align-top">
 								<div class="h-4 placeholder animate-pulse rounded"></div>
@@ -194,6 +266,9 @@
 	<div class="-mx-3 overflow-x-auto sm:mx-0 {extraClass}">
 		<table class="w-full {textSize}">
 			<colgroup>
+				{#if selectionOn}
+					<col class="w-10" />
+				{/if}
 				{#each allCols as col (col.key)}
 					<col class={col.width ?? ''} />
 				{/each}
@@ -201,6 +276,9 @@
 			<thead>
 				{#if showGroupHeader}
 					<tr class="bg-surface-200-800">
+						{#if selectionOn}
+							<th class={padCls}></th>
+						{/if}
 						{#each groups as group, gi (gi)}
 							<th
 								colspan={group.columns.length}
@@ -214,6 +292,19 @@
 					</tr>
 				{/if}
 				<tr class="bg-surface-100-900">
+					{#if selectionOn}
+						<th class="{padCls} w-10 text-left">
+							<input
+								type="checkbox"
+								class="checkbox"
+								bind:this={headerCheckboxEl}
+								checked={headerAllSelected}
+								onclick={(e) => e.stopPropagation()}
+								onchange={toggleAll}
+								aria-label="Select all visible rows"
+							/>
+						</th>
+					{/if}
 					{#each allCols as col, ci (col.key)}
 						{@const annKey = keyFor?.(col)}
 						{@const sortable = col.sortable !== false}
@@ -262,6 +353,8 @@
 			</thead>
 			<tbody>
 				{#each sortedRows as row, ri (rowKey ? rowKey(row, ri) : ri)}
+					{@const rk = keyOf(row, ri)}
+					{@const canSelect = selectionOn && (!selectableRow || selectableRow(row))}
 					<tr
 						class="border-t border-surface-200-800 {onRowClick
 							? 'cursor-pointer hover:preset-tonal-primary'
@@ -271,6 +364,25 @@
 						onclick={onRowClick ? () => onRowClick(row) : null}
 						onkeydown={onRowClick ? (e) => handleRowKeydown(e, row) : null}
 					>
+						{#if selectionOn}
+							<td class="{padCls} align-top">
+								{#if canSelect}
+									<div
+										role="presentation"
+										onclick={(e) => e.stopPropagation()}
+										onkeydown={(e) => e.stopPropagation()}
+									>
+										<input
+											type="checkbox"
+											class="checkbox"
+											checked={(selected as unknown as Set<string | number>).has(rk)}
+											onchange={() => toggleRow(rk)}
+											aria-label="Select row"
+										/>
+									</div>
+								{/if}
+							</td>
+						{/if}
 						{#each allCols as col, ci (col.key)}
 							{@const v = readCell(row, col)}
 							<td
