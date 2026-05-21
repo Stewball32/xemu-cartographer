@@ -19,6 +19,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+## [0.6.1] - 2026-05-20
+
+### Added
+
+- `DataTable` selection API: new `selectable` / `selected` / `selectableRow` props add a leading checkbox column with header select-all (indeterminate via native DOM property when partially selected). Enables pod-listing mass actions and matches the wider admin-restructure.
+- `xbe_title_name` field on the `host:summary` envelope (sourced from `instanceCache.XBETitleName`), so the pod listing can show the XBE binary title distinct from the resolved game title without joining per-instance rooms.
+- `/admin/` dashboard with pod / scraper / user stat tiles (loaded via `Promise.allSettled`) and a nav card grid showing per-area Live / Placeholder badges.
+- Placeholder pages scaffolded for upcoming milestones via new `<PagePlaceholder>`: `/admin/identity` (M07), `/admin/roles` (M08), `/admin/games` (M13), `/play` (M09), `/series` + `/series/new` + `/series/[id]` (M14), `/u/[username]`, `/teams`, `/teams/[slug]` (M15).
+- `sveltekit/docs/NAV.md` documents the Skeleton v4 rail-mode menu-gap override (cause + Tailwind v4 `!` specificity workaround) so the fix can be ported to the template + sibling repos. Linked from `CLAUDE.md` alongside `TABLES.md`.
+
+### Changed
+
+- Admin route consolidation: `/pod/*` moved under `/admin/pod/*` and `/capture-policies/` moved under `/admin/`. `requireAdmin` hoisted into `routes/admin/+layout.ts` so individual admin routes no longer carry their own auth guard. Playwright specs + mock helpers bulk-updated.
+- Top-level navigation: new Play / Series / Teams entries; the Admin group now collapses to a single rail-mode icon when it carries an `icon`+`href`, and active highlighting uses a prefix match so `/admin/*` lights up the shield. Capture and Overlays/Players entries dropped from the nav.
+- Skeleton v4 rail-mode menu-gap fix landed: override `[data-part='menu']`'s `flex:1` + `justify-content:center` with `flex-none!` / `justify-start!` (Tailwind v4 `!` suffix needed to beat the (0,3,0) attribute-selector specificity) and pin Settings to the bottom with `mt-auto` on the footer.
+- `task test` / `task fmt` scoped to `./cmd/...` `./internal/...` (was `./...`), matching `task lint`. Avoids crashes on root-owned `containers/browser/config-*/profile/cache2/` bind-mount dirs when running on a host that's ever booted a browser container without sudo.
+- `docs/STATUS.md` Maybe section parks the milestone-open marker-tag idea (cut `vX.Y.0-alpha.0` as the first commit of every milestone so `/api/version` self-identifies which milestone the binary belongs to) — pending real use on a milestone or two before promotion to an ADR.
+
+### Removed
+
+- Dead `readLowString` helper in `internal/scraper/haloce/reader.go` — was the low-GVA scenario.map read; lost its only caller when M19 Fix C replaced it with `readScenarioTagName` (tag-instance walk via `DerefLowPtr`).
+
 ## [0.6.0] - 2026-05-20
 
 ### Added
