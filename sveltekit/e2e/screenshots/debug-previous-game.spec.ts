@@ -20,7 +20,9 @@ test('debug-previous-game: /admin/pod/[name]/debug/#previous_game renders envelo
 	// Scope every assertion to the active tab's panel — Skeleton keeps
 	// every Tabs.Content mounted, so other tabs (Xbox) also have stat
 	// tiles labelled `seq` etc. in the DOM.
-	const panel = page.getByRole('tabpanel', { name: 'Previous Game' });
+	// The tab label in the strip is just "Previous" (matching the other
+	// single-word tab labels), so the tabpanel's accessible name is "Previous".
+	const panel = page.getByRole('tabpanel', { name: 'Previous' });
 
 	// Envelope-stats header: the label "previous_game envelope" plus
 	// five stat tiles (seq/tick/received/v/instance). Text-only assertions

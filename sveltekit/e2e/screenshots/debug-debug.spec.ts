@@ -31,10 +31,10 @@ test('debug-debug: /admin/pod/[name]/debug/#debug renders envelope-stats header 
 		await expect(debugPanel.getByText(label, { exact: true }).first()).toBeVisible();
 	}
 
-	// Pretty section headings (the literal JSON keys, rendered as <code>).
-	for (const heading of ['players', 'state_inputs', 'score_probe']) {
-		await expect(debugPanel.locator('code', { hasText: heading }).first()).toBeVisible();
-	}
+	// Pretty section heading (the literal JSON key, rendered as <code>).
+	// state_inputs / score_probe used to live on the debug envelope but moved
+	// to the on-demand probe envelope in M6c — only `players` remains here.
+	await expect(debugPanel.locator('code', { hasText: 'players' }).first()).toBeVisible();
 
 	// Flip the Pretty/JSON Switch — Skeleton's Switch projects as role=checkbox
 	// with the current-state label ("Pretty" / "JSON") as the accessible name.
