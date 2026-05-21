@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { Tabs, FileUpload, Avatar } from '@skeletonlabs/skeleton-svelte';
+	import { Tabs, FileUpload } from '@skeletonlabs/skeleton-svelte';
 	import {
 		UserIcon,
 		MailIcon,
@@ -13,12 +13,13 @@
 		ShieldAlertIcon,
 		MapPinIcon,
 		LinkIcon,
-		UnlinkIcon
+		UnlinkIcon,
+		LoaderIcon
 	} from '@lucide/svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import pb from '$lib/pocketbase';
-	import { getFileURL } from '$lib/utils/files';
-	import { toaster } from '$lib/stores/toaster';
+	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
+	import { toastPromise } from '$lib/stores/toaster';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 
 	let activeTab = $state('general');
@@ -29,7 +30,7 @@
 	let email = $state(_user?.email ?? '');
 	let bio = $state(_user?.bio ?? '');
 	let location = $state(_user?.location ?? '');
-	let avatarUrl = $state<string | null>(getFileURL(_user, 'avatar', { thumb: '160x160' }));
+	let pendingPreviewUrl = $state<string | null>(null);
 	let pendingAvatarFile = $state<File | null>(null);
 	let saving = $state(false);
 	let deleting = $state(false);
@@ -41,6 +42,16 @@
 	const passwordMismatch = $derived(
 		newPasswordConfirm !== '' && newPassword !== newPasswordConfirm
 	);
+	const previewInitials = $derived.by<string | undefined>(() => {
+		const name = displayName.trim();
+		if (!name) return undefined;
+		return name
+			.split(/\s+/)
+			.map((p) => p[0])
+			.join('')
+			.toUpperCase()
+			.slice(0, 2);
+	});
 
 	// Connected Accounts tab state
 	let linkedAuths = $state<Array<Record<string, string>>>([]);
@@ -76,14 +87,14 @@
 		email = user.email ?? '';
 		bio = user.bio ?? '';
 		location = user.location ?? '';
-		avatarUrl = getFileURL(user, 'avatar', { thumb: '160x160' });
+		pendingPreviewUrl = null;
 	}
 
 	function handleAvatarAccept(details: { files: File[] }) {
 		const file = details.files[0];
 		if (!file) return;
 		pendingAvatarFile = file;
-		avatarUrl = URL.createObjectURL(file);
+		pendingPreviewUrl = URL.createObjectURL(file);
 	}
 
 	async function saveGeneral() {
@@ -92,14 +103,18 @@
 		try {
 			const data: Record<string, unknown> = { name: displayName, email, bio, location };
 			if (pendingAvatarFile) data.avatar = pendingAvatarFile;
-			await pb.collection('users').update(auth.user.id, data);
-			pendingAvatarFile = null;
-			toaster.success({ title: 'Saved', description: 'Your profile has been updated.' });
-		} catch (err) {
-			toaster.error({
-				title: 'Error',
-				description: err instanceof Error ? err.message : 'Failed to save settings.'
+			await toastPromise(pb.collection('users').update(auth.user.id, data), {
+				loading: { title: 'Saving' },
+				success: { title: 'Saved', description: 'Your profile has been updated.' },
+				errorTitle: 'Save failed'
 			});
+			pendingAvatarFile = null;
+			if (pendingPreviewUrl) {
+				URL.revokeObjectURL(pendingPreviewUrl);
+				pendingPreviewUrl = null;
+			}
+		} catch {
+			// toast already shown
 		} finally {
 			saving = false;
 		}
@@ -107,6 +122,9 @@
 
 	function resetGeneral() {
 		pendingAvatarFile = null;
+		if (pendingPreviewUrl) {
+			URL.revokeObjectURL(pendingPreviewUrl);
+		}
 		loadUserData();
 	}
 
@@ -114,13 +132,13 @@
 		if (!auth.user) return;
 		sendingVerification = true;
 		try {
-			await auth.requestVerification(auth.user.email);
-			toaster.success({ title: 'Sent', description: 'Verification email sent. Check your inbox.' });
-		} catch (err) {
-			toaster.error({
-				title: 'Error',
-				description: err instanceof Error ? err.message : 'Failed to send verification email.'
+			await toastPromise(auth.requestVerification(auth.user.email), {
+				loading: { title: 'Sending' },
+				success: { title: 'Sent', description: 'Verification email sent. Check your inbox.' },
+				errorTitle: 'Send failed'
 			});
+		} catch {
+			// toast already shown
 		} finally {
 			sendingVerification = false;
 		}
@@ -130,20 +148,23 @@
 		if (!auth.user || newPassword !== newPasswordConfirm) return;
 		changingPassword = true;
 		try {
-			await pb.collection('users').update(auth.user.id, {
-				oldPassword,
-				password: newPassword,
-				passwordConfirm: newPasswordConfirm
-			});
+			await toastPromise(
+				pb.collection('users').update(auth.user.id, {
+					oldPassword,
+					password: newPassword,
+					passwordConfirm: newPasswordConfirm
+				}),
+				{
+					loading: { title: 'Updating password' },
+					success: { title: 'Updated', description: 'Your password has been changed.' },
+					errorTitle: 'Password change failed'
+				}
+			);
 			oldPassword = '';
 			newPassword = '';
 			newPasswordConfirm = '';
-			toaster.success({ title: 'Updated', description: 'Your password has been changed.' });
-		} catch (err) {
-			toaster.error({
-				title: 'Error',
-				description: err instanceof Error ? err.message : 'Failed to change password.'
-			});
+		} catch {
+			// toast already shown
 		} finally {
 			changingPassword = false;
 		}
@@ -157,14 +178,15 @@
 		if (!confirmed) return;
 		deleting = true;
 		try {
-			await pb.collection('users').delete(auth.user.id);
+			await toastPromise(pb.collection('users').delete(auth.user.id), {
+				loading: { title: 'Deleting account' },
+				success: { title: 'Deleted', description: 'Your account has been removed.' },
+				errorTitle: 'Delete failed'
+			});
 			auth.logout();
 			goto(resolve('/login/'));
-		} catch (err) {
-			toaster.error({
-				title: 'Error',
-				description: err instanceof Error ? err.message : 'Failed to delete account.'
-			});
+		} catch {
+			// toast already shown
 			deleting = false;
 		}
 	}
@@ -172,22 +194,22 @@
 	async function linkProvider(provider: string) {
 		if (!auth.user) return;
 		linkingProvider = provider;
+		const label = OAUTH_PROVIDERS[provider]?.label ?? provider;
 		try {
-			await auth.linkOAuth(provider);
-			await loadLinkedAuths();
-			toaster.success({
-				title: 'Connected',
-				description: `${OAUTH_PROVIDERS[provider]?.label ?? provider} account linked.`
-			});
-		} catch (err) {
-			const message = err instanceof Error ? err.message : 'Failed to link account.';
-			toaster.error({
-				title: 'Error',
-				description:
-					message.includes('already') || message.includes('unique')
+			await toastPromise(auth.linkOAuth(provider), {
+				loading: { title: 'Connecting', description: label },
+				success: { title: 'Connected', description: `${label} account linked.` },
+				errorTitle: 'Connect failed',
+				errorDescription: (err) => {
+					const message = err instanceof Error ? err.message : 'Failed to link account.';
+					return message.includes('already') || message.includes('unique')
 						? 'This account is already linked to another user.'
-						: message
+						: message;
+				}
 			});
+			await loadLinkedAuths();
+		} catch {
+			// toast already shown
 		} finally {
 			linkingProvider = null;
 		}
@@ -196,18 +218,16 @@
 	async function unlinkProvider(provider: string) {
 		if (!auth.user) return;
 		unlinkingProvider = provider;
+		const label = OAUTH_PROVIDERS[provider]?.label ?? provider;
 		try {
-			await auth.unlinkOAuth(auth.user.id, provider);
+			await toastPromise(auth.unlinkOAuth(auth.user.id, provider), {
+				loading: { title: 'Disconnecting', description: label },
+				success: { title: 'Disconnected', description: `${label} account unlinked.` },
+				errorTitle: 'Disconnect failed'
+			});
 			await loadLinkedAuths();
-			toaster.success({
-				title: 'Disconnected',
-				description: `${OAUTH_PROVIDERS[provider]?.label ?? provider} account unlinked.`
-			});
-		} catch (err) {
-			toaster.error({
-				title: 'Error',
-				description: err instanceof Error ? err.message : 'Failed to unlink account.'
-			});
+		} catch {
+			// toast already shown
 		} finally {
 			unlinkingProvider = null;
 		}
@@ -233,12 +253,12 @@
 
 					<!-- Avatar Upload -->
 					<div class="flex items-center gap-6">
-						<Avatar class="size-20">
-							{#if avatarUrl}
-								<Avatar.Image src={avatarUrl} />
-							{/if}
-							<Avatar.Fallback>{displayName.slice(0, 2).toUpperCase() || '?'}</Avatar.Fallback>
-						</Avatar>
+						<UserAvatar
+							user={_user}
+							overrideSrc={pendingPreviewUrl}
+							fallback={previewInitials}
+							size="size-20"
+						/>
 						<FileUpload maxFiles={1} accept="image/*" onFileAccept={handleAvatarAccept}>
 							<FileUpload.Dropzone class="card preset-outlined-surface-200-800 p-4">
 								<div class="flex flex-col items-center gap-2 text-center">
@@ -315,7 +335,8 @@
 								onclick={resendVerification}
 								disabled={sendingVerification}
 							>
-								{sendingVerification ? 'Sending...' : 'Resend'}
+								{#if sendingVerification}<LoaderIcon class="size-4 animate-spin" />{/if}
+								<span>Resend</span>
 							</button>
 						</div>
 					{/if}
@@ -381,7 +402,8 @@
 							!newPassword ||
 							!newPasswordConfirm}
 					>
-						{changingPassword ? 'Updating...' : 'Update Password'}
+						{#if changingPassword}<LoaderIcon class="size-4 animate-spin" />{/if}
+						<span>Update Password</span>
 					</button>
 				</div>
 
@@ -392,15 +414,20 @@
 						Permanently delete your account and all associated data. This action cannot be undone.
 					</p>
 					<button class="btn preset-filled-error-500" onclick={deleteAccount} disabled={deleting}>
-						<Trash2Icon class="size-4" />
-						<span>{deleting ? 'Deleting...' : 'Delete Account'}</span>
+						{#if deleting}
+							<LoaderIcon class="size-4 animate-spin" />
+						{:else}
+							<Trash2Icon class="size-4" />
+						{/if}
+						<span>Delete Account</span>
 					</button>
 				</div>
 
 				<!-- Save -->
 				<div class="flex gap-3">
 					<button class="btn preset-filled" onclick={saveGeneral} disabled={saving}>
-						{saving ? 'Saving...' : 'Save Changes'}
+						{#if saving}<LoaderIcon class="size-4 animate-spin" />{/if}
+						<span>Save Changes</span>
 					</button>
 					<button class="btn preset-tonal" onclick={resetGeneral} disabled={saving}>Reset</button>
 				</div>
@@ -443,8 +470,12 @@
 											onclick={() => unlinkProvider(provider)}
 											disabled={isUnlinking}
 										>
-											<UnlinkIcon class="size-4" />
-											<span>{isUnlinking ? 'Unlinking...' : 'Disconnect'}</span>
+											{#if isUnlinking}
+												<LoaderIcon class="size-4 animate-spin" />
+											{:else}
+												<UnlinkIcon class="size-4" />
+											{/if}
+											<span>Disconnect</span>
 										</button>
 									{:else}
 										<button
@@ -452,8 +483,12 @@
 											onclick={() => linkProvider(provider)}
 											disabled={isLinking}
 										>
-											<LinkIcon class="size-4" />
-											<span>{isLinking ? 'Linking...' : 'Connect'}</span>
+											{#if isLinking}
+												<LoaderIcon class="size-4 animate-spin" />
+											{:else}
+												<LinkIcon class="size-4" />
+											{/if}
+											<span>Connect</span>
 										</button>
 									{/if}
 								</div>

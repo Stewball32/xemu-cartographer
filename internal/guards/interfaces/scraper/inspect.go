@@ -75,15 +75,12 @@ type PreviousGameInfo struct {
 //
 // Phase is the runner's lifecycle state introduced in M5 stage 5a:
 // "idle" (no recognised title yet), "ready" (title detected, no live
-// match), "live" (active match). Renders independently of CurrentState
-// so the debug page can show "phase=idle" even when the bound reader
-// hasn't observed any game state at all.
+// match), "live" (active match).
 type InspectState struct {
 	Info
 	Running      bool                 `json:"running"`
 	Phase        string               `json:"phase"`
 	LastReadAt   time.Time            `json:"last_read_at"`
-	CurrentState scraper.GameState    `json:"current_state"`
 	StateInputs  scraper.StateInputs  `json:"state_inputs"`
 	ScoreProbe   scraper.ScoreProbe   `json:"score_probe"`
 	GameData     *scraper.GameData    `json:"game_data"`

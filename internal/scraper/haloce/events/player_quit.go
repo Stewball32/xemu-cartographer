@@ -2,9 +2,10 @@ package events
 
 import "github.com/Stewball32/xemu-cartographer/internal/scraper"
 
-// detectPlayerQuit emits player_quit on the QuitFlag 0 → 1 transition. Note
-// this is the engine's quit flag, distinct from a player-disappeared-from-
-// roster event — see roster.go for the latter.
+// detectPlayerQuit emits player_update (kind=player_quit) on the engine
+// quit-flag 0 → 1 transition. Distinct from a player-disappeared-from-
+// roster event (see roster.go's player_left); the engine quit flag means
+// "this player pressed quit" rather than "their slot has been recycled."
 func detectPlayerQuit(ctx *Context) []scraper.Envelope {
 	var out []scraper.Envelope
 	for _, ip := range ctx.Result.InternalPlayers {
@@ -14,9 +15,9 @@ func detectPlayerQuit(ctx *Context) []scraper.Envelope {
 			continue
 		}
 		if prev == 0 && ip.QuitFlag == 1 {
-			out = append(out, ctx.emit(map[string]any{
-				"event_type": scraper.EventPlayerQuit,
-				"player":     idx,
+			out = append(out, ctx.emitPlayerUpdate(scraper.PlayerUpdateEvent{
+				Kind:   scraper.PlayerUpdateKindPlayerQuit,
+				Player: playerRefByIndex(ctx.Snap, idx),
 			}))
 		}
 	}
@@ -29,9 +30,10 @@ func updatePlayerQuitPrev(state *scraper.TickState, result scraper.TickResult) {
 	}
 }
 
-// updateWeaponSlotsPrev preserves the legacy bookkeeping of PrevWeaponSlots.
+// updateWeaponSlotsPrev preserves legacy bookkeeping of PrevWeaponSlots.
 // No detector currently consumes it but UpdateTickState in the original
-// events.go wrote it, so keep parity until a downstream consumer is removed.
+// events.go wrote it, so keep parity until a downstream consumer is
+// confirmed removed.
 func updateWeaponSlotsPrev(state *scraper.TickState, result scraper.TickResult) {
 	for _, ip := range result.InternalPlayers {
 		state.PrevWeaponSlots[ip.Index] = ip.WeaponSlots

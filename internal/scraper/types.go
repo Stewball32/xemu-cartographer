@@ -1,6 +1,10 @@
 package scraper
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"log"
+	"time"
+)
 
 // GameState describes the current state of the game engine.
 type GameState string
@@ -26,52 +30,65 @@ type StateInputs map[string]any
 // game when authoritative offsets are still being worked out.
 type ScoreProbe map[string]any
 
-// Event type constants.
-const (
-	EventKill           = "kill"
-	EventDeath          = "death"
-	EventSpawn          = "spawn"
-	EventDamage         = "damage"
-	EventMelee          = "melee"
-	EventTeamKill       = "team_kill"
-	EventItemPickedUp   = "item_picked_up"
-	EventItemDropped    = "item_dropped"
-	EventItemSpawned    = "item_spawned"
-	EventItemDepleted   = "item_depleted"
-	EventGrenadeThrown  = "grenade_thrown"
-	EventPowerupPickup  = "powerup_picked_up"
-	EventPowerupExpired = "powerup_expired"
-	EventMultikill      = "multikill"
-	EventKillStreak     = "kill_streak"
-	EventScore          = "score"
-	EventVehicleEntered = "vehicle_entered"
-	EventVehicleExited  = "vehicle_exited"
-	EventPlayerQuit     = "player_quit"
-	EventGameStart      = "game_start"
-	EventGameEnd        = "game_end"
+// v1 event type constants are gone — the v2 taxonomy uses 5 top-level
+// event_types with kind/cause discriminators. See event_payloads.go for
+// the new constants (EventTypeDeath, EventTypeDamage, EventTypeMedal,
+// EventTypePlayerUpdate, EventTypeGameUpdate) and the kind/cause sets
+// (DeathCause*, DamageKind*, MedalKind*, PlayerUpdateKind*,
+// GameUpdateKind*, PowerupActiveCamouflage, etc.).
 
-	// Roster + team-score change events (Part D of the caching refactor).
-	// Emitted only when the relevant GameData field diff vs the
-	// previous tick is non-zero.
-	EventTeamScore         = "team_score"
-	EventPlayerJoined      = "player_joined"
-	EventPlayerLeft        = "player_left"
-	EventPlayerTeamChanged = "player_team_changed"
-)
+// ProtocolVersion is the wire-protocol version carried on every Envelope.
+// Bumps on any breaking payload change. Clients validate at hello time
+// (internal/scraper/manager/hello.go) and can warn / refuse to consume
+// envelopes carrying a mismatched version.
+//
+// v2 (PR 4 of the rebuild — atlas/new_json/04-ground-up-rebuild.md §3): adds
+// `seq` (uint64, monotonic per (instance, type), instance-lifetime) and `ts`
+// (server send time, RFC3339); renames the legacy `payload` field to `data`.
+// The v1 wire shape is gone — this is an alpha-stage break per project
+// scope, not a backward-compatible upgrade.
+const ProtocolVersion uint8 = 2
 
 // Envelope is the top-level wrapper for every WebSocket message.
+//
+// Field order is the same as the JSON serialization order so the bytes on
+// the wire read in a natural sequence: version, kind, scope, sequence,
+// engine tick, send time, then the type-specific payload.
 type Envelope struct {
+	V        uint8           `json:"v"`
 	Type     string          `json:"type"`
 	Instance string          `json:"instance"`
+	Seq      uint64          `json:"seq"`
 	Tick     uint32          `json:"tick"`
-	Payload  json.RawMessage `json:"payload"`
+	Ts       time.Time       `json:"ts"`
+	Data     json.RawMessage `json:"data"`
 }
 
-// MakeEnvelope serialises a payload into an Envelope. Ignores marshal errors
-// (caller controls the payload type).
-func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
-	b, _ := json.Marshal(payload)
-	return Envelope{Type: msgType, Instance: instance, Tick: tick, Payload: b}
+// MakeEnvelope serialises a payload into an Envelope.
+//
+// `seq` is monotonic per (instance, type), instance-lifetime — callers hold
+// the counter (per-runner in manager.runner, per-aggregator in the host:all
+// aggregator) and pass the next value here. `ts` is captured automatically
+// at construction time as the canonical server send time.
+//
+// Marshal failure (e.g. a NaN float in the payload) is logged and the
+// envelope's Data is left empty (wire shows `data: null`). The original
+// "_" silent drop hid a payload-loss bug that took live-traffic
+// inspection to find; the log line is the cheap fix.
+func MakeEnvelope(msgType, instance string, seq uint64, tick uint32, payload any) Envelope {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("scraper: MakeEnvelope marshal %q payload: %v", msgType, err)
+	}
+	return Envelope{
+		V:        ProtocolVersion,
+		Type:     msgType,
+		Instance: instance,
+		Seq:      seq,
+		Tick:     tick,
+		Ts:       time.Now(),
+		Data:     b,
+	}
 }
 
 // -------------------------------------------------------------------
@@ -87,7 +104,11 @@ func MakeEnvelope(msgType, instance string, tick uint32, payload any) Envelope {
 // (under the .ready field). See envelopeType* constants in
 // internal/scraper/manager/loop.go.
 type GameData struct {
-	GameState       GameState        `json:"game_state"`
+	// GameState stays in-process for the haloce events package (game_start /
+	// game_end detection compares snapshots) and for the manager's previous-
+	// game capture, but is excluded from JSON since the wire protocol no
+	// longer surfaces it.
+	GameState       GameState        `json:"-"`
 	Map             string           `json:"map"`
 	Gametype        string           `json:"gametype"`
 	VariantName     string           `json:"variant_name,omitempty"`
@@ -95,7 +116,7 @@ type GameData struct {
 	ScoreLimit      int32            `json:"score_limit"`
 	TimeLimitTicks  int32            `json:"time_limit_ticks"`
 	TeamScores      []TeamScore      `json:"team_scores"`
-	Players         []GamePlayer    `json:"players"`
+	Players         []GamePlayer     `json:"players"`
 	PowerItemSpawns []PowerItemSpawn `json:"power_item_spawns"`
 
 	// Machines is the connected-machine roster for system-link / splitscreen
@@ -168,6 +189,11 @@ type GamePlayer struct {
 	Index int    `json:"index"`
 	Name  string `json:"name"`
 	Team  uint32 `json:"team"`
+	// ArmorColor is the engine palette index for this player's biped tint
+	// (Halo: CE 0-17, Halo 2 wider). Joined from the network roster by
+	// gamertag inside the plugin's player-build path. Frontends key into a
+	// per-game palette table to render the color swatch in FFA UIs.
+	ArmorColor int16 `json:"armor_color"`
 	// Score is the per-player gametype score: ctf_score for CTF, the per-
 	// player slot of the matching score table for Slayer/Oddball/King/Race
 	// (these all live in distinct memory bases — see haloce/offsets.go
@@ -190,6 +216,11 @@ type GamePlayer struct {
 	// up with GameData.Machines[].Index. Nil when machine attribution
 	// isn't available (e.g. in-engine PlayerDatumArray reads pre-network).
 	MachineIndex *int `json:"machine_index"`
+	// ControllerIndex is the player's controller slot (0–3) on their *own*
+	// machine — distinct from LocalIndex which is only set for players on
+	// this xemu instance. Sourced from the network player table; nil when
+	// machine attribution isn't available.
+	ControllerIndex *int `json:"controller_index"`
 }
 
 // GameMachine is one connected machine in a system-link lobby. Index is
@@ -216,6 +247,7 @@ type PowerItemSpawn struct {
 	SpawnID            int     `json:"spawn_id"`
 	Tag                string  `json:"tag"`
 	SpawnIntervalTicks int16   `json:"spawn_interval_ticks"`
+	GametypeMask       uint8   `json:"gametype_mask"` // u8 bitmask of which gametypes this placement applies to
 	X                  float32 `json:"x"`
 	Y                  float32 `json:"y"`
 	Z                  float32 `json:"z"`
@@ -563,6 +595,7 @@ type TickPlayer struct {
 	Health             float32      `json:"health"`
 	Shields            float32      `json:"shields"`
 	HasCamo            bool         `json:"has_camo"`
+	CamoTimer          *uint32      `json:"camo_timer,omitempty"`
 	HasOvershield      bool         `json:"has_overshield"`
 	Frags              uint8        `json:"frags"`
 	Plasmas            uint8        `json:"plasmas"`

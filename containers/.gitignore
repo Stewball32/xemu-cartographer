@@ -2,6 +2,8 @@
 !.gitignore
 !*/
 browser/*
+!browser/init/
+!browser/init/*
 xemu/configs/*
 !xemu/init/*
 

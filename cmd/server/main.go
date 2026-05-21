@@ -6,8 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
@@ -20,14 +18,17 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"      // self-registering Halo: CE GameReader
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"  // self-registering WS handlers
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"     // self-registering WS room types
+	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
+	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 )
 
 func main() {
@@ -77,6 +78,21 @@ func main() {
 		scrMgr = scrapermgr.New(svc)
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
+
+		// Capture-policy loader: read the persisted (instance, class) rows
+		// now so runners started immediately after this (auto-start via the
+		// discovery watcher, manual /api/admin/scraper/start) inherit the
+		// current snapshot. The hook bind keeps them in sync as operators
+		// edit policies through the PB dashboard.
+		//
+		// pb: sink scheme must register BEFORE the initial reload — a
+		// policy carrying "pb:game_events" loaded against an empty registry
+		// would error with "unknown scheme" and silently drop captures.
+		sinks.RegisterPBSink(app)
+		scrMgr.RegisterCapturePolicyHooks()
+		if err := scrMgr.ReloadCapturePolicies(); err != nil {
+			log.Printf("scraper: initial capture-policy load: %v", err)
+		}
 
 		// Containers (optional): start podman manager + socket watcher when
 		// CONTAINERS_ENABLED=true. The route group registers itself as a
@@ -149,7 +165,7 @@ func main() {
 		hub = ws.NewHub(app)
 		go hub.Run()
 		ws.SetInstance(hub)
-		se.Router.GET("/api/ws", ws.NewHandler(hub, app))
+		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
 		svc.WS = hub
 		hub.SetServices(svc)
 

@@ -37,14 +37,25 @@ func handleJoinRoom(e *Event) {
 		return
 	}
 	switch {
-	case e.Room == rooms.HostAllRoom:
+	case e.Room == rooms.HostAllRoom, e.Room == rooms.SummaryRoom:
 		for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
 			e.SendRaw(msg)
 		}
 	case strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":"):
-		name := e.Room[len(rooms.HostRoomPrefix)+1:]
-		for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
-			e.SendRaw(msg)
+		// "host:<rest>" where rest is either "<inst>" (legacy all-classes
+		// replay) or "<inst>:<class>" (v2 per-class replay).
+		rest := e.Room[len(rooms.HostRoomPrefix)+1:]
+		parts := strings.SplitN(rest, ":", 2)
+		name := parts[0]
+		if len(parts) == 1 {
+			for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+				e.SendRaw(msg)
+			}
+		} else {
+			class := parts[1]
+			for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(name, class) {
+				e.SendRaw(msg)
+			}
 		}
 	}
 }

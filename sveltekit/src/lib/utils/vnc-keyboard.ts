@@ -112,6 +112,19 @@ export class VNCKeyboard {
 		this.ws.send(buf);
 	}
 
+	sendChord(keys: string[], holdMs = 60) {
+		const syms: number[] = [];
+		for (const k of keys) {
+			const sym = KEYSYM[k];
+			if (sym == null) return;
+			syms.push(sym);
+		}
+		for (const sym of syms) this.sendKey(sym, true);
+		setTimeout(() => {
+			for (let i = syms.length - 1; i >= 0; i--) this.sendKey(syms[i], false);
+		}, holdMs);
+	}
+
 	get connected(): boolean {
 		return this.state === State.Ready && this.ws?.readyState === WebSocket.OPEN;
 	}

@@ -24,6 +24,7 @@ type hostSummary struct {
 	Instance             string    `json:"instance"`
 	Phase                Phase     `json:"phase"`
 	Title                string    `json:"title"`
+	XBETitleName         string    `json:"xbe_title_name"`
 	Map                  string    `json:"map"`
 	Gametype             string    `json:"gametype"`
 	ScoreSummary         string    `json:"score_summary"`
@@ -130,7 +131,8 @@ func (a *aggregator) post(u summaryUpdate) {
 	}
 }
 
-// broadcast renders hostsCache into one envelope and pushes to host:all.
+// broadcast renders hostsCache into one envelope and pushes to
+// host:summary (the v2 cross-instance dashboard feed).
 func (a *aggregator) broadcast() {
 	if a.svc == nil || a.svc.WS == nil {
 		return
@@ -139,12 +141,12 @@ func (a *aggregator) broadcast() {
 	if !ok {
 		return
 	}
-	a.svc.WS.SendToRoomRaw(rooms.HostAllRoom, msgBytes)
+	a.svc.WS.SendToRoomRaw(rooms.SummaryRoom, msgBytes)
 }
 
 // joinReplay returns one envelope-bytes message representing the current
-// hostsCache, for replay to clients that just joined host:all. Same shape
-// as the broadcast() output.
+// hostsCache, for replay to clients that just joined host:summary. Same
+// shape as the broadcast() output.
 func (a *aggregator) joinReplay() [][]byte {
 	if a == nil {
 		return nil
@@ -156,15 +158,15 @@ func (a *aggregator) joinReplay() [][]byte {
 	return [][]byte{msgBytes}
 }
 
-// marshalEnvelope is the shared host:all envelope builder. Returns the
-// pre-marshaled wire bytes ready for SendToRoomRaw / SendRaw. M5 stage 5c:
-// envelope type is "current_state" (full hostsCache snapshot per OQ2's
-// "full re-broadcast, no diffs" resolution); "all" as the envelope's
-// Instance field stays as the client-side disambiguator between the
-// host:all summary feed and per-instance host:<name> streams.
+// marshalEnvelope is the shared host:summary envelope builder. Returns
+// the pre-marshaled wire bytes ready for SendToRoomRaw / SendRaw. v2:
+// envelope type is "summary"; payload is a SummaryPayload wrapping the
+// hostsCache list under a `hosts` key so the payload has somewhere to
+// grow (server-wide metrics, instance counts) without breaking
+// consumers. Instance is empty (the summary class is cross-instance).
 func (a *aggregator) marshalEnvelope() ([]byte, bool) {
-	summaries := a.snapshot()
-	env := scraper.MakeEnvelope(envelopeTypeCurrentState, "all", 0, summaries)
+	payload := SummaryPayload{Hosts: a.snapshot()}
+	env := scraper.MakeEnvelope(envelopeTypeSummary, "", 0, 0, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("aggregator: marshal envelope: %v", err)
@@ -172,7 +174,7 @@ func (a *aggregator) marshalEnvelope() ([]byte, bool) {
 	}
 	msg := websocket.Message{
 		Type:    "scraper",
-		Room:    rooms.HostAllRoom,
+		Room:    rooms.SummaryRoom,
 		Payload: envBytes,
 	}
 	msgBytes, err := json.Marshal(msg)
@@ -209,6 +211,7 @@ func summaryFromCache(name string, c *instanceCache) hostSummary {
 		Instance:             name,
 		Phase:                c.Phase,
 		Title:                c.Title,
+		XBETitleName:         c.XBETitleName,
 		LastSuccessfulReadAt: c.LastReadAt,
 	}
 	if c.GameData != nil {

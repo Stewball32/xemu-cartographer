@@ -54,14 +54,23 @@ func handleRequestEvents(e *Event) {
 		}
 	}
 
+	// Dedup by instance: a user in both host:<inst>:event and
+	// host:<inst>:tick should only get one EventsReply per instance.
+	seenInstance := map[string]bool{}
 	for _, room := range e.Services.WS.UserRooms(e.UserID) {
-		if room == rooms.HostAllRoom {
+		if room == rooms.HostAllRoom || room == rooms.SummaryRoom {
 			continue
 		}
 		if !strings.HasPrefix(room, rooms.HostRoomPrefix+":") {
 			continue
 		}
-		name := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
+		rest := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
+		parts := strings.SplitN(rest, ":", 2)
+		name := parts[0]
+		if seenInstance[name] {
+			continue
+		}
+		seenInstance[name] = true
 		msgBytes, ok := e.Services.Scraper.EventsReply(name, filters.SinceTick, filters.Types)
 		if !ok {
 			continue

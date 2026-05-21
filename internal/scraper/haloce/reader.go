@@ -1,6 +1,7 @@
 package haloce
 
 import (
+	"log"
 	"math"
 	"strings"
 
@@ -37,6 +38,13 @@ type Reader struct {
 	// most recent ReadGameState call. Surfaced via LastStateInputs for the
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
+
+	// Diagnostic one-shot flags for the two readers under offset investigation
+	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
+	// empty on Xbox builds). Set true after the first call logs its raw
+	// pointer/count values so the log doesn't flood at 30Hz.
+	loggedObjectTypesDiag bool
+	loggedPowerSpawnsDiag bool
 }
 
 // NewReader creates a Reader for the given instance.
@@ -162,10 +170,15 @@ func (r *Reader) composeGameData() scraper.GameData {
 	out := scraper.GameData{}
 
 	// Live match-config fields. Cheap; the host can still change these in
-	// pregame, so read every call rather than caching.
-	isTeamGameHVA, _ := r.inst.LowHVA(AddrIsTeamGame)
-	isTeamGameV, _ := r.inst.Mem.ReadU8At(isTeamGameHVA)
-	out.IsTeamGame = isTeamGameV != 0
+	// pregame, so read every call rather than caching. Sourced from the
+	// host's network_game_server variant settings (NGS+0xC8) — the legacy
+	// AddrIsTeamGame at 0x2F90C4 is only written at match-start and reads 0
+	// in the lobby.
+	if hva, err := r.inst.LowHVA(RefAddrNetworkGameServer); err == nil {
+		if v, err := r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantTeamPlay)); err == nil {
+			out.IsTeamGame = v != 0
+		}
+	}
 
 	gametypeID, err := r.readGametypeID()
 	if err != nil {
@@ -191,9 +204,14 @@ func (r *Reader) composeGameData() scraper.GameData {
 	r.fillPlayerScores(out.Players, gametypeID)
 	out.TimeLimitTicks = 0 // no verified address
 
-	// Scenario-static data — fall through to live reads if cache hasn't filled
-	// yet (e.g. very early pregame when the scenario pointer is still null).
-	if r.scenarioCache != nil && r.scenarioCache.Filled {
+	// Scenario-static data — copy whatever has populated in the cache,
+	// independent of Filled. Filled is the re-read optimization flag (only
+	// flips once every critical reader has produced data); it must not gate
+	// the wire output, or fields that did populate (e.g. PlayerSpawns, Fog)
+	// get dropped just because ObjectTypes / PowerSpawnsScenario haven't
+	// filled yet. Fall back to a live readScenarioTagName when the cache
+	// hasn't gotten started or Map is still empty.
+	if r.scenarioCache != nil {
 		out.Map = r.scenarioCache.MapName
 		out.GameDifficulty = r.scenarioCache.GameDifficulty
 		out.PlayerSpawns = r.scenarioCache.PlayerSpawns
@@ -201,8 +219,9 @@ func (r *Reader) composeGameData() scraper.GameData {
 		out.ObjectTypes = r.scenarioCache.ObjectTypes
 		out.TagCache = r.scenarioCache.TagCache
 		out.PowerItemSpawns = r.composePowerItemSpawns()
-	} else {
-		out.Map = r.readLowString(AddrMultiplayerMapName, 32)
+	}
+	if out.Map == "" {
+		out.Map = r.readScenarioTagName()
 	}
 
 	return out
@@ -229,6 +248,7 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 			SpawnID:            sp.SpawnID,
 			Tag:                sp.Tag,
 			SpawnIntervalTicks: sp.SpawnIntervalTicks,
+			GametypeMask:       sp.GametypeMask,
 			X:                  sp.X,
 			Y:                  sp.Y,
 			Z:                  sp.Z,
@@ -239,16 +259,17 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 }
 
 // readVariantName returns the host's loaded variant name (e.g. "TS TRAINING",
-// "CTF 3C 10S", "Accumulate"). Stored as UTF-16-LE in the first 24 bytes
-// (12 chars max) of the variant struct at RefAddrGlobalVariant. Updated
-// at match-start, so in lobby this is the *last loaded* variant rather
-// than the dropdown selection.
+// "CTF Pro", "Elimination"). Stored as UTF-16-LE in 24 bytes at NGS+0xAC —
+// the host writes this continuously while editing the variant in the lobby
+// UI, so it reflects the current dropdown selection even before match-start.
+// The GlobalVariant struct (0x2F90A8) holds the same data only after
+// match-start.
 func (r *Reader) readVariantName() string {
-	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
+	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
 	if err != nil {
 		return ""
 	}
-	b, err := r.inst.Mem.ReadBytesAt(hva, 24)
+	b, err := r.inst.Mem.ReadBytesAt(hva+int64(OffNGSVariantName), 24)
 	if err != nil {
 		return ""
 	}
@@ -256,27 +277,17 @@ func (r *Reader) readVariantName() string {
 }
 
 // readGametypeID returns the current gametype ID (1=ctf, 2=slayer, 3=oddball,
-// 4=king, 5=race, 6=terminator, 7=stub) by reading the u32 at
-// RefAddrGlobalVariant + OffGVGametype. The variant struct holds the
-// running variant once a match has started; engine-globals presence gates
-// the read so we don't surface stale "last loaded" data during the lobby.
-//
-// Confirmed via probe: in active CTF/Slayer/Oddball matches the value at
-// +0x18 of this struct matches the running gametype. Both bases (0x2F90A8
-// and 0x2FAB60) carry identical bytes mid-match; we use the first.
+// 4=king, 5=race, 6=terminator, 7=stub) by reading the u32 at NGS+0xC4 —
+// the host's network_game_server variant settings substruct, which the host
+// writes continuously while editing the variant in the lobby UI. This is
+// lobby-reliable; the legacy read from RefAddrGlobalVariant+OffGVGametype
+// only carries the running gametype once a match has started.
 func (r *Reader) readGametypeID() (uint32, error) {
-	geGlobalsPtr, err := r.inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
+	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
 	if err != nil {
 		return 0, err
 	}
-	if geGlobalsPtr == 0 {
-		return 0, nil
-	}
-	hva, err := r.inst.LowHVA(RefAddrGlobalVariant)
-	if err != nil {
-		return 0, err
-	}
-	return r.inst.Mem.ReadU32At(hva + int64(OffGVGametype))
+	return r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantGametype))
 }
 
 // fillPlayerScores populates each player's Score field using the per-gametype
@@ -445,13 +456,15 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 			localIdx = &v
 		}
 		machineIdx := int(machine)
+		ctrlIdx := int(ctrl)
 		players = append(players, scraper.GamePlayer{
-			Index:        int(listIdx),
-			Name:         xbox.DecodeUTF16LE(nameBytes),
-			Team:         uint32(team),
-			IsLocal:      &isLocal,
-			LocalIndex:   localIdx,
-			MachineIndex: &machineIdx,
+			Index:           int(listIdx),
+			Name:            xbox.DecodeUTF16LE(nameBytes),
+			Team:            uint32(team),
+			IsLocal:         &isLocal,
+			LocalIndex:      localIdx,
+			MachineIndex:    &machineIdx,
+			ControllerIndex: &ctrlIdx,
 		})
 	}
 	return players, nil
@@ -532,12 +545,12 @@ func (r *Reader) LocalMachineName() (string, bool) {
 	return name, true
 }
 
-// attributeMachines fills GamePlayer.MachineIndex by joining each player
-// against the network_players roster by name. Necessary because the in-engine
-// PlayerDatumArray (the source of in-game roster reads) doesn't carry a
-// machine index — that field only exists in the network roster, which is
-// also what the lobby debug page needs to show "who connected from where"
-// regardless of whether PDA is populated yet.
+// attributeMachines fills GamePlayer.MachineIndex and ArmorColor by joining
+// each player against the network_players roster by name. Necessary because
+// the in-engine PlayerDatumArray (the source of in-game roster reads) doesn't
+// carry machine index or color — both fields only exist in the network roster,
+// which is also what the lobby debug page needs to show "who connected from
+// where" regardless of whether PDA is populated yet.
 func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 	if len(players) == 0 {
 		return
@@ -553,7 +566,12 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 		return
 	}
 	rosterHVA := ngdHVA + int64(OffNGDNetworkPlayers)
-	nameToMachine := make(map[string]int, playerCount)
+	type netInfo struct {
+		machine    int
+		controller int
+		color      int16
+	}
+	nameToNet := make(map[string]netInfo, playerCount)
 	for i := int16(0); i < playerCount; i++ {
 		entryHVA := rosterHVA + int64(uint32(i)*NetworkPlayerStride)
 		nameBytes, err := mem.ReadBytesAt(entryHVA+int64(OffNetPlayerName), 24)
@@ -561,15 +579,25 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 			continue
 		}
 		machine, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerMachineIndex))
-		nameToMachine[xbox.DecodeUTF16LE(nameBytes)] = int(machine)
+		ctrl, _ := mem.ReadU8At(entryHVA + int64(OffNetPlayerControllerIndex))
+		color, _ := mem.ReadS16At(entryHVA + int64(OffNetPlayerColor))
+		nameToNet[xbox.DecodeUTF16LE(nameBytes)] = netInfo{
+			machine:    int(machine),
+			controller: int(ctrl),
+			color:      color,
+		}
 	}
 	for i := range players {
-		if players[i].MachineIndex != nil {
-			continue
-		}
-		if mi, ok := nameToMachine[players[i].Name]; ok {
-			v := mi
-			players[i].MachineIndex = &v
+		if ni, ok := nameToNet[players[i].Name]; ok {
+			players[i].ArmorColor = ni.color
+			if players[i].MachineIndex == nil {
+				v := ni.machine
+				players[i].MachineIndex = &v
+			}
+			if players[i].ControllerIndex == nil {
+				v := ni.controller
+				players[i].ControllerIndex = &v
+			}
 		}
 	}
 }
@@ -774,6 +802,7 @@ func (r *Reader) readTickPlayer(
 	ip.QuitFlag = quitRaw
 	respawnRaw, _ := mem.ReadU32(playerBase + OffPlrRespawnTimer)
 	ip.RespawnTimer = respawnRaw
+	camoRaw, _ := mem.ReadU32(playerBase + OffPlrCamoTimer)
 
 	handle, _ := mem.ReadS32(playerBase + OffPlrObjectHandle)
 	prevHandle, _ := mem.ReadS32(playerBase + OffPlrPrevObjHandle)
@@ -788,6 +817,10 @@ func (r *Reader) readTickPlayer(
 	if !alive && respawnRaw > 0 {
 		v := respawnRaw
 		tp.RespawnInTicks = &v
+	}
+	if alive && camoRaw > 0 {
+		v := camoRaw
+		tp.CamoTimer = &v
 	}
 
 	// Dynamic object data.
@@ -1103,43 +1136,75 @@ func (r *Reader) readPowerItemStatus(
 // is filled separately by readPowerInitialOIDs once world objects exist.
 //
 // Returns nil if the scenario isn't loaded yet.
+//
+// One-shot diagnostic log fires on the first call per Reader (M19
+// 2026-05-18) to surface which gate drops every candidate item:
+// scenarioBase/ensureBases failures, itemCount/firstItemAddr cache
+// gates, or per-item filters (negative tag index / empty tag name /
+// non-positive respawn interval).
 func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 	inst := r.inst
 	mem := inst.Mem
 
-	scenarioBase, err := inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	var scenarioBase, firstItemAddr uint32
+	var itemCount int32
+	var emptyHandle, emptyTagName, nonPowerInterval, kept int
+	gate := "ok"
+	defer func() {
+		if r.loggedPowerSpawnsDiag {
+			return
+		}
+		r.loggedPowerSpawnsDiag = true
+		log.Printf("scraper[%s]: readPowerSpawnScenarios diag: gate=%s scenarioBase=0x%08X tagInstBase=0x%08X itemCount=%d firstItemAddr=0x%08X emptyHandle=%d emptyName=%d nonPower=%d kept=%d",
+			r.name, gate, scenarioBase, r.tagInstBase, itemCount, firstItemAddr,
+			emptyHandle, emptyTagName, nonPowerInterval, kept)
+	}()
+
+	var err error
+	scenarioBase, err = inst.DerefLowPtr(AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
+		gate = "scenarioBase"
 		return nil
 	}
 	if err := r.ensureBases(); err != nil {
+		gate = "ensureBases"
 		return nil
 	}
 
-	itemCount, _ := mem.ReadS32(scenarioBase + OffScenarioItemCount)
+	itemCount, _ = mem.ReadS32(scenarioBase + OffScenarioItemCount)
 	if itemCount <= 0 {
+		gate = "itemCount<=0"
 		return nil
 	}
-	firstItemAddr, _ := mem.ReadU32(scenarioBase + OffScenarioItemFirst)
+	firstItemAddr, _ = mem.ReadU32(scenarioBase + OffScenarioItemFirst)
 	if firstItemAddr < HighGVAThreshold {
+		gate = "firstItemAddr"
 		return nil
 	}
 
 	var spawns []scenarioPowerSpawn
 	for i := int32(0); i < itemCount; i++ {
 		itemAddr := firstItemAddr + uint32(i)*ScenarioItemStride
-		tagIdxRaw, _ := mem.ReadS32(itemAddr + OffScenItemTagIndex)
-		if tagIdxRaw < 0 {
+		// The field at +0x5C is a u32 tag HANDLE (high16=salt, low16=index)
+		// — not an s32 index as halocaster.py:648 claimed. Salt bits often
+		// have the high bit set, so reading as signed gave -1 for every item.
+		handle, _ := mem.ReadU32(itemAddr + OffScenItemTagIndex)
+		if handle == HandleEmpty {
+			emptyHandle++
 			continue
 		}
-		tagIdx := int16(tagIdxRaw)
+		tagIdx := int16(handle & HandleIndexMask)
 		tagName, err := r.readTagName(tagIdx)
 		if err != nil || tagName == "" {
+			emptyTagName++
 			continue
 		}
-		interval := r.readSpawnInterval(tagIdx)
+		interval := r.readSpawnInterval(itemAddr, tagIdx)
 		if interval <= 0 {
+			nonPowerInterval++
 			continue // not a power item
 		}
+		gametypeMask, _ := mem.ReadU8(itemAddr + OffScenItemGameType)
 		x, _ := mem.ReadF32(itemAddr + OffScenItemX)
 		y, _ := mem.ReadF32(itemAddr + OffScenItemY)
 		z, _ := mem.ReadF32(itemAddr + OffScenItemZ)
@@ -1148,10 +1213,15 @@ func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 			SpawnID:            len(spawns),
 			Tag:                tagName,
 			SpawnIntervalTicks: interval,
+			GametypeMask:       gametypeMask,
 			X:                  x,
 			Y:                  y,
 			Z:                  z,
 		})
+		kept++
+	}
+	if kept == 0 {
+		gate = "allItemsFiltered"
 	}
 	return spawns
 }
@@ -1236,22 +1306,36 @@ func (r *Reader) findTagIndex(name string) (int16, error) {
 	return -1, nil
 }
 
-func (r *Reader) readSpawnInterval(tagIdx int16) int16 {
+// readSpawnInterval returns the effective respawn interval for a scenario
+// item placement, in TICKS. Source data on Xbox is in seconds; we multiply
+// by TicksPerSecond so the rest of the scraper (RespawnTimer, event
+// detection) stays in tick units.
+//
+// Resolution order matches the Halo CE engine: prefer the per-placement
+// override at scenario_item+0x0E; fall back to the itmc tag's default at
+// tag_data+0x0C. Returns 0 only when both are zero (non-respawning item).
+//
+// halocaster.py:655's chain (tag_data+0x14 → ptr → +0x0C) was PC-only —
+// on Xbox the itmc body is inlined into the tag_data buffer with no
+// indirection step.
+func (r *Reader) readSpawnInterval(itemAddr uint32, tagIdx int16) int16 {
+	mem := r.inst.Mem
+	if v, _ := mem.ReadS16(itemAddr + OffScenItemSpawnTime); v > 0 {
+		return int16(uint32(v) * TicksPerSecond)
+	}
 	if r.tagInstBase < HighGVAThreshold {
 		return 0
 	}
-	mem := r.inst.Mem
 	tagInstEntry := r.tagInstBase + uint32(TagInstStride)*uint32(uint16(tagIdx))
 	tagDataPtr, _ := mem.ReadU32(tagInstEntry + OffTagDataPtr)
 	if tagDataPtr < HighGVAThreshold {
 		return 0
 	}
-	intervalTablePtr, _ := mem.ReadU32(tagDataPtr + OffTagRespawnIntervalOff)
-	if intervalTablePtr < HighGVAThreshold {
+	seconds, _ := mem.ReadS16(tagDataPtr + OffTagItmcSpawnTime)
+	if seconds <= 0 {
 		return 0
 	}
-	interval, _ := mem.ReadS16(intervalTablePtr + OffTagRespawnInterval)
-	return interval
+	return int16(uint32(seconds) * TicksPerSecond)
 }
 
 // -------------------------------------------------------------------
@@ -1274,6 +1358,55 @@ func (r *Reader) readTagName(tagIdx int16) (string, error) {
 	name := r.readHighString(namePtr)
 	r.tagNameCache[tagIdx] = name
 	return name, nil
+}
+
+// scenarioTagScanLimit caps the tag-instance walk in readScenarioTagName.
+// Halo: CE scenarios typically expose ~600 tags; the scenario tag is at
+// index 0 in every known scenario, so the loop almost always wins on the
+// first iteration. The bound exists only so a stale tagInstBase can't run
+// away.
+const scenarioTagScanLimit = 1024
+
+// readScenarioTagName returns the active scenario tag's name (the map
+// path, e.g. "levels\\test\\downrush\\downrush") by walking the tag
+// instance array for the entry whose data_ptr matches the global
+// scenario pointer. Replaces the halocaster.py-era AddrMultiplayerMapName
+// (0x2E37CD) low-GVA read, which returned "" for active matches on the
+// Xbox build.
+//
+// Self-resolves r.tagInstBase via DerefLowPtr if not yet cached so it
+// works from the Ready phase (before ReadTick's ensureBases pass runs).
+// Returns "" when either base pointer isn't reachable yet (early
+// pregame) or no tag entry matches inside the scan limit.
+func (r *Reader) readScenarioTagName() string {
+	if r.tagInstBase < HighGVAThreshold {
+		base, err := r.inst.DerefLowPtr(AddrGlobalTagInstancesPtr)
+		if err != nil || base < HighGVAThreshold {
+			return ""
+		}
+		r.tagInstBase = base
+	}
+	scenarioBase, err := r.inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	if err != nil || scenarioBase < HighGVAThreshold {
+		return ""
+	}
+	mem := r.inst.Mem
+	for i := uint32(0); i < scenarioTagScanLimit; i++ {
+		entry := r.tagInstBase + i*uint32(TagInstStride)
+		dataPtr, err := mem.ReadU32(entry + OffTagDataPtr)
+		if err != nil {
+			return ""
+		}
+		if dataPtr != scenarioBase {
+			continue
+		}
+		namePtr, err := mem.ReadU32(entry + OffTagNamePtr)
+		if err != nil || namePtr < HighGVAThreshold {
+			return ""
+		}
+		return r.readHighString(namePtr)
+	}
+	return ""
 }
 
 func (r *Reader) readHighString(gva uint32) string {
@@ -1312,22 +1445,4 @@ func (r *Reader) ensureBases() error {
 		r.ohdBase = base
 	}
 	return nil
-}
-
-// readLowString reads a null-terminated ASCII string from a cached low GVA host VA.
-func (r *Reader) readLowString(lowGVA uint32, maxLen int) string {
-	hva, err := r.inst.LowHVA(lowGVA)
-	if err != nil {
-		return ""
-	}
-	b, err := r.inst.Mem.ReadBytesAt(hva, maxLen)
-	if err != nil {
-		return ""
-	}
-	for i, c := range b {
-		if c == 0 {
-			return string(b[:i])
-		}
-	}
-	return string(b)
 }

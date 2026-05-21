@@ -30,6 +30,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
@@ -52,6 +53,16 @@ type Manager struct {
 	runners map[string]*runner
 
 	agg *aggregator
+
+	// policyMu guards policies. Held separately from mu so the loader
+	// can update the Manager-level snapshot without contending with
+	// Start/Stop on the runners map. reloadMu serialises full reloads
+	// — only one ReloadCapturePolicies pass runs at a time so a slow
+	// FindAllRecords can't race with a fast one and leave runners on
+	// stale slices.
+	policyMu sync.RWMutex
+	policies []capture.Policy
+	reloadMu sync.Mutex
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -126,6 +137,12 @@ func (m *Manager) Start(name, sock string) error {
 	m.runners[name] = r
 	m.mu.Unlock()
 
+	// Hand the runner the Manager's current capture-policy snapshot so
+	// its first tick already has the right demand evaluation. A reload
+	// firing concurrently re-pushes (last write wins); the worst case
+	// is a single tick on a slightly stale slice.
+	r.setPolicies(m.getCapturePolicies())
+
 	// Seed the aggregator immediately so host:all subscribers see a fresh
 	// Idle entry without waiting for the runner's first heartbeat tick.
 	m.agg.post(summaryUpdate{
@@ -184,11 +201,11 @@ func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) 
 	}
 	c := r.readCache()
 	return scraperiface.InstanceState{
-		Name:      name,
-		TitleID:   c.TitleID,
-		Title: c.Title,
-		XboxName:  c.XboxName,
-		Running:   true,
+		Name:     name,
+		TitleID:  c.TitleID,
+		Title:    c.Title,
+		XboxName: c.XboxName,
+		Running:  true,
 	}, true
 }
 
@@ -211,20 +228,24 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 	if c.PreviousGame != nil {
 		prev = &scraperiface.PreviousGameInfo{
 			GameData: c.PreviousGame.GameData,
-			Events:    c.PreviousGame.Events,
-			EndedAt:   c.PreviousGame.EndedAt,
+			Events:   c.PreviousGame.Events,
+			EndedAt:  c.PreviousGame.EndedAt,
 		}
 	}
 
 	return scraperiface.InspectState{
-		Info:         info,
-		Running:      true,
-		Phase:        string(c.Phase),
-		LastReadAt:   c.LastReadAt,
-		CurrentState: c.GameState,
-		StateInputs:  c.StateInputs,
-		ScoreProbe:   c.ScoreProbe,
-		GameData:    c.GameData,
+		Info:       info,
+		Running:    true,
+		Phase:      string(c.Phase),
+		LastReadAt: c.LastReadAt,
+		// state_inputs / score_probe moved off the per-tick cache when
+		// probe split out as its own on-demand envelope class. The
+		// fields stay on InspectState for v1 wire-shape stability but
+		// always render as empty maps — clients that want live probe
+		// data now use the request_probe WS handler (see probe.go).
+		StateInputs:  scraper.StateInputs{},
+		ScoreProbe:   scraper.ScoreProbe{},
+		GameData:     c.GameData,
 		LatestTick:   c.LatestTick,
 		RecentEvents: c.Events,
 		PreviousGame: prev,
@@ -252,20 +273,20 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 	}
 	m.mu.Unlock()
 
-	out := make([][]byte, 0, len(runners))
+	out := make([][]byte, 0, len(runners)*4)
 	for _, r := range runners {
-		if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
-			out = append(out, msgBytes)
+		for _, m := range r.classEnvelopeMessages() {
+			out = append(out, m.Bytes)
 		}
 	}
 	return out
 }
 
-// JoinReplayForInstance returns the current_state replay bytes for a single
-// runner, or nil if the named runner doesn't exist (or its cache fails to
-// marshal). Used by the join_room handler when a client subscribes to
-// host:<name> so the overlay can render immediately rather than waiting
-// for the next state_update / phase transition.
+// JoinReplayForInstance returns one envelope per applicable v2 class for
+// a single runner, or nil if the named runner doesn't exist. Used by the
+// join_room handler when a client subscribes to host:<name> (no class
+// suffix — returns all classes) so a late joiner can render immediately
+// rather than waiting for the next per-class broadcast.
 func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	m.mu.Lock()
 	r, ok := m.runners[name]
@@ -273,8 +294,30 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	if msgBytes, ok := r.buildCurrentStateEnvelope(); ok {
-		return [][]byte{msgBytes}
+	msgs := r.classEnvelopeMessages()
+	out := make([][]byte, 0, len(msgs))
+	for _, mm := range msgs {
+		out = append(out, mm.Bytes)
+	}
+	return out
+}
+
+// JoinReplayForInstanceClass returns the envelope for a single v2 class
+// of a single runner, or nil if the runner or class has no current data.
+// Used by the join_room handler when a client subscribes to
+// host:<name>:<class> so they get exactly the cached envelope for that
+// class — no extra classes they didn't ask for.
+func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	for _, mm := range r.classEnvelopeMessages() {
+		if mm.Class == class {
+			return [][]byte{mm.Bytes}
+		}
 	}
 	return nil
 }

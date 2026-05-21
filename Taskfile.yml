@@ -1,6 +1,15 @@
 version: "3"
 dotenv: [".env"]
 
+vars:
+  # Single source of truth: the git tag. See docs/decisions/0001-version-from-git-tag.md
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+
 tasks:
   dev:
     desc: Run Go backend (Air) and SvelteKit dev server in parallel
@@ -46,6 +55,8 @@ tasks:
   build:frontend:
     desc: Build SvelteKit static output
     dir: sveltekit
+    env:
+      PUBLIC_APP_VERSION: "{{.VERSION}}"
     cmds:
       - pnpm install --frozen-lockfile
       - pnpm build
@@ -53,11 +64,32 @@ tasks:
     generates: ["../pb_public/**/*"]
 
   build:backend:
-    desc: Build Go binary
+    desc: Build Go binary (version baked in via ldflags)
     cmds:
-      - CGO_ENABLED=0 go build -o ./bin/server ./cmd/server
+      - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version={{.VERSION}} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit={{.COMMIT}} -X github.com/Stewball32/xemu-cartographer/internal/version.Date={{.DATE}}" -o ./bin/server ./cmd/server
     sources: ["cmd/**/*.go", "internal/**/*.go", "go.mod", "go.sum"]
     generates: ["bin/server"]
+
+  test:
+    desc: Run Go tests and frontend type-check
+    cmds:
+      # Scope matches `task lint` — keeps `./...` from walking into the
+      # root-owned containers/ bind-mount tree when local containers have
+      # run as root (see docs/prod_deployment / Container caveats).
+      - go test ./cmd/... ./internal/...
+      - cd sveltekit && pnpm check
+
+  fmt:
+    desc: Format Go and frontend code
+    cmds:
+      - go fmt ./cmd/... ./internal/...
+      - cd sveltekit && pnpm format
+
+  lint:
+    desc: Lint Go and frontend code
+    cmds:
+      - golangci-lint run --build-tags=dev ./cmd/... ./internal/...
+      - cd sveltekit && pnpm lint
 
   clean:
     desc: Remove build artifacts
@@ -65,12 +97,13 @@ tasks:
       - rm -rf bin/ tmp/ pb_public/
 
   container:build:
-    desc: Build container image with Podman
-    cmds: ["podman build -t xemu-cartographer -f Containerfile ."]
+    desc: Build container image with Podman (tags VERSION and latest)
+    cmds:
+      - podman build --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg DATE={{.DATE}} -t xemu-cartographer:{{.VERSION}} -t xemu-cartographer:latest -f Containerfile .
 
   container:run:
     desc: Run container with Podman
     cmds:
       [
-        "podman run -p ${PUBLIC_PB_PORT:-8090}:8090 -v pb_data:/app/pb_data:z xemu-cartographer",
+        "podman run -p ${PUBLIC_PB_PORT:-8090}:8090 -v pb_data:/app/pb_data:z xemu-cartographer:latest",
       ]

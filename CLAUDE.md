@@ -11,6 +11,16 @@ Before writing or reviewing code that touches a third-party library where the AP
 - **Skeleton UI v4** — [sveltekit/docs/skeleton-llms.txt](sveltekit/docs/skeleton-llms.txt) is a table of contents of Skeleton's official docs (components, theming, Tailwind v4 integration). Read it first to locate the right page, then WebFetch the specific page under `https://www.skeleton.dev/` (e.g. `https://www.skeleton.dev/docs/svelte/framework-components/app-bar.md`, `https://www.skeleton.dev/docs/svelte/tailwind-components/buttons`). Always use the **Svelte** section, not React.
 - **SvelteKit, PocketBase JS SDK, Disgo, Tailwind v4** — WebFetch the official docs site (`kit.svelte.dev`, `pocketbase.io/docs`, `disgo.dev`, `tailwindcss.com`) rather than inventing an API.
 
+## Project meta-docs
+
+[`docs/README.md`](docs/README.md) is the source of truth for the project's meta-docs convention. Follow it when adding planning, status, or decision documents.
+
+- New milestone → copy [`docs/milestones/_template.md`](docs/milestones/_template.md) to `docs/milestones/M??-kebab-name.md`, then add a row to `docs/milestones/README.md`.
+- New decision → copy [`docs/decisions/_template.md`](docs/decisions/_template.md) to `docs/decisions/????-kebab-name.md`, then add a row to `docs/decisions/README.md`. ADRs are immutable once Accepted — supersede with a new ADR rather than editing.
+- Update [`docs/STATUS.md`](docs/STATUS.md) whenever the "Now" set of work changes.
+- Add user-visible changes to `CHANGELOG.md` under `[Unreleased]`; cut a versioned section when shipping (SemVer, Keep-a-Changelog format).
+- Dates are always absolute (`YYYY-MM-DD`). Milestone `Log` sections and the ADR index are append-only.
+
 ## Development Commands
 
 ```sh
@@ -112,28 +122,28 @@ Protected pages can be served through custom PocketBase routes that validate JWT
 
 The README's [Project Structure](README.md#project-structure) tree covers the directory layout. The table below highlights packages with cross-cutting roles or non-obvious behavior.
 
-| Package                                 | Purpose                                                                                                                                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `internal/guards`                       | Unified cross-system guards, `Services` struct, `GuardFunc` type                                                                                                                                 |
-| `internal/guards/interfaces/`           | Per-method interfaces, one file each, grouped by system (`discord/`, `websocket/`, `pocketbase/`, `scraper/`). Compose into aggregate `Service` interfaces via embedding.                        |
-| `internal/pocketbase`                   | PB service wrapper — implements `pbiface.Service`                                                                                                                                                |
-| `internal/pocketbase/routes/containers` | `/api/admin/containers/*` CRUD + kiosk noVNC reverse proxy + VNC pass-through                                                                                                                    |
-| `internal/pocketbase/routes/scraper`    | `/api/admin/scraper/*` — list/start/stop scraper runners (typed against `scraperiface.Service`, no compile-time dep on the manager)                                                              |
-| `internal/pocketbase/routes/xemu`       | `/api/admin/xemu/*` — memory-bridge probe/smoke + live diagnostics (`probe.go`, `probe_title.go`, `sample_deltas.go`, `scan_string.go`)                                                          |
-| `internal/pocketbase/seed`              | In-process dev seeder — `seed.go` (`//go:build dev`) + `stub.go` (`//go:build !dev`) + `data.go` defines seed vars; `containers_snapshot.go` keeps a record-backed snapshot of live podman state |
-| `internal/websocket`                    | WebSocket Hub, client management, message routing, JWT auth upgrade                                                                                                                              |
-| `internal/websocket/rooms`              | Room type definitions with guard lists — one per file (`overlay`, `admin`, `public`, `host:<name>`, `host:all`)                                                                                  |
-| `internal/scraper`                      | `GameReader` interface + game registry; `Detect()` picks a plugin by xemu title ID                                                                                                               |
-| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs phase-driven tick goroutine, broadcasts to `host:<name>` + `host:all` rooms; implements `scraperiface.Service`                          |
-| `internal/scraper/haloce`               | Halo: CE `GameReader` (offsets, game-data / tick / event readers); self-registers via blank import in `main.go`                                                                                  |
+| Package                                 | Purpose                                                                                                                                                                                                                                                          |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `internal/guards`                       | Unified cross-system guards, `Services` struct, `GuardFunc` type                                                                                                                                                                                                 |
+| `internal/guards/interfaces/`           | Per-method interfaces, one file each, grouped by system (`discord/`, `websocket/`, `pocketbase/`, `scraper/`). Compose into aggregate `Service` interfaces via embedding.                                                                                        |
+| `internal/pocketbase`                   | PB service wrapper — implements `pbiface.Service`                                                                                                                                                                                                                |
+| `internal/pocketbase/routes/containers` | `/api/admin/containers/*` CRUD + kiosk noVNC reverse proxy + VNC pass-through                                                                                                                                                                                    |
+| `internal/pocketbase/routes/scraper`    | `/api/admin/scraper/*` — list/start/stop scraper runners (typed against `scraperiface.Service`, no compile-time dep on the manager)                                                                                                                              |
+| `internal/pocketbase/routes/xemu`       | `/api/admin/xemu/*` — memory-bridge probe/smoke + live diagnostics (`probe.go`, `probe_title.go`, `sample_deltas.go`, `scan_string.go`)                                                                                                                          |
+| `internal/pocketbase/seed`              | In-process dev seeder — `seed.go` (`//go:build dev`) + `stub.go` (`//go:build !dev`) + `data.go` defines seed vars; `containers_snapshot.go` keeps a record-backed snapshot of live podman state                                                                 |
+| `internal/websocket`                    | WebSocket Hub, client management, message routing, JWT auth upgrade                                                                                                                                                                                              |
+| `internal/websocket/rooms`              | Room type definitions with guard lists — one per file (`overlay`, `admin`, `public`, `host:<name>`, `host:all`)                                                                                                                                                  |
+| `internal/scraper`                      | `GameReader` interface + game registry; `Detect()` picks a plugin by xemu title ID                                                                                                                                                                               |
+| `internal/scraper/manager`              | Per-instance scraper runner: opens `xemu.Instance`, runs phase-driven tick goroutine, broadcasts to `host:<name>` + `host:all` rooms; implements `scraperiface.Service`                                                                                          |
+| `internal/scraper/haloce`               | Halo: CE `GameReader` (offsets, game-data / tick / event readers); self-registers via blank import in `main.go`                                                                                                                                                  |
 | `internal/scraper/xbox`                 | Title-agnostic Xbox console primitives — one file per scan target: `xbe_certificate.go`, `console_name.go`, `serial.go`, `mac.go`, `clock.go`, `timezone.go`, `video_standard.go`; plus `memory.go` (kernel helpers), `offsets.go`, `encoding.go` (Xbox strings) |
-| `internal/xemu`                         | xemu QMP client + memory bridge — `Instance.Init`, GVA→GPA translation, `ReadBytes`/`ReadAt`                                                                                                     |
-| `internal/podman`                       | Podman CLI wrapper — container pair lifecycle, stride-wise port allocation, state tracking                                                                                                       |
-| `internal/discovery`                    | Polling watcher over `CONTAINERS_SOCKET_DIR`; emits `onAdd(name, sock)` / `onRemove(name)` so the scraper manager can attach/detach as containers come and go                                    |
+| `internal/xemu`                         | xemu QMP client + memory bridge — `Instance.Init`, GVA→GPA translation, `ReadBytes`/`ReadAt`                                                                                                                                                                     |
+| `internal/podman`                       | Podman CLI wrapper — container pair lifecycle, stride-wise port allocation, state tracking                                                                                                                                                                       |
+| `internal/discovery`                    | Polling watcher over `CONTAINERS_SOCKET_DIR`; emits `onAdd(name, sock)` / `onRemove(name)` so the scraper manager can attach/detach as containers come and go                                                                                                    |
 
 ## Frontend Structure
 
-- **UI framework:** Skeleton UI v4 (Svelte 5 + Tailwind CSS v4), cerberus theme
+- **UI framework:** Skeleton UI v4 (Svelte 5 + Tailwind CSS v4); six bundled themes in [sveltekit/src/lib/styles/](sveltekit/src/lib/styles/) (`theme-{default,forerunner,midnight,norcal,phosphor,xbox}.css`), one is selected via `data-theme="..."` on `<html>` in [sveltekit/src/app.html](sveltekit/src/app.html). Per-theme body decorations (e.g. xbox's warped hex mesh + jewel glow) live behind `[data-theme='...']` selectors in [sveltekit/src/routes/layout.css](sveltekit/src/routes/layout.css). Theme previews: `/debug/theme/` and `/debug/theme-compact/`.
 - **API client:** PocketBase JS SDK (`pocketbase` npm package) — singleton in `src/lib/pocketbase.ts`; in dev points to `http://localhost:PORT`, in production passes `undefined` (same-origin relative)
 - **Auth store:** `src/lib/stores/auth.svelte.ts` — uses Svelte 5 runes (`$state`/`$derived`), not writable stores
 - **Mode store:** `src/lib/stores/mode.svelte.ts` — dark/light mode toggle, persisted in `localStorage`; call `mode.toggle()` or `mode.set('dark'|'light')`
@@ -143,6 +153,8 @@ The README's [Project Structure](README.md#project-structure) tree covers the di
 - **WebSocket:** Browser native `WebSocket` API connecting to `/api/ws?token=PB_JWT`
 - **Routing:** SvelteKit file-based routing in `sveltekit/src/routes/`; `+layout.ts` sets `ssr = false`, `prerender = true`, `trailingSlash = 'always'` globally
 - **Admin debug page:** [sveltekit/src/routes/admin/debug/](sveltekit/src/routes/admin/debug/) renders per-instance tabs (Overview / Game / Tick / Events / Probe / Raw JSON). Sub-components live in [sveltekit/src/lib/components/debug/](sveltekit/src/lib/components/debug/) (`OverviewCard`, `KvCard`, `ColGroupedTable`, `PlayerListItem`, `PlayerDetailPanel`). The Probe tab consumes `GameReader.BuildScoreProbe()` and `LastStateInputs()` from [internal/scraper/scraper.go](internal/scraper/scraper.go) — when adding diagnostics to a game plugin, surface them through these methods.
+- **Tables:** use `<DataTable>` from [sveltekit/src/lib/components/ui/DataTable.svelte](sveltekit/src/lib/components/ui/DataTable.svelte) for any list of records. Conventions (required props, density, cell patterns, order stability) live in [sveltekit/docs/TABLES.md](sveltekit/docs/TABLES.md).
+- **Nav layout & Skeleton rail-gap override:** [sveltekit/docs/NAV.md](sveltekit/docs/NAV.md) — Skeleton v4's rail mode stretches `Navigation.Menu` via `flex: 1` and centers items, producing a large gap between groups; the doc records the targeted override and the Tailwind v4 `!` suffix needed to win on specificity. Re-apply this override in any template-derived repo.
 - **Build:** adapter-static outputs directly to `pb_public/` with SPA fallback
 - **Env:** `vite.config.ts` uses `envDir: '..'` to read from root `.env` — no separate `sveltekit/.env`
 - **Package manager:** pnpm
@@ -200,6 +212,7 @@ The scraper manager is special: it holds `*guards.Services` and broadcasts to pe
 - **Dev DB is ephemeral:** Air compiles the server to `tmp/server.exe` and `clean_on_exit = true` wipes `tmp/` on exit — including `tmp/pb_data/` where PocketBase stores its dev database. This is intentional: each `task dev` session starts with a clean slate. TypeScript type generation (`task typegen`) therefore uses `--url` mode against the live server rather than reading the DB file directly.
 - **`atlas/` directory:** Snapshots of predecessor projects (`HaloCaster`, `xemu-cartographer-legacy`) kept as porting reference. **Treat every artifact here as unverified** — offsets, patterns, and APIs must be re-confirmed against current xemu/library behavior before being copied into the live tree. Not part of the build, not imported, not modified. When in doubt, read `atlas/README.md` first. Contents are gitignored (local-only) by default.
 - **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main`. **frontend** runs `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...` and `go build` (note: **not** `go test`); **e2e** downloads the built `pb_public/` and runs Playwright. Backend unit tests are local-only — run `go test ./...` before pushing scraper/podman/proxy changes.
+- **pnpm pinned to v10:** both `Containerfile` (`corepack prepare pnpm@10`) and `.github/workflows/ci.yml` (`pnpm/action-setup` `version: 10`). Don't bump to `latest` — pnpm v11 raises `ERR_PNPM_IGNORED_BUILDS` during `--frozen-lockfile` installs even when packages are listed in `onlyBuiltDependencies`. The dep build-script allowlist is authoritative in `sveltekit/pnpm-workspace.yaml` (pnpm v10+ ignores a `pnpm` block in `package.json`), and the `Containerfile`'s frontend stage must copy this file into the build context.
 
 ## Containers (xemu + browser pairs)
 
@@ -231,6 +244,14 @@ All routes inherit `RequireAuth + RequireAdmin` middleware (see [internal/pocket
 | POST   | `/api/admin/containers/{name}/start` | —                | `204`                           |
 | POST   | `/api/admin/containers/{name}/stop`  | —                | `204`                           |
 | DELETE | `/api/admin/containers/{name}`       | —                | `204`                           |
+| DELETE | `/api/admin/containers/{name}/files` | —                | `204` (or `409` if running)     |
+| POST   | `/api/admin/containers/cleanup`      | —                | `200 {"deleted":[…]}`           |
+
+`DELETE /{name}/files` wipes the on-disk bind-mount sources (xemu config + Firefox profile) without touching the container record — useful for resetting a corrupted profile (e.g. stale Firefox `.parentlock`) without losing the entry. Refuses if either container half is currently `running`/`paused`/`restarting` so we don't yank the rug under a live X session.
+
+`POST /cleanup` walks `containers/browser/config-*`, `containers/xemu/configs/*`, and `containers/xemu/shared/hdds/*` and removes any entry that doesn't correspond to a live container record. **Files in `containers/xemu/shared/hdds/` whose basename starts with `_` (e.g. `_default.qcow2`) are treated as protected baselines and skipped.** Both halves rely on `Manager.runSudo` to escalate when the entries are root-owned (which is the default — see below).
+
+Both halves of the container pair run as **root inside the container** (`PUID=PGID=os.Getuid()`, `USER_ID=GROUP_ID=os.Getuid()`). xemu needs that for `NET_ADMIN`/`NET_RAW` (pcap netplay binds raw sockets on the host interface, and Linux projects container caps into the effective set only for root). The browser side matches for symmetry. With `task dev` typically run under `sudo` (so the scraper can read host-side process state), this means the in-container init writes back into bind mounts as host root — leaving config dirs and HDD files root-owned on the host. The two cleanup endpoints above (and the `Cleanup files` button on `/containers/`) are the operator's path to remove those without manually escalating in a shell.
 
 Per-instance ports are allocated stride-wise from `CONTAINERS_PORT_BASE` (default 3100). For `index=0`: HTTP=3100, HTTPS=3101, WS=3102, BrowserWeb=3103, VNC=3104. The browser container points its kiosk Firefox at `https://localhost:<XemuHTTPS>` so the UI is visible at `http://localhost:<BrowserWeb>`.
 

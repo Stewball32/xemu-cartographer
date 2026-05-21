@@ -1,0 +1,103 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.6.1] - 2026-05-20
+
+### Added
+
+- `DataTable` selection API: new `selectable` / `selected` / `selectableRow` props add a leading checkbox column with header select-all (indeterminate via native DOM property when partially selected). Enables pod-listing mass actions and matches the wider admin-restructure.
+- `xbe_title_name` field on the `host:summary` envelope (sourced from `instanceCache.XBETitleName`), so the pod listing can show the XBE binary title distinct from the resolved game title without joining per-instance rooms.
+- `/admin/` dashboard with pod / scraper / user stat tiles (loaded via `Promise.allSettled`) and a nav card grid showing per-area Live / Placeholder badges.
+- Placeholder pages scaffolded for upcoming milestones via new `<PagePlaceholder>`: `/admin/identity` (M07), `/admin/roles` (M08), `/admin/games` (M13), `/play` (M09), `/series` + `/series/new` + `/series/[id]` (M14), `/u/[username]`, `/teams`, `/teams/[slug]` (M15).
+- `sveltekit/docs/NAV.md` documents the Skeleton v4 rail-mode menu-gap override (cause + Tailwind v4 `!` specificity workaround) so the fix can be ported to the template + sibling repos. Linked from `CLAUDE.md` alongside `TABLES.md`.
+
+### Changed
+
+- Admin route consolidation: `/pod/*` moved under `/admin/pod/*` and `/capture-policies/` moved under `/admin/`. `requireAdmin` hoisted into `routes/admin/+layout.ts` so individual admin routes no longer carry their own auth guard. Playwright specs + mock helpers bulk-updated.
+- Top-level navigation: new Play / Series / Teams entries; the Admin group now collapses to a single rail-mode icon when it carries an `icon`+`href`, and active highlighting uses a prefix match so `/admin/*` lights up the shield. Capture and Overlays/Players entries dropped from the nav.
+- Skeleton v4 rail-mode menu-gap fix landed: override `[data-part='menu']`'s `flex:1` + `justify-content:center` with `flex-none!` / `justify-start!` (Tailwind v4 `!` suffix needed to beat the (0,3,0) attribute-selector specificity) and pin Settings to the bottom with `mt-auto` on the footer.
+- `task test` / `task fmt` scoped to `./cmd/...` `./internal/...` (was `./...`), matching `task lint`. Avoids crashes on root-owned `containers/browser/config-*/profile/cache2/` bind-mount dirs when running on a host that's ever booted a browser container without sudo.
+- `docs/STATUS.md` Maybe section parks the milestone-open marker-tag idea (cut `vX.Y.0-alpha.0` as the first commit of every milestone so `/api/version` self-identifies which milestone the binary belongs to) — pending real use on a milestone or two before promotion to an ADR.
+
+### Removed
+
+- Dead `readLowString` helper in `internal/scraper/haloce/reader.go` — was the low-GVA scenario.map read; lost its only caller when M19 Fix C replaced it with `readScenarioTagName` (tag-instance walk via `DerefLowPtr`).
+
+## [0.6.0] - 2026-05-20
+
+### Added
+
+- `/api/version` endpoint returning the git-tag-derived version, short commit, and build date.
+- Container images now tagged with both `:VERSION` and `:latest`.
+- ADR-0001 documents the single-source-of-truth version pipeline (git tag → ldflags → `internal/version` → `/api/version` → frontend `PUBLIC_APP_VERSION`).
+- Standard `task test` / `task fmt` / `task lint` targets matching the template's Taskfile convention.
+- Overview debug tab: Handshake section surfacing the v2 hello envelope (`protocol_version`, `server_time`, advertised classes, known instances).
+- Placeholder debug tabs for `container`, `debug`, `objects`, `scenario`, `summary` so the tab strip reflects the planned M6c structure (M06).
+- Xbox debug tab: envelope-stats header (`seq`, `tick`, `received`, `v`, `instance`), Pretty/JSON view toggle (Skeleton `Switch` with `LayoutGrid`/`Braces` icons), and a JSON view with Skeleton `TreeView` navigation + scoped `CodeBlock` (selecting a node returns the envelope wrapped down to that path) (M06).
+- Page-level `viewMode` preference on the debug page (Pretty / JSON), persisted to `localStorage['debug.view']` so the choice carries across tabs that opt into the same toggle (M06).
+- WS v2 store exposes `xboxEnvelope[instance]` (full `EnvelopeV2<XboxPayload>` including `seq`/`tick`/`ts`/`v`) alongside the existing payload-only `xbox[instance]` slot.
+- Scenario envelope `power_item_spawns[].gametype_mask` — new u8 field exposing the gametype bitmask at `scenario_item+0x04`. Lets consumers distinguish per-gametype variants of the same physical placement (e.g. CTF rocket-spawn-30s vs Slayer rocket-spawn-120s at identical coordinates). 0 = no gametype constraint (M19).
+- Halo CE scraper: one-shot diagnostic log lines on the first call per Reader for `readObjectTypes` and `readPowerSpawnScenarios` (gate-tripped + raw pointer/count counters). Makes future offset drift loud without flooding logs at 30Hz (M19).
+- Events debug tab: envelope-stats header (`latest seq`, `latest tick`, `received`, `event_type`, `logged`) with the same Pretty/JSON `Switch` as the Xbox tab; new JSON view pairs a Skeleton `TreeView` walking the rolling event log envelope-by-envelope with a scoped `CodeBlock` (M06).
+- New v2 `probe` envelope class — on-demand only, request/reply via `request_probe` WS handler (mirrors `request_events`). Carries `state_inputs` + `score_probe` from the active `GameReader` plugin's `LastStateInputs` + `BuildScoreProbe` methods. Frontend exposes `scraperWSV2.probe[name]` + `lastProbeReplyAt[name]` + `requestProbe(instance)`; the standalone Probe page (`/pod/probe/<name>/`) consumes it with a Refresh button + "refreshed Ns ago" indicator. Reader access serialised through the runner loop via a buffered `probeReqCh` so reader-cache state stays loop-only (no race with the WS handler goroutine) (M06).
+- Kiosk Xbox controller gains a Reset button (warning-toned, RotateCcw icon) that sends Ctrl+R as a VNC chord to soft-reset xemu back to the dashboard. New shared `VNCKeyboard.sendChord(keys, holdMs)` helper consolidates chord behavior; `ControlsTab` now calls it instead of duplicating the chord logic. Back/Start move down next to the analog sticks (M06).
+- New `/pod/[name]/` landing page — per-pod hub with a `StatTile` strip (websockets, scraper phase, xbox, title, map, variant) sourced from `scraperWSV2.{hostSummaries,xbox,game}`, a podman container detail card (status, ports, scraper attached — the data the placeholder Container debug tab was meant to surface), three large navigation tiles to View / Debug / Probe, and Start / Stop / Delete actions (M06).
+
+### Changed
+
+- Game debug tab rewritten on the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`) with the shared page-level view toggle, Pretty view as a Skeleton `Accordion` of `top-level` / `config` / `team_scores` / `players` / `machines` / `network` sections (tiles for nested scalars, `DataTable` for array sections, every field always rendered with `—` for missing), JSON view with Skeleton `TreeView` + scoped `CodeBlock`. WS v2 store exposes `gameEnvelope[instance]` alongside the existing payload-only `game[instance]`. Old per-section components (FogSection, GameInfoSection, MachinesSection, ObjectTypesSection, PlayersSection, PowerItemsSection, SpawnsSection, TagCacheSection) removed. The `v2ToV1GameData` adapter still consumed by overview + postgame vms moved to `debug/shared/v2-to-v1-game.ts` (M06).
+- Debug envelope tab migrated from placeholder to the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`), Pretty view with Accordion sections (`players`, `state_inputs`, `score_probe`) rendering every expected field with `—` for missing and distinct `present`/`null`/`missing` tags for the nullable `extended`/`bones`/`update_queue`/`raw` members of `DebugPlayer`, and a JSON view (Skeleton `TreeView` + scoped `CodeBlock`). WS v2 store exposes `debugEnvelope[instance]` alongside the existing payload-only `debug[instance]` slot (M06).
+- golangci-lint sweep across `internal/`: explicitly drop ignored `Close()` errors, return wrapped errors on `fmt.Fprintln` writes, drop dead helpers (`playerRefPtr`, `vehicleRefPtr`, `itemRefPtr`, `intPtr` and friends, `strPtr`, `vec3FromXYZ`, `readyBroadcastInterval`, test-only `fakeReader`), and document `//nolint:unused` registration scaffolding.
+- `internal/scraper/haloce/events/vehicle.go`: rewrite `!(prevAlive && tp.Alive)` as `!prevAlive || !tp.Alive` for staticcheck.
+- Regenerated PocketBase TypeScript types to include the `capture_policies` and `game_events` collections introduced in earlier v2-31 / v2-18 commits.
+- Xbox debug tab is now a pure view of the `xbox` envelope: dropped the leftover runtime/transport sections (Connection / Lifecycle / Cross-instance summary / Envelope freshness) that mixed transport state with envelope contents.
+- `DebugContext` gains optional `viewMode` + `setViewMode`; the probe page no longer needs to opt in.
+- Scenario debug tab migrated from a placeholder to the full xbox Pretty/JSON pattern: envelope-stats header + Pretty Accordion (`top-level`, `fog`, `memory_regions`, `object_types`, `player_spawns`, `power_item_spawns`, `tag_defs`) with always-rendered tiles + `DataTable` lists, plus a `TreeView`-driven JSON view scoped to the selected node. WS v2 store now exposes `scenarioEnvelope[instance]` alongside the existing payload-only `scenario[instance]` (M06).
+- Tick debug tab rewritten on the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`) with the Pretty/JSON Switch, Pretty view as an Accordion of five sections that mirror the JSON shape (`players` / `power_items` / `ctf_flags` / `game_globals` / `locals`) with every field always rendered, and a JSON view that pairs a Skeleton `TreeView` with a scoped `CodeBlock`. The v2→v1 tick projection that fed the legacy v1 sections moved into `overview-vm.ts` (the only remaining consumer) so `tick-vm.ts` is now a pure formatter (M06). WS v2 store exposes `tickEnvelope[instance]` alongside the existing payload-only `tick[instance]` slot.
+- Objects debug tab migrated from the placeholder shell to the xbox Pretty/JSON pattern: envelope-stats header (`seq`/`tick`/`received`/`v`/`instance`), Accordion Pretty view with `summary`/`objects`/`projectiles` sections (DataTables for the two arrays, count tiles in the summary), and a Skeleton `TreeView` + scoped `CodeBlock` JSON view. WS v2 store exposes `objectsEnvelope[instance]` alongside the payload-only `objects[instance]` slot (M06).
+- Previous-Game debug tab rewritten on the same xbox Pretty/JSON pattern (envelope-stats header + Accordion sections mirroring the JSON shape: `top-level` / `game` / `events`). Events render as a sortable `DataTable` over each envelope's `seq`/`tick`/`ts`/`type`/`data.event_type`. The `postgame/` folder is gone — renamed to `previous_game/` to match the envelope class — and the WS v2 store now exposes `previousGameEnvelope[instance]` alongside the existing payload-only `previousGame[instance]` slot (M06).
+- Shared helpers extracted out of the retired `postgame/postgame-vm.ts`: `PlayerTotalRow` + `buildPlayerTotalRow` + `buildPlayerTotals` moved to `debug/shared/player-totals.ts`, and the v2→v1 `v2ToV1PreviousGame` adapter moved to `debug/shared/previous-game-adapter.ts` (consumed by the Overview tab's previous-match section).
+- `debug` envelope shrinks to just `players` — `state_inputs` and `score_probe` moved to the new on-demand `probe` envelope so `BuildScoreProbe()` no longer runs per-tick (~30 Hz of memory-region sampling work, regardless of whether anyone was watching). The Debug tab loses those two Accordion sections; the standalone Probe page is the canonical view (M06).
+- `/api/admin/scraper/{name}/inspect` returns empty `state_inputs` / `score_probe` maps for v1 wire-shape stability — the cache fields are gone; clients that want live probe data should use the new `request_probe` WS path.
+- Pod route hierarchy reshaped to `/pod/[name]/{view,debug,probe}/` (was `/pod/{view,debug,probe}/[name]/`). The instance name is now the parent path segment so per-pod state can hang off `/pod/[name]/` cleanly. `/pod/+page.svelte` simplifies: View/Debug/Probe per-row buttons removed (navigation funnels through the new `/pod/[name]/` hub), row click routes to `/pod/[name]/`, Start/Stop/Delete stay as row actions. Sub-page "Back" links point at the per-pod hub rather than all the way back to `/pod/`. Playwright specs + mock helpers bulk-updated to the new URLs (M06).
+
+### Deprecated
+
+### Removed
+
+- `SystemTab.svelte`, `runtime-vm.ts`, and the old per-tab `xbox-vm.ts` under `sveltekit/src/lib/components/debug/system/` (folder removed entirely — superseded by `debug/xbox/`).
+- Unused `showAll` getter from the probe page's `DebugContext` wiring.
+- `state_inputs` + `score_probe` fields on the `debug` envelope (and on `DebugPayload` / `instanceCache`) — both moved to the new on-demand `probe` envelope (see Added).
+- Placeholder `ContainerTab` and `SummaryTab` debug components (and their unused `TabPlaceholder` shell) — Container's intended purpose (podman details) is absorbed into the new `/pod/[name]/` landing page; Summary's intended purpose (cross-instance host:summary view) is covered by `/pod/+page.svelte` which already reads from `scraperWSV2.hostSummaries`. The `container` / `summary` entries are gone from the debug-page tab strip too (M06).
+
+### Fixed
+
+- `apiBaseURL()` now honors the page's `https:` protocol in dev (was hardcoded `http`).
+- Envelope `seq` no longer hardcoded to `0`. New per-(instance, class) counter on the runner (`seqByClass` + `seqMu`) bumps each `marshalClassEnvelope` call, so clients can detect drops / out-of-order delivery / retransmits (M06).
+- `xbox.name` now resolves for every observed container shape (dashboard-idle and in-game alike). `xbox.ReadConsoleName` swaps its old 8-byte `00 00 00 00 30 53 11 9E` anchor for a 12-byte `NICK` header anchor (`4B 43 49 4E 01 00 00 00 00 00 00 00`) and dispatches on the 4-byte record tag at NICK+12 — type A (`04 00 53 4D`, observed on Halo containers) or type B (`30 53 11 9E`, canonical `NICKNAME.XBN`, observed on UnleashX-booted containers). Triangulated against four live containers (Whicker / Cupid / Crazy / charr) (M06).
+- Scenario class envelope now re-broadcasts when its observable fields fill in lazily after the Ready→Live snapshot already shipped. New `(r *runner).maybeEmitScenario` watches a packed fingerprint of `len(PlayerSpawns)` / `len(ObjectTypes)` / `len(PowerItemSpawns)` plus `Fog` / `TagCache` presence on `cache.GameData` and re-emits when the fingerprint changes; `broadcastSnapshot` syncs the fingerprint to its own emission so phase transitions don't double-emit. Fixes the UI's empty `player_spawns` / `object_types` / `power_item_spawns` / `tag_defs` tabs during active matches even though the backend cache was populated (M06).
+- `scenario.map` now resolves on the Xbox build. Replaced the halocaster.py-era `AddrMultiplayerMapName = 0x2E37CD` low-GVA read (which returns `""` on Xbox) with a `Reader.readScenarioTagName()` helper that walks the tag instance array for the entry whose `data_ptr` matches the global scenario pointer and reads its name (e.g. `levels\test\downrush\downrush`). Used in both `composeGameData` and the `scenarioStaticCache` populator. `AddrMultiplayerMapName` deleted; no remaining callers (M06).
+- Scenario envelope `player_spawns[].gametypes` now serializes as a JSON number array (e.g. `[13,0,1,0]`). Previously came across as a base64 string (`"DQABAA=="`) because the field was declared `[]uint8`, which Go's `encoding/json` aliases to `[]byte` and marshals as base64. Switched to `[4]uint8` (fixed-size arrays of bytes don't trigger the special case). Frontend types already expected `number[]`, so no parse-side change (M19).
+- Scenario envelope `object_types` / `power_item_spawns` no longer permanently empty after a transient cold read on scenario load. `ensureScenarioStatic` flipped `Filled = true` unconditionally after the first attempt, so if `readObjectTypes` (depends on object-type cache range Lo/Hi being engine-populated) or `readPowerSpawnScenarios` (depends on `tagInstBase` being warm) returned empty on that first call, the empty result was locked in for the lifetime of the scenario. Now each field is re-read while still empty, and `Filled` only flips once all critical readers have actually produced data (M19).
+- Scenario envelope `object_types` now populates with all 11 Halo CE Xbox object type entries (biped, vehicle, weapon, equipment, garbage, projectile, scenery, machine, control, light_fixture, placeholder) and engine-reported datum sizes. Previously empty: `RefAddrObjectTypeDefRangeLo/Hi` were dereferenced as pointers when they're actually literal address bounds, and the per-type struct pointers in the array are low-GVA (engine .data section) requiring per-pointer translation via `RefreshLowHVA`. Per-type name field at +0x00 turned out to be a self-pointer/vtable on Xbox (halocaster.py's "string pointer at +0x00" was wrong), so names are hardcoded from Halo CE's fixed 11-type order (M19).
+- Scenario envelope `power_item_spawns` now populates with every respawnable scenario item placement (powerups, heavy weapons, grenades — whatever the level designer assigned a respawn time). Previously empty due to a tag-handle vs s32-index read bug at scenario_item+0x5C plus a wrong itmc-tag-data offset chain. `OffScenItemTagIndex` is now read as a u32 handle (high16=salt, low16=index, 0xFFFFFFFF=empty); the itmc default spawn time is read directly at tag_data+0x0C (no PC-style indirection through +0x14); the per-placement spawn-time override at scenario_item+0x0E takes precedence when non-zero. Values multiplied by `TicksPerSecond=30` so the wire stays in tick units (M19).
+
+### Security

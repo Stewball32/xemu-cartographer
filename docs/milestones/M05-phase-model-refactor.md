@@ -1,0 +1,228 @@
+# Milestone 5 — Scraper & WebSocket phase model + cache refactor
+
+Restructure the scraper pipeline and the WS emission layer around a clear three-phase model (Idle / Ready / Live) with an authoritative per-instance cache as the source of truth. The current implementation works but conflates lifecycle, scrape cadence, broadcast wrapping, and _caching of pre-marshaled wire bytes_ in the runner; clients reconstruct state from a stream of envelopes rather than reading a coherent cached object on connect. This milestone introduces explicit phases, a structured cache (`instanceCache`), a per-instance room (`host:<name>`) + aggregate room (`host:all`), and a cleaner emission protocol that _builds_ envelopes from the cache on demand instead of replaying stale broadcast bytes.
+
+Driving brief: [scraper-ws-refactor-brief.md](../scraper-ws-refactor-brief.md).
+
+**Honors existing conventions:** one-per-file registration, `internal/scraper/manager` and `internal/websocket/handlers` package layouts, `guards.Services` for cross-system access, and the M2c wrap-not-extend envelope policy (`Message{Type:"scraper", Room, Payload:<envelope>}`).
+
+## Terminology
+
+The word "snapshot" is **deliberately retired** by this refactor. Today it appears in three different roles in the codebase, and conflating them is part of why the wire model is hard to reason about:
+
+- **Legacy: `snapshot` as an envelope type.** Today the runner broadcasts envelopes of type `"snapshot"`, `"tick"`, and `"event"`. After this milestone, those types are replaced by `current_state` (full cache contents) + `state_update` (per-scrape cadence cache update) + `event` (unchanged in spirit). The new wire protocol contains no envelope named "snapshot".
+- **Legacy: `ReadSnapshot()` as a `GameReader` method name.** Today this method reads a mix of static (map, gametype, scenario data) and volatile (roster scores, team scores) fields. The method may keep the name for diff-readability or be renamed (see open question 3) — but the name is _internal_ and not meaningful to the wire protocol.
+- **Legacy: `runner.latestSnapshotMsg` and `Manager.LatestSnapshotMessages()`.** These cache the marshaled `Message` bytes for the most recent `snapshot` envelope and replay them on `join_room`. Both are removed in 5a (cache becomes structured) and 5c (replay becomes a `current_state` build from the cache).
+- **Generic English usage.** When a brief or doc says "atomic snapshot of state", the intended meaning is "an atomically-read consistent view of the cache". This milestone uses **"atomic cache read"** instead.
+
+After this milestone, references to "snapshot" in code, comments, log lines, and docs should either disappear or be qualified by which legacy role they refer to. New names:
+
+| Concept (new model)                                    | Term used here                            |
+| ------------------------------------------------------ | ----------------------------------------- |
+| Full cache contents emitted on join + phase transition | **`current_state` envelope**              |
+| Per-scrape cadence update of the tick-fields portion   | **`state_update` envelope**               |
+| Discrete happenings during Live (kills, pickups, etc.) | **`event` envelope**                      |
+| The structured per-instance cache held by the runner   | **`instanceCache`**                       |
+| The aggregated cross-instance summary cache            | **`hostsCache`** (drives `host:all` room) |
+| An atomically-read consistent view of `instanceCache`  | **"atomic cache read"**                   |
+| Live-match fields fixed for the duration of the match  | **"match-static fields"**                 |
+| Live fields that change during play                    | **"tick fields"**                         |
+
+## Out of scope
+
+- **PocketBase persistence** of events / final match state — leaves the in-memory `previous_game` shape such that a future flush is straightforward (M13, formerly M5).
+- **Halo 2 and other titles** — honor the registry extension point, don't build implementations.
+- **Phase-transition debouncing** — emit transitions as observed; if title-ID reads turn out flappy during boot, debounce later.
+- **Backpressure on slow clients** — current Hub behavior is fine for now.
+- **Wire-format backwards compatibility** — no external consumers; SvelteKit updates alongside.
+
+## 5a. Phase model + structured cache (scraper-internal, no wire change)
+
+**Status:** Implemented. New [phase.go](../internal/scraper/manager/phase.go) carries the `PhaseIdle / PhaseReady / PhaseLive` enum. The runner's old field cluster (one pre-marshaled-bytes cache for the legacy "snapshot" envelope plus several per-field caches) is replaced by a structured `instanceCache` in [runner.go](../internal/scraper/manager/runner.go) holding phase, identity (`TitleID / Title / XboxName`), freshness (`LastReadAt / EngineTick / Iterations`), `GameData`, event log, and `PreviousGame` slot. [loop.go](../internal/scraper/manager/loop.go) is now phase-driven (Idle ~3s → Ready ~500ms → Live ~30Hz tick-paced), with a `defer` that captures the just-ended match into `cache.PreviousGame` even on panic / ctx-cancel / heartbeat fallout. [manager.go](../internal/scraper/manager/manager.go) `JoinReplayMessages()` builds the join-replay bytes on demand from the cache rather than caching pre-marshaled bytes. The `GameReader` interface renames `ReadSnapshot → ReadGameData`, `ReadLobby → ReadReadyState` (Halo: CE plugin updated). The "snapshot" term is fully retired internally — the only remaining references are the three `envelopeType*` constants in [loop.go](../internal/scraper/manager/loop.go) holding the legacy wire-type strings until M5 stage 5c.
+
+Also implemented in this stage:
+
+- **OQ4 (single runner per instance lifetime, hot-swappable reader).** `Manager.Start` no longer calls `scraper.Detect` upfront — runners are created in Idle and self-detect via `scraper.ReadTitleID(r.inst)` + `scraper.Lookup(titleID)` on their own poll iterations. On unrecognised titles or detection drops the runner releases its reader and stays in Idle. `Manager.Start` now only fails on QMP init errors; the discovery watcher and `/api/admin/scraper/start` route comments are updated to match.
+- **Phase + `LastReadAt` + `PreviousGame` exposed via Inspect.** `InspectState` gains `Phase` (string), `LastReadAt` (time), `PreviousGame` (game data + events + ended-at). The admin debug page's Overview tab status row renders all three so phase transitions are visible without inspecting the cached game data.
+- **OQ6 heartbeat fallback (Live → Idle).** During Live, `liveReadFailureLimit` consecutive `ReadGameState` errors transition the runner back to Idle. Calibrated at ~300ms of failure (30 polls × 10ms), enough to ride out single-tick reads the engine missed but quick to react to a clean xemu exit.
+- **OQ6 continuous-probe endpoint.** New `GET /api/admin/xemu/probe-title?sock=<path>&samples=<n>&interval_ms=<ms>` ([probe_title.go](../internal/pocketbase/routes/xemu/probe_title.go)) samples the title-ID + XBE magic at GVA 0x00010000 over time. Investigation tool — run while transitioning Halo CE → quit-to-dashboard to determine whether the title-ID address flips reliably or stays stale. The heartbeat fallback above is the production behaviour while that investigation is pending; once the probe data is in, a more direct title-ID-based Live → Idle exit may replace or complement the heartbeat.
+- **XBE-swap correctness fix.** `xemu.Instance.LowHVA` returns a cached HVA from the one-shot `Init`-time GVA→GPA→HVA translation. Across XBE swaps (dashboard → game, game → dashboard, game → game) the kernel keeps the guest VA but moves the underlying physical page, so the cached HVA reads stale bytes from the previous mapping — which would have made every Idle poll return the _first_ XBE's title ID forever. New `xemu.Instance.RefreshLowHVA(gva)` re-runs the QMP translation in place, and `scraper.ReadTitleID` now always re-translates so the Idle / Ready title-ID polls observe XBE swaps correctly. Same fix means the OQ6 probe captures fresh data on every sample rather than re-reading the start-time HVA.
+- **Ready stuck-on-errors fix.** The Ready loop now runs the title-ID re-check _before_ `ReadGameState`, so when an XBE swap leaves Halo's reader pointing at stale / unmapped addresses (and `ReadGameState` returns errors every iteration), the runner still escapes to Idle within ~5s rather than looping forever on the failed read path.
+
+**Smoke test (2026-05-05, validating 5a + 5b together):**
+
+End-to-end exercise on three concurrent containerised instances (debug-host, debug-alpha, debug-bravo) all bound to a Halo: CE system-link lobby. Played a 2-kill Slayer match with a hard-quit ending. Phase + score timeline captured via 500ms inspect polling, kill chain captured via host:debug-host WebSocket subscription:
+
+- **Idle → Ready** (UnleashX `0x9E115330` → Halo: CE `0x4D530004`): ≤3.04s (one Idle poll cycle).
+- **Ready → Live** (lobby menu → in_game): fired exactly at first in_game tick.
+- **Live phase**: ~90s of 30Hz tick broadcasts (536 snapshot envelopes), full kill chain captured (32 events: spawn / melee / damage / death / kill / score / kill_streak / team_score / game_start / player_joined). Damage-table → kill attribution working, kill_streak counters match per-player kill counts.
+- **Live → Ready (postgame)**: cleanly captured; `cache.PreviousGame` populated with full roster (Whisp/Mopey on team 0, Sleepy on team 1 with 2 kills 0 deaths, matching the actual play), 32 events, ended_at timestamp.
+- **Postgame → menu**: `prev_game=Y` correctly preserved across the cs change inside Ready.
+- **Ready → Idle** (Halo: CE → UnleashX dashboard via xemu reset): captured in ≤504ms (lucky timing on the title-ID re-check; worst case ~5s gated by `readyTitleCheckInterval=10`). For non-host clients (debug-bravo) the engine first transitions in_game → menu (network drop), then Ready → Idle ~5s later when the title-ID re-check sees the XBE swap.
+- **OQ6 answered without needing the probe**: the runner could only have escaped Ready by `scraper.ReadTitleID(r.inst)` returning the new value — there is no other Ready→Idle path. The clean transition validates that the M5 5a `RefreshLowHVA` fix re-translates the GVA correctly across XBE swaps. The `/api/admin/xemu/probe-title` endpoint stays in the tree as a future diagnostic.
+
+**Lessons / findings worth keeping:**
+
+- Hard-resetting xemu (vs in-game "Quit to Main Menu") bypasses the engine's `QuitFlag` and player-roster updates, so no `player_quit` event fires on hard quit. Pre-existing 5a behavior, captured below as a follow-up.
+- The probe-title endpoint's response is built and returned all-at-once via `e.JSON`, so `curl` cannot be killed mid-window — kill it and you discard everything. For tight-window probes use a short bounded sample count (e.g. 60 × 500ms = 30s) so the response materialises in time.
+
+- Introduce `Phase` enum (`PhaseIdle`, `PhaseReady`, `PhaseLive`) on the runner.
+- Replace `runner.latestSnapshotMsg []byte` (legacy marshaled-bytes cache) with a structured `instanceCache` holding: phase, always-on values (title, Xbox machine name, freshness indicator, `last_successful_read_at`), match data (same field set across Ready and Live), event log (only meaningful in Live), `previous_game` slot (Ready-only, populated by Live → Ready transitions).
+- Reshape the loop into phase-driven branches:
+  - **Idle (~3s):** poll title ID + non-game-specific values via a new `ReadIdleData()` method on `GameReader` (or a non-plugin code path — see open question 3). Watch for title-ID becoming recognized.
+  - **Ready (~500ms):** read the full match-data field set every poll (no static/tick split yet). Reuses today's `ReadLobby()` (cheap variant) — see open question 3 for whether to rename.
+  - **Live (~30Hz tick-paced):** read match-static fields once on Ready → Live (cached for the match), tick fields every tick. Reuses today's `ReadSnapshot()` for the static-fields read and `ReadTick()` for tick fields — see open question 3.
+- Implement phase transitions including the Live → Ready cleanup that moves the just-ended match into `previous_game`. Use `defer` so a panic / ctx cancel / xemu crash mid-match still moves data rather than dropping it.
+- Atomic cache reads: mutex-protected pointer swap so a reader (later, the WS layer responding to `request_state`) sees a complete `instanceCache`, not a half-built one.
+- `last_successful_read_at` advances on every successful read; failed reads logged but do not advance the timestamp.
+- Keep broadcasting today's `Message{Type:"scraper", Room:"overlay", Payload:<envelope>}` shape (and today's legacy `snapshot`/`tick`/`event` envelope types) so the SvelteKit overlay continues to work — no wire change yet.
+
+**Why first:** every other stage depends on a structured cache existing. Locking down the phase machine and the cache shape _before_ changing the wire keeps the diff readable and lets us verify the in-memory model in isolation against a live xemu.
+
+**Defers:** wire-format envelope shape changes, room-name changes, addressed-reply handlers, frontend updates.
+
+**Investigation work folded in:** answer open question 6 (Live → Idle detection gap) during this stage by adding a `/api/admin/scraper/{name}/probe-title` endpoint or extending the existing probe to dump the XBE title ID continuously, compare across the Halo CE → dashboard transition, and either fix the read or document why title-ID-based load-out detection is unreliable and propose an alternative (state-poll heuristic, QMP signal, or process-restart watch).
+
+## 5b. Multi-room model + reserved-name chokepoint
+
+**Status:** Implemented and live-validated (see 5a smoke-test block above — 5a + 5b were tested together against the same Halo: CE session). The single shared `overlay` room is gone; per-instance broadcasts target `host:<name>` and a new aggregator goroutine drives a cross-instance `host:all` summary feed.
+
+What landed:
+
+- **Chokepoint + RoomType** in [internal/websocket/rooms/host.go](../internal/websocket/rooms/host.go): single `host` RoomType registered (RequireAuth) — `host:smoke1` and `host:all` both resolve to it via the registry's existing prefix-strip logic (separate `host:all` registration would be unreachable, documented in the file). The reserved suffix `"all"` and any name containing `:` or whitespace are rejected by the exported `RoomForInstance(name) (string, error)` chokepoint, which is the single trust boundary for instance-name → room-name derivation.
+- **Aggregator** in [internal/scraper/manager/aggregator.go](../internal/scraper/manager/aggregator.go): one goroutine per Manager owns the `host:all` writes. `mutex+map[string]hostSummary` storage holding `{instance, phase, title, map, gametype, score_summary, last_successful_read_at}` per instance; non-blocking buffered-channel `post()` from runners; 250ms coalesce ticker bounds the broadcast cadence. Full re-broadcast on every dirty tick (OQ2 — no diffs); `host:all` envelope's `instance:"all"` is the client-side disambiguator from per-instance feeds.
+- **Runner wiring**: each runner caches its `hostRoom` string at construction (validated by the chokepoint at `Manager.Start`) and posts hostSummary updates via `publishSummary()` on phase changes + game-data changes + a 1s heartbeat (`maybeHeartbeatSummary` wired into `recordIteration`).
+- **JoinReplay extensions** in [internal/guards/interfaces/scraper/joinreplay.go](../internal/guards/interfaces/scraper/joinreplay.go): `JoinReplayForInstance(name)` and `JoinReplayForHostAll()` added; the legacy `JoinReplayMessages()` survives until 5d narrows it. The [join_room handler](../internal/websocket/handlers/join_room.go) dispatches replay per room.
+- **Defense in depth** in [internal/discovery/watcher.go](../internal/discovery/watcher.go): the watcher logs and skips any `all.sock` to avoid spamming a doomed start every poll, even though `Manager.Start` is the actual trust boundary.
+- **Frontend minimal update** in [sveltekit/src/lib/stores/scraper-ws.svelte.ts](../sveltekit/src/lib/stores/scraper-ws.svelte.ts): client now joins `host:all` first, then auto-subscribes to each `host:<name>` returned in the summary payload (via a `SvelteSet` to satisfy `svelte/prefer-svelte-reactivity`). The legacy `firstGameData`/`firstTick` accessors keep the overlay rendering unchanged.
+- **HTTP status code fix** in [internal/pocketbase/routes/scraper/handlers.go](../internal/pocketbase/routes/scraper/handlers.go): chokepoint rejections (`name="all"` etc.) now return `400 Bad Request` instead of `502 Bad Gateway` via a new `manager.ErrInvalidName` sentinel. True upstream failures (QMP init) still return 502; name collision still 409.
+- **Tests**: `host_test.go` covers `RoomForInstance` accept/reject + verifies `host:smoke1` and `host:all` both resolve to the registered host RoomType. `aggregator_test.go` covers coalesce-on-dirty-tick, idle-no-broadcast, Removed eviction, full-snapshot rebroadcast, joinReplay envelope shape, and the team-score formatting helper. `manager_test.go` extended for the chokepoint enforcement at `Start`.
+
+**Defers (unchanged):** envelope shape changes are 5c; addressed-reply narrowing of `request_state` is 5d; per-instance subscription UI flow + per-overlay route param wiring is 5e.
+
+## 5c. Emission protocol (envelope shapes + ordering)
+
+**Status:** Implemented. The legacy `snapshot` / `tick` / `event` wire-type set is replaced by `current_state` / `state_update` / `event` across all per-instance and host:all paths. New `CurrentStatePayload` and `StateUpdatePayload` types in [runner.go](../internal/scraper/manager/runner.go) define the wire shape; `runner.buildCurrentStateEnvelope()` and `runner.buildStateUpdateEnvelope(phase)` are the single source for marshaled bytes (used by both the loop broadcast paths and the join-replay paths). `loop.go`'s dispatcher emits `current_state` on every phase transition before the new phase function starts emitting `state_update`s — the runner being the single goroutine writer for its `host:<name>` room satisfies the brief's ordering invariant for free. The aggregator's `host:all` envelope is now `current_state` carrying the full `[]hostSummary` (per OQ2's "full re-broadcast, no diffs"). `Manager.JoinReplayMessages()` and `JoinReplayForInstance()` now build `current_state` envelopes from the full `instanceCache`, so a late-joining client gets phase + identity + freshness + game data + recent events + `previous_game` in one message rather than just GameData.
+
+Frontend (SvelteKit) consumes `'snapshot'` / `'tick'` and is broken on this branch by design — 5e ships the matching client update; 5d narrows `request_state` to a single-room reply and adds `request_events`.
+
+Unit tests in [wire_test.go](../internal/scraper/manager/wire_test.go) cover the builders across all three phases (Idle has no per-phase payload + envelope tick=0; Ready carries `Ready` game data + tick=0; Live carries `Tick` payload + envelope tick=engine tick) and the postgame Ready-with-PreviousGame case.
+
+- Replace today's legacy `snapshot` / `tick` / `event` envelope set with the new protocol:
+  - **`current_state`** (per-instance room): full `instanceCache` contents (phase, always-on values, match data, event log, `previous_game` if present). Sent on join (replacing today's `LatestSnapshotMessages` replay in `join_room`) and on every phase transition.
+  - **`state_update`** (per-instance room): the tick-fields portion of the cache, sent every scrape during all three phases at phase-appropriate cadence. Carries phase, instance, and tick (where meaningful — see "decisions made").
+  - **`event`** (per-instance room): instance + tick + event type + metadata. Streams independently of `state_update` — a scoreboard client reads `state_update`, a kill-feed client reads `event`, both are valid.
+  - **`current_state`** (default room `host:all`): full `hostsCache` on join (list of per-instance summaries).
+  - **Default-room update** (`host:all`): full updated `hostsCache` re-broadcast on any instance summary change or instance add/remove.
+- Enforce the ordering rule: the new `current_state` for a phase transition reaches clients before any `state_update` envelope tagged with the new phase. Single goroutine per room (already a runner invariant) makes this trivial to guarantee.
+- Update the [`join_room` handler](../internal/websocket/handlers/join_room.go) to emit `current_state` for whichever `host:*` room the client just joined, built fresh from the `instanceCache` (or `hostsCache` for `host:all`) from 5a — no pre-marshaled-bytes cache anymore.
+
+**Why third:** depends on (5a) the cache existing and (5b) rooms being registered. With both in place, this stage is a focused "redefine the wire" change rather than a multi-domain refactor.
+
+**Defers:** client-side handling of new envelope shapes (frontend updates land in 5e), addressed-reply handlers (5d).
+
+## 5d. Addressed-reply handlers (`request_state`, `request_events`)
+
+**Status:** Implemented. [request_state.go](../internal/websocket/handlers/request_state.go) now narrows replies to the requester's own `host:*` memberships (looked up via `e.Services.WS.UserRooms(e.UserID)`); `host:all` membership replays the host:all `current_state`, and each `host:<name>` membership replays the per-instance `current_state` from that runner's cache. New [request_events.go](../internal/websocket/handlers/request_events.go) handler accepts an optional `{since_tick, types}` filter payload, iterates the requester's `host:<name>` rooms (skipping `host:all`), and sends one envelope per instance via `e.SendRaw`. The reply uses a new inner envelope type **`events`** (plural — distinct from per-event live `event` envelopes so clients can pattern-match request replies) carrying `{phase, since_tick, events}`. The cache-side filter + marshaling lives on the manager as `Manager.EventsReply` (added to the `scraperiface.Service` aggregate interface via a new `EventsReply` sub-interface) so the WS handler — which can't import `internal/websocket` without a cycle — gets pre-marshaled wire bytes back.
+
+OQ1 resolution: in Idle and Ready phases the reply is always an empty events list, even when `previous_game` exists; the phase field tells the client why. OQ7 resolution: events are returned in oldest-first stream order — the cache stores newest-first, the filter reverses on the way out.
+
+Unit tests in [events_test.go](../internal/scraper/manager/events_test.go) cover `filterEvents` (empty input, oldest-first reversal, `since_tick` filter, type-set filter) and `Manager.EventsReply` (unknown instance, Idle returns empty even with cached events, Live filters by tick + type and emits the `events` envelope shape).
+
+Frontend wiring (resync calls + reply handling) lands in 5e.
+
+**Bugfix surfaced during 5c+5d+5e smoke test (2026-05-06):** the original `filterEvents` matched the user's `types` parameter against `ev.Type`, but every detector in [internal/scraper/haloce/events/events.go](../internal/scraper/haloce/events/events.go) emits envelopes with `Type` set to the literal `"event"` wire-type — the semantic event type lives in `payload.event_type`. The unit test built synthetic envelopes with `MakeEnvelope(typ, ...)` so it passed without exercising the runtime shape. End result: `request_events` with any non-empty `types` list returned zero events. Fixed by extracting `event_type` from the payload JSON in `eventInnerType` and matching against that, plus updating the test fixture to use the runtime envelope shape. The frontend's `eventBucket` had a parallel bug — it read `ev.payload.type` (the inner field is `event_type`) and fell through to `ev.type` which is always `"event"`, so every event ended up in the `"other"` bucket. Fixed in [sveltekit/src/routes/admin/debug/[name]/+page.svelte](../sveltekit/src/routes/admin/debug/[name]/+page.svelte).
+
+- Update [internal/websocket/handlers/request_state.go](../internal/websocket/handlers/request_state.go) to look up the `host:*` room the requester is in and reply with the new `current_state` envelope for that room (via `e.SendRaw` so it's addressed only to the sender). Today's handler returns legacy snapshot bytes for all instances — narrow it to a single `current_state` build for the requester's room.
+- Add `request_events` handler. Optional filters: `since_tick` (events with `tick > N`, for resync after a connection gap) and `types` (string-array filter). With no filters, return the full Live-phase event log. **In Idle and Ready, return an empty list even when `previous_game` exists** (resolves open question 1). Reply via `e.SendRaw`.
+- Document the ordering convention for `request_events`: events returned in the same order they were appended to the live event stream (open question 7).
+
+**Why fourth:** depends on (5c) for envelope shapes; the new `request_state` reply has to use the new `current_state` shape.
+
+**Defers:** any persistence-backed event lookup (out of scope; in-memory only).
+
+## 5e. SvelteKit client update
+
+**Status:** Implemented. The `scraperWS` store in [sveltekit/src/lib/stores/scraper-ws.svelte.ts](../sveltekit/src/lib/stores/scraper-ws.svelte.ts) is rebuilt around per-instance state records keyed by host name (`gameData[name]`, `ticks[name]`, `events[name]`, `phases[name]`, `hostSummaries[name]`, `previousGames[name]`, etc.). Type guards `isCurrentState` / `isStateUpdate` / `isEvent` / `isEventsReply` discriminate the new envelope set in [sveltekit/src/lib/types/scraper.ts](../sveltekit/src/lib/types/scraper.ts). The store exports `requestState()` and `requestEvents({sinceTick, types})` which the per-instance debug page calls on connect + reconnect for gap-fill resync. The instance-picker on [admin/debug/+page.svelte](../sveltekit/src/routes/admin/debug/+page.svelte) consumes `host:all` summaries to render phase + score live across all running instances; the per-instance page on [admin/debug/[name]/+page.svelte](../sveltekit/src/routes/admin/debug/[name]/+page.svelte) subscribes only to its own `host:<name>` room and merges the WS feed against the 3s HTTP inspect poll as a fallback. Players overlay at [sveltekit/src/routes/overlays/players/+page.svelte](../sveltekit/src/routes/overlays/players/+page.svelte) uses the `firstGameData` / `firstTick` convenience accessors so a single overlay surface still works without per-instance routing.
+
+`pnpm check` clean (0 errors, 0 warnings). `pnpm lint` clean. `pnpm test` 11/11 pass.
+
+**5c+5d+5e smoke test (2026-05-06):**
+
+End-to-end exercise across four containerised instances (debug-host as neutral host, debug-alpha/bravo/charlie as players) all in a Halo: CE system-link match. Captured wire shapes for each phase via a Python websocket-client harness against `/api/ws`:
+
+- **Idle** (debug-host on UnleashX dashboard before disc insert): `current_state` envelope on join carried full identity block (xbox_name, serial_number, mac_address, video_standard, kernel_system_time, kernel_boot_time, kernel_uptime_ns, time_zone_std/dlt, xbe_title_name, xbe_version, xbe_game_region, xbe_allowed_media), no game_data, envelope.tick=0. `state_update` cadence: 1/5s ≈ ~3s as designed.
+- **Ready** (debug-bravo at lobby/menu): `current_state` carried identity + game_data (machines / players / map / gametype / power_item_spawns), envelope.tick=engine_tick=296819 at build time. `state_update` cadence: 10/5s ≈ ~500ms; payload had `phase + freshness + ready` (the GameData under the `ready` field), envelope.tick=0 (correct — non-Live).
+- **Live** (all 4 in match): `state_update` cadence: 300/10s = exactly 30Hz across each instance ✓; payload had `phase + freshness + engine_tick + tick` with full TickPayload (game_globals, locals, network, objects, players, power_items). `current_state` carried identity + game_data + latest_tick + accumulated events. envelope.tick on Live `state_update` = engine_tick (1961, 1962, …, advancing). Aggregator broadcast `host:all` `current_state` 21/10s ≈ 2.1/s (250ms coalesce ticker firing on dirty Live ticks across 4 instances) carrying the full `[]hostSummary`.
+- **Phase-transition ordering:** for every room, exactly one `current_state` arrived on join before any `state_update` tagged with the new phase ✓.
+- **`request_state` addressed reply:** one `current_state` per host:\* room the requester is in (host:all + each host:<name>) — replies carried fresh atomic-cache reads, not stale broadcast bytes.
+- **`request_events` plural envelope:** type=`"events"` (distinct from streaming `"event"`), payload `{phase, since_tick, events}` ✓. Idle and Ready returned empty even when `since_tick` would otherwise match cached events (OQ1 ✓). `since_tick` filter respected — at since_tick=2529 all replies returned only events with tick > 2529 (min_event_tick=4081). Type filter required the bugfix above before it returned events; post-fix `types=['spawn']` returned 4 spawn events at the most recent respawn tick, `types=['kill']` returned 0 (no kills yet in match), `types=['event']` (the literal wire type) correctly returned 0 since no event has `event_type:"event"`.
+- **Chokepoint:** `POST /api/admin/scraper/start name=all` returned HTTP 400 with `ErrInvalidName` sentinel; `name="foo:bar"` likewise rejected with the colon-rejection error. ✓
+
+Test artifacts (Python harness scripts) live at `/tmp/m5_*.py` for re-running.
+
+**Not validated end-to-end this run** (covered by unit tests in [wire_test.go](../internal/scraper/manager/wire_test.go) + the prior 5a/5b 2026-05-05 smoke test): Live → Ready transition populating `previous_game`, hard-quit Live → Idle via heartbeat fallback, streaming `event` envelopes (cache events were verified via `request_events`; the streaming path uses the same `r.broadcast(svc, ev)` builder with the same envelope shape).
+
+- Replace single hardcoded `join_room` to `"overlay"` with per-instance subscription: pages join `host:<instance>` based on the route param, the admin debug page can subscribe to multiple, the instance-picker UI subscribes to `host:all`.
+- Replace today's legacy `Envelope = {snapshot|tick|event}` consumer with the new envelope set: `current_state`, `state_update`, `event`.
+- Wire `request_state` and `request_events` into the store for resync after a connection gap.
+- Update [scraper-ws.svelte.ts](../sveltekit/src/lib/stores/scraper-ws.svelte.ts), the type definitions in [scraper.ts](../sveltekit/src/lib/types/scraper.ts), the players overlay, and the admin debug page tabs.
+
+**Why last:** all backend wire-format work must land first; the frontend churn is contained here and ships in lockstep with the new protocol.
+
+**Defers:** persistence-backed history views (M13, formerly M5).
+
+## Open questions (with proposed resolutions)
+
+1. **`request_events` outside Live** — _Resolved by brief._ Returns empty in Idle and Ready, even when `previous_game` exists. Rationale: a client asking for events shouldn't have to also check phase to know whether the response is "live" or "from a finished match". If post-game replay becomes useful later, expose via a separate `request_previous_game` message.
+
+2. **Default-room update granularity** — _Proposed: full list re-broadcast._ Aligns with the brief's recommendation. Payload is small (a handful of summary records); diff logic is more complex and won't pay off until we have many more instances. Revisit if the per-instance summary grows or the host count grows large.
+
+3. **`GameReader` interface evaluation** — _Proposed: minimal extension + rename._ Reading [internal/scraper/haloce/reader.go](../internal/scraper/haloce/reader.go) shows the existing methods map cleanly: `ReadSnapshot` already caches scenario-static data and re-reads volatile fields on each call (matches Live's static-fields-cached + Ready's full reread); `ReadLobby` is the explicit cheap variant for non-in_game (matches Ready's cadence); `ReadTick` matches Live's tick reads. The only misfit is **Idle**, which today reads the ambient game state via `ReadGameState()` but has no notion of "Xbox machine name + freshness indicator". Proposed interface changes:
+   - **Add `ReadIdleData() (IdlePayload, error)`** returning `{title?, machine_name, clock_or_freshness_value, last_read_at}`.
+   - **Rename `ReadSnapshot` → `ReadMatchState`** (or `ReadFullState`) to retire the overloaded "snapshot" term. The method name is internal — no wire impact — and the rename clarifies that it reads the match-data field set (static + volatile), distinct from the wire-protocol `current_state` envelope. Consistent with the brief's explicit retirement of the "snapshot" term.
+   - **Rename `ReadLobby` → `ReadReadyState`** (or `ReadActiveState`) for the same reason — "lobby" is one of several Ready-phase contexts (lobby, post-match stat screen, between-match menu).
+   - Keep `ReadTick`, `ReadGameState`, `OnStateChange`, `BuildScoreProbe`, `LastStateInputs`, `NewTickState`, `XboxName`, `Title`, `LowGVAs` unchanged.
+   - Do **not** predeclare a separate static/tick method split on the interface — the existing `ReadSnapshot`/`ReadTick` pair plus internal scenario caching in the plugin (today's pattern) already deliver the right behavior.
+
+   Renames are mechanical and can land in 5a alongside the cache work, or as a prep-stage 5a-prelude commit, depending on how clean the diff needs to be.
+
+4. **Idle-phase scraping mechanics** — _Proposed: single runner per instance lifetime with a hot-swappable reader._ Today `Manager.Start` fails when `scraper.Detect` doesn't recognize the title — no runner is created and the discovery watcher logs the failure. New model: `Manager.Start` always creates a runner; the runner owns the `*xemu.Instance` for the whole socket lifetime. The runner enters Idle with no `GameReader`. On title-ID becoming recognized, the runner loads the matching reader (registry lookup) and transitions to Ready. On title-ID becoming unrecognized (Live → Idle or Ready → Idle), the runner drops the reader and returns to Idle. Justification: keeps lifecycle tied to socket presence (matches discovery's mental model), avoids the complexity of two runner classes and handoff between them, and leaves a clean place for the Idle-phase poll loop.
+
+5. **Reserved-name enforcement for `all`** — _Proposed: confirm chokepoint approach._ Single function `roomForInstance(name) (string, error)` in [internal/websocket/rooms/](../internal/websocket/rooms/) is the only sanctioned way to derive a room name from an instance name. Returns error on `name == "all"` (or anything that contains `:` or other reserved characters). Every code path that needs a room name goes through it. PocketBase API rules and podman create-validation can layer on top for user-facing rejection at create time, but the chokepoint is the trust boundary. The discovery watcher in [internal/discovery/](../internal/discovery/) needs a small change to filter out `.sock` files whose stem is `all` so the chokepoint never sees that name from disk.
+
+6. **Load-out detection gap** — _Proposed: investigate during 5a, two candidate causes._ The current [loop.go:168-181](../internal/scraper/manager/loop.go#L168-L181) periodic check (every ~5s during idle states only) compares `scraper.ReadTitleID(r.inst)` against the start-time `r.titleID`. Two candidate causes for the Halo CE → dashboard miss:
+   - (a) The XBE header at GVA `0x00010000` retains the old title ID after game exit because xemu doesn't re-load that page when the dashboard takes over.
+   - (b) The check only runs in idle states; if the runner is in-game when the user quits, no Live → Ready transition fires (the game can't emit it if it's gone).
+
+   Investigation plan: add a debug probe that continuously reads the title ID + a dashboard-detection heuristic (e.g., presence of an XBE-magic check, a known dashboard title ID, or a memory-region nullity test) across a real Halo CE → quit-to-dashboard transition; pick the most reliable signal. If the title-ID address is the right place but the read is stale, propose re-translating the GVA on each check (xemu may have remapped the page). If the title-ID address is unreliable, fall back to a state-machine signal (e.g., heartbeat: if `ReadGameState` errors for N consecutive polls, assume Live → Idle). Document the finding either way.
+
+7. **Event ordering for `request_events`** — _New question, not in brief._ Proposal: events returned in the same order they were appended to the live event log (registration / detection order, which today is per-detector iteration order in [internal/scraper/haloce/events](../internal/scraper/haloce/events)). Document that ordering is "stream order, not necessarily strict tick order" so a client doing post-hoc analysis knows not to assume `event[i].tick <= event[i+1].tick` for events from the same tick.
+
+8. **Multi-runner writes to `host:all`** — _New question._ Many runners may push summary updates to the aggregate room. Proposal: a single aggregator goroutine owns `host:all` writes; runners post `summaryUpdate` events to a buffered channel, the aggregator coalesces and broadcasts. Keeps the "single goroutine writes per room" invariant intact and avoids lock contention between runners. Aggregator lives in `internal/scraper/manager/` next to the per-instance runners.
+
+## Decisions made (where the brief was internally inconsistent or open)
+
+- **Idle scrape cadence**: brief says ~3s; existing loop uses 500ms even in non-game states. Decision: follow brief (3s in Idle, ~500ms in Ready). The 500ms current value was tuned for menus / lobbies (which are now Ready), and Idle is genuinely "we have nothing useful to read until the title changes" — 3s is sufficient.
+- **Retire vs alias the `overlay` room name**: brief says "the current single shared `overlay` room goes away" but doesn't specify whether to alias it briefly during the rollout. Decision: hard switch in 5b — there are no external consumers and the SvelteKit client is updated in 5e of this same milestone, so an alias buys nothing.
+- **`tick` field semantics on `state_update`**: brief says "Carries the phase, instance, and tick (where meaningful) on every envelope". Decision: `tick` is omitted (or `0`) outside Live; in Live it's the engine tick. Documented on the envelope type.
+- **Default-room name**: brief uses both `host:all` ("Room model" section) and just describes "the default room". Decision: `host:all`, matching the per-instance prefix.
+
+## Smoke test (post-implementation, runs after 5e)
+
+1. `task dev` with `CONTAINERS_ENABLED=true`.
+2. Create + start two containers (`smoke1`, `smoke2`) via the M3 admin endpoints; both appear in `host:all`'s `current_state` as Idle until xemu finishes booting.
+3. With Halo CE not yet inserted, both should report Idle phase + Xbox machine name + advancing freshness indicator in their `host:<name>` room's `current_state`. Verify in the admin debug page (after 5e wires the per-instance tabs to per-instance rooms).
+4. Insert Halo CE on `smoke1` → Ready transition. Confirm a fresh `current_state` reaches subscribers before any `state_update` tagged Ready arrives. Lobby fields populate within ~500ms.
+5. Start a match on `smoke1` → Live at 30Hz; `state_update` envelopes carry tick fields at engine cadence; `event` envelopes stream independently as kills/etc happen.
+6. Quit to Halo CE main menu mid-match → Live → Ready; `previous_game` populated in the `instanceCache`; `state_update` cadence drops to ~500ms; `request_events` returns empty (per open question 1).
+7. Quit to xemu dashboard → Ready → Idle (this is the path open question 6 must fix); `previous_game` dropped; `state_update` cadence drops to ~3s.
+8. Disconnect a WebSocket client mid-match, reconnect, send `request_state` → addressed-reply with one `current_state` for the requester's room; send `request_events` with `since_tick=<last_seen>` → addressed-reply with the gap.
+9. `host:all` `current_state` re-broadcasts on every instance summary change; both instances stay represented throughout.
+
+## M5 follow-ups (deferred)
+
+- **`game_end` / `player_quit` synthesis on hard-quit paths.** Surfaced during the 5a + 5b 2026-05-05 smoke test. When xemu is hard-reset (vs an in-engine "Quit to Main Menu"), Halo CE has no opportunity to set the per-player `QuitFlag` byte the existing detector watches, so the cache never records why the match ended. Two approaches:
+  - In `runLive`'s exit path (state `in_game` → anything else), synthesize one `game_end` event and append it to the cache before returning `PhaseReady`. Tiny code change in [internal/scraper/manager/loop.go](../internal/scraper/manager/loop.go).
+  - On Live → Idle via the heartbeat fallback (xemu vanished mid-match), synthesize a `player_quit` for every player still in the live roster. Slightly larger; touches the same exit paths.
+    Both are M19-class robustness work — not blockers for 5c. File the deferred note here.

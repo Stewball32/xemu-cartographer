@@ -15,7 +15,7 @@ import (
 // Test helpers must match runtime emit shape so filterEvents covers the
 // same code path real events take.
 func makeEvent(tick uint32, typ string) scraper.Envelope {
-	return scraper.MakeEnvelope("event", "smoke", tick, map[string]any{
+	return scraper.MakeEnvelope("event", "smoke", 0, tick, map[string]any{
 		"event_type": typ,
 	})
 }
@@ -37,9 +37,9 @@ func TestFilterEventsEmpty(t *testing.T) {
 func TestFilterEventsReversesToOldestFirst(t *testing.T) {
 	// Cache order (newest-first): [tick=3, tick=2, tick=1].
 	cache := []scraper.Envelope{
-		makeEvent(3, scraper.EventKill),
-		makeEvent(2, scraper.EventDeath),
-		makeEvent(1, scraper.EventSpawn),
+		makeEvent(3, scraper.EventTypeDeath),
+		makeEvent(2, scraper.EventTypeDamage),
+		makeEvent(1, scraper.EventTypePlayerUpdate),
 	}
 	out := filterEvents(cache, 0, nil)
 	if len(out) != 3 {
@@ -53,10 +53,10 @@ func TestFilterEventsReversesToOldestFirst(t *testing.T) {
 // TestFilterEventsSinceTick: only events with tick > sinceTick survive.
 func TestFilterEventsSinceTick(t *testing.T) {
 	cache := []scraper.Envelope{
-		makeEvent(5, scraper.EventKill),
-		makeEvent(4, scraper.EventDeath),
-		makeEvent(3, scraper.EventSpawn),
-		makeEvent(2, scraper.EventKill),
+		makeEvent(5, scraper.EventTypeDeath),
+		makeEvent(4, scraper.EventTypeDamage),
+		makeEvent(3, scraper.EventTypePlayerUpdate),
+		makeEvent(2, scraper.EventTypeDeath),
 	}
 	out := filterEvents(cache, 3, nil)
 	gotTicks := make([]uint32, len(out))
@@ -73,18 +73,18 @@ func TestFilterEventsSinceTick(t *testing.T) {
 // survive; nil/empty type filter means no filter.
 func TestFilterEventsTypes(t *testing.T) {
 	cache := []scraper.Envelope{
-		makeEvent(4, scraper.EventKill),
-		makeEvent(3, scraper.EventDeath),
-		makeEvent(2, scraper.EventSpawn),
-		makeEvent(1, scraper.EventKill),
+		makeEvent(4, scraper.EventTypeDeath),
+		makeEvent(3, scraper.EventTypeDamage),
+		makeEvent(2, scraper.EventTypePlayerUpdate),
+		makeEvent(1, scraper.EventTypeDeath),
 	}
-	out := filterEvents(cache, 0, []string{scraper.EventKill})
+	out := filterEvents(cache, 0, []string{scraper.EventTypeDeath})
 	if len(out) != 2 {
 		t.Fatalf("len = %d, want 2 (only kill events)", len(out))
 	}
 	for _, e := range out {
-		if got := eventInnerType(e); got != scraper.EventKill {
-			t.Fatalf("inner event_type = %q, want %q", got, scraper.EventKill)
+		if got := eventInnerType(e); got != scraper.EventTypeDeath {
+			t.Fatalf("inner event_type = %q, want %q", got, scraper.EventTypeDeath)
 		}
 	}
 }
@@ -112,7 +112,7 @@ func TestEventsReplyIdleReturnsEmpty(t *testing.T) {
 	r.cache.Phase = PhaseIdle
 	// Stash some events on the cache to prove they're filtered out by phase
 	// rather than absence.
-	r.cache.Events = []scraper.Envelope{makeEvent(2, scraper.EventKill)}
+	r.cache.Events = []scraper.Envelope{makeEvent(2, scraper.EventTypeDeath)}
 	m.runners["alpha"] = r
 
 	bytes, ok := m.EventsReply("alpha", 0, nil)
@@ -142,13 +142,13 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	r.cache.EngineTick = 100
 	// Cache is newest-first.
 	r.cache.Events = []scraper.Envelope{
-		makeEvent(7, scraper.EventKill),
-		makeEvent(6, scraper.EventDeath),
-		makeEvent(5, scraper.EventKill),
+		makeEvent(7, scraper.EventTypeDeath),
+		makeEvent(6, scraper.EventTypeDamage),
+		makeEvent(5, scraper.EventTypeDeath),
 	}
 	m.runners["alpha"] = r
 
-	bytes, ok := m.EventsReply("alpha", 5, []string{scraper.EventKill})
+	bytes, ok := m.EventsReply("alpha", 5, []string{scraper.EventTypeDeath})
 	if !ok {
 		t.Fatal("EventsReply: ok=false")
 	}
@@ -175,7 +175,7 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	}
 
 	var payload EventsResponsePayload
-	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+	if err := json.Unmarshal(env.Data, &payload); err != nil {
 		t.Fatalf("unmarshal EventsResponsePayload: %v", err)
 	}
 	if payload.Phase != PhaseLive {
@@ -187,7 +187,7 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	if len(payload.Events) != 1 {
 		t.Fatalf("payload.events len = %d, want 1 (only kill at tick=7)", len(payload.Events))
 	}
-	if got := eventInnerType(payload.Events[0]); payload.Events[0].Tick != 7 || got != scraper.EventKill {
+	if got := eventInnerType(payload.Events[0]); payload.Events[0].Tick != 7 || got != scraper.EventTypeDeath {
 		t.Fatalf("payload.events[0] tick=%d inner=%q, want kill at tick=7", payload.Events[0].Tick, got)
 	}
 }
@@ -208,7 +208,7 @@ func decodeEventsReply(t *testing.T, data []byte) EventsResponsePayload {
 		t.Fatalf("envelope.type = %q, want %q", env.Type, envelopeTypeEvents)
 	}
 	var p EventsResponsePayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		t.Fatalf("unmarshal EventsResponsePayload: %v", err)
 	}
 	return p

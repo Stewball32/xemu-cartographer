@@ -35,10 +35,6 @@ func requireCollection(app *pocketbase.PocketBase, name string) (*core.Collectio
 	return app.FindCollectionByNameOrId(name)
 }
 
-func strPtr(s string) *string {
-	return &s
-}
-
 func f64(v float64) *float64 {
 	return &v
 }

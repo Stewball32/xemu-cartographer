@@ -37,8 +37,6 @@ func RegisterAll(app *pocketbase.PocketBase) error {
 		if !ok {
 			if existing[cfg.Name] {
 				log.Printf("oauth: removing previously configured provider %q (env vars missing)\n", cfg.Name)
-			} else {
-				// log.Printf("oauth: skipping provider %q (env vars missing)\n", cfg.Name)
 			}
 			continue
 		}

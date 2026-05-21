@@ -97,3 +97,43 @@ func gamePlayerByIndex(snap scraper.GameData) map[int]scraper.GamePlayer {
 	}
 	return out
 }
+
+// playerRefFromGame builds a v2 PlayerRef from a GamePlayer. Used by event
+// detectors to denormalize roster identity (name, team, armor_color) onto
+// emitted events so the event log alone is sufficient for analytics across
+// later roster changes.
+func playerRefFromGame(p scraper.GamePlayer) scraper.PlayerRef {
+	return scraper.PlayerRef{
+		Index:      p.Index,
+		Name:       p.Name,
+		Team:       p.Team,
+		ArmorColor: p.ArmorColor,
+	}
+}
+
+// playerRefByIndex returns a PlayerRef for idx, looking up identity in the
+// game-data snapshot. When idx isn't in the roster (race during a join /
+// leave), returns a partial ref with only Index set; the caller can check
+// Name == "" to detect this.
+func playerRefByIndex(snap scraper.GameData, idx int) scraper.PlayerRef {
+	for _, p := range snap.Players {
+		if p.Index == idx {
+			return playerRefFromGame(p)
+		}
+	}
+	return scraper.PlayerRef{Index: idx}
+}
+
+// vec3FromTickPlayer builds a v2 Vec3 position from a TickPlayer's flat
+// X/Y/Z fields. Convenience wrapper so detectors don't repeat the
+// conversion at every emit site.
+func vec3FromTickPlayer(tp scraper.TickPlayer) scraper.Vec3 {
+	return scraper.Vec3{X: tp.X, Y: tp.Y, Z: tp.Z}
+}
+
+// vec3Ptr returns &Vec3{x,y,z}. Useful for optional pos fields on event
+// payloads (PlayerUpdateEvent.Pos, GameUpdateEvent.Pos).
+func vec3Ptr(x, y, z float32) *scraper.Vec3 {
+	v := scraper.Vec3{X: x, Y: y, Z: z}
+	return &v
+}

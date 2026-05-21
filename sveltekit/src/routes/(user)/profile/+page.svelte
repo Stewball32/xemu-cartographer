@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { Avatar } from '@skeletonlabs/skeleton-svelte';
 	import {
 		ShieldCheckIcon,
 		MapPinIcon,
@@ -11,7 +10,7 @@
 		UserIcon
 	} from '@lucide/svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { getFileURL } from '$lib/utils/files';
+	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 
 	let linkedAuths = $state<Array<Record<string, string>>>([]);
@@ -25,19 +24,6 @@
 			}
 		}
 	});
-
-	const avatarUrl = $derived(
-		auth.user ? getFileURL(auth.user, 'avatar', { thumb: '160x160' }) : null
-	);
-
-	const initials = $derived(
-		auth.user?.name
-			?.split(' ')
-			.map((n: string) => n[0])
-			.join('')
-			.toUpperCase()
-			.slice(0, 2) ?? '?'
-	);
 
 	const memberSince = $derived(
 		auth.user
@@ -57,12 +43,7 @@
 		<div class="h-20 bg-linear-to-r from-primary-500 to-secondary-500"></div>
 		<div class="px-6 pb-6">
 			<div class="-mt-10 flex items-end gap-4">
-				<Avatar class="size-20 ring-4 ring-surface-100-900">
-					{#if avatarUrl}
-						<Avatar.Image src={avatarUrl} />
-					{/if}
-					<Avatar.Fallback>{initials}</Avatar.Fallback>
-				</Avatar>
+				<UserAvatar user={auth.user} size="size-20" class="ring-4 ring-surface-100-900" />
 				<div class="flex-1 pb-1">
 					<div class="flex items-center gap-2">
 						<h2 class="h3">{auth.user?.name || auth.user?.username}</h2>

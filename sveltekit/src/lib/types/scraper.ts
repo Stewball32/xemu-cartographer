@@ -11,6 +11,32 @@ export interface ScraperInfo {
 	title_id: number;
 	title: string;
 	xbox_name: string;
+
+	// EEPROM-derived system info — populated by the runner's system-snapshot
+	// pass. Title-agnostic; stable for the lifetime of the runner once first
+	// populated. Fields are absent / 0 until the first successful read.
+	serial_number?: string;
+	mac_address?: string;
+	video_standard?: string;
+	time_zone_bias?: number;
+	time_zone_std_name?: string;
+	time_zone_dlt_name?: string;
+
+	// XBE-certificate-derived fields, populated by the same system-snapshot
+	// pass. Useful as a fallback when the title-ID registry lookup misses
+	// (xbe_title_name is the canonical developer-supplied name).
+	xbe_title_name?: string;
+	xbe_version?: number;
+	xbe_game_region?: number;
+	xbe_disk_number?: number;
+	xbe_allowed_media?: number;
+
+	// Kernel-clock fields. kernel_system_time is wall-clock UTC; kernel_boot_time
+	// is when the guest booted; kernel_uptime_ns is nanoseconds since boot.
+	kernel_system_time?: string;
+	kernel_boot_time?: string;
+	kernel_uptime_ns?: number;
+
 	tick: number;
 	ticks: number;
 	started_at: string;
@@ -18,9 +44,7 @@ export interface ScraperInfo {
 
 // Phase is the runner's lifecycle state introduced in M5 stage 5a:
 // "idle" (no recognised title yet), "ready" (title detected, no live
-// match), "live" (active match in progress). Renders independently of
-// current_state — phase=idle can carry an empty current_state, while
-// current_state=in_game implies phase=live.
+// match), "live" (active match in progress).
 export type Phase = 'idle' | 'ready' | 'live';
 
 // PreviousGameInfo is the just-ended match captured on Live → Ready
@@ -42,7 +66,6 @@ export interface ScraperInspect extends ScraperInfo {
 	running: boolean;
 	phase: Phase;
 	last_read_at: string;
-	current_state: GameState | '';
 	state_inputs: StateInputs | null;
 	score_probe: ScoreProbe | null;
 	game_data: GameData | null;
@@ -63,100 +86,21 @@ export type StateInputs = Record<string, number | boolean | string | null>;
 // can spot which raw value matches what they see in-game.
 export type ScoreProbe = Record<string, unknown>;
 
-export type GameState = 'menu' | 'lobby' | 'pregame' | 'in_game' | 'postgame';
-
-// Envelope wire types (M5 stage 5c/5d):
-//   - "current_state"  full instanceCache (per-instance) or hostsCache list (host:all);
-//                       sent on join + every phase transition.
-//   - "state_update"   per-poll volatile fields at phase-appropriate cadence
-//                       (Idle ~3s, Ready ~500ms, Live ~30Hz).
-//   - "event"          single live event during Live.
-//   - "events"         plural — addressed reply to a request_events message
-//                       carrying EventsResponsePayload (oldest-first).
-// Backend constants: internal/scraper/manager/loop.go envelopeType* +
-// internal/scraper/manager/events.go envelopeTypeEvents.
-export type EnvelopeType = 'current_state' | 'state_update' | 'event' | 'events';
-
-// Reserved aggregate-room name; mirrors backend rooms.HostAllRoom.
-export const HOST_ALL_ROOM = 'host:all';
-// Per-instance host room prefix; backend rooms.HostRoomPrefix + ":".
-export const HOST_ROOM_PREFIX = 'host:';
-
-// Outer WebSocket Message wrapper. M5 stage 5b: scraper broadcasts set
-// type="scraper", room="host:<instance>" (per-instance) or room="host:all"
-// (cross-instance summary feed), and payload=<Envelope as JSON>. The
-// envelope's instance field disambiguates the two — "all" indicates the
-// host:all summary feed, anything else is per-instance.
-export interface WSMessage {
-	type: string;
-	room?: string;
-	target?: string;
-	payload?: unknown;
-}
-
-// Inner scraper envelope. Payload shape depends on type.
+// Envelope is the legacy v1 wrapper shape used by debug-tab components
+// that haven't been rewritten to read v2 types natively. The vms in
+// internal/scraper/manager/{game,tick,postgame,overview}-vm project v2
+// per-class envelopes into this shape so the section components keep
+// rendering. New code should consume EnvelopeV2 from $lib/types/scraper-v2.
+//
+// `type` is left untyped here ("event" is the only value any consumer
+// actually inspects post-migration); rather than re-export the v1
+// discriminator union we let TS accept any string.
 export interface Envelope<P = unknown> {
-	type: EnvelopeType;
+	v: number;
+	type: string;
 	instance: string;
 	tick: number;
 	payload: P;
-}
-
-// hostSummary entry in the host:all aggregate cache. Mirrors
-// internal/scraper/manager/aggregator.go hostSummary.
-export interface HostSummary {
-	instance: string;
-	phase: Phase;
-	title: string;
-	map: string;
-	gametype: string;
-	score_summary: string;
-	last_successful_read_at: string;
-}
-
-// CurrentStatePayload mirrors internal/scraper/manager/runner.go
-// CurrentStatePayload — the per-instance "current_state" envelope payload.
-// Sent on join_room reply + every phase transition. Carries a full atomic
-// read of the runner's instanceCache so a fresh subscriber can render
-// without prior history.
-export interface CurrentStatePayload {
-	phase: Phase;
-	started_at: string;
-	title_id: number;
-	title: string;
-	xbox_name: string;
-	last_read_at: string;
-	engine_tick: number;
-	iterations: number;
-	game_state?: GameState | '';
-	game_data?: GameData | null;
-	latest_tick?: TickPayload | null;
-	events?: Envelope[];
-	previous_game?: PreviousGameInfo | null;
-}
-
-// StateUpdatePayload mirrors internal/scraper/manager/runner.go
-// StateUpdatePayload — the per-poll volatile-fields envelope. Phase-specific
-// fields are populated only in their phase: Idle carries freshness only,
-// Ready carries `ready` (volatile lobby/menu game data), Live carries
-// `engine_tick` + `tick`.
-export interface StateUpdatePayload {
-	phase: Phase;
-	last_read_at: string;
-	iterations: number;
-	engine_tick?: number;
-	tick?: TickPayload | null;
-	ready?: GameData | null;
-}
-
-// EventsResponsePayload mirrors internal/scraper/manager/events.go
-// EventsResponsePayload — addressed reply to request_events. Events are
-// oldest-first per backend OQ7. Phase + since_tick are echoed so the
-// requester can reconcile the reply against an outstanding request.
-export interface EventsResponsePayload {
-	phase: Phase;
-	since_tick: number;
-	events: Envelope[];
 }
 
 export interface TeamScore {
@@ -168,6 +112,7 @@ export interface GamePlayer {
 	index: number;
 	name: string;
 	team: number;
+	armor_color: number;
 	score: number;
 	kills: number;
 	deaths: number;
@@ -182,6 +127,7 @@ export interface GamePlayer {
 	is_local: boolean | null;
 	local_index: number | null;
 	machine_index: number | null;
+	controller_index: number | null;
 }
 
 export interface GameMachine {
@@ -193,13 +139,13 @@ export interface PowerItemSpawn {
 	spawn_id: number;
 	tag: string;
 	spawn_interval_ticks: number;
+	gametype_mask: number;
 	x: number;
 	y: number;
 	z: number;
 }
 
 export interface GameData {
-	game_state: GameState;
 	map: string;
 	gametype: string;
 	variant_name?: string;
@@ -334,6 +280,7 @@ export interface TickPlayer {
 	health: number;
 	shields: number;
 	has_camo: boolean;
+	camo_timer: number | null;
 	has_overshield: boolean;
 	frags: number;
 	plasmas: number;
@@ -714,28 +661,4 @@ export interface TickProjectile {
 	rotation_axis_z: number;
 	rotation_sine: number;
 	rotation_cosine: number;
-}
-
-// Type guards for narrowing Envelope by type. Each guard discriminates on
-// the `type` literal so an if/else chain narrows the union exhaustively.
-export function isCurrentState(
-	env: Envelope
-): env is Envelope<CurrentStatePayload> & { type: 'current_state' } {
-	return env.type === 'current_state';
-}
-
-export function isStateUpdate(
-	env: Envelope
-): env is Envelope<StateUpdatePayload> & { type: 'state_update' } {
-	return env.type === 'state_update';
-}
-
-export function isEvent(env: Envelope): env is Envelope & { type: 'event' } {
-	return env.type === 'event';
-}
-
-export function isEventsReply(
-	env: Envelope
-): env is Envelope<EventsResponsePayload> & { type: 'events' } {
-	return env.type === 'events';
 }

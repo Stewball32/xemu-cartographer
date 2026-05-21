@@ -2,7 +2,6 @@ package xbox
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strings"
 
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
@@ -15,31 +14,66 @@ const (
 	consoleNameMaxChars     int    = 16      // 16-wchar Xbox console-name cap
 )
 
-// ReadConsoleName scans guest memory for the kernel/dashboard copy of the
-// console name loaded from E:\UDATA\NICKNAME.XBN. The anchor is an 8-byte
-// pattern: four zero bytes followed by ConsoleNameRecordMagic in little-endian.
-// Every NICKNAME.XBN record in RAM (file-load buffer or clean kernel cache)
-// has this exact prefix; static occurrences of the magic in kernel/dashboard
-// image code do not, since their preceding bytes are not four zeros.
+// nickHeaderMagic is the 12-byte prefix that consistently precedes every
+// console-name record found in xemu guest RAM across both observed
+// container shapes (containers in-game with Halo loaded AND containers
+// idling on the UnleashX dashboard): "NICK" (`4B 43 49 4E`) followed by
+// `01 00 00 00` (record version=1) and four zero bytes (padding to a
+// u32 boundary before the record tag at +12). The pattern is distinct
+// enough that we haven't seen image-code false positives — the 12-byte
+// anchor is far less ambiguous than the original 8-byte
+// `00 00 00 00 30 53 11 9E` scan.
+var nickHeaderMagic = []byte{
+	0x4B, 0x43, 0x49, 0x4E, // "NICK"
+	0x01, 0x00, 0x00, 0x00, // record version u32 = 1
+	0x00, 0x00, 0x00, 0x00, // 4 bytes of zero padding
+}
+
+// After the 16-byte NICK header, two record-body shapes have been
+// observed in the wild. Both encode the console name as a UTF-16LE
+// string up to consoleNameMaxChars wchars; only the body header differs.
+var (
+	// nickRecordTypeA is the "compact" body: a 4-byte magic followed
+	// immediately by the name bytes. Decodes as LE u32 0x4D530004 —
+	// almost certainly a Microsoft / Xbox SDK record-type marker
+	// (`53 4D` reads as "SM"). Observed across all three of host,
+	// alpha, and bravo regardless of their loaded XBE.
+	nickRecordTypeA = []byte{0x04, 0x00, 0x53, 0x4D}
+
+	// nickRecordTypeB is the canonical NICKNAME.XBN record: the
+	// 4-byte ConsoleNameRecordMagic (0x9E115330) followed by a u16
+	// length (`20 00` = 0x0020 = 32 bytes / 16 wchars max). Observed
+	// on charlie (UnleashX dashboard fully booted, NICKNAME.XBN
+	// mapped into RAM). The first 4 bytes match the legacy 8-byte
+	// anchor the previous scanner used (`00 00 00 00 30 53 11 9E`).
+	nickRecordTypeB = []byte{0x30, 0x53, 0x11, 0x9E}
+)
+
+// ReadConsoleName scans guest RAM for a console-name record loaded from
+// E:\UDATA\NICKNAME.XBN and returns the decoded name. The 12-byte NICK
+// anchor + record-type dispatch handles both the type A (compact, seen
+// in host/alpha/bravo) and type B (canonical NICKNAME.XBN, seen in
+// charlie) layouts, so it works whether the container is running Halo,
+// idling on the dashboard, or anywhere in between.
 //
-// Returns the FIRST decoded record in the scan window — that's slot 0
-// (console name); slots 1..N (per-controller nicknames) follow in heap and
-// are skipped naturally because the scan walks low-to-high GVA.
+// Returns the FIRST decoded record in the scan window. Per-controller
+// nickname slots have the same NICK header and would match too, but
+// the scan walks low-to-high GVA and the console-name record is
+// historically slot 0 — so the controller slots are skipped naturally
+// by returning on the first non-empty decode.
 //
-// Title-agnostic: works whether UnleashX, Halo CE, or any other XBE is
-// running, and works in any runner phase. Returns "" if no anchor is found
-// or every match decodes to an empty/whitespace string.
+// Title-agnostic. Returns "" if no anchor is found or every match
+// decodes to an empty / whitespace string.
 func ReadConsoleName(mem *xemu.Mem) string {
 	if mem == nil {
 		return ""
 	}
 
-	var anchor [8]byte
-	binary.LittleEndian.PutUint32(anchor[4:], ConsoleNameRecordMagic)
-	// anchor[0:4] stays zero — that's the discriminator against image-code
-	// false positives.
-
-	overlap := len(anchor) - 1
+	// Width of the longest legal record after the NICK header. Type B
+	// is 4-byte magic + 2-byte length + name bytes; type A is 4-byte
+	// magic + name bytes. Reserve the longer.
+	const maxRecordTail = 4 + 2 + ConsoleNameMaxBytes
+	overlap := len(nickHeaderMagic) + maxRecordTail - 1
 	var prevTail []byte
 
 	for gva := consoleNameScanStartGVA; gva < consoleNameScanEndGVA; gva += uint32(consoleNameScanChunk) {
@@ -57,8 +91,8 @@ func ReadConsoleName(mem *xemu.Mem) string {
 			continue
 		}
 
-		// Stitch a small tail from the previous chunk so an anchor straddling
-		// the boundary still hits.
+		// Stitch a small tail from the previous chunk so a header
+		// straddling the boundary still hits.
 		search := buf
 		if len(prevTail) > 0 {
 			stitched := make([]byte, len(prevTail)+len(buf))
@@ -69,12 +103,33 @@ func ReadConsoleName(mem *xemu.Mem) string {
 
 		offset := 0
 		for offset < len(search) {
-			i := bytes.Index(search[offset:], anchor[:])
+			i := bytes.Index(search[offset:], nickHeaderMagic)
 			if i < 0 {
 				break
 			}
 			hit := offset + i
-			nameStart := hit + len(anchor)
+			recordStart := hit + len(nickHeaderMagic)
+			if recordStart+4 > len(search) {
+				break
+			}
+
+			recordTag := search[recordStart : recordStart+4]
+			var nameStart int
+			switch {
+			case bytes.Equal(recordTag, nickRecordTypeA):
+				nameStart = recordStart + 4
+			case bytes.Equal(recordTag, nickRecordTypeB):
+				// Skip the 4-byte magic AND the 2-byte length field
+				// (0x0020 = 32 bytes / 16 wchars max).
+				nameStart = recordStart + 4 + 2
+			default:
+				// Unknown record type — keep walking. Could be a stray
+				// "NICK" in image code; the post-header bytes will
+				// nearly always fail this check.
+				offset = hit + len(nickHeaderMagic)
+				continue
+			}
+
 			if nameStart+ConsoleNameMaxBytes > len(search) {
 				break
 			}
@@ -82,7 +137,7 @@ func ReadConsoleName(mem *xemu.Mem) string {
 			if name != "" {
 				return name
 			}
-			offset = hit + len(anchor)
+			offset = hit + len(nickHeaderMagic)
 		}
 
 		if overlap > 0 && len(buf) >= overlap {

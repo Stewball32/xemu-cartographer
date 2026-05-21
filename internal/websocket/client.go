@@ -37,7 +37,7 @@ func (c *Client) UserID() string {
 func (c *Client) readPump(ctx context.Context) {
 	defer func() {
 		c.hub.unregister <- c
-		c.conn.Close(websocket.StatusNormalClosure, "")
+		_ = c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
 	c.conn.SetReadLimit(readLimit)
@@ -64,7 +64,7 @@ func (c *Client) readPump(ctx context.Context) {
 // writePump sends queued messages from the Hub to the browser.
 // Runs as a goroutine until the send channel is closed or context is cancelled.
 func (c *Client) writePump(ctx context.Context) {
-	defer c.conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = c.conn.Close(websocket.StatusNormalClosure, "") }()
 
 	for {
 		select {

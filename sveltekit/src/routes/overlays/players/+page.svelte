@@ -2,12 +2,12 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { scraperWS } from '$lib/stores/scraper-ws.svelte';
-	import type { GamePlayer, TickPlayer, WeaponInfo } from '$lib/types/scraper';
+	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
+	import type { GameRosterPlayer, TickPlayerV2, TickWeaponV2 } from '$lib/types/scraper-v2';
 
 	type Joined = {
-		snap: GamePlayer;
-		tick: TickPlayer | null;
+		snap: GameRosterPlayer;
+		tick: TickPlayerV2 | null;
 	};
 
 	const HEALTH_MAX = 75;
@@ -26,8 +26,11 @@
 		return segs[segs.length - 1] || trimmed;
 	}
 
-	function ammoLabel(w: WeaponInfo): string {
-		if (w.is_energy && typeof w.charge === 'number') {
+	// v2 TickWeaponV2 dropped the explicit is_energy bool; charge !== null is
+	// the equivalent signal (plasma pistol / plasma rifle / fuel rod populate
+	// charge, ballistic weapons leave it nil).
+	function ammoLabel(w: TickWeaponV2): string {
+		if (w.charge !== null && w.charge !== undefined) {
 			return `${Math.round(w.charge * 100)}%`;
 		}
 		const mag = w.ammo_mag ?? 0;
@@ -35,22 +38,44 @@
 		return `${mag} / ${pack}`;
 	}
 
-	function selectedWeapon(t: TickPlayer | null): WeaponInfo | null {
+	function selectedWeapon(t: TickPlayerV2 | null): TickWeaponV2 | null {
 		if (!t || !t.weapons || t.weapons.length === 0) return null;
 		const slot = t.selected_weapon_slot;
 		const found = t.weapons.find((w) => w.slot === slot);
 		return found ?? t.weapons[0];
 	}
 
+	// The overlay renders a single Xbox at a time. Pick the first instance
+	// the server reports in hello — historically the v1 store's
+	// `firstGameData` / `firstTick` accessors did the same "any one"
+	// selection. A future PR can expose an instance-name route param if
+	// multi-Xbox overlays are needed.
+	const targetInstance = $derived(scraperWSV2.hello?.instances[0]?.name ?? null);
+
+	// Subscribe to game + tick for the chosen instance whenever it changes.
+	// subscribeInstance idempotently records intent; the store replays on
+	// reconnect.
+	let lastSubscribed: string | null = null;
+	$effect(() => {
+		if (!targetInstance) return;
+		if (lastSubscribed === targetInstance) return;
+		if (lastSubscribed) {
+			scraperWSV2.unsubscribeInstance(lastSubscribed, ['game', 'tick']);
+		}
+		scraperWSV2.subscribeInstance(targetInstance, ['game', 'tick']);
+		lastSubscribed = targetInstance;
+	});
+
 	let joined = $derived.by<Joined[]>(() => {
-		const snap = scraperWS.firstGameData;
-		const tick = scraperWS.firstTick;
-		if (!snap || !snap.players) return [];
-		const tickByIdx = new SvelteMap<number, TickPlayer>();
-		if (tick && tick.players) {
+		if (!targetInstance) return [];
+		const game = scraperWSV2.game[targetInstance];
+		const tick = scraperWSV2.tick[targetInstance];
+		if (!game || !game.players) return [];
+		const tickByIdx = new SvelteMap<number, TickPlayerV2>();
+		if (tick?.players) {
 			for (const tp of tick.players) tickByIdx.set(tp.index, tp);
 		}
-		return snap.players
+		return game.players
 			.filter((p) => p.is_local === true)
 			.sort((a, b) => (a.local_index ?? 0) - (b.local_index ?? 0))
 			.map((p) => ({ snap: p, tick: tickByIdx.get(p.index) ?? null }));
@@ -58,12 +83,21 @@
 
 	onMount(() => {
 		if (auth.token) {
-			scraperWS.connect(auth.token);
+			scraperWSV2.connect(auth.token);
+			// Subscribe to host:summary so hello.instances populates and the
+			// $effect above can pick a target. (Hello is delivered on connect
+			// regardless of subscriptions, so this is a safety net for
+			// reconnects where the cached hello is stale.)
+			scraperWSV2.subscribeSummary();
 		}
 	});
 
 	onDestroy(() => {
-		scraperWS.disconnect();
+		if (lastSubscribed) {
+			scraperWSV2.unsubscribeInstance(lastSubscribed, ['game', 'tick']);
+		}
+		scraperWSV2.unsubscribeSummary();
+		scraperWSV2.disconnect();
 	});
 </script>
 
@@ -76,7 +110,7 @@
 </svelte:head>
 
 <div class="overlay-root">
-	{#if !scraperWS.connected}
+	{#if !scraperWSV2.connected}
 		<div class="status-card">Connecting…</div>
 	{:else if joined.length === 0}
 		<div class="status-card">Waiting for match…</div>

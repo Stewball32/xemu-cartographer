@@ -4,7 +4,7 @@
 	import { page } from '$app/stores';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { toaster } from '$lib/stores/toaster';
-	import { LockIcon, ArrowLeftIcon, KeyRoundIcon } from '@lucide/svelte';
+	import { LockIcon, ArrowLeftIcon, KeyRoundIcon, LoaderIcon } from '@lucide/svelte';
 
 	let token = $state($page.data.token as string);
 	let password = $state('');
@@ -93,7 +93,8 @@
 					</label>
 
 					<button type="submit" class="btn w-full preset-filled" disabled={loading || mismatch}>
-						{loading ? 'Resetting...' : 'Reset Password'}
+						{#if loading}<LoaderIcon class="size-4 animate-spin" />{/if}
+						<span>Reset Password</span>
 					</button>
 				</form>
 			{/if}

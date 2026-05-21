@@ -4,4 +4,5 @@ package websocket
 type Rooms interface {
 	IsInRoom(userID string, room string) bool
 	UserRooms(userID string) []string
+	RoomHasMembers(room string) bool
 }

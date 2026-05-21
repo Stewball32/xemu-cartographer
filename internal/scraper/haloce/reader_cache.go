@@ -25,6 +25,7 @@ type scenarioPowerSpawn struct {
 	SpawnID            int
 	Tag                string
 	SpawnIntervalTicks int16
+	GametypeMask       uint8 // u8 bitmask at scenario_item+0x04; which gametypes this placement applies to
 	X, Y, Z            float32
 }
 
@@ -69,8 +70,12 @@ func (r *Reader) OnStateChange(prev, next scraper.GameState) error {
 }
 
 // ensureScenarioStatic fills the scenario-static cache once the scenario
-// pointer is reachable. Idempotent. Leaves Filled=false on early-pregame
-// pointer-not-yet-set so the next call retries.
+// pointer is reachable. Idempotent. Each field is re-read while still empty,
+// because readers like readObjectTypes / readPowerSpawnScenarios depend on
+// engine state (object-type cache range, tagInstBase) that may not be warm
+// at the same moment scenarioBase becomes reachable. Filled flips true only
+// once all critical readers have produced data, so a transient empty result
+// on the first call doesn't get locked in permanently.
 func (r *Reader) ensureScenarioStatic() {
 	if r.scenarioCache != nil && r.scenarioCache.Filled {
 		return
@@ -84,14 +89,32 @@ func (r *Reader) ensureScenarioStatic() {
 		return
 	}
 
-	r.scenarioCache.MapName = r.readLowString(AddrMultiplayerMapName, 32)
+	if r.scenarioCache.MapName == "" {
+		r.scenarioCache.MapName = r.readScenarioTagName()
+	}
 	r.scenarioCache.GameDifficulty = r.readGameDifficulty()
-	r.scenarioCache.PlayerSpawns = r.readPlayerSpawns()
-	r.scenarioCache.Fog = r.readFog()
-	r.scenarioCache.ObjectTypes = r.readObjectTypes()
-	r.scenarioCache.TagCache = r.readCachePtrs()
-	r.scenarioCache.PowerSpawnsScenario = r.readPowerSpawnScenarios()
-	r.scenarioCache.Filled = true
+	if len(r.scenarioCache.PlayerSpawns) == 0 {
+		r.scenarioCache.PlayerSpawns = r.readPlayerSpawns()
+	}
+	if r.scenarioCache.Fog == nil {
+		r.scenarioCache.Fog = r.readFog()
+	}
+	if r.scenarioCache.TagCache == nil {
+		r.scenarioCache.TagCache = r.readCachePtrs()
+	}
+	if len(r.scenarioCache.ObjectTypes) == 0 {
+		r.scenarioCache.ObjectTypes = r.readObjectTypes()
+	}
+	if len(r.scenarioCache.PowerSpawnsScenario) == 0 {
+		r.scenarioCache.PowerSpawnsScenario = r.readPowerSpawnScenarios()
+	}
+
+	if r.scenarioCache.MapName != "" &&
+		len(r.scenarioCache.PlayerSpawns) > 0 &&
+		len(r.scenarioCache.ObjectTypes) > 0 &&
+		len(r.scenarioCache.PowerSpawnsScenario) > 0 {
+		r.scenarioCache.Filled = true
+	}
 }
 
 // ensureMatchStatic fills the per-match cache. Two-phase: most fields fill on
@@ -121,8 +144,11 @@ func (r *Reader) ensureMatchStatic() {
 
 	// InitialObjectIDs: gated on (a) scenario power-spawn list available and
 	// (b) world-object header populated. (b) is only true once gameplay is
-	// running, so this typically fills on the first in_game tick.
-	if !r.matchCache.InitialObjIDsFilled && r.scenarioCache != nil && r.scenarioCache.Filled {
+	// running, so this typically fills on the first in_game tick. Gated on
+	// PowerSpawnsScenario directly rather than scenarioCache.Filled — the
+	// Filled flag also depends on ObjectTypes populating, which is unrelated
+	// to power-item OIDs and may lag or fail independently.
+	if !r.matchCache.InitialObjIDsFilled && r.scenarioCache != nil && len(r.scenarioCache.PowerSpawnsScenario) > 0 {
 		if r.ohdBase >= HighGVAThreshold {
 			objHeaderFirst, _ := r.inst.Mem.ReadU32(r.ohdBase + OffOHDFirstElement)
 			if objHeaderFirst >= HighGVAThreshold {

@@ -50,7 +50,7 @@ func (m *Manager) EventsReply(instance string, sinceTick uint32, types []string)
 		SinceTick: sinceTick,
 		Events:    events,
 	}
-	env := scraper.MakeEnvelope(envelopeTypeEvents, instance, c.EngineTick, payload)
+	env := scraper.MakeEnvelope(envelopeTypeEvents, instance, 0, c.EngineTick, payload)
 
 	msgBytes, ok := marshalRoomMessage(instance, r.hostRoom, env)
 	if !ok {
@@ -99,13 +99,13 @@ func filterEvents(events []scraper.Envelope, sinceTick uint32, types []string) [
 // is missing or the field can't be decoded — those events fail any
 // type-set filter rather than spuriously matching.
 func eventInnerType(ev scraper.Envelope) string {
-	if len(ev.Payload) == 0 {
+	if len(ev.Data) == 0 {
 		return ""
 	}
 	var holder struct {
 		EventType string `json:"event_type"`
 	}
-	if err := json.Unmarshal(ev.Payload, &holder); err != nil {
+	if err := json.Unmarshal(ev.Data, &holder); err != nil {
 		return ""
 	}
 	return holder.EventType

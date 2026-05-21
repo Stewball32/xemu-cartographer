@@ -49,7 +49,7 @@ func handleVNCRelay(e *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	defer clientConn.CloseNow()
+	defer func() { _ = clientConn.CloseNow() }()
 
 	ctx, cancel := context.WithCancel(e.Request.Context())
 	defer cancel()
@@ -59,10 +59,10 @@ func handleVNCRelay(e *core.RequestEvent) error {
 		Subprotocols: []string{"binary"},
 	})
 	if err != nil {
-		clientConn.Close(websocket.StatusBadGateway, "upstream dial failed")
+		_ = clientConn.Close(websocket.StatusBadGateway, "upstream dial failed")
 		return nil
 	}
-	defer upstreamConn.CloseNow()
+	defer func() { _ = upstreamConn.CloseNow() }()
 
 	var wg sync.WaitGroup
 	wg.Add(2)

@@ -11,7 +11,9 @@ export enum Collections {
 	Mfas = "_mfas",
 	Otps = "_otps",
 	Superusers = "_superusers",
+	CapturePolicies = "capture_policies",
 	Containers = "containers",
+	GameEvents = "game_events",
 	Users = "users",
 }
 
@@ -93,6 +95,34 @@ export type SuperusersRecord = {
 	verified?: boolean
 }
 
+export enum CapturePoliciesModeOptions {
+	"auto" = "auto",
+	"always" = "always",
+	"never" = "never",
+}
+
+export enum CapturePoliciesCadenceOptions {
+	"default" = "default",
+	"engine" = "engine",
+	"30hz" = "30hz",
+	"10hz" = "10hz",
+	"5hz" = "5hz",
+	"250ms" = "250ms",
+	"500ms" = "500ms",
+	"1s" = "1s",
+}
+export type CapturePoliciesRecord = {
+	cadence: CapturePoliciesCadenceOptions
+	class: string
+	created: IsoAutoDateString
+	description?: string
+	id: string
+	instance: string
+	mode: CapturePoliciesModeOptions
+	sink?: string
+	updated: IsoAutoDateString
+}
+
 export type ContainersRecord = {
 	browser_vnc: number
 	browser_web: number
@@ -104,6 +134,17 @@ export type ContainersRecord = {
 	xemu_http: number
 	xemu_https: number
 	xemu_ws: number
+}
+
+export type GameEventsRecord<Tdata = unknown> = {
+	created: IsoAutoDateString
+	data?: null | Tdata
+	id: string
+	instance: string
+	seq?: number
+	tick?: number
+	ts?: IsoDateString
+	type: string
 }
 
 export type UsersRecord = {
@@ -129,7 +170,9 @@ export type ExternalauthsResponse<Texpand = unknown> = Required<ExternalauthsRec
 export type MfasResponse<Texpand = unknown> = Required<MfasRecord> & BaseSystemFields<Texpand>
 export type OtpsResponse<Texpand = unknown> = Required<OtpsRecord> & BaseSystemFields<Texpand>
 export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> & AuthSystemFields<Texpand>
+export type CapturePoliciesResponse<Texpand = unknown> = Required<CapturePoliciesRecord> & BaseSystemFields<Texpand>
 export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
+export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<GameEventsRecord<Tdata>> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
 
 // Types containing all Records and Responses, useful for creating typing helper functions
@@ -140,7 +183,9 @@ export type CollectionRecords = {
 	_mfas: MfasRecord
 	_otps: OtpsRecord
 	_superusers: SuperusersRecord
+	capture_policies: CapturePoliciesRecord
 	containers: ContainersRecord
+	game_events: GameEventsRecord
 	users: UsersRecord
 }
 
@@ -150,7 +195,9 @@ export type CollectionResponses = {
 	_mfas: MfasResponse
 	_otps: OtpsResponse
 	_superusers: SuperusersResponse
+	capture_policies: CapturePoliciesResponse
 	containers: ContainersResponse
+	game_events: GameEventsResponse
 	users: UsersResponse
 }
 
