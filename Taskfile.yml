@@ -73,13 +73,16 @@ tasks:
   test:
     desc: Run Go tests and frontend type-check
     cmds:
-      - go test ./...
+      # Scope matches `task lint` — keeps `./...` from walking into the
+      # root-owned containers/ bind-mount tree when local containers have
+      # run as root (see docs/prod_deployment / Container caveats).
+      - go test ./cmd/... ./internal/...
       - cd sveltekit && pnpm check
 
   fmt:
     desc: Format Go and frontend code
     cmds:
-      - go fmt ./...
+      - go fmt ./cmd/... ./internal/...
       - cd sveltekit && pnpm format
 
   lint:
