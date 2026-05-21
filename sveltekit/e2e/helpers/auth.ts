@@ -3,7 +3,7 @@
 // auth.svelte.ts hits during hydrate(): users/auth-refresh and /api/me.
 //
 // Used together with installPodMocks() from ./mocks — together they let a spec
-// screenshot any /pod/* route against the static sirv build without booting
+// screenshot any /admin/pod/* route against the static sirv build without booting
 // PocketBase. Workers should not modify this file.
 
 import type { Page } from '@playwright/test';

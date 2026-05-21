@@ -3,13 +3,13 @@ import { loginAsAdmin } from '../helpers/auth';
 import { installPodMocks, MOCK_INSTANCE_LIVE } from '../helpers/mocks';
 import { screenshotPodRoute } from '../helpers/screenshot';
 
-test('debug-events: /pod/[name]/debug/#events renders header + feed and toggles JSON', async ({
+test('debug-events: /admin/pod/[name]/debug/#events renders header + feed and toggles JSON', async ({
 	page
 }) => {
 	await installPodMocks(page);
 	await loginAsAdmin(page);
 
-	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#events`);
+	await page.goto(`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#events`);
 	await page.waitForLoadState('networkidle');
 
 	// Envelope-stats header tiles render (even when the mocked WS hands us
@@ -38,5 +38,5 @@ test('debug-events: /pod/[name]/debug/#events renders header + feed and toggles 
 
 	// Final screenshot: capture the route at every viewport so the PR carries
 	// visual evidence the new header / view-toggle render across breakpoints.
-	await screenshotPodRoute(page, `/pod/${MOCK_INSTANCE_LIVE}/debug/#events`, 'debug-events');
+	await screenshotPodRoute(page, `/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#events`, 'debug-events');
 });

@@ -180,7 +180,7 @@
 				success: { title: 'Deleted', description: name },
 				errorTitle: 'Delete failed'
 			});
-			await goto(resolve('/pod/'));
+			await goto(resolve('/admin/pod/'));
 		} catch {
 			busyAction = null;
 		}
@@ -207,7 +207,7 @@
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
 	<div class="flex items-center justify-between gap-2">
-		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/')}>
+		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/pod/')}>
 			<ArrowLeftIcon class="size-4" />
 			Back to pods
 		</a>
@@ -327,7 +327,7 @@
 
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 		<a
-			href={resolve('/pod/[name]/view', { name })}
+			href={resolve('/admin/pod/[name]/view', { name })}
 			class="block rounded-container transition hover:bg-surface-200-800 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:outline-none"
 		>
 			<Card size="md" tone="filled" class="flex h-full flex-col items-start gap-2">
@@ -341,7 +341,7 @@
 			</Card>
 		</a>
 		<a
-			href={resolve('/pod/[name]/debug', { name })}
+			href={resolve('/admin/pod/[name]/debug', { name })}
 			class="block rounded-container transition hover:bg-surface-200-800 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:outline-none"
 		>
 			<Card size="md" tone="filled" class="flex h-full flex-col items-start gap-2">
@@ -355,7 +355,7 @@
 			</Card>
 		</a>
 		<a
-			href={resolve('/pod/[name]/probe', { name })}
+			href={resolve('/admin/pod/[name]/probe', { name })}
 			class="block rounded-container transition hover:bg-surface-200-800 focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:outline-none"
 		>
 			<Card size="md" tone="filled" class="flex h-full flex-col items-start gap-2">
@@ -382,7 +382,7 @@
 			<div class="text-sm">
 				No container record for <code>{name}</code>. It may be an external QMP orphan or it may have
 				been deleted.
-				<a class="anchor" href={resolve('/pod/')}>Back to pods</a>.
+				<a class="anchor" href={resolve('/admin/pod/')}>Back to pods</a>.
 			</div>
 		</Card>
 	{:else}

@@ -237,11 +237,13 @@
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
 	<div class="flex items-center justify-between gap-2">
-		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/[name]', { name })}>
+		<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/pod/[name]', { name })}>
 			<ArrowLeftIcon class="size-4" />
 			Back to pod
 		</a>
-		<a class="btn preset-tonal btn-sm" href={resolve('/pod/[name]/probe', { name })}>Probe →</a>
+		<a class="btn preset-tonal btn-sm" href={resolve('/admin/pod/[name]/probe', { name })}
+			>Probe →</a
+		>
 	</div>
 	<PageHeader title={name}>
 		{#snippet actions()}
@@ -304,7 +306,9 @@
 	{#if !runnerAttached && !gameData && !tick}
 		<div class="card preset-tonal p-3 text-sm">
 			No scraper attached for this instance. Start it from
-			<a class="anchor" href={resolve('/pod/[name]/view', { name })}>/pod/[name]/view/</a>.
+			<a class="anchor" href={resolve('/admin/pod/[name]/view', { name })}
+				>/admin/pod/[name]/view/</a
+			>.
 		</div>
 	{/if}
 

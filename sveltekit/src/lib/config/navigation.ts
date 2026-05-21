@@ -1,4 +1,4 @@
-import { BoxIcon, FilmIcon, SettingsIcon, UsersIcon } from '@lucide/svelte';
+import { BoxIcon, PlayIcon, SettingsIcon, ShieldIcon, TrophyIcon, UsersIcon } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
 export interface NavLink {
@@ -12,29 +12,27 @@ export interface NavLink {
 }
 
 export interface NavGroup {
-	label: string;
+	label?: string;
 	href?: string;
+	icon?: Component;
 	links: NavLink[];
 	adminOnly?: boolean;
 }
 
 export const mainGroups: NavGroup[] = [
 	{
-		label: 'Overlays',
-		links: [{ label: 'Players', href: '/overlays/players/', icon: UsersIcon, showInBar: true }]
+		links: [
+			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true },
+			{ label: 'Series', href: '/series/', icon: TrophyIcon },
+			{ label: 'Teams', href: '/teams/', icon: UsersIcon }
+		]
 	},
 	{
 		label: 'Admin',
+		href: '/admin/',
+		icon: ShieldIcon,
 		adminOnly: true,
-		links: [
-			{ label: 'Pod', href: '/pod/', icon: BoxIcon, showInBar: true },
-			{
-				label: 'Capture',
-				href: '/capture-policies/',
-				icon: FilmIcon,
-				showInBar: false
-			}
-		]
+		links: [{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true }]
 	}
 ];
 

@@ -269,7 +269,7 @@
 
 	<header class="flex flex-wrap items-center gap-2">
 		<a
-			href={resolve('/pod/[name]', { name })}
+			href={resolve('/admin/pod/[name]', { name })}
 			class="btn-icon preset-tonal"
 			aria-label="Back to pod"
 		>
@@ -286,7 +286,7 @@
 	{#if !detail && !loading}
 		<div class="card preset-tonal p-3 text-sm">
 			No container record for <code>{name}</code>. Create one on
-			<a class="anchor" href={resolve('/pod/')}>/pod/</a>.
+			<a class="anchor" href={resolve('/admin/pod/')}>/admin/pod/</a>.
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3 lg:grid lg:grid-cols-[2fr_1fr] lg:gap-4">

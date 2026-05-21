@@ -127,13 +127,13 @@
 </script>
 
 <div class="mx-auto flex max-w-7xl flex-col gap-4">
-	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/pod/[name]', { name })}>
+	<a class="flex items-center gap-1 anchor text-sm" href={resolve('/admin/pod/[name]', { name })}>
 		<ArrowLeftIcon class="size-4" />
 		Back to pod
 	</a>
 	<PageHeader title={name} description="Address hunting — live diagnostics + ad-hoc memory probes.">
 		{#snippet actions()}
-			<a class="btn preset-tonal btn-sm" href={resolve('/pod/[name]/debug', { name })}>
+			<a class="btn preset-tonal btn-sm" href={resolve('/admin/pod/[name]/debug', { name })}>
 				<BugIcon class="size-4" />
 				<span>Debug page</span>
 			</a>
@@ -149,7 +149,9 @@
 		{#if !inspect}
 			<div class="card preset-tonal p-3 text-sm">
 				No scraper attached for this instance. Start it from
-				<a class="anchor" href={resolve('/pod/[name]/view', { name })}>/pod/[name]/view/</a>.
+				<a class="anchor" href={resolve('/admin/pod/[name]/view', { name })}
+					>/admin/pod/[name]/view/</a
+				>.
 			</div>
 		{:else}
 			<ProbeTab {name} />

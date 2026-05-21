@@ -1,4 +1,4 @@
-// Playwright mock-API helper. Intercepts the /api/admin/* endpoints the /pod/*
+// Playwright mock-API helper. Intercepts the /api/admin/* endpoints the /admin/pod/*
 // routes consume and returns realistic fixture JSON so every screenshot has
 // populated, deterministic data.
 //
@@ -468,7 +468,7 @@ export async function installPodMocks(page: Page): Promise<void> {
 	await page.route('**/api/admin/scraper/*/start', (route) => route.fulfill({ status: 204 }));
 	await page.route('**/api/admin/scraper/*/stop', (route) => route.fulfill({ status: 204 }));
 
-	// Ad-hoc xemu probe endpoints — small canned JSON so the /pod/probe page's
+	// Ad-hoc xemu probe endpoints — small canned JSON so the /admin/pod/probe page's
 	// "Run" buttons return something useful for screenshots.
 	await page.route('**/api/admin/xemu/probe**', (route) =>
 		route.fulfill(

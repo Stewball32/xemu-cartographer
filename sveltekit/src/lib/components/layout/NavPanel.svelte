@@ -32,13 +32,19 @@
 	let visibleGroups = $derived(
 		mainGroups
 			.filter((g) => !g.adminOnly || isAdmin())
-			.map((g) => ({
-				...g,
-				links: g.links
-					.filter((l) => !l.adminOnly || isAdmin())
-					.filter((l) => isVisible(l, navLayout))
-			}))
-			.filter((g) => g.links.length > 0)
+			.map((g) => {
+				const collapseToRailIcon = navLayout === 'rail' && !!g.icon && !!g.href;
+				return {
+					...g,
+					collapseToRailIcon,
+					links: collapseToRailIcon
+						? []
+						: g.links
+								.filter((l) => !l.adminOnly || isAdmin())
+								.filter((l) => isVisible(l, navLayout))
+				};
+			})
+			.filter((g) => g.collapseToRailIcon || g.links.length > 0)
 	);
 
 	let visibleFooterLinks = $derived(footerLinks.filter((l) => isVisible(l, navLayout)));
@@ -78,43 +84,59 @@
 			</Navigation.Header>
 		{/if}
 		<Navigation.Content class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-			{#each visibleGroups as group (group.label)}
+			{#each visibleGroups as group (group.label ?? group.href ?? group.links[0]?.href)}
 				<Navigation.Group>
-					{#if navLayout === 'sidebar'}
-						<Navigation.Label>
-							{#if group.href}
-								<!-- eslint-disable svelte/no-navigation-without-resolve -->
-								<a
-									href={group.href}
-									aria-current={currentPath === group.href ? 'page' : undefined}
-									class="hover:underline aria-[current=page]:underline"
-									onclick={!isDesktop ? close : undefined}
-								>
-									{group.label}
-								</a>
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{:else}
-								{group.label}
-							{/if}
-						</Navigation.Label>
-					{/if}
-					<Navigation.Menu>
-						{#each group.links as link (link.href)}
+					{#if group.collapseToRailIcon && group.icon && group.href}
+						{@const GroupIcon = group.icon}
+						{@const groupHref = group.href}
+						<Navigation.Menu class="flex-none! justify-start!">
 							<Navigation.TriggerAnchor
-								href={link.href}
-								aria-current={currentPath === link.href ? 'page' : undefined}
+								href={groupHref}
+								aria-current={currentPath.startsWith(groupHref) ? 'page' : undefined}
 								class="aria-[current=page]:preset-tonal"
 								onclick={!isDesktop ? close : undefined}
 							>
-								<link.icon class="size-5" />
-								<Navigation.TriggerText>{link.label}</Navigation.TriggerText>
+								<GroupIcon class="size-5" />
+								<Navigation.TriggerText>{group.label}</Navigation.TriggerText>
 							</Navigation.TriggerAnchor>
-						{/each}
-					</Navigation.Menu>
+						</Navigation.Menu>
+					{:else}
+						{#if navLayout === 'sidebar' && group.label}
+							<Navigation.Label>
+								{#if group.href}
+									<!-- eslint-disable svelte/no-navigation-without-resolve -->
+									<a
+										href={group.href}
+										aria-current={currentPath === group.href ? 'page' : undefined}
+										class="hover:underline aria-[current=page]:underline"
+										onclick={!isDesktop ? close : undefined}
+									>
+										{group.label}
+									</a>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								{:else}
+									{group.label}
+								{/if}
+							</Navigation.Label>
+						{/if}
+						<Navigation.Menu class="flex-none! justify-start!">
+							{#each group.links as link (link.href)}
+								<Navigation.TriggerAnchor
+									href={link.href}
+									aria-current={currentPath === link.href ? 'page' : undefined}
+									class="aria-[current=page]:preset-tonal"
+									onclick={!isDesktop ? close : undefined}
+								>
+									<link.icon class="size-5" />
+									<Navigation.TriggerText>{link.label}</Navigation.TriggerText>
+								</Navigation.TriggerAnchor>
+							{/each}
+						</Navigation.Menu>
+					{/if}
 				</Navigation.Group>
 			{/each}
 		</Navigation.Content>
-		<Navigation.Footer>
+		<Navigation.Footer class="mt-auto">
 			<Navigation.Menu>
 				{#each visibleFooterLinks as link (link.href)}
 					<Navigation.TriggerAnchor

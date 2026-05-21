@@ -15,7 +15,7 @@ test('debug-tick: tick tab renders Pretty sections + envelope header + JSON view
 	await loginAsAdmin(page);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#tick`);
+	await page.goto(`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#tick`);
 	await page.waitForLoadState('networkidle');
 
 	// Scope assertions to the active Tick tabpanel so labels that also live

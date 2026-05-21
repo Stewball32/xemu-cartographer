@@ -1,5 +1,5 @@
 // Scenario debug tab — verifies the migrated xbox-pattern Pretty/JSON views
-// render against the mocked /pod/* fixture set. Walks the envelope-stats
+// render against the mocked /admin/pod/* fixture set. Walks the envelope-stats
 // header, every Pretty Accordion section heading, and the post-toggle
 // TreeView before capturing a desktop screenshot.
 
@@ -26,7 +26,7 @@ test('debug-scenario: Pretty/JSON tab renders headings + tree on mocked instance
 	await loginAsAdmin(page);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#scenario`);
+	await page.goto(`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#scenario`);
 	await page.waitForLoadState('networkidle');
 
 	// Skeleton Tabs.Content keeps every panel mounted but hides inactive

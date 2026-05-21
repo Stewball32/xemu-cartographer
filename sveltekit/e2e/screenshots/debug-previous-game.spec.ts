@@ -8,13 +8,13 @@ import { loginAsAdmin } from '../helpers/auth';
 import { installPodMocks, MOCK_INSTANCE_LIVE } from '../helpers/mocks';
 import { screenshotPodRoute } from '../helpers/screenshot';
 
-test('debug-previous-game: /pod/[name]/debug/#previous_game renders envelope-class tab', async ({
+test('debug-previous-game: /admin/pod/[name]/debug/#previous_game renders envelope-class tab', async ({
 	page
 }) => {
 	await installPodMocks(page);
 	await loginAsAdmin(page);
 
-	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#previous_game`);
+	await page.goto(`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#previous_game`);
 	await page.waitForLoadState('networkidle');
 
 	// Scope every assertion to the active tab's panel — Skeleton keeps
@@ -53,7 +53,7 @@ test('debug-previous-game: /pod/[name]/debug/#previous_game renders envelope-cla
 
 	await screenshotPodRoute(
 		page,
-		`/pod/${MOCK_INSTANCE_LIVE}/debug/#previous_game`,
+		`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#previous_game`,
 		'debug-previous-game'
 	);
 });

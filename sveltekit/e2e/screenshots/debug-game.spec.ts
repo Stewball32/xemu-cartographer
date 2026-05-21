@@ -1,4 +1,4 @@
-// Debug-page Game-tab smoke + screenshot. Navigates to /pod/<live>/debug/#game,
+// Debug-page Game-tab smoke + screenshot. Navigates to /admin/pod/<live>/debug/#game,
 // activates the Game tab, and asserts the rewritten tab renders its
 // envelope-stats header tiles, every Pretty section heading, and the JSON
 // view's TreeView after toggling the Switch.
@@ -14,11 +14,11 @@ import { loginAsAdmin } from '../helpers/auth';
 import { installPodMocks, MOCK_INSTANCE_LIVE } from '../helpers/mocks';
 import { screenshotPodRoute } from '../helpers/screenshot';
 
-test('debug-game: /pod/[name]/debug/#game renders Pretty/JSON game tab', async ({ page }) => {
+test('debug-game: /admin/pod/[name]/debug/#game renders Pretty/JSON game tab', async ({ page }) => {
 	await installPodMocks(page);
 	await loginAsAdmin(page);
 
-	await page.goto(`/pod/${MOCK_INSTANCE_LIVE}/debug/#game`);
+	await page.goto(`/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#game`);
 	await page.waitForLoadState('networkidle');
 
 	// Hash-driven tab selection happens during onMount; nudge via the
@@ -53,5 +53,5 @@ test('debug-game: /pod/[name]/debug/#game renders Pretty/JSON game tab', async (
 	// envelope arrives (the empty-state copy lives inside the same card).
 	await expect(gameTab.getByText('tree', { exact: true })).toBeVisible();
 
-	await screenshotPodRoute(page, `/pod/${MOCK_INSTANCE_LIVE}/debug/#game`, 'debug-game');
+	await screenshotPodRoute(page, `/admin/pod/${MOCK_INSTANCE_LIVE}/debug/#game`, 'debug-game');
 });
