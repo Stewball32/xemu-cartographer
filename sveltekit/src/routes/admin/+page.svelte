@@ -6,7 +6,7 @@
 		BoxIcon,
 		DatabaseIcon,
 		KeyIcon,
-		UserCogIcon,
+		UserIcon,
 		UsersIcon
 	} from '@lucide/svelte';
 	import type { Component } from 'svelte';
@@ -50,11 +50,19 @@
 			status: 'live'
 		},
 		{
-			title: 'Identity',
-			description: 'Gamertags, teams, and team rosters.',
-			icon: UserCogIcon,
-			href: resolve('/admin/identity/'),
-			status: 'placeholder',
+			title: 'Players',
+			description: 'Moderate user gamertags.',
+			icon: UserIcon,
+			href: resolve('/admin/players/'),
+			status: 'live',
+			milestone: 'M07'
+		},
+		{
+			title: 'Rosters',
+			description: 'Team metadata + roster history.',
+			icon: UsersIcon,
+			href: resolve('/admin/rosters/'),
+			status: 'live',
 			milestone: 'M07'
 		},
 		{

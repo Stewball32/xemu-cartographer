@@ -3,8 +3,8 @@ import {
 	PlayIcon,
 	SettingsIcon,
 	ShieldIcon,
-	TagIcon,
 	TrophyIcon,
+	UserIcon,
 	UsersIcon
 } from '@lucide/svelte';
 import type { Component } from 'svelte';
@@ -42,7 +42,8 @@ export const mainGroups: NavGroup[] = [
 		adminOnly: true,
 		links: [
 			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
-			{ label: 'Identity', href: '/admin/identity/', icon: TagIcon }
+			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
+			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon }
 		]
 	}
 ];
