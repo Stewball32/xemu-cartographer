@@ -2,9 +2,10 @@
 
 Architecture Decision Records — one markdown per decision. Copy [`_template.md`](_template.md) when recording a new one.
 
-| ID   | Title                                                | Status   | Date       |
-| ---- | ---------------------------------------------------- | -------- | ---------- |
-| 0001 | [Version from git tag](0001-version-from-git-tag.md) | Accepted | 2026-05-16 |
+| ID   | Title                                                                  | Status   | Date       |
+| ---- | ---------------------------------------------------------------------- | -------- | ---------- |
+| 0001 | [Version from git tag](0001-version-from-git-tag.md)                   | Accepted | 2026-05-16 |
+| 0002 | [Unified `audit_log` collection](0002-unified-audit-log-collection.md) | Accepted | 2026-05-26 |
 
 ## Status values
 

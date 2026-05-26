@@ -3,11 +3,11 @@
 > **Status:** Planned
 > **Started:** —
 > **Completed:** —
-> **Depends on:** M07 (specifically the 7h audit-log writeup, which determines whether moderation columns live on-record or in a unified `audit_log` collection)
+> **Depends on:** M07 + [ADR-0002 (unified `audit_log` collection)](../decisions/0002-unified-audit-log-collection.md), which fixes the moderation/history shape M22 builds on.
 
 ## Goal
 
-Stand up the moderation infrastructure that turns M07's identity schema into something safe to expose. Gamertags and team names become 4-state (approved / allowed / pending / blocked) with an admin queue, edits flip back to "allowed" for re-check, and a reserved-name pre-list catches obvious bad submissions before they hit the public view. The audit columns / collection shape is inherited from M7's 7h writeup so we don't relitigate it here.
+Stand up the moderation infrastructure that turns M07's identity schema into something safe to expose. Gamertags and team names become 4-state (approved / allowed / pending / blocked) with an admin queue, edits flip back to "allowed" for re-check, and a reserved-name pre-list catches obvious bad submissions before they hit the public view. Audit shape comes from ADR-0002 (unified `audit_log` collection): per-row state columns + an event-sourced trail in `audit_log`.
 
 Implicitly raises trust in the platform: users can submit content freely (default = visible), but admins have a single review queue and an audit trail that survives both admin succession and per-row deletion.
 
@@ -31,10 +31,10 @@ Implicitly raises trust in the platform: users can submit content freely (defaul
 
 ## Actions
 
-- [ ] Apply M7's 7h audit-log recommendation (unified collection or per-row columns).
+- [ ] Materialize the `audit_log` collection per [ADR-0002](../decisions/0002-unified-audit-log-collection.md). Build the `internal/audit/` write helper + per-action payload structs.
 - [ ] Tasks #7, #10, #12, #17 from the open task list — see those for sub-bullets.
-- [ ] Migrate existing `blocked: bool` rows → 4-state `status`.
-- [ ] Wire the admin queue views into the post-7f Players + Rosters admin pages.
+- [ ] Migrate existing `blocked: bool` rows → 4-state `status`; synthesize `audit_log` rows (`actor=null, action='block'`) for the historical block events.
+- [ ] Wire the admin queue views into the existing /admin/players/ + /admin/rosters/ pages (split landed in M7f).
 
 ## Verification
 
@@ -49,3 +49,4 @@ Implicitly raises trust in the platform: users can submit content freely (defaul
 _Append-only. Never edit past entries; add a new dated line._
 
 - 2026-05-26: created — drafted alongside M07 scope expansion. Hard-depends on the 7h writeup for the audit-column shape.
+- 2026-05-26: ADR-0002 lands the audit-log shape decision (unified `audit_log` collection). M22 unblocked.
