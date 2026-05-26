@@ -57,6 +57,24 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		})
 	}
 
+	// Soft-delete (M7d). Hard delete loses every FK back through gamertags +
+	// rosters + teams.created_by, which would scrub real game history when a
+	// user "deletes their account". Instead, mark + tombstone: the
+	// users_soft_delete_pii hook blanks email/name/bio/location/avatar when
+	// is_deleted flips false→true. Login auth is blocked by the AuthRule
+	// below. Reactivation pathway is out of scope; a separate hard-delete
+	// path for legal/GDPR may land later.
+	if users.Fields.GetByName("is_deleted") == nil {
+		users.Fields.Add(&core.BoolField{
+			Name: "is_deleted",
+		})
+	}
+	if users.Fields.GetByName("deleted_at") == nil {
+		users.Fields.Add(&core.DateField{
+			Name: "deleted_at",
+		})
+	}
+
 	// default_gamertag points at the user's "show me as" pick. Nullable —
 	// freshly-created users get auto-populated by the
 	// users_default_gamertag hook, but the field stays unconstrained at
@@ -88,6 +106,14 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		Username:  "username", // OAuth2 username   → users.username
 		Id:        "",         // OAuth2 id         → (unmapped)
 	}
+
+	// Soft-deleted users cannot log in. AuthRule gates every auth method
+	// (password, OAuth, OTP) so a tombstoned account stays inaccessible
+	// without us touching the individual auth handlers. Other rules
+	// (ListRule/ViewRule/etc.) stay at PB defaults — admins can still
+	// see deleted rows through the superuser UI for moderation review.
+	authRule := "is_deleted = false"
+	users.AuthRule = &authRule
 
 	return app.Save(users)
 }

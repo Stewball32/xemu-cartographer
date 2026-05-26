@@ -367,14 +367,14 @@
 	async function deleteAccount() {
 		if (!auth.user) return;
 		const confirmed = confirm(
-			'Permanently delete your account and all associated data? This cannot be undone.'
+			'Mark your account as deleted? Your gamertag, roster, and team history stay attached to "[deleted user]" so past games remain readable, but your email, display name, bio, and avatar are blanked and you cannot log back in.'
 		);
 		if (!confirmed) return;
 		deleting = true;
 		try {
-			await toastPromise(pb.collection('users').delete(auth.user.id), {
+			await toastPromise(pb.collection('users').update(auth.user.id, { is_deleted: true }), {
 				loading: { title: 'Deleting account' },
-				success: { title: 'Deleted', description: 'Your account has been removed.' },
+				success: { title: 'Deleted', description: 'Your account has been tombstoned.' },
 				errorTitle: 'Delete failed'
 			});
 			auth.logout();

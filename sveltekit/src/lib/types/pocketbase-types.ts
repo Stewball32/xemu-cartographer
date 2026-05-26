@@ -186,10 +186,12 @@ export type UsersRecord = {
 	bio?: string
 	created: IsoAutoDateString
 	default_gamertag?: RecordIdString
+	deleted_at?: IsoDateString
 	email: string
 	emailVisibility?: boolean
 	id: string
 	isAdmin?: boolean
+	is_deleted?: boolean
 	location?: string
 	name?: string
 	password: string
