@@ -8,8 +8,8 @@
 
 <PagePlaceholder
 	title={slug ?? ''}
-	milestone="M15"
-	description="Team stats and roster. K/D/A rolled across only the games where players were repping this team. Per-game-type filters mirror the user profile."
+	milestone="M23"
+	description="Team detail: name + slug + Founded by, current roster with owner/manager badges, former-members section. Lands with M23 (team membership workflows)."
 	backHref={resolve('/teams/')}
 	backLabel="Back to teams"
 />

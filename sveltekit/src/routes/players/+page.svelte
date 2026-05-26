@@ -4,9 +4,9 @@
 </script>
 
 <PagePlaceholder
-	title="Teams"
+	title="Players"
 	milestone="M23"
-	description="Searchable, sortable team list. Doubles as the join-target surface that M23's request-to-join flow consumes. Lands with M23 (team membership workflows)."
+	description="Searchable, sortable player directory. Doubles as the user-search surface that M23's invitation flow consumes from /u/[username]/. Lands with M23 (team membership workflows)."
 	backHref={resolve('/')}
 	backLabel="Back home"
 />
