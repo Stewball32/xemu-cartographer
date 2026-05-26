@@ -11,7 +11,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M04  | [SvelteKit overlay + container management UI](M04-frontend-overlay-ui.md)                   | Done        |
 | M05  | [Scraper & WebSocket phase model + cache refactor](M05-phase-model-refactor.md)             | Done        |
 | M06  | [Frontend polish (theme + auth-refresh fix + debug revamp)](M06-frontend-polish.md)         | Done        |
-| M07  | [Identity schemas: gamertags + teams](M07-identity-schemas.md)                              | Planned     |
+| M07  | [Identity schemas: gamertags + teams](M07-identity-schemas.md)                              | In progress |
 | M08  | [Roles + permissions](M08-roles-permissions.md)                                             | Planned     |
 | M09  | [Match-aware kiosk view](M09-match-aware-kiosk.md)                                          | Planned     |
 | M10  | [Overlay revamp + new browser sources](M10-overlay-revamp.md)                               | Planned     |
@@ -26,6 +26,8 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M19  | [Robustness + offset validation](M19-robustness-offsets.md)                                 | Planned     |
 | M20  | [Halo 2 scraper (with known caveats)](M20-halo2-scraper.md)                                 | Planned     |
 | M21+ | [Open](M21-plus-open.md)                                                                    | Planned     |
+| M22  | [Moderation + audit log](M22-moderation-audit.md)                                           | Planned     |
+| M23  | [Team membership workflows](M23-team-membership-workflows.md)                               | Planned     |
 
 ## Status values
 

@@ -14,6 +14,9 @@ export enum Collections {
 	CapturePolicies = "capture_policies",
 	Containers = "containers",
 	GameEvents = "game_events",
+	Gamertags = "gamertags",
+	Rosters = "rosters",
+	Teams = "teams",
 	Users = "users",
 }
 
@@ -147,10 +150,41 @@ export type GameEventsRecord<Tdata = unknown> = {
 	type: string
 }
 
+export type GamertagsRecord = {
+	blocked?: boolean
+	created: IsoAutoDateString
+	id: string
+	tag: string
+	updated: IsoAutoDateString
+	user: RecordIdString
+}
+
+export type RostersRecord = {
+	created: IsoAutoDateString
+	gamertag: RecordIdString
+	id: string
+	is_captain?: boolean
+	is_manager?: boolean
+	joined_at: IsoDateString
+	left_at?: IsoDateString
+	team: RecordIdString
+	updated: IsoAutoDateString
+}
+
+export type TeamsRecord = {
+	created: IsoAutoDateString
+	created_by: RecordIdString
+	id: string
+	name: string
+	slug: string
+	updated: IsoAutoDateString
+}
+
 export type UsersRecord = {
 	avatar?: FileNameString
 	bio?: string
 	created: IsoAutoDateString
+	default_gamertag?: RecordIdString
 	email: string
 	emailVisibility?: boolean
 	id: string
@@ -173,6 +207,9 @@ export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> &
 export type CapturePoliciesResponse<Texpand = unknown> = Required<CapturePoliciesRecord> & BaseSystemFields<Texpand>
 export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
 export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<GameEventsRecord<Tdata>> & BaseSystemFields<Texpand>
+export type GamertagsResponse<Texpand = unknown> = Required<GamertagsRecord> & BaseSystemFields<Texpand>
+export type RostersResponse<Texpand = unknown> = Required<RostersRecord> & BaseSystemFields<Texpand>
+export type TeamsResponse<Texpand = unknown> = Required<TeamsRecord> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
 
 // Types containing all Records and Responses, useful for creating typing helper functions
@@ -186,6 +223,9 @@ export type CollectionRecords = {
 	capture_policies: CapturePoliciesRecord
 	containers: ContainersRecord
 	game_events: GameEventsRecord
+	gamertags: GamertagsRecord
+	rosters: RostersRecord
+	teams: TeamsRecord
 	users: UsersRecord
 }
 
@@ -198,6 +238,9 @@ export type CollectionResponses = {
 	capture_policies: CapturePoliciesResponse
 	containers: ContainersResponse
 	game_events: GameEventsResponse
+	gamertags: GamertagsResponse
+	rosters: RostersResponse
+	teams: TeamsResponse
 	users: UsersResponse
 }
 

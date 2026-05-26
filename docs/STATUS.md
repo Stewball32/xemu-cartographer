@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-20
+> **Last updated:** 2026-05-26
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -18,6 +18,10 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Next
 
+Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26.
+
+- M22 — Moderation + audit log (depends on M07 7h writeup)
+- M23 — Team membership workflows (depends on M07 + M22)
 - M08 — Roles + permissions
 - M09 — Match-aware kiosk view
 - M10 — Overlay revamp + new browser sources

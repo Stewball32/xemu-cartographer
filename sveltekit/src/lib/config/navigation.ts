@@ -1,4 +1,12 @@
-import { BoxIcon, PlayIcon, SettingsIcon, ShieldIcon, TrophyIcon, UsersIcon } from '@lucide/svelte';
+import {
+	BoxIcon,
+	PlayIcon,
+	SettingsIcon,
+	ShieldIcon,
+	TagIcon,
+	TrophyIcon,
+	UsersIcon
+} from '@lucide/svelte';
 import type { Component } from 'svelte';
 
 export interface NavLink {
@@ -32,7 +40,10 @@ export const mainGroups: NavGroup[] = [
 		href: '/admin/',
 		icon: ShieldIcon,
 		adminOnly: true,
-		links: [{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true }]
+		links: [
+			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
+			{ label: 'Identity', href: '/admin/identity/', icon: TagIcon }
+		]
 	}
 ];
 

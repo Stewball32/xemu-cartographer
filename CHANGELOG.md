@@ -9,6 +9,14 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- M07 — Identity schemas: three new PocketBase collections (`gamertags`, `teams`, `rosters`) plus `users.default_gamertag` FK. Gamertags carry a `blocked` flag for admin soft-moderation; the `(user, tag)` unique index prevents a user from resurrecting a blocked string. Rosters track team-membership history Liquipedia-style — `joined_at` + nullable `left_at`, with the same `(team, gamertag)` allowed in multiple rows for re-joins.
+- M07 — `users_default_gamertag` PB hook: on user creation, auto-creates a gamertag matching the user's `username` and sets `users.default_gamertag` to it. Saves the bootstrap step on first login. Counterpart `gamertags_default_cleanup` clears the FK before a tag is deleted so the relation never dangles.
+- M07 — `/api/me` now returns `default_gamertag` + `gamertags[]` + `teams[]` (each team carrying the caller's `membership` block — captain/manager flags, joined_at, left_at). Superusers get the basic identity payload only (they live in `_superusers`, not `users`).
+- M07 — `pbiface.Gamertags` guards interface (`FindGamertagsForUser`, `FindUserByGamertagString`, `FindActiveRostersForUser`) wired into `*pb.Service` so non-PB systems (scraper, Discord) can resolve player identity without a hard PB import.
+- M07 — Self-service "Gamertags & Teams" tab under `/settings/`: users add/remove their own gamertags, pick a default, create teams (auto-rostered as captain+manager via their default tag). Blocked rows render with a badge and the owner's edit/delete buttons disappear; backend rules enforce the same restriction.
+- M07 — Admin `/admin/identity/` page (replaces the placeholder): three tabs — Gamertags (block/unblock + edit + delete), Teams (edit name/slug + delete), Rosters (edit captain/manager flags + joined_at + left_at + delete). Filter inputs per tab, DataTable + Dialog patterns consistent with `/admin/capture-policies/`.
+- M07 — Navigation gains an `Identity` link in the admin group (`/admin/identity/`, `TagIcon`).
+
 ### Changed
 
 ### Deprecated

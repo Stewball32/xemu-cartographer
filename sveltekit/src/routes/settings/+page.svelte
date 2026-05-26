@@ -14,13 +14,20 @@
 		MapPinIcon,
 		LinkIcon,
 		UnlinkIcon,
-		LoaderIcon
+		LoaderIcon,
+		TagIcon,
+		PlusIcon,
+		StarIcon,
+		UsersIcon,
+		CrownIcon,
+		BriefcaseIcon
 	} from '@lucide/svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import pb from '$lib/pocketbase';
 	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
 	import { toastPromise } from '$lib/stores/toaster';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
+	import { apiBaseURL } from '$lib/utils/api-base';
 
 	let activeTab = $state('general');
 
@@ -62,6 +69,192 @@
 
 	const visibleProviders = $derived(enabledProviders.filter((name) => name in OAUTH_PROVIDERS));
 
+	// Identity tab state
+	interface MeGamertag {
+		id: string;
+		tag: string;
+		blocked: boolean;
+	}
+	interface MeTeamMembership {
+		gamertag_id: string;
+		is_captain: boolean;
+		is_manager: boolean;
+		joined_at: string;
+		left_at: string | null;
+	}
+	interface MeTeam {
+		id: string;
+		name: string;
+		slug: string;
+		membership: MeTeamMembership;
+	}
+	interface MeIdentity {
+		default_gamertag: MeGamertag | null;
+		gamertags: MeGamertag[];
+		teams: MeTeam[];
+	}
+
+	let myGamertags = $state<MeGamertag[]>([]);
+	let myTeams = $state<MeTeam[]>([]);
+	let myDefaultGamertagId = $state<string | null>(null);
+	let identityLoading = $state(false);
+	let newTagInput = $state('');
+	let addingTag = $state(false);
+	let removingTagId = $state<string | null>(null);
+	let settingDefaultId = $state<string | null>(null);
+	let teamCreateOpen = $state(false);
+	let teamCreateName = $state('');
+	let teamCreateSlug = $state('');
+	let teamSlugTouched = $state(false);
+	let creatingTeam = $state(false);
+
+	const identityBaseURL = apiBaseURL();
+
+	function slugify(value: string): string {
+		return value
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
+	$effect(() => {
+		// Auto-derive the slug from the name until the user touches the slug
+		// field directly. After that, leave their typed value alone.
+		if (!teamSlugTouched) teamCreateSlug = slugify(teamCreateName);
+	});
+
+	async function loadIdentity() {
+		if (!auth.token) return;
+		identityLoading = true;
+		try {
+			const res = await fetch(`${identityBaseURL}/api/me`, {
+				headers: { Authorization: auth.token }
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = (await res.json()) as MeIdentity;
+			myGamertags = data.gamertags ?? [];
+			myTeams = data.teams ?? [];
+			myDefaultGamertagId = data.default_gamertag?.id ?? null;
+		} catch {
+			// Don't toast — the tab just stays empty. Network blip is fine.
+			myGamertags = [];
+			myTeams = [];
+			myDefaultGamertagId = null;
+		} finally {
+			identityLoading = false;
+		}
+	}
+
+	async function addGamertag() {
+		if (!auth.user || !newTagInput.trim()) return;
+		const tag = newTagInput.trim();
+		addingTag = true;
+		try {
+			await toastPromise(
+				pb.collection('gamertags').create({ user: auth.user.id, tag, blocked: false }),
+				{
+					loading: { title: 'Adding gamertag' },
+					success: { title: 'Added', description: tag },
+					errorTitle: 'Add failed',
+					errorDescription: (err) => {
+						const m = err instanceof Error ? err.message : 'Failed';
+						return m.toLowerCase().includes('unique') ? 'You already own that gamertag.' : m;
+					}
+				}
+			);
+			newTagInput = '';
+			await loadIdentity();
+		} catch {
+			// toast already shown
+		} finally {
+			addingTag = false;
+		}
+	}
+
+	async function removeGamertag(id: string) {
+		if (!auth.user) return;
+		removingTagId = id;
+		try {
+			await toastPromise(pb.collection('gamertags').delete(id), {
+				loading: { title: 'Removing' },
+				success: { title: 'Removed' },
+				errorTitle: 'Remove failed'
+			});
+			await loadIdentity();
+		} catch {
+			// toast already shown
+		} finally {
+			removingTagId = null;
+		}
+	}
+
+	async function setDefaultGamertag(id: string) {
+		if (!auth.user) return;
+		settingDefaultId = id;
+		try {
+			await toastPromise(pb.collection('users').update(auth.user.id, { default_gamertag: id }), {
+				loading: { title: 'Setting default' },
+				success: { title: 'Default updated' },
+				errorTitle: 'Update failed'
+			});
+			await loadIdentity();
+		} catch {
+			// toast already shown
+		} finally {
+			settingDefaultId = null;
+		}
+	}
+
+	function openTeamCreate() {
+		teamCreateOpen = true;
+		teamCreateName = '';
+		teamCreateSlug = '';
+		teamSlugTouched = false;
+	}
+
+	function closeTeamCreate() {
+		teamCreateOpen = false;
+	}
+
+	async function createTeam() {
+		if (!auth.user || !myDefaultGamertagId) return;
+		const name = teamCreateName.trim();
+		const slug = teamCreateSlug.trim();
+		if (!name || !slug) return;
+		creatingTeam = true;
+		try {
+			const team = await toastPromise(
+				pb.collection('teams').create({ name, slug, created_by: auth.user.id }),
+				{
+					loading: { title: 'Creating team' },
+					success: { title: 'Team created', description: name },
+					errorTitle: 'Create failed',
+					errorDescription: (err) => {
+						const m = err instanceof Error ? err.message : 'Failed';
+						return m.toLowerCase().includes('unique') ? 'Slug is already taken.' : m;
+					}
+				}
+			);
+			// Auto-roster the creator as captain + manager so they can manage
+			// the team without an admin intervention. PB rules permit this
+			// because the acting user is the team's created_by.
+			await pb.collection('rosters').create({
+				team: team.id,
+				gamertag: myDefaultGamertagId,
+				is_captain: true,
+				is_manager: true,
+				joined_at: new Date().toISOString().replace('T', ' ').replace(/\..+$/, '.000Z')
+			});
+			closeTeamCreate();
+			await loadIdentity();
+		} catch {
+			// toast already shown
+		} finally {
+			creatingTeam = false;
+		}
+	}
+
 	onMount(async () => {
 		try {
 			const methods = await pb.collection('users').listAuthMethods();
@@ -70,6 +263,7 @@
 			enabledProviders = [];
 		}
 		await loadLinkedAuths();
+		await loadIdentity();
 	});
 
 	async function loadLinkedAuths() {
@@ -240,6 +434,7 @@
 	<Tabs value={activeTab} onValueChange={(e) => (activeTab = e.value)}>
 		<Tabs.List class="mb-6">
 			<Tabs.Trigger value="general">General</Tabs.Trigger>
+			<Tabs.Trigger value="identity">Gamertags &amp; Teams</Tabs.Trigger>
 			<Tabs.Trigger value="accounts">Connected Accounts</Tabs.Trigger>
 			<Tabs.Indicator />
 		</Tabs.List>
@@ -431,6 +626,228 @@
 					</button>
 					<button class="btn preset-tonal" onclick={resetGeneral} disabled={saving}>Reset</button>
 				</div>
+			</div>
+		</Tabs.Content>
+
+		<!-- Identity Tab -->
+		<Tabs.Content value="identity">
+			<div class="space-y-6">
+				<!-- My Gamertags -->
+				<div class="space-y-4 card p-6">
+					<div class="flex items-center justify-between gap-3">
+						<h2 class="h4">My Gamertags</h2>
+						{#if identityLoading}
+							<LoaderIcon class="size-4 animate-spin opacity-50" />
+						{/if}
+					</div>
+					<p class="text-sm opacity-70">
+						Add the handles you play under. Your default is what other players see by default.
+					</p>
+
+					{#if myGamertags.length === 0}
+						<p class="text-sm opacity-50">No gamertags yet.</p>
+					{:else}
+						<div class="space-y-2">
+							{#each myGamertags as gt (gt.id)}
+								{@const isDefault = gt.id === myDefaultGamertagId}
+								{@const isRemoving = removingTagId === gt.id}
+								{@const isSettingDefault = settingDefaultId === gt.id}
+								<div
+									class="flex items-center justify-between rounded-md border border-surface-300-700 p-3"
+								>
+									<div class="flex items-center gap-3">
+										<TagIcon class="size-4 opacity-50" />
+										<span class="font-mono">{gt.tag}</span>
+										{#if isDefault}
+											<span class="badge preset-tonal-primary text-xs">
+												<StarIcon class="size-3" />
+												Default
+											</span>
+										{/if}
+										{#if gt.blocked}
+											<span class="badge preset-tonal-error text-xs" title="Blocked by an admin">
+												<ShieldAlertIcon class="size-3" />
+												Blocked
+											</span>
+										{/if}
+									</div>
+									<div class="flex items-center gap-2">
+										{#if !isDefault && !gt.blocked}
+											<button
+												class="btn preset-tonal btn-sm"
+												onclick={() => setDefaultGamertag(gt.id)}
+												disabled={isSettingDefault}
+											>
+												{#if isSettingDefault}
+													<LoaderIcon class="size-4 animate-spin" />
+												{:else}
+													<StarIcon class="size-4" />
+												{/if}
+												<span>Set default</span>
+											</button>
+										{/if}
+										{#if !gt.blocked}
+											<button
+												class="btn preset-tonal-error btn-sm"
+												onclick={() => removeGamertag(gt.id)}
+												disabled={isRemoving}
+												title={isDefault
+													? 'Removing your default will clear the default selection'
+													: 'Remove gamertag'}
+											>
+												{#if isRemoving}
+													<LoaderIcon class="size-4 animate-spin" />
+												{:else}
+													<Trash2Icon class="size-4" />
+												{/if}
+											</button>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					<form
+						class="flex items-end gap-2"
+						onsubmit={(e) => {
+							e.preventDefault();
+							addGamertag();
+						}}
+					>
+						<label class="label flex-1">
+							<span>Add a gamertag</span>
+							<div class="input-group grid-cols-[auto_1fr_auto]">
+								<div class="ig-cell"><TagIcon class="size-4" /></div>
+								<input
+									type="text"
+									class="ig-input"
+									placeholder="e.g. Stewball32"
+									maxlength="32"
+									bind:value={newTagInput}
+									disabled={addingTag}
+								/>
+							</div>
+						</label>
+						<button
+							type="submit"
+							class="btn preset-filled"
+							disabled={addingTag || !newTagInput.trim()}
+						>
+							{#if addingTag}
+								<LoaderIcon class="size-4 animate-spin" />
+							{:else}
+								<PlusIcon class="size-4" />
+							{/if}
+							<span>Add</span>
+						</button>
+					</form>
+				</div>
+
+				<!-- My Teams -->
+				<div class="space-y-4 card p-6">
+					<div class="flex items-center justify-between gap-3">
+						<h2 class="h4">My Teams</h2>
+						<button
+							class="btn preset-filled btn-sm"
+							onclick={openTeamCreate}
+							disabled={!myDefaultGamertagId}
+							title={myDefaultGamertagId ? 'Create a new team' : 'Pick a default gamertag first'}
+						>
+							<PlusIcon class="size-4" />
+							<span>Create team</span>
+						</button>
+					</div>
+					<p class="text-sm opacity-70">Teams you are currently rostered on.</p>
+
+					{#if myTeams.length === 0}
+						<p class="text-sm opacity-50">Not on any teams yet.</p>
+					{:else}
+						<div class="space-y-2">
+							{#each myTeams as team (team.id)}
+								<div
+									class="flex items-center justify-between rounded-md border border-surface-300-700 p-3"
+								>
+									<div class="flex items-center gap-3">
+										<UsersIcon class="size-4 opacity-50" />
+										<div>
+											<p class="font-semibold">{team.name}</p>
+											<p class="text-xs opacity-50">{team.slug}</p>
+										</div>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if team.membership.is_captain}
+											<span class="badge preset-tonal-warning text-xs">
+												<CrownIcon class="size-3" />
+												Captain
+											</span>
+										{/if}
+										{#if team.membership.is_manager}
+											<span class="badge preset-tonal-primary text-xs">
+												<BriefcaseIcon class="size-3" />
+												Manager
+											</span>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Team Create Modal (inline; Skeleton's Modal needs portal setup, dialog is simpler) -->
+				{#if teamCreateOpen}
+					<div
+						class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/50 p-4"
+						role="dialog"
+						aria-modal="true"
+					>
+						<div class="w-full max-w-md space-y-4 card p-6">
+							<h3 class="h4">Create team</h3>
+							<label class="label">
+								<span>Name</span>
+								<div class="input-group grid-cols-[auto_1fr_auto]">
+									<div class="ig-cell"><UsersIcon class="size-4" /></div>
+									<input
+										type="text"
+										class="ig-input"
+										maxlength="60"
+										bind:value={teamCreateName}
+										placeholder="NorCal Halo"
+									/>
+								</div>
+							</label>
+							<label class="label">
+								<span>Slug</span>
+								<div class="input-group grid-cols-[auto_1fr_auto]">
+									<div class="ig-cell font-mono text-xs opacity-50">/teams/</div>
+									<input
+										type="text"
+										class="ig-input"
+										maxlength="60"
+										bind:value={teamCreateSlug}
+										onkeydown={() => (teamSlugTouched = true)}
+										placeholder="norcal-halo"
+									/>
+								</div>
+								<p class="text-xs opacity-50">Lowercase letters, numbers, and dashes only.</p>
+							</label>
+							<div class="flex justify-end gap-2">
+								<button class="btn preset-tonal" onclick={closeTeamCreate} disabled={creatingTeam}>
+									Cancel
+								</button>
+								<button
+									class="btn preset-filled"
+									onclick={createTeam}
+									disabled={creatingTeam || !teamCreateName.trim() || !teamCreateSlug.trim()}
+								>
+									{#if creatingTeam}<LoaderIcon class="size-4 animate-spin" />{/if}
+									<span>Create</span>
+								</button>
+							</div>
+						</div>
+					</div>
+				{/if}
 			</div>
 		</Tabs.Content>
 

@@ -4,4 +4,5 @@ package pocketbase
 // Implemented by pocketbase.Service via structural typing.
 type Service interface {
 	Users
+	Gamertags
 }

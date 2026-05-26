@@ -57,6 +57,25 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		})
 	}
 
+	// default_gamertag points at the user's "show me as" pick. Nullable —
+	// freshly-created users get auto-populated by the
+	// users_default_gamertag hook, but the field stays unconstrained at
+	// the schema level so admins can clear it without violating Required.
+	// Lives on users (not as is_primary on gamertags) so there's a single
+	// canonical default per user with no risk of zero or multiple primaries.
+	if users.Fields.GetByName("default_gamertag") == nil {
+		gamertagsCol, err := app.FindCollectionByNameOrId("gamertags")
+		if err != nil {
+			return err
+		}
+		users.Fields.Add(&core.RelationField{
+			Name:          "default_gamertag",
+			CollectionId:  gamertagsCol.Id,
+			MaxSelect:     1,
+			CascadeDelete: false,
+		})
+	}
+
 	// Unique index — idempotent by name
 	const idxName = "idx_users_username_unique"
 	if users.GetIndex(idxName) == "" {
