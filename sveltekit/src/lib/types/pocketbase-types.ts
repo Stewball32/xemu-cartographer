@@ -154,6 +154,7 @@ export type GamertagsRecord = {
 	blocked?: boolean
 	created: IsoAutoDateString
 	id: string
+	sanitized?: string
 	tag: string
 	updated: IsoAutoDateString
 	user: RecordIdString
@@ -163,8 +164,8 @@ export type RostersRecord = {
 	created: IsoAutoDateString
 	gamertag: RecordIdString
 	id: string
-	is_captain?: boolean
 	is_manager?: boolean
+	is_owner?: boolean
 	joined_at: IsoDateString
 	left_at?: IsoDateString
 	team: RecordIdString

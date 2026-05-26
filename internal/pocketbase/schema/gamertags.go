@@ -9,11 +9,17 @@ import (
 // (user, tag) combo. A user can own multiple tags ("Stewball32" / "Stewball"
 // / "Stewie"); the default pick lives on users.default_gamertag.
 //
+// `sanitized` is the lowercased + trimmed mirror of `tag`, maintained by the
+// gamertags_sanitize hook. Uniqueness lives on (user, sanitized) so that case
+// variants ("Stewie" vs "STEWIE") can't dupe — the scraper-side lookup that
+// lands in M9+ also keys off `sanitized` so player-name matching is
+// case-insensitive without needing a `LOWER(tag)` query at hit time.
+//
 // `blocked` is the soft-moderation flag: admins flip it true when a tag is
-// inappropriate. The unique (user, tag) index then prevents the same user
-// from resurrecting the same string, while the row stays around as an audit
-// trail. Owner update/delete is gated on `blocked = false` via the API rules
-// (admins can always edit).
+// inappropriate. The (user, sanitized) unique index then prevents the same
+// user from resurrecting the same string, while the row stays around as an
+// audit trail. Owner update/delete is gated on `blocked = false` via the
+// API rules (admins can always edit).
 //
 // Registration order is controlled by identity.go (not init()) because
 // rosters depends on teams and users depends on gamertags.
@@ -41,8 +47,13 @@ func registerGamertagsCollection(app *pocketbase.PocketBase) error {
 			Name:        "tag",
 			Required:    true,
 			Min:         1,
-			Max:         32,
+			Max:         12,
 			Presentable: true,
+		},
+		&core.TextField{
+			Name: "sanitized",
+			Min:  1,
+			Max:  12,
 		},
 		&core.BoolField{
 			Name: "blocked",
@@ -58,7 +69,8 @@ func registerGamertagsCollection(app *pocketbase.PocketBase) error {
 		},
 	)
 
-	collection.AddIndex("idx_gamertags_user_tag_unique", true, "user, tag", "")
+	collection.AddIndex("idx_gamertags_user_sanitized_unique", true, "user, sanitized", "")
+	collection.AddIndex("idx_gamertags_sanitized", false, "sanitized", "")
 
 	setGamertagsRules(collection)
 

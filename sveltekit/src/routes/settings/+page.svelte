@@ -77,7 +77,7 @@
 	}
 	interface MeTeamMembership {
 		gamertag_id: string;
-		is_captain: boolean;
+		is_owner: boolean;
 		is_manager: boolean;
 		joined_at: string;
 		left_at: string | null;
@@ -236,13 +236,13 @@
 					}
 				}
 			);
-			// Auto-roster the creator as captain + manager so they can manage
+			// Auto-roster the creator as owner + manager so they can manage
 			// the team without an admin intervention. PB rules permit this
 			// because the acting user is the team's created_by.
 			await pb.collection('rosters').create({
 				team: team.id,
 				gamertag: myDefaultGamertagId,
-				is_captain: true,
+				is_owner: true,
 				is_manager: true,
 				joined_at: new Date().toISOString().replace('T', ' ').replace(/\..+$/, '.000Z')
 			});
@@ -776,10 +776,10 @@
 										</div>
 									</div>
 									<div class="flex items-center gap-2">
-										{#if team.membership.is_captain}
+										{#if team.membership.is_owner}
 											<span class="badge preset-tonal-warning text-xs">
 												<CrownIcon class="size-3" />
-												Captain
+												Owner
 											</span>
 										{/if}
 										{#if team.membership.is_manager}

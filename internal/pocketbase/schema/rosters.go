@@ -46,7 +46,7 @@ func registerRostersCollection(app *pocketbase.PocketBase) error {
 			MaxSelect:     1,
 			CascadeDelete: false,
 		},
-		&core.BoolField{Name: "is_captain"},
+		&core.BoolField{Name: "is_owner"},
 		&core.BoolField{Name: "is_manager"},
 		&core.DateField{
 			Name:     "joined_at",

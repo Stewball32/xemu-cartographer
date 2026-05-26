@@ -44,7 +44,7 @@ type teamInfo struct {
 
 type teamMembershipInfo struct {
 	GamertagID string  `json:"gamertag_id"`
-	IsCaptain  bool    `json:"is_captain"`
+	IsOwner    bool    `json:"is_owner"`
 	IsManager  bool    `json:"is_manager"`
 	JoinedAt   string  `json:"joined_at"`
 	LeftAt     *string `json:"left_at"`
@@ -133,7 +133,7 @@ func registerMeRoute(se *core.ServeEvent) {
 					Slug: team.GetString("slug"),
 					Membership: teamMembershipInfo{
 						GamertagID: r.GetString("gamertag"),
-						IsCaptain:  r.GetBool("is_captain"),
+						IsOwner:    r.GetBool("is_owner"),
 						IsManager:  r.GetBool("is_manager"),
 						JoinedAt:   r.GetDateTime("joined_at").String(),
 						LeftAt:     nil,

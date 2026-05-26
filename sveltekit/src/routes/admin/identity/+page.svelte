@@ -58,7 +58,7 @@
 		id: string;
 		team: string;
 		gamertag: string;
-		is_captain: boolean;
+		is_owner: boolean;
 		is_manager: boolean;
 		joined_at: string;
 		left_at: string;
@@ -101,7 +101,7 @@
 	let rsDialogOpen = $state(false);
 	let rsForm = $state({
 		id: '',
-		is_captain: false,
+		is_owner: false,
 		is_manager: false,
 		joined_at: '',
 		left_at: ''
@@ -289,7 +289,7 @@
 	function openRsEdit(row: RosterRow) {
 		rsForm = {
 			id: row.id,
-			is_captain: row.is_captain,
+			is_owner: row.is_owner,
 			is_manager: row.is_manager,
 			joined_at: toDateInputValue(row.joined_at),
 			left_at: row.left_at ? toDateInputValue(row.left_at) : ''
@@ -303,7 +303,7 @@
 			rsFormBusy = true;
 			await toastPromise(
 				pb.collection('rosters').update(f.id, {
-					is_captain: f.is_captain,
+					is_owner: f.is_owner,
 					is_manager: f.is_manager,
 					joined_at: fromDateInputValue(f.joined_at),
 					left_at: f.left_at ? fromDateInputValue(f.left_at) : ''
@@ -731,9 +731,9 @@
 				{/snippet}
 				{#snippet rsRoleCell({ row }: { row: RosterRow })}
 					<div class="flex gap-1">
-						{#if row.is_captain}<span class="badge preset-tonal-warning text-xs">C</span>{/if}
+						{#if row.is_owner}<span class="badge preset-tonal-warning text-xs">O</span>{/if}
 						{#if row.is_manager}<span class="badge preset-tonal-primary text-xs">M</span>{/if}
-						{#if !row.is_captain && !row.is_manager}<span class="text-xs opacity-50">—</span>{/if}
+						{#if !row.is_owner && !row.is_manager}<span class="text-xs opacity-50">—</span>{/if}
 					</div>
 				{/snippet}
 				{#snippet rsDatesCell({ row }: { row: RosterRow })}
@@ -920,10 +920,10 @@
 				<input
 					type="checkbox"
 					class="checkbox"
-					bind:checked={rsForm.is_captain}
+					bind:checked={rsForm.is_owner}
 					disabled={rsFormBusy}
 				/>
-				<span class="text-sm">Captain</span>
+				<span class="text-sm">Owner</span>
 			</label>
 			<label class="flex items-center gap-2">
 				<input
