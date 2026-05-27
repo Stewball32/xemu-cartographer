@@ -9,11 +9,29 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- M07 — Identity schemas: three new PocketBase collections (`gamertags`, `teams`, `rosters`) plus `users.default_gamertag` FK. Gamertags carry a `blocked` flag for admin soft-moderation; the unique index prevents a user from resurrecting a blocked string. Rosters track team-membership history Liquipedia-style — `joined_at` + nullable `left_at`, with the same `(team, gamertag)` allowed in multiple rows for re-joins.
+- M07 — `users_default_gamertag` PB hook: on user creation, auto-creates a gamertag matching the user's `username` and sets `users.default_gamertag` to it. Saves the bootstrap step on first login. Counterpart `gamertags_default_cleanup` clears the FK before a tag is deleted so the relation never dangles.
+- M07 — `/api/me` now returns `default_gamertag` + `gamertags[]` + `teams[]` (each team carrying the caller's `membership` block — owner/manager flags, joined_at, left_at). Superusers get the basic identity payload only (they live in `_superusers`, not `users`).
+- M07 — `pbiface.Gamertags` guards interface (`FindGamertagsForUser`, `FindUserByGamertagString`, `FindActiveRostersForUser`) wired into `*pb.Service` so non-PB systems (scraper, Discord) can resolve player identity without a hard PB import.
+- M07 — Self-service "Gamertags & Teams" section under `/settings/`: users add/remove their own gamertags, pick a default, create teams (auto-rostered as owner+manager via their default tag). Blocked rows render with a badge and the owner's edit/delete buttons disappear; backend rules enforce the same restriction.
+- M07 — Admin `/admin/players/` (gamertag moderation) and `/admin/rosters/` (Teams + Rosters tabs). Filter inputs, DataTable + Dialog patterns consistent with `/admin/capture-policies/`. `/players/` public placeholder created (didn't exist before) pointing at M23.
+- M07 — Soft-delete users (7d): `is_deleted` + `deleted_at` fields with auth gated on `is_deleted = false` so a tombstoned account can't log back in; `users_soft_delete_pii` hook blanks email/name/bio/location/avatar + clears default_gamertag on the false→true transition. `/u/[username]/` resolves deleted accounts to a tombstone render.
+- M07 — `gamertags.sanitized` column (lowercased + trimmed, maintained by the `gamertags_sanitize` hook on pre-create/pre-update) + non-unique `sanitized` index for the scraper-side player-name lookup that lands in M9+.
+- ADR-0002 (`docs/decisions/0002-unified-audit-log-collection.md`) commits to a unified `audit_log` collection (actor / target_collection / target_id / action / payload_json / created) as the shape M22 builds on. Per-row state columns stay on each collection for current-state queries; transitions live in `audit_log`.
+
 ### Changed
+
+- M07 — Gamertag `tag` cap shrinks 32 → 12; uniqueness moves from `(user, tag)` to `(user, sanitized)` so case variants ("Stewie" vs "STEWIE") can't dupe.
+- M07 — `is_captain` → `is_owner` everywhere (schema, `/api/me` JSON, generated types, settings UI, admin UI). Captain concept deferred; team-level roles are now Owner + Manager. Admin role badge updated from "C" to "O".
+- M07 — `users.username` becomes immutable post-creation via the `users_username_immutable` pre-update hook (PB collection rules can't express "block changes, allow no-ops"). Settings General gains a read-only Username row pointing users at gamertags as the change-of-handle mechanism.
+- M07 — `/settings/` swaps the three-tab layout for three stacked sections (General / Gamertags & Teams / Connected Accounts). Email change splits off from the general save — a dedicated "Change email" button runs PocketBase's `requestEmailChange` flow (PB mails the new address, flips `verified=false` on confirm).
+- M07 — `/admin/+page` tile grid: Identity tile replaced by Players + Rosters tiles (both Live, M07). Top navigation Identity link replaced by Players + Rosters links in the Admin group.
 
 ### Deprecated
 
 ### Removed
+
+- M07 — `/admin/identity/` route — split into `/admin/players/` + `/admin/rosters/`.
 
 ### Fixed
 

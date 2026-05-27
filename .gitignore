@@ -48,3 +48,9 @@ Thumbs.db
 
 # Claude Code (local-only state + agent worktrees)
 /.claude/
+
+# Playwright MCP scratch — per-call page snapshots, console logs, and
+# screenshots saved by the @playwright/mcp server during browser smoke
+# passes. Ephemeral; useful while a stage is in flight, no value committed.
+.playwright-mcp/
+/m*-*.png
