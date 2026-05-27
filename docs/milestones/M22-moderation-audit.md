@@ -1,7 +1,7 @@
 # M22 — Moderation + audit log
 
-> **Status:** Planned
-> **Started:** —
+> **Status:** In progress
+> **Started:** 2026-05-26
 > **Completed:** —
 > **Depends on:** M07 + [ADR-0002 (unified `audit_log` collection)](../decisions/0002-unified-audit-log-collection.md), which fixes the moderation/history shape M22 builds on.
 
@@ -50,3 +50,4 @@ _Append-only. Never edit past entries; add a new dated line._
 
 - 2026-05-26: created — drafted alongside M07 scope expansion. Hard-depends on the 7h writeup for the audit-column shape.
 - 2026-05-26: ADR-0002 lands the audit-log shape decision (unified `audit_log` collection). M22 unblocked.
+- 2026-05-26: 22a — audit-log foundation. New `audit_log` collection registered in `internal/pocketbase/schema/audit_log.go` per ADR-0002 (actor / target_collection / target_id / action / payload_json / created + the three documented indexes; listRule admin-only, mutate rules nil). New `internal/audit/` package exposes `Write(app, actor, action, target, payload)` (in-hook ergonomic) + `WriteRef(app, actor, action, collection, id, payload)` (for post-delete or synthetic rows); callers always pass `actor` explicitly. `action.go` declares the `Action` type and the one-file-per-action convention (`action_<verb>.go` pairs an `ActionXxx` constant with an `XxxPayload` struct) — substage 22a ships only the type + convention, the first real action files land with 22b. Unit tests cover both helpers + nil-actor + validation. No moderation features in this slice; gamertag/team 4-state, rename history, and reserved-name pre-list still pending.

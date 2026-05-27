@@ -18,6 +18,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - M07 — Soft-delete users (7d): `is_deleted` + `deleted_at` fields with auth gated on `is_deleted = false` so a tombstoned account can't log back in; `users_soft_delete_pii` hook blanks email/name/bio/location/avatar + clears default_gamertag on the false→true transition. `/u/[username]/` resolves deleted accounts to a tombstone render.
 - M07 — `gamertags.sanitized` column (lowercased + trimmed, maintained by the `gamertags_sanitize` hook on pre-create/pre-update) + non-unique `sanitized` index for the scraper-side player-name lookup that lands in M9+.
 - ADR-0002 (`docs/decisions/0002-unified-audit-log-collection.md`) commits to a unified `audit_log` collection (actor / target_collection / target_id / action / payload_json / created) as the shape M22 builds on. Per-row state columns stay on each collection for current-state queries; transitions live in `audit_log`.
+- M22a — `audit_log` PocketBase collection materialized per ADR-0002, with the three documented `(target_collection, target_id, created DESC)` / `(actor, created DESC)` / `(action, created DESC)` indexes. Admin-only listRule + nil mutate rules; every legitimate write flows through the new helper.
+- M22a — `internal/audit` package with `Write(app, actor, action, target *core.Record, payload)` + `WriteRef(app, actor, action, collection, id, payload)` plus the `Action` type and one-file-per-action convention (`action_<verb>.go` pairs an `ActionXxx` constant with an `XxxPayload` struct). Foundation only — the first real action files land with M22b's gamertag 4-state moderation.
 
 ### Changed
 
