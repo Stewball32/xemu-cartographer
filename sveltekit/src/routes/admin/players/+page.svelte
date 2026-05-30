@@ -1,13 +1,23 @@
 <script lang="ts">
-	// Players (M7f, M22b). Admin moderation surface for user gamertags.
+	// Players (M7f, M22b, M22c). Admin moderation surface for user gamertags.
 	// Was part of the monolithic /admin/identity/ page; split out so
 	// admins can land directly on the page they need. The
 	// /admin/+layout.ts guard enforces isAdmin; this page assumes it.
 	//
-	// M22b — `blocked: bool` replaced with `status` 4-state enum (approved
-	// / allowed / pending / blocked). The block/unblock toggle in the row
-	// actions flips between `blocked` and `allowed`; admin queue UI for
-	// approve/pending transitions lands in M22c.
+	// M22b — `blocked: bool` replaced with `status` 4-state enum (approved /
+	// allowed / pending / blocked). The block toggle in row actions flips
+	// between `blocked` and `allowed`; status transitions are audited
+	// through internal/audit by the gamertags_status_transitions hook.
+	//
+	// M22c — tabbed queue view. Three sub-lists:
+	//   - Pending: status=pending (M22e reserved-name pre-list / community
+	//     report will populate this; empty until then).
+	//   - Needs double-check: status=allowed — every new submission lands
+	//     here pre-approval, plus auto-downgrades from approved (owner
+	//     edited tag of an approved row).
+	//   - All: every row regardless of status.
+	// Approve action (single-row) writes status="approved" + an
+	// ActionApprove audit row via the hook. Bulk multi-select is deferred.
 	//
 	// User-account moderation (ban/timeout, isAdmin toggles, soft-delete
 	// review) is deliberately deferred — that surface lands in M8 when the
@@ -15,6 +25,7 @@
 
 	import { onMount } from 'svelte';
 	import {
+		CheckIcon,
 		LoaderIcon,
 		PencilIcon,
 		RefreshCwIcon,
@@ -23,6 +34,7 @@
 		ShieldOffIcon,
 		Trash2Icon
 	} from '@lucide/svelte';
+	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import pb from '$lib/pocketbase';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { confirmToast, describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
@@ -48,14 +60,18 @@
 		expand?: { user?: UserExpand };
 	}
 
+	type QueueTab = 'pending' | 'queue' | 'all';
+
 	let gtRows = $state<GamertagRow[]>([]);
 	let gtLoading = $state(true);
 	let gtFilter = $state('');
 	let gtSort = $state<SortState>({ key: 'tag', dir: 'asc' });
+	let activeTab = $state<QueueTab>('pending');
 	let gtDialogOpen = $state(false);
 	let gtForm = $state({ id: '', tag: '' });
 	let gtFormBusy = $state(false);
 	let gtBlockBusy = $state<Record<string, boolean>>({});
+	let gtApproveBusy = $state<Record<string, boolean>>({});
 	let gtDeleteBusy = $state<Record<string, boolean>>({});
 
 	async function loadGamertags() {
@@ -72,9 +88,8 @@
 	}
 
 	// Block/unblock flips between exactly two states (blocked ↔ allowed). Any
-	// other transition (e.g. approve, flag-as-pending) needs the admin queue
-	// UI from 22c — this surface keeps the same two-state semantic as the M7
-	// boolean toggle.
+	// other transition uses the explicit approve action or the M22e pending
+	// flag (deferred).
 	async function toggleBlock(row: GamertagRow) {
 		gtBlockBusy = { ...gtBlockBusy, [row.id]: true };
 		const wasBlocked = row.status === 'blocked';
@@ -95,15 +110,35 @@
 		}
 	}
 
+	// Approve promotes the row to status="approved". The backend hook emits
+	// an ActionApprove audit row with the requesting admin as actor.
+	async function approveGamertag(row: GamertagRow) {
+		gtApproveBusy = { ...gtApproveBusy, [row.id]: true };
+		try {
+			await toastPromise(pb.collection('gamertags').update(row.id, { status: 'approved' }), {
+				loading: { title: 'Approving', description: row.tag },
+				success: { title: 'Approved', description: row.tag },
+				errorTitle: 'Approve failed'
+			});
+			await loadGamertags();
+		} catch {
+			// toast already shown
+		} finally {
+			const nx = { ...gtApproveBusy };
+			delete nx[row.id];
+			gtApproveBusy = nx;
+		}
+	}
+
 	function openGtEdit(row: GamertagRow) {
 		gtForm = { id: row.id, tag: row.tag };
 		gtDialogOpen = true;
 	}
 
-	// Edit dialog is tag-only: status transitions go through the block toggle
-	// or the M22c admin queue. Writing { tag } as a PATCH leaves the existing
-	// status untouched, so editing an approved tag here lets the auto-downgrade
-	// hook on the backend kick in and flip status back to "allowed" for re-check.
+	// Edit dialog is tag-only: status transitions go through the row buttons.
+	// Writing { tag } as a PATCH leaves status untouched, so editing an
+	// approved tag here triggers the auto-downgrade hook on the backend
+	// (status → "allowed" + ActionEdit audit row).
 	async function saveGamertag() {
 		const f = gtForm;
 		if (!f.tag.trim()) {
@@ -151,11 +186,21 @@
 		}
 	}
 
-	const gtFiltered = $derived.by<GamertagRow[]>(() => {
+	// Per-tab counts run on the unfiltered set so admins see total backlog
+	// regardless of what's typed in the search box.
+	const pendingCount = $derived(gtRows.filter((r) => r.status === 'pending').length);
+	const queueCount = $derived(gtRows.filter((r) => r.status === 'allowed').length);
+	const allCount = $derived(gtRows.length);
+
+	const gtVisible = $derived.by<GamertagRow[]>(() => {
+		let base = gtRows;
+		if (activeTab === 'pending') base = base.filter((r) => r.status === 'pending');
+		else if (activeTab === 'queue') base = base.filter((r) => r.status === 'allowed');
+
 		const q = gtFilter.trim().toLowerCase();
 		const filtered = !q
-			? gtRows
-			: gtRows.filter(
+			? base
+			: base.filter(
 					(r) =>
 						r.tag.toLowerCase().includes(q) ||
 						r.sanitized?.includes(q) ||
@@ -178,6 +223,13 @@
 		});
 	});
 
+	const emptyMessage = $derived.by(() => {
+		if (gtFilter) return 'No matches.';
+		if (activeTab === 'pending') return 'No pending review.';
+		if (activeTab === 'queue') return 'No tags waiting for double-check.';
+		return 'No gamertags yet.';
+	});
+
 	onMount(() => {
 		if (!auth.token) {
 			toaster.error({ title: 'Not authenticated', description: 'Log in to manage players.' });
@@ -190,8 +242,26 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6">
 	<PageHeader
 		title="Players"
-		description="Moderate user gamertags. Account-level controls (admin/ban/timeout) move here in M8."
+		description="Moderate user gamertags through the review queue. Account-level controls (admin/ban/timeout) move here in M8."
 	/>
+
+	<Tabs value={activeTab} onValueChange={(e) => (activeTab = e.value as QueueTab)}>
+		<Tabs.List>
+			<Tabs.Trigger value="pending">
+				<span>Pending</span>
+				<span class="badge preset-tonal-warning text-xs">{pendingCount}</span>
+			</Tabs.Trigger>
+			<Tabs.Trigger value="queue">
+				<span>Needs double-check</span>
+				<span class="badge preset-tonal text-xs">{queueCount}</span>
+			</Tabs.Trigger>
+			<Tabs.Trigger value="all">
+				<span>All</span>
+				<span class="badge preset-tonal text-xs">{allCount}</span>
+			</Tabs.Trigger>
+			<Tabs.Indicator />
+		</Tabs.List>
+	</Tabs>
 
 	<div class="flex items-center justify-between gap-2">
 		<div class="input-group flex-1 grid-cols-[auto_1fr]">
@@ -238,7 +308,7 @@
 		{:else if row.status === 'approved'}
 			<span class="badge preset-tonal-success">Approved</span>
 		{:else}
-			<span class="text-xs opacity-50">—</span>
+			<span class="text-xs opacity-50">Allowed</span>
 		{/if}
 	{/snippet}
 	{#snippet gtActionsCell({ row }: { row: GamertagRow })}
@@ -248,6 +318,20 @@
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 		>
+			{#if row.status !== 'approved'}
+				<button
+					class="btn-icon preset-tonal-success btn-sm"
+					title="Approve"
+					onclick={() => approveGamertag(row)}
+					disabled={!!gtApproveBusy[row.id]}
+				>
+					{#if gtApproveBusy[row.id]}
+						<LoaderIcon class="size-4 animate-spin" />
+					{:else}
+						<CheckIcon class="size-4" />
+					{/if}
+				</button>
+			{/if}
 			<button
 				class="btn-icon preset-tonal btn-sm"
 				title={row.status === 'blocked' ? 'Unblock' : 'Block'}
@@ -282,7 +366,7 @@
 
 	<Card size="flush" class="overflow-x-auto">
 		<DataTable
-			rows={gtFiltered}
+			rows={gtVisible}
 			groups={[
 				{
 					columns: [
@@ -298,8 +382,8 @@
 			sort={gtSort}
 			onSortChange={(s) => (gtSort = s)}
 			secondarySort={{ key: 'tag', dir: 'asc' }}
-			loading={gtLoading && gtFiltered.length === 0}
-			emptyMessage={gtFilter ? 'No matches.' : 'No gamertags yet.'}
+			loading={gtLoading && gtVisible.length === 0}
+			{emptyMessage}
 		/>
 	</Card>
 </div>
@@ -329,8 +413,8 @@
 			/>
 		</label>
 		<p class="text-xs opacity-60">
-			Use the shield button in the row actions to block or unblock. Editing an approved tag
-			automatically flips its status back to "allowed" for re-check.
+			Use the shield button in the row actions to block or unblock, or the check button to approve.
+			Editing an approved tag automatically flips its status back to "allowed" for re-check.
 		</p>
 		<div class="flex justify-end gap-2">
 			<button
