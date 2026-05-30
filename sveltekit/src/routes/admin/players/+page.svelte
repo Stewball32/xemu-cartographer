@@ -1,8 +1,13 @@
 <script lang="ts">
-	// Players (M7f). Admin moderation surface for user gamertags. Was part
-	// of the monolithic /admin/identity/ page; split out so admins can land
-	// directly on the page they need. The /admin/+layout.ts guard enforces
-	// isAdmin; this page assumes it.
+	// Players (M7f, M22b). Admin moderation surface for user gamertags.
+	// Was part of the monolithic /admin/identity/ page; split out so
+	// admins can land directly on the page they need. The
+	// /admin/+layout.ts guard enforces isAdmin; this page assumes it.
+	//
+	// M22b — `blocked: bool` replaced with `status` 4-state enum (approved
+	// / allowed / pending / blocked). The block/unblock toggle in the row
+	// actions flips between `blocked` and `allowed`; admin queue UI for
+	// approve/pending transitions lands in M22c.
 	//
 	// User-account moderation (ban/timeout, isAdmin toggles, soft-delete
 	// review) is deliberately deferred — that surface lands in M8 when the
@@ -37,7 +42,7 @@
 		user: string;
 		tag: string;
 		sanitized: string;
-		blocked: boolean;
+		status: string;
 		created: string;
 		updated: string;
 		expand?: { user?: UserExpand };
@@ -48,7 +53,7 @@
 	let gtFilter = $state('');
 	let gtSort = $state<SortState>({ key: 'tag', dir: 'asc' });
 	let gtDialogOpen = $state(false);
-	let gtForm = $state({ id: '', tag: '', blocked: false });
+	let gtForm = $state({ id: '', tag: '' });
 	let gtFormBusy = $state(false);
 	let gtBlockBusy = $state<Record<string, boolean>>({});
 	let gtDeleteBusy = $state<Record<string, boolean>>({});
@@ -66,13 +71,18 @@
 		}
 	}
 
+	// Block/unblock flips between exactly two states (blocked ↔ allowed). Any
+	// other transition (e.g. approve, flag-as-pending) needs the admin queue
+	// UI from 22c — this surface keeps the same two-state semantic as the M7
+	// boolean toggle.
 	async function toggleBlock(row: GamertagRow) {
 		gtBlockBusy = { ...gtBlockBusy, [row.id]: true };
-		const next = !row.blocked;
+		const wasBlocked = row.status === 'blocked';
+		const nextStatus = wasBlocked ? 'allowed' : 'blocked';
 		try {
-			await toastPromise(pb.collection('gamertags').update(row.id, { blocked: next }), {
-				loading: { title: next ? 'Blocking' : 'Unblocking', description: row.tag },
-				success: { title: next ? 'Blocked' : 'Unblocked', description: row.tag },
+			await toastPromise(pb.collection('gamertags').update(row.id, { status: nextStatus }), {
+				loading: { title: wasBlocked ? 'Unblocking' : 'Blocking', description: row.tag },
+				success: { title: wasBlocked ? 'Unblocked' : 'Blocked', description: row.tag },
 				errorTitle: 'Update failed'
 			});
 			await loadGamertags();
@@ -86,10 +96,14 @@
 	}
 
 	function openGtEdit(row: GamertagRow) {
-		gtForm = { id: row.id, tag: row.tag, blocked: row.blocked };
+		gtForm = { id: row.id, tag: row.tag };
 		gtDialogOpen = true;
 	}
 
+	// Edit dialog is tag-only: status transitions go through the block toggle
+	// or the M22c admin queue. Writing { tag } as a PATCH leaves the existing
+	// status untouched, so editing an approved tag here lets the auto-downgrade
+	// hook on the backend kick in and flip status back to "allowed" for re-check.
 	async function saveGamertag() {
 		const f = gtForm;
 		if (!f.tag.trim()) {
@@ -98,14 +112,11 @@
 		}
 		try {
 			gtFormBusy = true;
-			await toastPromise(
-				pb.collection('gamertags').update(f.id, { tag: f.tag.trim(), blocked: f.blocked }),
-				{
-					loading: { title: 'Saving', description: f.tag },
-					success: { title: 'Saved', description: f.tag },
-					errorTitle: 'Save failed'
-				}
-			);
+			await toastPromise(pb.collection('gamertags').update(f.id, { tag: f.tag.trim() }), {
+				loading: { title: 'Saving', description: f.tag },
+				success: { title: 'Saved', description: f.tag },
+				errorTitle: 'Save failed'
+			});
 			gtDialogOpen = false;
 			await loadGamertags();
 		} catch {
@@ -216,12 +227,16 @@
 	{#snippet gtTagCell({ row }: { row: GamertagRow })}
 		<span class="font-mono">{row.tag}</span>
 	{/snippet}
-	{#snippet gtBlockedCell({ row }: { row: GamertagRow })}
-		{#if row.blocked}
+	{#snippet gtStatusCell({ row }: { row: GamertagRow })}
+		{#if row.status === 'blocked'}
 			<span class="badge preset-tonal-error">
 				<ShieldAlertIcon class="size-3" />
 				Blocked
 			</span>
+		{:else if row.status === 'pending'}
+			<span class="badge preset-tonal-warning">Pending</span>
+		{:else if row.status === 'approved'}
+			<span class="badge preset-tonal-success">Approved</span>
 		{:else}
 			<span class="text-xs opacity-50">—</span>
 		{/if}
@@ -235,13 +250,13 @@
 		>
 			<button
 				class="btn-icon preset-tonal btn-sm"
-				title={row.blocked ? 'Unblock' : 'Block'}
+				title={row.status === 'blocked' ? 'Unblock' : 'Block'}
 				onclick={() => toggleBlock(row)}
 				disabled={!!gtBlockBusy[row.id]}
 			>
 				{#if gtBlockBusy[row.id]}
 					<LoaderIcon class="size-4 animate-spin" />
-				{:else if row.blocked}
+				{:else if row.status === 'blocked'}
 					<ShieldOffIcon class="size-4" />
 				{:else}
 					<ShieldAlertIcon class="size-4" />
@@ -273,7 +288,7 @@
 					columns: [
 						{ key: 'user', label: 'User', cell: gtUserCell },
 						{ key: 'tag', label: 'Tag', cell: gtTagCell },
-						{ key: 'blocked', label: 'Status', cell: gtBlockedCell },
+						{ key: 'status', label: 'Status', cell: gtStatusCell },
 						{ key: 'actions', label: '', cell: gtActionsCell, sortable: false, align: 'right' }
 					]
 				}
@@ -313,10 +328,10 @@
 				disabled={gtFormBusy}
 			/>
 		</label>
-		<label class="flex items-center gap-2">
-			<input type="checkbox" class="checkbox" bind:checked={gtForm.blocked} disabled={gtFormBusy} />
-			<span class="text-sm">Blocked</span>
-		</label>
+		<p class="text-xs opacity-60">
+			Use the shield button in the row actions to block or unblock. Editing an approved tag
+			automatically flips its status back to "allowed" for re-check.
+		</p>
 		<div class="flex justify-end gap-2">
 			<button
 				type="button"

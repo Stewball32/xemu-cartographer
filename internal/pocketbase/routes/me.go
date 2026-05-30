@@ -15,10 +15,14 @@ func init() {
 
 // meResponse is the shape returned by GET /api/me. Fields added in M7:
 //   - default_gamertag: caller's "show me as" pick, or null
-//   - gamertags:        every tag the caller owns (blocked rows included so
-//     the settings UI can render a badge)
+//   - gamertags:        every tag the caller owns (every status included so
+//     the settings UI can render a badge for blocked/pending rows)
 //   - teams:            currently-active team memberships with the per-team
 //     captain/manager flags and joined_at date
+//
+// M22b: gamertagInfo.Blocked → Status (4-state enum from the gamertags
+// SelectField). Callers that previously checked `blocked === true` should
+// switch to `status === "blocked"`.
 type meResponse struct {
 	ID              string         `json:"id"`
 	Email           string         `json:"email"`
@@ -30,9 +34,9 @@ type meResponse struct {
 }
 
 type gamertagInfo struct {
-	ID      string `json:"id"`
-	Tag     string `json:"tag"`
-	Blocked bool   `json:"blocked"`
+	ID     string `json:"id"`
+	Tag    string `json:"tag"`
+	Status string `json:"status"`
 }
 
 type teamInfo struct {
@@ -82,9 +86,9 @@ func registerMeRoute(se *core.ServeEvent) {
 		}
 		for _, t := range tags {
 			resp.Gamertags = append(resp.Gamertags, gamertagInfo{
-				ID:      t.Id,
-				Tag:     t.GetString("tag"),
-				Blocked: t.GetBool("blocked"),
+				ID:     t.Id,
+				Tag:    t.GetString("tag"),
+				Status: t.GetString("status"),
 			})
 		}
 
