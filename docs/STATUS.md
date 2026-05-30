@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-26
+> **Last updated:** 2026-05-26 (M22a in progress)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
