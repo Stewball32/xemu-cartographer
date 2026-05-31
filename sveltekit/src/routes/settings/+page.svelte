@@ -84,6 +84,7 @@
 		id: string;
 		name: string;
 		slug: string;
+		status: string;
 		membership: MeTeamMembership;
 	}
 	interface MeIdentity {
@@ -834,7 +835,29 @@
 								<div class="flex items-center gap-3">
 									<UsersIcon class="size-4 opacity-50" />
 									<div>
-										<p class="font-semibold">{team.name}</p>
+										<div class="flex items-center gap-2">
+											<p class="font-semibold">{team.name}</p>
+											{#if team.status === 'blocked'}
+												<span class="badge preset-tonal-error text-xs" title="Blocked by an admin">
+													<ShieldAlertIcon class="size-3" />
+													Blocked
+												</span>
+											{:else if team.status === 'pending'}
+												<span
+													class="badge preset-tonal-warning text-xs"
+													title="Pending admin review"
+												>
+													Pending
+												</span>
+											{:else if team.status === 'approved'}
+												<span
+													class="badge preset-tonal-success text-xs"
+													title="Approved by an admin"
+												>
+													Approved
+												</span>
+											{/if}
+										</div>
 										<p class="text-xs opacity-50">{team.slug}</p>
 									</div>
 								</div>

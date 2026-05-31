@@ -43,6 +43,7 @@ type teamInfo struct {
 	ID         string             `json:"id"`
 	Name       string             `json:"name"`
 	Slug       string             `json:"slug"`
+	Status     string             `json:"status"`
 	Membership teamMembershipInfo `json:"membership"`
 }
 
@@ -132,9 +133,10 @@ func registerMeRoute(se *core.ServeEvent) {
 					continue
 				}
 				resp.Teams = append(resp.Teams, teamInfo{
-					ID:   team.Id,
-					Name: team.GetString("name"),
-					Slug: team.GetString("slug"),
+					ID:     team.Id,
+					Name:   team.GetString("name"),
+					Slug:   team.GetString("slug"),
+					Status: team.GetString("status"),
 					Membership: teamMembershipInfo{
 						GamertagID: r.GetString("gamertag"),
 						IsOwner:    r.GetBool("is_owner"),

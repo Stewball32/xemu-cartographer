@@ -189,12 +189,19 @@ export type RostersRecord = {
 	updated: IsoAutoDateString
 }
 
+export enum TeamsStatusOptions {
+	"approved" = "approved",
+	"allowed" = "allowed",
+	"pending" = "pending",
+	"blocked" = "blocked",
+}
 export type TeamsRecord = {
 	created: IsoAutoDateString
 	created_by: RecordIdString
 	id: string
 	name: string
 	slug: string
+	status?: TeamsStatusOptions
 	updated: IsoAutoDateString
 }
 

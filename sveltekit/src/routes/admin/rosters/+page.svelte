@@ -1,16 +1,27 @@
 <script lang="ts">
-	// Rosters (M7f). Admin moderation surface for teams and roster history.
-	// Was part of the monolithic /admin/identity/ page; split out so admins
-	// can land directly on the surface they need. /admin/+layout.ts enforces
-	// isAdmin; this page assumes it.
+	// Rosters (M7f, M22d). Admin moderation surface for teams and roster
+	// history. Was part of the monolithic /admin/identity/ page; split out
+	// so admins can land directly on the surface they need.
+	// /admin/+layout.ts enforces isAdmin; this page assumes it.
+	//
+	// M22d — teams gains a 4-state `status` (approved / allowed / pending /
+	// blocked) mirroring the M22b gamertags treatment. The Teams tab adds a
+	// nested status filter (Pending / Needs double-check / All) and an
+	// Approve row action. Status transitions are audited by the
+	// teams_status_transitions hook; team-name changes additionally write an
+	// ActionRename audit row for the eventual team page "formerly known as"
+	// history view.
 
 	import { onMount } from 'svelte';
 	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import {
+		CheckIcon,
 		LoaderIcon,
 		PencilIcon,
 		RefreshCwIcon,
 		SearchIcon,
+		ShieldAlertIcon,
+		ShieldOffIcon,
 		Trash2Icon,
 		UserIcon,
 		UsersIcon
@@ -40,11 +51,14 @@
 		id: string;
 		name: string;
 		slug: string;
+		status: string;
 		created_by: string;
 		created: string;
 		updated: string;
 		expand?: { created_by?: UserExpand };
 	}
+
+	type TmQueueTab = 'pending' | 'queue' | 'all';
 	interface RosterRow {
 		id: string;
 		team: string;
@@ -68,9 +82,12 @@
 	let tmLoading = $state(true);
 	let tmFilter = $state('');
 	let tmSort = $state<SortState>({ key: 'name', dir: 'asc' });
+	let tmQueueTab = $state<TmQueueTab>('pending');
 	let tmDialogOpen = $state(false);
 	let tmForm = $state({ id: '', name: '', slug: '' });
 	let tmFormBusy = $state(false);
+	let tmApproveBusy = $state<Record<string, boolean>>({});
+	let tmBlockBusy = $state<Record<string, boolean>>({});
 	let tmDeleteBusy = $state<Record<string, boolean>>({});
 
 	// Rosters state
@@ -118,6 +135,47 @@
 	function openTmEdit(row: TeamRow) {
 		tmForm = { id: row.id, name: row.name, slug: row.slug };
 		tmDialogOpen = true;
+	}
+
+	// Approve promotes a team to status="approved". The teams_status_transitions
+	// hook emits the ActionApprove audit row with the admin as actor.
+	async function approveTeam(row: TeamRow) {
+		tmApproveBusy = { ...tmApproveBusy, [row.id]: true };
+		try {
+			await toastPromise(pb.collection('teams').update(row.id, { status: 'approved' }), {
+				loading: { title: 'Approving', description: row.name },
+				success: { title: 'Approved', description: row.name },
+				errorTitle: 'Approve failed'
+			});
+			await loadTeams();
+		} catch {
+			// toast already shown
+		} finally {
+			const nx = { ...tmApproveBusy };
+			delete nx[row.id];
+			tmApproveBusy = nx;
+		}
+	}
+
+	// Block toggle mirrors /admin/players/: flips blocked ↔ allowed only.
+	async function toggleTmBlock(row: TeamRow) {
+		tmBlockBusy = { ...tmBlockBusy, [row.id]: true };
+		const wasBlocked = row.status === 'blocked';
+		const nextStatus = wasBlocked ? 'allowed' : 'blocked';
+		try {
+			await toastPromise(pb.collection('teams').update(row.id, { status: nextStatus }), {
+				loading: { title: wasBlocked ? 'Unblocking' : 'Blocking', description: row.name },
+				success: { title: wasBlocked ? 'Unblocked' : 'Blocked', description: row.name },
+				errorTitle: 'Update failed'
+			});
+			await loadTeams();
+		} catch {
+			// toast already shown
+		} finally {
+			const nx = { ...tmBlockBusy };
+			delete nx[row.id];
+			tmBlockBusy = nx;
+		}
 	}
 
 	async function saveTeam() {
@@ -244,11 +302,21 @@
 		return `${htmlDate} 00:00:00.000Z`;
 	}
 
+	// Per-tab counts run on the unfiltered set so admins see the total backlog
+	// regardless of what's typed in the search box.
+	const tmPendingCount = $derived(tmRows.filter((r) => r.status === 'pending').length);
+	const tmQueueCount = $derived(tmRows.filter((r) => r.status === 'allowed').length);
+	const tmAllCount = $derived(tmRows.length);
+
 	const tmFiltered = $derived.by<TeamRow[]>(() => {
+		let base = tmRows;
+		if (tmQueueTab === 'pending') base = base.filter((r) => r.status === 'pending');
+		else if (tmQueueTab === 'queue') base = base.filter((r) => r.status === 'allowed');
+
 		const q = tmFilter.trim().toLowerCase();
 		const filtered = !q
-			? tmRows
-			: tmRows.filter(
+			? base
+			: base.filter(
 					(r) =>
 						r.name.toLowerCase().includes(q) ||
 						r.slug.toLowerCase().includes(q) ||
@@ -262,6 +330,13 @@
 			const bv = String((b as unknown as Record<string, unknown>)[s.key] ?? '');
 			return av.localeCompare(bv) * dir;
 		});
+	});
+
+	const tmEmptyMessage = $derived.by(() => {
+		if (tmFilter) return 'No matches.';
+		if (tmQueueTab === 'pending') return 'No pending review.';
+		if (tmQueueTab === 'queue') return 'No teams waiting for double-check.';
+		return 'No teams yet.';
 	});
 
 	const rsFiltered = $derived.by<RosterRow[]>(() => {
@@ -325,6 +400,24 @@
 
 		<Tabs.Content value="teams">
 			<div class="flex flex-col gap-4 pt-4">
+				<Tabs value={tmQueueTab} onValueChange={(e) => (tmQueueTab = e.value as TmQueueTab)}>
+					<Tabs.List>
+						<Tabs.Trigger value="pending">
+							<span>Pending</span>
+							<span class="badge preset-tonal-warning text-xs">{tmPendingCount}</span>
+						</Tabs.Trigger>
+						<Tabs.Trigger value="queue">
+							<span>Needs double-check</span>
+							<span class="badge preset-tonal text-xs">{tmQueueCount}</span>
+						</Tabs.Trigger>
+						<Tabs.Trigger value="all">
+							<span>All</span>
+							<span class="badge preset-tonal text-xs">{tmAllCount}</span>
+						</Tabs.Trigger>
+						<Tabs.Indicator />
+					</Tabs.List>
+				</Tabs>
+
 				<div class="flex items-center justify-between gap-2">
 					<div class="input-group flex-1 grid-cols-[auto_1fr]">
 						<div class="ig-cell preset-tonal">
@@ -356,6 +449,20 @@
 						<span class="text-xs opacity-50">{row.slug}</span>
 					</div>
 				{/snippet}
+				{#snippet tmStatusCell({ row }: { row: TeamRow })}
+					{#if row.status === 'blocked'}
+						<span class="badge preset-tonal-error">
+							<ShieldAlertIcon class="size-3" />
+							Blocked
+						</span>
+					{:else if row.status === 'pending'}
+						<span class="badge preset-tonal-warning">Pending</span>
+					{:else if row.status === 'approved'}
+						<span class="badge preset-tonal-success">Approved</span>
+					{:else}
+						<span class="text-xs opacity-50">Allowed</span>
+					{/if}
+				{/snippet}
 				{#snippet tmCreatorCell({ row }: { row: TeamRow })}
 					<span>{row.expand?.created_by?.username ?? row.created_by}</span>
 				{/snippet}
@@ -366,6 +473,34 @@
 						onclick={(e) => e.stopPropagation()}
 						onkeydown={(e) => e.stopPropagation()}
 					>
+						{#if row.status !== 'approved'}
+							<button
+								class="btn-icon preset-tonal-success btn-sm"
+								title="Approve"
+								onclick={() => approveTeam(row)}
+								disabled={!!tmApproveBusy[row.id]}
+							>
+								{#if tmApproveBusy[row.id]}
+									<LoaderIcon class="size-4 animate-spin" />
+								{:else}
+									<CheckIcon class="size-4" />
+								{/if}
+							</button>
+						{/if}
+						<button
+							class="btn-icon preset-tonal btn-sm"
+							title={row.status === 'blocked' ? 'Unblock' : 'Block'}
+							onclick={() => toggleTmBlock(row)}
+							disabled={!!tmBlockBusy[row.id]}
+						>
+							{#if tmBlockBusy[row.id]}
+								<LoaderIcon class="size-4 animate-spin" />
+							{:else if row.status === 'blocked'}
+								<ShieldOffIcon class="size-4" />
+							{:else}
+								<ShieldAlertIcon class="size-4" />
+							{/if}
+						</button>
 						<button
 							class="btn-icon preset-tonal btn-sm"
 							title="Edit"
@@ -395,6 +530,7 @@
 							{
 								columns: [
 									{ key: 'name', label: 'Team', cell: tmNameCell },
+									{ key: 'status', label: 'Status', cell: tmStatusCell },
 									{ key: 'created_by', label: 'Created by', cell: tmCreatorCell },
 									{ key: 'created', label: 'Created' },
 									{
@@ -413,7 +549,7 @@
 						onSortChange={(s) => (tmSort = s)}
 						secondarySort={{ key: 'name', dir: 'asc' }}
 						loading={tmLoading && tmFiltered.length === 0}
-						emptyMessage={tmFilter ? 'No matches.' : 'No teams yet.'}
+						emptyMessage={tmEmptyMessage}
 					/>
 				</Card>
 			</div>
