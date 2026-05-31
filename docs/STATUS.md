@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-31 (M22d in progress — 22a/22b/22c merged, 22d PR pending)
+> **Last updated:** 2026-05-31 (M22e in progress — 22a/22b/22c/22d merged, 22e PR pending; M22 verification criteria all met)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 

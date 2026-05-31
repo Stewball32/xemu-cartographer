@@ -16,6 +16,7 @@ export enum Collections {
 	Containers = "containers",
 	GameEvents = "game_events",
 	Gamertags = "gamertags",
+	ReservedNames = "reserved_names",
 	Rosters = "rosters",
 	Teams = "teams",
 	Users = "users",
@@ -177,6 +178,15 @@ export type GamertagsRecord = {
 	user: RecordIdString
 }
 
+export type ReservedNamesRecord = {
+	created: IsoAutoDateString
+	created_by?: RecordIdString
+	description?: string
+	id: string
+	pattern: string
+	updated: IsoAutoDateString
+}
+
 export type RostersRecord = {
 	created: IsoAutoDateString
 	gamertag: RecordIdString
@@ -236,6 +246,7 @@ export type CapturePoliciesResponse<Texpand = unknown> = Required<CapturePolicie
 export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
 export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<GameEventsRecord<Tdata>> & BaseSystemFields<Texpand>
 export type GamertagsResponse<Texpand = unknown> = Required<GamertagsRecord> & BaseSystemFields<Texpand>
+export type ReservedNamesResponse<Texpand = unknown> = Required<ReservedNamesRecord> & BaseSystemFields<Texpand>
 export type RostersResponse<Texpand = unknown> = Required<RostersRecord> & BaseSystemFields<Texpand>
 export type TeamsResponse<Texpand = unknown> = Required<TeamsRecord> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
@@ -253,6 +264,7 @@ export type CollectionRecords = {
 	containers: ContainersRecord
 	game_events: GameEventsRecord
 	gamertags: GamertagsRecord
+	reserved_names: ReservedNamesRecord
 	rosters: RostersRecord
 	teams: TeamsRecord
 	users: UsersRecord
@@ -269,6 +281,7 @@ export type CollectionResponses = {
 	containers: ContainersResponse
 	game_events: GameEventsResponse
 	gamertags: GamertagsResponse
+	reserved_names: ReservedNamesResponse
 	rosters: RostersResponse
 	teams: TeamsResponse
 	users: UsersResponse

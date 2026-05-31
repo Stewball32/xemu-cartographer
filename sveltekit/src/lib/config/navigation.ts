@@ -1,4 +1,5 @@
 import {
+	BookmarkXIcon,
 	BoxIcon,
 	PlayIcon,
 	SettingsIcon,
@@ -43,7 +44,8 @@ export const mainGroups: NavGroup[] = [
 		links: [
 			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
 			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
-			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon }
+			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
+			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon }
 		]
 	}
 ];
