@@ -33,7 +33,7 @@
 		id: string;
 		user: string;
 		tag: string;
-		blocked: boolean;
+		status: string;
 		expand?: { user?: UserExpand };
 	}
 	interface TeamRow {

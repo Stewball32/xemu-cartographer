@@ -11,6 +11,7 @@ export enum Collections {
 	Mfas = "_mfas",
 	Otps = "_otps",
 	Superusers = "_superusers",
+	AuditLog = "audit_log",
 	CapturePolicies = "capture_policies",
 	Containers = "containers",
 	GameEvents = "game_events",
@@ -98,6 +99,16 @@ export type SuperusersRecord = {
 	verified?: boolean
 }
 
+export type AuditLogRecord<Tpayload_json = unknown> = {
+	action: string
+	actor?: RecordIdString
+	created: IsoAutoDateString
+	id: string
+	payload_json?: null | Tpayload_json
+	target_collection: string
+	target_id: string
+}
+
 export enum CapturePoliciesModeOptions {
 	"auto" = "auto",
 	"always" = "always",
@@ -150,11 +161,17 @@ export type GameEventsRecord<Tdata = unknown> = {
 	type: string
 }
 
+export enum GamertagsStatusOptions {
+	"approved" = "approved",
+	"allowed" = "allowed",
+	"pending" = "pending",
+	"blocked" = "blocked",
+}
 export type GamertagsRecord = {
-	blocked?: boolean
 	created: IsoAutoDateString
 	id: string
 	sanitized?: string
+	status?: GamertagsStatusOptions
 	tag: string
 	updated: IsoAutoDateString
 	user: RecordIdString
@@ -207,6 +224,7 @@ export type ExternalauthsResponse<Texpand = unknown> = Required<ExternalauthsRec
 export type MfasResponse<Texpand = unknown> = Required<MfasRecord> & BaseSystemFields<Texpand>
 export type OtpsResponse<Texpand = unknown> = Required<OtpsRecord> & BaseSystemFields<Texpand>
 export type SuperusersResponse<Texpand = unknown> = Required<SuperusersRecord> & AuthSystemFields<Texpand>
+export type AuditLogResponse<Tpayload_json = unknown, Texpand = unknown> = Required<AuditLogRecord<Tpayload_json>> & BaseSystemFields<Texpand>
 export type CapturePoliciesResponse<Texpand = unknown> = Required<CapturePoliciesRecord> & BaseSystemFields<Texpand>
 export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
 export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<GameEventsRecord<Tdata>> & BaseSystemFields<Texpand>
@@ -223,6 +241,7 @@ export type CollectionRecords = {
 	_mfas: MfasRecord
 	_otps: OtpsRecord
 	_superusers: SuperusersRecord
+	audit_log: AuditLogRecord
 	capture_policies: CapturePoliciesRecord
 	containers: ContainersRecord
 	game_events: GameEventsRecord
@@ -238,6 +257,7 @@ export type CollectionResponses = {
 	_mfas: MfasResponse
 	_otps: OtpsResponse
 	_superusers: SuperusersResponse
+	audit_log: AuditLogResponse
 	capture_policies: CapturePoliciesResponse
 	containers: ContainersResponse
 	game_events: GameEventsResponse

@@ -71,7 +71,7 @@
 	interface MeGamertag {
 		id: string;
 		tag: string;
-		blocked: boolean;
+		status: string;
 	}
 	interface MeTeamMembership {
 		gamertag_id: string;
@@ -149,18 +149,15 @@
 		const tag = newTagInput.trim();
 		addingTag = true;
 		try {
-			await toastPromise(
-				pb.collection('gamertags').create({ user: auth.user.id, tag, blocked: false }),
-				{
-					loading: { title: 'Adding gamertag' },
-					success: { title: 'Added', description: tag },
-					errorTitle: 'Add failed',
-					errorDescription: (err) => {
-						const m = err instanceof Error ? err.message : 'Failed';
-						return m.toLowerCase().includes('unique') ? 'You already own that gamertag.' : m;
-					}
+			await toastPromise(pb.collection('gamertags').create({ user: auth.user.id, tag }), {
+				loading: { title: 'Adding gamertag' },
+				success: { title: 'Added', description: tag },
+				errorTitle: 'Add failed',
+				errorDescription: (err) => {
+					const m = err instanceof Error ? err.message : 'Failed';
+					return m.toLowerCase().includes('unique') ? 'You already own that gamertag.' : m;
 				}
-			);
+			});
 			newTagInput = '';
 			await loadIdentity();
 		} catch {
@@ -722,15 +719,23 @@
 											Default
 										</span>
 									{/if}
-									{#if gt.blocked}
+									{#if gt.status === 'blocked'}
 										<span class="badge preset-tonal-error text-xs" title="Blocked by an admin">
 											<ShieldAlertIcon class="size-3" />
 											Blocked
 										</span>
+									{:else if gt.status === 'pending'}
+										<span class="badge preset-tonal-warning text-xs" title="Pending admin review">
+											Pending
+										</span>
+									{:else if gt.status === 'approved'}
+										<span class="badge preset-tonal-success text-xs" title="Approved by an admin">
+											Approved
+										</span>
 									{/if}
 								</div>
 								<div class="flex items-center gap-2">
-									{#if !isDefault && !gt.blocked}
+									{#if !isDefault && gt.status !== 'blocked'}
 										<button
 											class="btn preset-tonal btn-sm"
 											onclick={() => setDefaultGamertag(gt.id)}
@@ -744,7 +749,7 @@
 											<span>Set default</span>
 										</button>
 									{/if}
-									{#if !gt.blocked}
+									{#if gt.status !== 'blocked'}
 										<button
 											class="btn preset-tonal-error btn-sm"
 											onclick={() => removeGamertag(gt.id)}
