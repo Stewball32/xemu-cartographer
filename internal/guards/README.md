@@ -27,9 +27,18 @@ interfaces/
 │   ├── rooms.go         # Rooms { IsInRoom(), UserRooms() }
 │   ├── broadcast.go     # Broadcast { BroadcastRaw(), SendToUserRaw(), SendToRoomRaw() }
 │   └── websocket.go     # Service = Connected + Rooms + Broadcast
-└── pocketbase/
-    ├── users.go         # Users { FindUserByDiscordID() }
-    └── pocketbase.go    # Service = Users + ...
+├── pocketbase/
+│   ├── users.go         # Users { FindUserByDiscordID() }
+│   ├── gamertags.go     # Gamertags { FindGamertagsForUser(), FindUserByGamertagString(), FindActiveRostersForUser() }  (M07)
+│   └── pocketbase.go    # Service = Users + Gamertags + ...
+└── scraper/
+    ├── lifecycle.go     # Lifecycle { Start(name, sock), Stop(name) }
+    ├── inspect.go       # Inspect { List(), Inspect(name) } + Info / InspectState / PreviousGameInfo structs
+    ├── joinreplay.go    # JoinReplay { JoinReplayMessages(), JoinReplayForInstance(name), JoinReplayForInstanceClass(name, class), JoinReplayForHostAll() }
+    ├── events_reply.go  # EventsReply { EventsReply(instance, sinceTick, types) }
+    ├── probe_reply.go   # ProbeReply { ProbeReply(instance) }
+    ├── state.go         # State { InstanceState(name) } + InstanceState struct
+    └── scraper.go       # Service = Lifecycle + Inspect + JoinReplay + EventsReply + ProbeReply + State
 ```
 
 Small interfaces compose into aggregate `Service` interfaces via embedding. Each system's concrete type (`disgo.Bot`, `websocket.Hub`, `pocketbase.Service`) implements the aggregate interface via Go's structural typing — no explicit import of the interface package needed.

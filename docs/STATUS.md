@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-31 (M22 closed; M23 promotes to Now)
+> **Last updated:** 2026-06-01 (M07 + M22 shipped as v0.7.0; M23 stays Now)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
