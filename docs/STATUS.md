@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-05-31 (M22e in progress — 22a/22b/22c/22d merged, 22e PR pending; M22 verification criteria all met)
+> **Last updated:** 2026-05-31 (M22 closed; M23 promotes to Now)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -14,13 +14,11 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Now
 
-- [ ] [M22 — Moderation + audit log](milestones/M22-moderation-audit.md) (unblocked by M07 7h / [ADR-0002](decisions/0002-unified-audit-log-collection.md))
+- [ ] [M23 — Team membership workflows](milestones/M23-team-membership-workflows.md) (unblocked by M22 close)
 
 ## Next
 
-Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26.
-
-- M23 — Team membership workflows (depends on M07 + M22)
+Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31.
 - M08 — Roles + permissions
 - M09 — Match-aware kiosk view
 - M10 — Overlay revamp + new browser sources
