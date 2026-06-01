@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.7.0] - 2026-05-31
+
+### Added
+
 - M07 — Identity schemas: three new PocketBase collections (`gamertags`, `teams`, `rosters`) plus `users.default_gamertag` FK. Gamertags carry a `blocked` flag for admin soft-moderation; the unique index prevents a user from resurrecting a blocked string. Rosters track team-membership history Liquipedia-style — `joined_at` + nullable `left_at`, with the same `(team, gamertag)` allowed in multiple rows for re-joins.
 - M07 — `users_default_gamertag` PB hook: on user creation, auto-creates a gamertag matching the user's `username` and sets `users.default_gamertag` to it. Saves the bootstrap step on first login. Counterpart `gamertags_default_cleanup` clears the FK before a tag is deleted so the relation never dangles.
 - M07 — `/api/me` now returns `default_gamertag` + `gamertags[]` + `teams[]` (each team carrying the caller's `membership` block — owner/manager flags, joined_at, left_at). Superusers get the basic identity payload only (they live in `_superusers`, not `users`).

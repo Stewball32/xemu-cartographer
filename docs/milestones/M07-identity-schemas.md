@@ -81,3 +81,4 @@ _Append-only. Never edit past entries; add a new dated line._
 - 2026-05-26: 7g — public profile/list/detail pages kept as placeholders pointing at M23 (where the invite/join CTAs that drive each page actually live). The M7 schema is already validated end-to-end through /admin/players/ + /admin/rosters/. `/u/[username]/` carries the soft-deleted tombstone render per 7d. New `/players/` route created (didn't exist before) for the M23 entry point.
 - 2026-05-26: 7h — [ADR-0002](../decisions/0002-unified-audit-log-collection.md) accepts a unified `audit_log` collection (actor, target_collection, target_id, action, payload_json, created). M22's "Depends on" now satisfied; M22 unblocked.
 - 2026-05-26: M7 closed.
+- 2026-05-31: Released as v0.7.0 per ADR-0001 (CHANGELOG [Unreleased] → [0.7.0] - 2026-05-31, git tag v0.7.0). Bundled with M22 in the same release cut.
