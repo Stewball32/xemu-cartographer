@@ -6,6 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/audit"
+	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
 )
 
 func init() {
@@ -55,6 +56,8 @@ func registerTeamsStatusTransitionsHook(app *pocketbase.PocketBase) {
 
 		// Always audit name changes — even on non-approved rows + admin renames
 		// — so the team page can show every name the team has carried.
+		// M23c twin-writes the rename to team_log so the public team page
+		// can read it without admin-only audit_log access.
 		if nameChanged {
 			if err := audit.Write(e.App, e.Auth, audit.ActionRename, e.Record, audit.RenamePayload{
 				PrevName: prevName,
@@ -62,6 +65,13 @@ func registerTeamsStatusTransitionsHook(app *pocketbase.PocketBase) {
 				ByAdmin:  actorIsAdmin,
 			}); err != nil {
 				e.App.Logger().Error("M22d: audit ActionRename failed", "id", e.Record.Id, "err", err)
+			}
+			if err := teamlog.Write(e.App, e.Record, e.Auth, teamlog.EventTeamRenamed, nil, nil, teamlog.TeamRenamedPayload{
+				PrevName: prevName,
+				NewName:  newName,
+				ByAdmin:  actorIsAdmin,
+			}); err != nil {
+				e.App.Logger().Error("M23c: team_log EventTeamRenamed failed", "id", e.Record.Id, "err", err)
 			}
 		}
 
@@ -114,6 +124,16 @@ func registerTeamsStatusTransitionsHook(app *pocketbase.PocketBase) {
 			}); err != nil {
 				e.App.Logger().Error("M22d: audit ActionApprove failed", "id", e.Record.Id, "err", err)
 			}
+		}
+
+		// M23c twin-write to team_log so the team page can render the
+		// transition. audit_log keeps its admin-only consumer; team_log is
+		// the user-facing surface.
+		if err := teamlog.Write(e.App, e.Record, e.Auth, teamlog.EventTeamStatusChanged, nil, nil, teamlog.TeamStatusChangedPayload{
+			PrevStatus: prev,
+			NewStatus:  next,
+		}); err != nil {
+			e.App.Logger().Error("M23c: team_log EventTeamStatusChanged failed", "id", e.Record.Id, "err", err)
 		}
 
 		return e.Next()
