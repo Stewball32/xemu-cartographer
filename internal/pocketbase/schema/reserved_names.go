@@ -91,7 +91,7 @@ func reconcileReservedNamesRules(app *pocketbase.PocketBase) error {
 //   - Create/Update/Delete: admin only.
 func setReservedNamesRules(c *core.Collection) {
 	listView := "@request.auth.id != \"\""
-	mutate := "@request.auth.isAdmin = true"
+	mutate := hasAdminRole
 
 	c.ListRule = &listView
 	c.ViewRule = &listView

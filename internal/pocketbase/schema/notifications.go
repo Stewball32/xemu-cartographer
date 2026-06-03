@@ -95,7 +95,7 @@ func reconcileNotificationsRules(app *pocketbase.PocketBase) error {
 //     server-side notifications.Notify helper does (which bypasses rules via
 //     app.Save). Admin can still drop rows through the admin SDK if needed.
 func setNotificationsRules(c *core.Collection) {
-	own := "user = @request.auth.id || @request.auth.isAdmin = true"
+	own := "user = @request.auth.id || (" + hasAdminRole + ")"
 
 	c.ListRule = &own
 	c.ViewRule = &own

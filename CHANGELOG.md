@@ -19,6 +19,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - M08b — Dev seed (`internal/pocketbase/seed/seed.go`) — `ensureUser` now calls `roles.Grant(app, record.Id, "admin", nil)` after the user row saves when the seed entry's `IsAdmin` flag is set, so the seeded admin can hit `/api/admin/*` immediately without waiting for the migration backfill on next boot. The `isAdmin=true` field write stays for the duration of the 8b → 8d window so the M22-era Go reads still pass.
+- M08c — PB collection rules swap from `@request.auth.isAdmin = true` to a `@collection.user_roles.user ?= @request.auth.id && @collection.user_roles.role.slug ?= "admin"` subquery. Centralized in `internal/pocketbase/schema/rules.go` as the `hasAdminRole` constant; touches all eight gated schemas (`gamertags`, `teams`, `rosters`, `reserved_names`, `audit_log`, `notifications`, `capture_policies`, `team_membership_requests`) plus the new `roles` and `user_roles` collections themselves. The subquery is wrapped in parens when composed with `||` / `&&` so operator precedence stays predictable. Verified live: deleting an admin's `user_roles` row immediately removes their audit_log list access on the next request; restoring it returns access. The `isAdmin` column on users is now ignored by the rule layer — Go reads still consume it until 8d.
 
 ### Changed
 

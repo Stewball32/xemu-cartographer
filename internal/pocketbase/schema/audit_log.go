@@ -30,8 +30,8 @@ func init() {
 //
 // PB rules: list/view admin-only because the trail exposes mod actions and
 // actors. Create/update/delete are nil — every legitimate write goes through
-// the server-side helper. The isAdmin gate matches the rest of the M7-era
-// schemas and will swap to role-based checks when M8 lands.
+// the server-side helper. M8 swapped the isAdmin gate to the user_roles
+// subquery defined in rules.go (hasAdminRole).
 func registerAuditLogCollection(app *pocketbase.PocketBase) error {
 	if collectionExists(app, "audit_log") {
 		return reconcileAuditLogRules(app)
@@ -98,7 +98,7 @@ func reconcileAuditLogRules(app *pocketbase.PocketBase) error {
 }
 
 func setAuditLogRules(c *core.Collection) {
-	adminOnly := "@request.auth.isAdmin = true"
+	adminOnly := hasAdminRole
 	c.ListRule = &adminOnly
 	c.ViewRule = &adminOnly
 	c.CreateRule = nil

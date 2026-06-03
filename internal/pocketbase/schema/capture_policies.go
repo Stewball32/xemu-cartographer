@@ -93,14 +93,14 @@ func registerCapturePoliciesCollection(app *pocketbase.PocketBase) error {
 	return app.Save(collection)
 }
 
-// setCapturePolicyRules gates CRUD on users.isAdmin so the SvelteKit
+// setCapturePolicyRules gates CRUD on the M8 admin role so the SvelteKit
 // admin page can manage rows via the standard PB JS SDK
 // (pb.collection('capture_policies')...). PB superusers bypass these
 // rules automatically — the rule eval only runs for the regular users
 // auth collection, where it admits the same operator class as the
 // RequireAdmin middleware on the /api/admin/* routes.
 func setCapturePolicyRules(c *core.Collection) {
-	adminRule := "@request.auth.isAdmin = true"
+	adminRule := hasAdminRole
 	c.ListRule = &adminRule
 	c.ViewRule = &adminRule
 	c.CreateRule = &adminRule

@@ -99,7 +99,7 @@ func reconcileRostersRules(app *pocketbase.PocketBase) error {
 // or a custom Go-backed route.
 func setRostersRules(c *core.Collection) {
 	listView := "@request.auth.id != \"\""
-	mutate := "@request.auth.isAdmin = true || team.created_by = @request.auth.id"
+	mutate := "(" + hasAdminRole + ") || team.created_by = @request.auth.id"
 
 	c.ListRule = &listView
 	c.ViewRule = &listView

@@ -94,12 +94,13 @@ func reconcileRolesRules(app *pocketbase.PocketBase) error {
 	return app.Save(existing)
 }
 
-// setRolesRules is the M08a admit-by-isAdmin shape. 8c swaps the mutate rules
-// to the user_roles subquery shape; the read rules stay open to any authed
-// user.
+// setRolesRules: mutate rules consume the user_roles subquery defined in
+// rules.go (hasAdminRole) so the gating self-references the collection it
+// gates. Bootstrap: M08b's migration backfills the seeded admin's user_roles
+// row before this rule first evaluates against a real request.
 func setRolesRules(c *core.Collection) {
 	read := "@request.auth.id != \"\""
-	mutate := "@request.auth.isAdmin = true"
+	mutate := hasAdminRole
 
 	c.ListRule = &read
 	c.ViewRule = &read
