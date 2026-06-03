@@ -294,7 +294,6 @@ export type UsersRecord = {
 	email: string
 	emailVisibility?: boolean
 	id: string
-	isAdmin?: boolean
 	is_banned?: boolean
 	is_deleted?: boolean
 	location?: string
