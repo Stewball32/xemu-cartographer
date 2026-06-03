@@ -17,7 +17,11 @@ tasks:
 
   dev:backend:
     desc: Run Go backend with hot reload
-    cmds: ["air -c .air.toml"]
+    # PocketBase's `serve` defaults to 127.0.0.1:8090 when --http isn't
+    # passed, which silently ignores PUBLIC_PB_PORT from .env. Pass the
+    # flag explicitly so a non-8090 .env actually wins; mirrors the
+    # dev:backend:lan recipe below.
+    cmds: ["air -c .air.toml -- --http=127.0.0.1:${PUBLIC_PB_PORT}"]
 
   dev:frontend:
     desc: Run SvelteKit dev server (typegen waits for backend, then generates types)
