@@ -9,6 +9,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.8.0] - 2026-06-02
+
+### Added
+
 - M23 — Team membership workflows. Three new PocketBase collections (`notifications`, `team_log`, `team_membership_requests`) plus three new helper packages (`internal/notifications`, `internal/teamlog`, `internal/teamperms`) that wire owner-→-user invites + user-→-team join requests + accept/decline/cancel + self-leave + owner-driven removal end-to-end. Per the M23 decision tree, `audit_log` stays moderation-only; `team_log` is the team-internal activity surface; `default_gamertag` is the social handle (no UI gamertag picker on accept).
 - M23a — `notifications` collection: `user` / `type` / `payload_json` / `read` / `read_at` / `created`. Two indexes — `(user, read, created DESC)` for the bell badge walk + `(user, created DESC)` for the full-page list. Rules: list/view/update = recipient or admin; create/delete = nil (writes flow through `internal/notifications.Notify` which bypasses rules via `app.Save`). New `notifications_field_lock` hook restricts non-admin updates to the `read` field and auto-stamps `read_at` on the false→true transition. `/api/me` returns `notifications_unread_count` so the bell badge has its source on every hit.
 - M23a — `internal/notifications` package: `Notify(app, user, type, payload)` helper + nine per-type files (`team_invite`, `team_invite_accepted/declined/cancelled`, `team_join_request`, `team_join_request_accepted/declined/cancelled`, `team_removed`). Mirrors the `internal/audit` one-file-per-action convention.
