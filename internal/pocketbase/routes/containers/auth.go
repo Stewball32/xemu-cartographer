@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 // kioskTokenCookie is the cookie name used to carry a JWT through the iframe's
@@ -37,13 +39,7 @@ func authorizeAdminQueryToken(e *core.RequestEvent) bool {
 	if err != nil || record == nil {
 		return false
 	}
-	if record.IsSuperuser() {
-		return true
-	}
-	if record.GetBool("isAdmin") {
-		return true
-	}
-	return false
+	return roles.IsAdminAuth(Services.App, record)
 }
 
 // setKioskTokenCookie persists the validated ?token= as an HttpOnly cookie

@@ -53,14 +53,8 @@ func ensureUser(app *pocketbase.PocketBase, u seedUser) error {
 	record.Set("email", u.Email)
 	record.Set("password", u.Password)
 	record.Set("username", u.Username)
-	// M08: isAdmin semantics moved from a bool column on users to a
-	// user_roles row pointing at the admin role. The migration in
-	// schema/users.go backfills pre-M08 admins; for fresh dev seeds we
-	// grant directly here so the seeded admin can hit /api/admin/* without
-	// a reboot.
-	if u.IsAdmin {
-		record.Set("isAdmin", true)
-	}
+	// M08d: isAdmin column is gone — admin status is a user_roles row
+	// pointing at the admin role. Grant happens post-save below.
 
 	if err := app.Save(record); err != nil {
 		return err

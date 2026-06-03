@@ -7,6 +7,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 func init() {
@@ -29,11 +31,18 @@ func init() {
 // the header reads this on every /api/me hit (initial load + window focus
 // + post-action refreshes); a dedicated count endpoint would just create a
 // second polling cadence to debug.
+//
+// M08: Roles is the authoritative list of slugs the caller holds via the
+// user_roles join. IsAdmin is kept as a derived shorthand (`roles.includes
+// ("admin") || isSuperuser`) for frontend backwards-compat; new consumers
+// should branch on Roles to support future M16-style "tournament_organizer"
+// gates without another schema bump.
 type meResponse struct {
 	ID                       string         `json:"id"`
 	Email                    string         `json:"email"`
 	IsAdmin                  bool           `json:"isAdmin"`
 	IsSuperuser              bool           `json:"isSuperuser"`
+	Roles                    []string       `json:"roles"`
 	DefaultGamertag          *gamertagInfo  `json:"default_gamertag"`
 	Gamertags                []gamertagInfo `json:"gamertags"`
 	Teams                    []teamInfo     `json:"teams"`
@@ -67,19 +76,36 @@ func registerMeRoute(se *core.ServeEvent) {
 		resp := meResponse{
 			ID:          e.Auth.Id,
 			Email:       e.Auth.Email(),
-			IsAdmin:     e.Auth.GetBool("isAdmin"),
 			IsSuperuser: e.Auth.IsSuperuser(),
+			Roles:       []string{},
 			Gamertags:   []gamertagInfo{},
 			Teams:       []teamInfo{},
 		}
 
 		// Superusers live in _superusers, not users — they have no
-		// gamertags/teams to render. Return the basic identity payload.
+		// gamertags/teams to render and no user_roles rows. Return the
+		// basic identity payload with IsAdmin=true so the admin nav still
+		// renders for the bootstrap operator.
 		if resp.IsSuperuser {
+			resp.IsAdmin = true
 			return e.JSON(http.StatusOK, resp)
 		}
 
 		userID := e.Auth.Id
+
+		slugs, err := roles.Slugs(e.App, userID)
+		if err != nil {
+			log.Printf("/api/me: roles lookup for %s: %v", userID, err)
+		}
+		if slugs != nil {
+			resp.Roles = slugs
+		}
+		for _, s := range resp.Roles {
+			if s == "admin" {
+				resp.IsAdmin = true
+				break
+			}
+		}
 		tags, err := e.App.FindRecordsByFilter(
 			"gamertags",
 			"user = {:userID}",

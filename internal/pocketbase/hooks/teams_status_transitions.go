@@ -6,6 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/audit"
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
 )
 
@@ -52,7 +53,7 @@ func registerTeamsStatusTransitionsHook(app *pocketbase.PocketBase) {
 		newName := e.Record.GetString("name")
 		nameChanged := prevName != newName
 
-		actorIsAdmin := e.Auth != nil && (e.Auth.IsSuperuser() || e.Auth.GetBool("isAdmin"))
+		actorIsAdmin := roles.IsAdminAuth(e.App, e.Auth)
 
 		// Always audit name changes — even on non-approved rows + admin renames
 		// — so the team page can show every name the team has carried.

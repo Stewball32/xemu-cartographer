@@ -6,6 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/audit"
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 func init() {
@@ -56,7 +57,7 @@ func registerGamertagsStatusTransitionsHook(app *pocketbase.PocketBase) {
 		newTag := e.Record.GetString("tag")
 		tagChanged := prevTag != newTag
 
-		actorIsAdmin := e.Auth != nil && (e.Auth.IsSuperuser() || e.Auth.GetBool("isAdmin"))
+		actorIsAdmin := roles.IsAdminAuth(e.App, e.Auth)
 
 		// Auto-downgrade: owner edited the tag of an approved row. Force
 		// status back to allowed so the next admin review re-evaluates the

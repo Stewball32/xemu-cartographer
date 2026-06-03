@@ -56,12 +56,9 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		})
 	}
 
-	if users.Fields.GetByName("isAdmin") == nil {
-		users.Fields.Add(&core.BoolField{
-			Name:   "isAdmin",
-			Hidden: true,
-		})
-	}
+	// M08d: isAdmin column is no longer added on fresh installs. The
+	// migration below drops it on existing installs once every previously-
+	// admin user has a user_roles row pointing at the admin role.
 
 	// Soft-delete (M7d). Hard delete loses every FK back through gamertags +
 	// rosters + teams.created_by, which would scrub real game history when a
@@ -155,19 +152,25 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 // tail of registerUsersCollection so the migration runs once per boot and
 // recovers from a half-applied state.
 //
-// Drops out cleanly when the `isAdmin` field has already been removed (8d's
-// schema migration), at which point every previously-admin user must
-// already hold a user_roles row — the backfill has nothing left to do.
+// Two-phase: (1) backfill any row that still has isAdmin=true into user_roles;
+// (2) once every isAdmin=true row has a matching user_roles entry, drop the
+// isAdmin field from the users schema. Phase 2 is the 8d watershed — after
+// this commit's first boot, the field stops existing and every reader is
+// forced through internal/roles.
 //
-// Errors on the audit write are logged but don't abort the wider migration:
-// a row whose user_roles write succeeded but whose audit row didn't is
-// recoverable on the next boot (the per-row guard re-checks the user_roles
-// existence). Errors on the user_roles write itself ARE fatal — without that
-// row the user loses admin access immediately.
+// Drops out cleanly when the `isAdmin` field has already been removed at a
+// previous boot. Errors on the audit write are logged but don't abort the
+// wider migration. Errors on the user_roles write itself ARE fatal — without
+// that row the user loses admin access on the next boot.
+//
+// Guard for the drop: if any isAdmin=true row failed its user_roles backfill,
+// the field stays in place so the next boot retries. This avoids the
+// pathological case where a transient failure during migration leaves an
+// admin permanently locked out.
 func migrateUsersIsAdminToRoles(app *pocketbase.PocketBase) error {
 	users, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
-		return fmt.Errorf("M08b migration: lookup users collection: %w", err)
+		return fmt.Errorf("M08 migration: lookup users collection: %w", err)
 	}
 	if users.Fields.GetByName("isAdmin") == nil {
 		return nil
@@ -175,20 +178,21 @@ func migrateUsersIsAdminToRoles(app *pocketbase.PocketBase) error {
 
 	roleRow, err := app.FindFirstRecordByData("roles", "slug", "admin")
 	if err != nil || roleRow == nil {
-		log.Printf("M08b migration: admin role not seeded; skipping backfill (run will retry next boot)")
+		log.Printf("M08 migration: admin role not seeded; skipping backfill (run will retry next boot)")
 		return nil
 	}
 
 	urCol, err := app.FindCollectionByNameOrId("user_roles")
 	if err != nil {
-		return fmt.Errorf("M08b migration: lookup user_roles collection: %w", err)
+		return fmt.Errorf("M08 migration: lookup user_roles collection: %w", err)
 	}
 
 	rows, err := app.FindRecordsByFilter("users", "isAdmin = true", "", 0, 0)
 	if err != nil {
-		return fmt.Errorf("M08b migration: load isAdmin users: %w", err)
+		return fmt.Errorf("M08 migration: load isAdmin users: %w", err)
 	}
 
+	pendingBackfill := 0
 	for _, u := range rows {
 		existing, _ := app.FindFirstRecordByFilter(
 			"user_roles",
@@ -202,14 +206,27 @@ func migrateUsersIsAdminToRoles(app *pocketbase.PocketBase) error {
 		ur.Set("user", u.Id)
 		ur.Set("role", roleRow.Id)
 		if err := app.Save(ur); err != nil {
-			return fmt.Errorf("M08b migration: backfill user_roles for user %s: %w", u.Id, err)
+			pendingBackfill++
+			log.Printf("M08 migration: backfill user_roles for user %s failed (will retry next boot): %v", u.Id, err)
+			continue
 		}
 		if err := audit.WriteRef(app, nil, audit.ActionRoleGrant, "users", u.Id, audit.RoleGrantPayload{
 			RoleSlug:    "admin",
 			ByMigration: true,
 		}); err != nil {
-			log.Printf("M08b migration: audit row for user %s: %v (will retry next boot)", u.Id, err)
+			log.Printf("M08 migration: audit row for user %s: %v (will retry next boot)", u.Id, err)
 		}
 	}
+
+	if pendingBackfill > 0 {
+		log.Printf("M08 migration: %d backfill(s) failed; keeping users.isAdmin in place for next boot", pendingBackfill)
+		return nil
+	}
+
+	users.Fields.RemoveByName("isAdmin")
+	if err := app.Save(users); err != nil {
+		return fmt.Errorf("M08 migration: drop users.isAdmin field: %w", err)
+	}
+	log.Printf("M08 migration: dropped users.isAdmin field; roles source-of-truth is user_roles")
 	return nil
 }

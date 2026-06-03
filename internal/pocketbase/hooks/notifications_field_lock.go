@@ -7,6 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 func init() {
@@ -32,7 +34,7 @@ func init() {
 // field gate so back-office tooling can correct mis-delivered rows.
 func registerNotificationsFieldLockHook(app *pocketbase.PocketBase) {
 	app.OnRecordUpdateRequest("notifications").BindFunc(func(e *core.RecordRequestEvent) error {
-		actorIsAdmin := e.Auth != nil && (e.Auth.IsSuperuser() || e.Auth.GetBool("isAdmin"))
+		actorIsAdmin := roles.IsAdminAuth(e.App, e.Auth)
 
 		prev := e.Record.Original()
 		readChanged := prev.GetBool("read") != e.Record.GetBool("read")
