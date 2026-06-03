@@ -16,8 +16,11 @@ export enum Collections {
 	Containers = "containers",
 	GameEvents = "game_events",
 	Gamertags = "gamertags",
+	Notifications = "notifications",
 	ReservedNames = "reserved_names",
 	Rosters = "rosters",
+	TeamLog = "team_log",
+	TeamMembershipRequests = "team_membership_requests",
 	Teams = "teams",
 	Users = "users",
 }
@@ -178,6 +181,16 @@ export type GamertagsRecord = {
 	user: RecordIdString
 }
 
+export type NotificationsRecord<Tpayload_json = unknown> = {
+	created: IsoAutoDateString
+	id: string
+	payload_json?: null | Tpayload_json
+	read?: boolean
+	read_at?: IsoDateString
+	type: string
+	user: RecordIdString
+}
+
 export type ReservedNamesRecord = {
 	created: IsoAutoDateString
 	created_by?: RecordIdString
@@ -197,6 +210,42 @@ export type RostersRecord = {
 	left_at?: IsoDateString
 	team: RecordIdString
 	updated: IsoAutoDateString
+}
+
+export type TeamLogRecord<Tpayload_json = unknown> = {
+	actor?: RecordIdString
+	created: IsoAutoDateString
+	event: string
+	id: string
+	payload_json?: null | Tpayload_json
+	subject_gamertag?: RecordIdString
+	subject_user?: RecordIdString
+	team: RecordIdString
+}
+
+export enum TeamMembershipRequestsDirectionOptions {
+	"invited" = "invited",
+	"requested" = "requested",
+}
+
+export enum TeamMembershipRequestsStatusOptions {
+	"pending" = "pending",
+	"accepted" = "accepted",
+	"declined" = "declined",
+	"expired" = "expired",
+	"cancelled" = "cancelled",
+}
+export type TeamMembershipRequestsRecord = {
+	created: IsoAutoDateString
+	direction: TeamMembershipRequestsDirectionOptions
+	expires_at?: IsoDateString
+	id: string
+	initiated_by: RecordIdString
+	responded_by?: RecordIdString
+	status: TeamMembershipRequestsStatusOptions
+	team: RecordIdString
+	updated: IsoAutoDateString
+	user: RecordIdString
 }
 
 export enum TeamsStatusOptions {
@@ -246,8 +295,11 @@ export type CapturePoliciesResponse<Texpand = unknown> = Required<CapturePolicie
 export type ContainersResponse<Texpand = unknown> = Required<ContainersRecord> & BaseSystemFields<Texpand>
 export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<GameEventsRecord<Tdata>> & BaseSystemFields<Texpand>
 export type GamertagsResponse<Texpand = unknown> = Required<GamertagsRecord> & BaseSystemFields<Texpand>
+export type NotificationsResponse<Tpayload_json = unknown, Texpand = unknown> = Required<NotificationsRecord<Tpayload_json>> & BaseSystemFields<Texpand>
 export type ReservedNamesResponse<Texpand = unknown> = Required<ReservedNamesRecord> & BaseSystemFields<Texpand>
 export type RostersResponse<Texpand = unknown> = Required<RostersRecord> & BaseSystemFields<Texpand>
+export type TeamLogResponse<Tpayload_json = unknown, Texpand = unknown> = Required<TeamLogRecord<Tpayload_json>> & BaseSystemFields<Texpand>
+export type TeamMembershipRequestsResponse<Texpand = unknown> = Required<TeamMembershipRequestsRecord> & BaseSystemFields<Texpand>
 export type TeamsResponse<Texpand = unknown> = Required<TeamsRecord> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
 
@@ -264,8 +316,11 @@ export type CollectionRecords = {
 	containers: ContainersRecord
 	game_events: GameEventsRecord
 	gamertags: GamertagsRecord
+	notifications: NotificationsRecord
 	reserved_names: ReservedNamesRecord
 	rosters: RostersRecord
+	team_log: TeamLogRecord
+	team_membership_requests: TeamMembershipRequestsRecord
 	teams: TeamsRecord
 	users: UsersRecord
 }
@@ -281,8 +336,11 @@ export type CollectionResponses = {
 	containers: ContainersResponse
 	game_events: GameEventsResponse
 	gamertags: GamertagsResponse
+	notifications: NotificationsResponse
 	reserved_names: ReservedNamesResponse
 	rosters: RostersResponse
+	team_log: TeamLogResponse
+	team_membership_requests: TeamMembershipRequestsResponse
 	teams: TeamsResponse
 	users: UsersResponse
 }

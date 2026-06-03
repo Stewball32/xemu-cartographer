@@ -25,6 +25,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import pb from '$lib/pocketbase';
 	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
+	import PendingRequests from '$lib/components/membership/PendingRequests.svelte';
 	import { toastPromise } from '$lib/stores/toaster';
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 	import { apiBaseURL } from '$lib/utils/api-base';
@@ -688,6 +689,10 @@
 	<section class="mb-10">
 		<h2 class="mb-4 border-b border-surface-300-700 pb-2 h3">Gamertags &amp; Teams</h2>
 		<div class="space-y-6">
+			<!-- M23d: pending invites + sent requests, inline with the rest
+			     of the team management surface. The component handles its
+			     own load + actions. -->
+			<PendingRequests />
 			<!-- My Gamertags -->
 			<div class="space-y-4 card p-6">
 				<div class="flex items-center justify-between gap-3">

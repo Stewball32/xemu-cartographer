@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import NavToggle from './NavToggle.svelte';
 	import ModeToggle from './ModeToggle.svelte';
+	import HeaderBell from './HeaderBell.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { LogInIcon, LogOutIcon, UserIcon } from '@lucide/svelte';
 	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
@@ -15,9 +16,10 @@
 		<AppBar.Lead class="min-w-0">
 			<NavToggle onclick={onToggle} />
 		</AppBar.Lead>
-		<AppBar.Trail class="flex items-center">
+		<AppBar.Trail class="flex items-center gap-1">
 			<ModeToggle />
 			{#if auth.isLoggedIn && auth.user}
+				<HeaderBell />
 				<Popover positioning={{ placement: 'bottom-end' }}>
 					<Popover.Trigger
 						class="flex size-9 items-center justify-center rounded-full hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"

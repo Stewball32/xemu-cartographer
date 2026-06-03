@@ -23,14 +23,21 @@ func init() {
 // M22b: gamertagInfo.Blocked → Status (4-state enum from the gamertags
 // SelectField). Callers that previously checked `blocked === true` should
 // switch to `status === "blocked"`.
+//
+// M23a: notifications_unread_count is the count of rows in the notifications
+// collection addressed to the caller where read=false. The bell badge in
+// the header reads this on every /api/me hit (initial load + window focus
+// + post-action refreshes); a dedicated count endpoint would just create a
+// second polling cadence to debug.
 type meResponse struct {
-	ID              string         `json:"id"`
-	Email           string         `json:"email"`
-	IsAdmin         bool           `json:"isAdmin"`
-	IsSuperuser     bool           `json:"isSuperuser"`
-	DefaultGamertag *gamertagInfo  `json:"default_gamertag"`
-	Gamertags       []gamertagInfo `json:"gamertags"`
-	Teams           []teamInfo     `json:"teams"`
+	ID                       string         `json:"id"`
+	Email                    string         `json:"email"`
+	IsAdmin                  bool           `json:"isAdmin"`
+	IsSuperuser              bool           `json:"isSuperuser"`
+	DefaultGamertag          *gamertagInfo  `json:"default_gamertag"`
+	Gamertags                []gamertagInfo `json:"gamertags"`
+	Teams                    []teamInfo     `json:"teams"`
+	NotificationsUnreadCount int            `json:"notifications_unread_count"`
 }
 
 type gamertagInfo struct {
@@ -146,6 +153,20 @@ func registerMeRoute(se *core.ServeEvent) {
 					},
 				})
 			}
+		}
+
+		// Bell-badge count. CountRecords returns 0 if the notifications
+		// collection isn't present (shouldn't happen on a healthy server,
+		// but the schema-registration ordering inside OnServe means the
+		// route shouldn't crash a deployment that's mid-bootstrap).
+		count, err := e.App.CountRecords(
+			"notifications",
+			dbx.HashExp{"user": userID, "read": false},
+		)
+		if err != nil {
+			log.Printf("/api/me: notifications count for %s: %v", userID, err)
+		} else {
+			resp.NotificationsUnreadCount = int(count)
 		}
 
 		return e.JSON(http.StatusOK, resp)
