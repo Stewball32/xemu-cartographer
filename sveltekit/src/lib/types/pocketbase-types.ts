@@ -18,10 +18,12 @@ export enum Collections {
 	Gamertags = "gamertags",
 	Notifications = "notifications",
 	ReservedNames = "reserved_names",
+	Roles = "roles",
 	Rosters = "rosters",
 	TeamLog = "team_log",
 	TeamMembershipRequests = "team_membership_requests",
 	Teams = "teams",
+	UserRoles = "user_roles",
 	Users = "users",
 }
 
@@ -200,6 +202,16 @@ export type ReservedNamesRecord = {
 	updated: IsoAutoDateString
 }
 
+export type RolesRecord = {
+	created: IsoAutoDateString
+	description?: string
+	id: string
+	label: string
+	level?: number
+	slug: string
+	updated: IsoAutoDateString
+}
+
 export type RostersRecord = {
 	created: IsoAutoDateString
 	gamertag: RecordIdString
@@ -264,8 +276,17 @@ export type TeamsRecord = {
 	updated: IsoAutoDateString
 }
 
+export type UserRolesRecord = {
+	granted_at: IsoAutoDateString
+	granted_by?: RecordIdString
+	id: string
+	role: RecordIdString
+	user: RecordIdString
+}
+
 export type UsersRecord = {
 	avatar?: FileNameString
+	banned_until?: IsoDateString
 	bio?: string
 	created: IsoAutoDateString
 	default_gamertag?: RecordIdString
@@ -274,6 +295,7 @@ export type UsersRecord = {
 	emailVisibility?: boolean
 	id: string
 	isAdmin?: boolean
+	is_banned?: boolean
 	is_deleted?: boolean
 	location?: string
 	name?: string
@@ -297,10 +319,12 @@ export type GameEventsResponse<Tdata = unknown, Texpand = unknown> = Required<Ga
 export type GamertagsResponse<Texpand = unknown> = Required<GamertagsRecord> & BaseSystemFields<Texpand>
 export type NotificationsResponse<Tpayload_json = unknown, Texpand = unknown> = Required<NotificationsRecord<Tpayload_json>> & BaseSystemFields<Texpand>
 export type ReservedNamesResponse<Texpand = unknown> = Required<ReservedNamesRecord> & BaseSystemFields<Texpand>
+export type RolesResponse<Texpand = unknown> = Required<RolesRecord> & BaseSystemFields<Texpand>
 export type RostersResponse<Texpand = unknown> = Required<RostersRecord> & BaseSystemFields<Texpand>
 export type TeamLogResponse<Tpayload_json = unknown, Texpand = unknown> = Required<TeamLogRecord<Tpayload_json>> & BaseSystemFields<Texpand>
 export type TeamMembershipRequestsResponse<Texpand = unknown> = Required<TeamMembershipRequestsRecord> & BaseSystemFields<Texpand>
 export type TeamsResponse<Texpand = unknown> = Required<TeamsRecord> & BaseSystemFields<Texpand>
+export type UserRolesResponse<Texpand = unknown> = Required<UserRolesRecord> & BaseSystemFields<Texpand>
 export type UsersResponse<Texpand = unknown> = Required<UsersRecord> & AuthSystemFields<Texpand>
 
 // Types containing all Records and Responses, useful for creating typing helper functions
@@ -318,10 +342,12 @@ export type CollectionRecords = {
 	gamertags: GamertagsRecord
 	notifications: NotificationsRecord
 	reserved_names: ReservedNamesRecord
+	roles: RolesRecord
 	rosters: RostersRecord
 	team_log: TeamLogRecord
 	team_membership_requests: TeamMembershipRequestsRecord
 	teams: TeamsRecord
+	user_roles: UserRolesRecord
 	users: UsersRecord
 }
 
@@ -338,10 +364,12 @@ export type CollectionResponses = {
 	gamertags: GamertagsResponse
 	notifications: NotificationsResponse
 	reserved_names: ReservedNamesResponse
+	roles: RolesResponse
 	rosters: RostersResponse
 	team_log: TeamLogResponse
 	team_membership_requests: TeamMembershipRequestsResponse
 	teams: TeamsResponse
+	user_roles: UserRolesResponse
 	users: UsersResponse
 }
 

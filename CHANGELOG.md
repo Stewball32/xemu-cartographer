@@ -9,6 +9,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- M08a — `roles` + `user_roles` PocketBase collections. `roles` (slug, label, description, level 0–100) is seeded inline with three baseline rows on first-create (`superuser` / 100, `admin` / 50, `member` / 10) so production deployments always have the slugs the guard layer needs. `user_roles` (user, role, granted_by, granted_at) joins users to roles with a unique `(user, role)` index and a lookup `(user)` index. Both collections register through `internal/pocketbase/schema/identity.go` ahead of gamertags so the M08 backfill in `users.go` can resolve roles at runtime.
+- M08a — Four new audit-action constants + payload structs: `ActionRoleGrant` / `RoleGrantPayload{RoleSlug, ByMigration}`, `ActionRoleRevoke` / `RoleRevokePayload{RoleSlug, Reason}`, `ActionBan` / `BanPayload{Reason, ByMigration}`, `ActionTimeout` / `TimeoutPayload{Reason, ExpiresAt}`, plus `ActionUnban` / `UnbanPayload{Reason}` for the inverse of both. Wiring lands with 8b–8f.
+- M08a — `users.is_banned` (hidden bool) + `users.banned_until` (date) fields. AuthRule extension + transition hook land in 8f; M08a only adds the columns so the typegen pass is one-shot.
+
 ### Changed
 
 ### Deprecated

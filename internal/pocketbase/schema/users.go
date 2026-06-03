@@ -75,6 +75,24 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 		})
 	}
 
+	// Ban + timeout (M8f). is_banned is the indefinite-block knob;
+	// banned_until is the time-bounded variant. The AuthRule below admits a
+	// user when either (a) is_banned is false, or (b) banned_until is in
+	// the past — so a stale is_banned=true row whose banned_until elapsed
+	// silently unblocks. State transitions are gated + audited by the
+	// users_ban_transitions hook (M8f).
+	if users.Fields.GetByName("is_banned") == nil {
+		users.Fields.Add(&core.BoolField{
+			Name:   "is_banned",
+			Hidden: true,
+		})
+	}
+	if users.Fields.GetByName("banned_until") == nil {
+		users.Fields.Add(&core.DateField{
+			Name: "banned_until",
+		})
+	}
+
 	// default_gamertag points at the user's "show me as" pick. Nullable —
 	// freshly-created users get auto-populated by the
 	// users_default_gamertag hook, but the field stays unconstrained at

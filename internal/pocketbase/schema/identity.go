@@ -17,7 +17,14 @@ package schema
 // Order matters: the helper packages that consume them (internal/teamlog,
 // route handlers) lookup the collections at OnServe via FindCollectionByName,
 // so registration must finish before the routes register.
+//
+// M08 prepends roles + user_roles. user_roles relates to both users and
+// roles, so roles must run first. Both run before gamertags so the M08
+// migration in users.go (which backfills isAdmin → user_roles) can find a
+// live `roles` collection at runtime.
 func init() {
+	register(registerRolesCollection)
+	register(registerUserRolesCollection)
 	register(registerGamertagsCollection)
 	register(registerTeamsCollection)
 	register(registerRostersCollection)
