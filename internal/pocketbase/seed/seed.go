@@ -8,6 +8,8 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 // Run seeds the database with test data.
@@ -51,10 +53,23 @@ func ensureUser(app *pocketbase.PocketBase, u seedUser) error {
 	record.Set("email", u.Email)
 	record.Set("password", u.Password)
 	record.Set("username", u.Username)
-	record.Set("isAdmin", u.IsAdmin)
+	// M08: isAdmin semantics moved from a bool column on users to a
+	// user_roles row pointing at the admin role. The migration in
+	// schema/users.go backfills pre-M08 admins; for fresh dev seeds we
+	// grant directly here so the seeded admin can hit /api/admin/* without
+	// a reboot.
+	if u.IsAdmin {
+		record.Set("isAdmin", true)
+	}
 
 	if err := app.Save(record); err != nil {
 		return err
+	}
+
+	if u.IsAdmin {
+		if err := roles.Grant(app, record.Id, "admin", nil); err != nil {
+			return fmt.Errorf("seed user %s: grant admin role: %w", u.Email, err)
+		}
 	}
 
 	log.Printf("  user %s: created", u.Email)
