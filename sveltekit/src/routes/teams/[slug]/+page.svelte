@@ -21,16 +21,22 @@
 		ClockIcon,
 		CrownIcon,
 		BriefcaseIcon,
+		HistoryIcon,
 		LoaderIcon,
 		LogInIcon,
+		LogOutIcon,
 		UserIcon,
-		UsersIcon,
-		HistoryIcon
+		UserMinusIcon,
+		UsersIcon
 	} from '@lucide/svelte';
 	import pb from '$lib/pocketbase';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { describeAsyncError, toastPromise } from '$lib/stores/toaster';
-	import { apiBaseURL } from '$lib/utils/api-base';
+	import { confirmToast, describeAsyncError, toastPromise } from '$lib/stores/toaster';
+	import {
+		leaveRoster,
+		removeRosterMember,
+		requestToJoinTeam
+	} from '$lib/utils/membership-actions';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
@@ -174,29 +180,75 @@
 		if (!team) return;
 		joinInFlight = true;
 		try {
-			await toastPromise(
-				fetch(`${apiBaseURL()}/api/teams/${team.id}/join-requests`, {
-					method: 'POST',
-					headers: { Authorization: pb.authStore.token },
-					body: '{}'
-				}).then(async (res) => {
-					if (!res.ok) {
-						const txt = await res.text();
-						throw new Error(txt || res.statusText);
-					}
-					return res.json();
-				}),
-				{
-					loading: { title: 'Sending request', description: team.name },
-					success: { title: 'Request sent', description: 'The team owners will see it.' },
-					errorTitle: 'Could not send request'
-				}
-			);
+			await toastPromise(requestToJoinTeam(team.id), {
+				loading: { title: 'Sending request', description: team.name },
+				success: { title: 'Request sent', description: 'The team owners will see it.' },
+				errorTitle: 'Could not send request'
+			});
 			await Promise.all([load(), notifications.refresh()]);
 		} catch {
 			// toast already shown
 		} finally {
 			joinInFlight = false;
+		}
+	}
+
+	const iAmOwnerOrManager = $derived.by(() => {
+		if (!auth.isLoggedIn || !auth.user) return false;
+		return activeRoster.some(
+			(r) => r.expand?.gamertag?.user === auth.user!.id && (r.is_owner || r.is_manager)
+		);
+	});
+
+	let rosterActionBusy = $state<Record<string, boolean>>({});
+
+	async function leaveMyRow(rosterID: string, teamName: string) {
+		const ok = await confirmToast({
+			title: `Leave ${teamName}?`,
+			description: 'You will need a new invite or request to return.',
+			confirmLabel: 'Leave team',
+			type: 'warning'
+		});
+		if (!ok) return;
+		rosterActionBusy = { ...rosterActionBusy, [rosterID]: true };
+		try {
+			await toastPromise(leaveRoster(rosterID), {
+				loading: { title: 'Leaving', description: teamName },
+				success: { title: 'You left the team', description: teamName },
+				errorTitle: 'Leave failed'
+			});
+			await load();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...rosterActionBusy };
+			delete next[rosterID];
+			rosterActionBusy = next;
+		}
+	}
+
+	async function removeMember(rosterID: string, handle: string) {
+		const ok = await confirmToast({
+			title: `Remove @${handle}?`,
+			description: 'They will be notified and lose access immediately.',
+			confirmLabel: 'Remove',
+			type: 'warning'
+		});
+		if (!ok) return;
+		rosterActionBusy = { ...rosterActionBusy, [rosterID]: true };
+		try {
+			await toastPromise(removeRosterMember(rosterID), {
+				loading: { title: 'Removing', description: `@${handle}` },
+				success: { title: 'Removed', description: `@${handle}` },
+				errorTitle: 'Remove failed'
+			});
+			await load();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...rosterActionBusy };
+			delete next[rosterID];
+			rosterActionBusy = next;
 		}
 	}
 
@@ -383,6 +435,27 @@
 										<span class="badge preset-tonal-primary" title="Manager">
 											<BriefcaseIcon class="size-3" />
 										</span>
+									{/if}
+									{#if auth.user && u?.id === auth.user.id}
+										<button
+											type="button"
+											class="btn preset-tonal btn-sm"
+											onclick={() => leaveMyRow(r.id, t.name)}
+											disabled={rosterActionBusy[r.id]}
+											title="Leave team"
+										>
+											<LogOutIcon class="size-3.5" />
+										</button>
+									{:else if iAmOwnerOrManager}
+										<button
+											type="button"
+											class="btn preset-tonal-error btn-sm"
+											onclick={() => removeMember(r.id, gt?.tag ?? '?')}
+											disabled={rosterActionBusy[r.id]}
+											title="Remove from team"
+										>
+											<UserMinusIcon class="size-3.5" />
+										</button>
 									{/if}
 								</div>
 							</li>

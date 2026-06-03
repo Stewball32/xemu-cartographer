@@ -11,9 +11,15 @@
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { BellIcon, CheckCheckIcon, MailIcon } from '@lucide/svelte';
+	import { BellIcon, CheckCheckIcon, CheckIcon, MailIcon, XIcon } from '@lucide/svelte';
 	import { notifications } from '$lib/stores/notifications.svelte';
-	import { renderNotification } from '$lib/utils/notification-render';
+	import {
+		extractRequestID,
+		isActionableInvite,
+		renderNotification
+	} from '$lib/utils/notification-render';
+	import { acceptRequest, declineRequest } from '$lib/utils/membership-actions';
+	import { toastPromise } from '$lib/stores/toaster';
 
 	let open = $state(false);
 
@@ -50,6 +56,46 @@
 
 	async function handleMarkAllRead() {
 		await notifications.markAllRead();
+	}
+
+	let actionBusy = $state<Record<string, boolean>>({});
+
+	async function handleAccept(id: string, requestID: string) {
+		actionBusy = { ...actionBusy, [id]: true };
+		try {
+			await toastPromise(acceptRequest(requestID), {
+				loading: { title: 'Accepting' },
+				success: { title: 'Accepted' },
+				errorTitle: 'Accept failed'
+			});
+			await notifications.markRead(id);
+			await notifications.refresh();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...actionBusy };
+			delete next[id];
+			actionBusy = next;
+		}
+	}
+
+	async function handleDecline(id: string, requestID: string) {
+		actionBusy = { ...actionBusy, [id]: true };
+		try {
+			await toastPromise(declineRequest(requestID), {
+				loading: { title: 'Declining' },
+				success: { title: 'Declined' },
+				errorTitle: 'Decline failed'
+			});
+			await notifications.markRead(id);
+			await notifications.refresh();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...actionBusy };
+			delete next[id];
+			actionBusy = next;
+		}
 	}
 
 	const badgeLabel = $derived.by(() => {
@@ -104,11 +150,12 @@
 					<ul class="divide-y divide-surface-200-800">
 						{#each notifications.recent as n (n.id)}
 							{@const r = renderNotification(n.type, n.payload_json)}
-							<li>
+							{@const requestID = extractRequestID(n.type, n.payload_json)}
+							{@const showActions = isActionableInvite(n.type) && requestID && !n.read}
+							<li class:opacity-60={n.read}>
 								<button
 									type="button"
 									class="block w-full px-3 py-2 text-left hover:preset-tonal"
-									class:opacity-60={n.read}
 									onclick={() => handleRowClick(n.id, r.href, n.read)}
 								>
 									<div class="flex items-start justify-between gap-2">
@@ -123,6 +170,28 @@
 									<p class="mt-0.5 text-xs opacity-75">{r.description}</p>
 									<p class="mt-0.5 text-[10px] opacity-50">{formatRelative(n.created)}</p>
 								</button>
+								{#if showActions}
+									<div class="flex items-center justify-end gap-1 px-3 pb-2">
+										<button
+											type="button"
+											class="btn preset-tonal-error btn-sm text-xs"
+											disabled={actionBusy[n.id]}
+											onclick={() => handleDecline(n.id, requestID!)}
+										>
+											<XIcon class="size-3.5" />
+											Decline
+										</button>
+										<button
+											type="button"
+											class="btn preset-filled-primary-500 btn-sm text-xs"
+											disabled={actionBusy[n.id]}
+											onclick={() => handleAccept(n.id, requestID!)}
+										>
+											<CheckIcon class="size-3.5" />
+											Accept
+										</button>
+									</div>
+								{/if}
 							</li>
 						{/each}
 					</ul>

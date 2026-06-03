@@ -229,9 +229,23 @@ function fallback(type: string): RenderedNotification {
 	};
 }
 
-// Notification types whose row carries inline Accept/Decline actions on the
-// bell + /notifications/ rendering (M23d). For the bell + page we only need
-// to flag "is actionable" — the actions themselves come in M23d.
+// Notification types whose row carries inline Accept/Decline actions on
+// the bell + /notifications/ rendering. Both team_invite and
+// team_join_request are dual-action (recipient/owner can accept or
+// decline); other types are info-only and click-through.
 export function isActionableInvite(type: string): boolean {
 	return type === 'team_invite' || type === 'team_join_request';
+}
+
+// Pulls the request_id out of an actionable notification's payload so the
+// inline buttons can call /api/team-membership-requests/{id}/... without
+// re-parsing the per-type struct from the call site.
+export function extractRequestID(type: string, payloadJson: string): string | null {
+	if (!isActionableInvite(type)) return null;
+	try {
+		const obj = JSON.parse(payloadJson || '{}') as { request_id?: string };
+		return obj.request_id ?? null;
+	} catch {
+		return null;
+	}
 }

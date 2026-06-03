@@ -30,7 +30,7 @@
 	import pb from '$lib/pocketbase';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
-	import { apiBaseURL } from '$lib/utils/api-base';
+	import { inviteToTeam } from '$lib/utils/membership-actions';
 	import { notifications } from '$lib/stores/notifications.svelte';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -166,27 +166,11 @@
 		if (!user || !inviteTeam) return;
 		inviteInFlight = true;
 		try {
-			await toastPromise(
-				fetch(`${apiBaseURL()}/api/teams/${inviteTeam}/invite`, {
-					method: 'POST',
-					headers: {
-						Authorization: pb.authStore.token,
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({ user_id: user.id })
-				}).then(async (res) => {
-					if (!res.ok) {
-						const txt = await res.text();
-						throw new Error(txt || res.statusText);
-					}
-					return res.json();
-				}),
-				{
-					loading: { title: 'Sending invite', description: user.username },
-					success: { title: 'Invite sent', description: `@${user.username} will see it.` },
-					errorTitle: 'Could not send invite'
-				}
-			);
+			await toastPromise(inviteToTeam(inviteTeam, user.id), {
+				loading: { title: 'Sending invite', description: user.username },
+				success: { title: 'Invite sent', description: `@${user.username} will see it.` },
+				errorTitle: 'Could not send invite'
+			});
 			inviteOpen = false;
 			inviteTeam = '';
 			await notifications.refresh();

@@ -10,11 +10,23 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { ArrowLeftIcon, CheckCheckIcon, MailIcon, RefreshCwIcon } from '@lucide/svelte';
+	import {
+		ArrowLeftIcon,
+		CheckCheckIcon,
+		CheckIcon,
+		MailIcon,
+		RefreshCwIcon,
+		XIcon
+	} from '@lucide/svelte';
 	import pb from '$lib/pocketbase';
 	import { notifications, type NotificationRow } from '$lib/stores/notifications.svelte';
-	import { describeAsyncError, toaster } from '$lib/stores/toaster';
-	import { renderNotification } from '$lib/utils/notification-render';
+	import { describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
+	import {
+		extractRequestID,
+		isActionableInvite,
+		renderNotification
+	} from '$lib/utils/notification-render';
+	import { acceptRequest, declineRequest } from '$lib/utils/membership-actions';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 
@@ -107,6 +119,46 @@
 	}
 
 	const unreadOnPage = $derived(rows.filter((r) => !r.read).length);
+
+	let actionBusy = $state<Record<string, boolean>>({});
+
+	async function handleAccept(row: NotificationRow, requestID: string) {
+		actionBusy = { ...actionBusy, [row.id]: true };
+		try {
+			await toastPromise(acceptRequest(requestID), {
+				loading: { title: 'Accepting' },
+				success: { title: 'Accepted' },
+				errorTitle: 'Accept failed'
+			});
+			await markRead(row);
+			await load();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...actionBusy };
+			delete next[row.id];
+			actionBusy = next;
+		}
+	}
+
+	async function handleDecline(row: NotificationRow, requestID: string) {
+		actionBusy = { ...actionBusy, [row.id]: true };
+		try {
+			await toastPromise(declineRequest(requestID), {
+				loading: { title: 'Declining' },
+				success: { title: 'Declined' },
+				errorTitle: 'Decline failed'
+			});
+			await markRead(row);
+			await load();
+		} catch {
+			// toast already shown
+		} finally {
+			const next = { ...actionBusy };
+			delete next[row.id];
+			actionBusy = next;
+		}
+	}
 </script>
 
 <div class="mx-auto flex max-w-3xl flex-col gap-4">
@@ -167,11 +219,12 @@
 						<ul class="divide-y divide-surface-200-800">
 							{#each list as n (n.id)}
 								{@const r = renderNotification(n.type, n.payload_json)}
-								<li>
+								{@const requestID = extractRequestID(n.type, n.payload_json)}
+								{@const showActions = isActionableInvite(n.type) && requestID && !n.read}
+								<li class:opacity-60={n.read}>
 									<button
 										type="button"
 										class="block w-full px-4 py-3 text-left hover:preset-tonal"
-										class:opacity-60={n.read}
 										onclick={() => handleRowClick(n, r.href)}
 									>
 										<div class="flex items-start justify-between gap-3">
@@ -188,6 +241,28 @@
 											{/if}
 										</div>
 									</button>
+									{#if showActions}
+										<div class="flex items-center justify-end gap-1 px-4 pb-2">
+											<button
+												type="button"
+												class="btn preset-tonal-error btn-sm"
+												disabled={actionBusy[n.id]}
+												onclick={() => handleDecline(n, requestID!)}
+											>
+												<XIcon class="size-3.5" />
+												Decline
+											</button>
+											<button
+												type="button"
+												class="btn preset-filled-primary-500 btn-sm"
+												disabled={actionBusy[n.id]}
+												onclick={() => handleAccept(n, requestID!)}
+											>
+												<CheckIcon class="size-3.5" />
+												Accept
+											</button>
+										</div>
+									{/if}
 								</li>
 							{/each}
 						</ul>
