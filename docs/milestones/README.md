@@ -12,7 +12,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M05  | [Scraper & WebSocket phase model + cache refactor](M05-phase-model-refactor.md)             | Done    |
 | M06  | [Frontend polish (theme + auth-refresh fix + debug revamp)](M06-frontend-polish.md)         | Done    |
 | M07  | [Identity schemas: gamertags + teams](M07-identity-schemas.md)                              | Done    |
-| M08  | [Roles + permissions](M08-roles-permissions.md)                                             | In progress |
+| M08  | [Roles + permissions](M08-roles-permissions.md)                                             | Done    |
 | M09  | [Match-aware kiosk view](M09-match-aware-kiosk.md)                                          | Planned |
 | M10  | [Overlay revamp + new browser sources](M10-overlay-revamp.md)                               | Planned |
 | M11  | [Game minimaps](M11-game-minimaps.md)                                                       | Planned |
