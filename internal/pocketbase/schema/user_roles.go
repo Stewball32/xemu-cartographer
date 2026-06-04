@@ -86,18 +86,21 @@ func reconcileUserRolesRules(app *pocketbase.PocketBase) error {
 	return app.Save(existing)
 }
 
-// setUserRolesRules: mutate rules consume the user_roles subquery defined
-// in rules.go (hasAdminRole). This is a self-referential rule — an admin's
-// ability to mutate user_roles depends on their own user_roles row. The M08b
-// migration backfills the seeded admin's row before this rule first
-// evaluates, so the bootstrap converges cleanly.
+// setUserRolesRules: read scoped to the row's owner (a user can see which
+// roles they hold via /api/me anyway, so the SDK path stays symmetric);
+// mutate is nil because (a) self-referential subquery rules don't work at
+// the first-boot save, and (b) admins manage assignments through the M8g
+// custom routes which call roles.Grant/Revoke + app.Save (bypasses rules).
+//
+// To list all assignments (admin UI's Assignments tab) the custom route
+// uses app.FindRecords directly — rule-bypassed because the route is
+// already gated by RequireAdmin middleware.
 func setUserRolesRules(c *core.Collection) {
-	read := "@request.auth.id != \"\""
-	mutate := hasAdminRole
+	ownOnly := "user = @request.auth.id"
 
-	c.ListRule = &read
-	c.ViewRule = &read
-	c.CreateRule = &mutate
-	c.UpdateRule = &mutate
-	c.DeleteRule = &mutate
+	c.ListRule = &ownOnly
+	c.ViewRule = &ownOnly
+	c.CreateRule = nil
+	c.UpdateRule = nil
+	c.DeleteRule = nil
 }

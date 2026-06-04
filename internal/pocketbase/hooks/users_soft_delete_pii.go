@@ -9,6 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"github.com/Stewball32/xemu-cartographer/internal/notifications"
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
 	"github.com/Stewball32/xemu-cartographer/internal/teamperms"
 )
@@ -35,9 +36,9 @@ func init() {
 // Pairs with users.AuthRule "is_deleted = false" in schema/users.go — the
 // rule blocks login, this hook scrubs the data.
 //
-// M23e cascade. After PII blanking, the hook also reaps the user's
-// notifications + active membership state so nothing dangling addresses
-// the tombstoned account:
+// M23e + M8f cascade. After PII blanking, the hook also reaps the user's
+// notifications + active membership state + role grants so nothing
+// dangling addresses the tombstoned account:
 //  1. Delete every `notifications` row where user = id. The bell + page
 //     would render against a "[deleted user]" name otherwise; cheaper to
 //     drop the rows than to redact each one.
@@ -52,9 +53,13 @@ func init() {
 //     notification fan-out (the team page activity timeline carries the
 //     leave event, and ownership/manager arithmetic isn't worth a per-
 //     teammate alert).
+//  4. (M8f) Revoke every user_roles row through roles.Revoke so the
+//     audit_log carries a per-role ActionRoleRevoke entry tagged with the
+//     soft-delete reason. The audit rows survive the role row deletion
+//     because audit_log.target_id is unconstrained text.
 //
 // Cascade failures log + continue — the soft-delete itself is the
-// load-bearing transition; trailing notifications/team_log/roster
+// load-bearing transition; trailing notifications/team_log/roster/role
 // updates are best-effort.
 func registerUsersSoftDeletePIIHook(app *pocketbase.PocketBase) {
 	app.OnRecordUpdate("users").BindFunc(func(e *core.RecordEvent) error {
@@ -200,32 +205,47 @@ func cascadeSoftDelete(app core.App, user *core.Record) {
 	)
 	if err != nil {
 		app.Logger().Error("soft-delete: rosters lookup failed", "user", userID, "err", err)
+	} else {
+		leftAt, _ := types.ParseDateTime(time.Now().UTC())
+		for _, row := range rosters {
+			row.Set("left_at", leftAt)
+			if err := app.Save(row); err != nil {
+				app.Logger().Error("soft-delete: stamp left_at failed", "roster", row.Id, "err", err)
+				continue
+			}
+			team, terr := app.FindRecordById("teams", row.GetString("team"))
+			if terr != nil {
+				continue
+			}
+			var gt *core.Record
+			if id := row.GetString("gamertag"); id != "" {
+				if rec, gerr := app.FindRecordById("gamertags", id); gerr == nil {
+					gt = rec
+				}
+			}
+			var gamertag string
+			if gt != nil {
+				gamertag = gt.GetString("tag")
+			}
+			_ = teamlog.Write(app, team, nil, teamlog.EventMemberLeft, user, gt, teamlog.MemberLeftPayload{
+				Gamertag:      gamertag,
+				ViaSoftDelete: true,
+			})
+		}
+	}
+
+	// 4. (M8f) Revoke every user_roles row. roles.Revoke writes an
+	// ActionRoleRevoke audit row per slug with reason="user soft-deleted"
+	// so the admin timeline shows the cascade; the audit_log target_id is
+	// unconstrained text, so rows survive the role row delete.
+	slugs, err := roles.Slugs(app, userID)
+	if err != nil {
+		app.Logger().Error("soft-delete: roles lookup failed", "user", userID, "err", err)
 		return
 	}
-	leftAt, _ := types.ParseDateTime(time.Now().UTC())
-	for _, row := range rosters {
-		row.Set("left_at", leftAt)
-		if err := app.Save(row); err != nil {
-			app.Logger().Error("soft-delete: stamp left_at failed", "roster", row.Id, "err", err)
-			continue
+	for _, slug := range slugs {
+		if err := roles.Revoke(app, userID, slug, nil, "user soft-deleted"); err != nil {
+			app.Logger().Error("soft-delete: role revoke failed", "user", userID, "slug", slug, "err", err)
 		}
-		team, terr := app.FindRecordById("teams", row.GetString("team"))
-		if terr != nil {
-			continue
-		}
-		var gt *core.Record
-		if id := row.GetString("gamertag"); id != "" {
-			if rec, gerr := app.FindRecordById("gamertags", id); gerr == nil {
-				gt = rec
-			}
-		}
-		var gamertag string
-		if gt != nil {
-			gamertag = gt.GetString("tag")
-		}
-		_ = teamlog.Write(app, team, nil, teamlog.EventMemberLeft, user, gt, teamlog.MemberLeftPayload{
-			Gamertag:      gamertag,
-			ViaSoftDelete: true,
-		})
 	}
 }

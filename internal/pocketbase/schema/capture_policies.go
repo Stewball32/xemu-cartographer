@@ -5,9 +5,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerCapturePoliciesCollection)
-}
+// Registration is coordinated from identity.go (M08): capture_policies' PB
+// rules reference @collection.user_roles, so it must register after
+// user_roles.
 
 // registerCapturePoliciesCollection creates the capture_policies collection.
 //

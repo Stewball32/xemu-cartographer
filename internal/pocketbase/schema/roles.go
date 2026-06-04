@@ -94,19 +94,22 @@ func reconcileRolesRules(app *pocketbase.PocketBase) error {
 	return app.Save(existing)
 }
 
-// setRolesRules: mutate rules consume the user_roles subquery defined in
-// rules.go (hasAdminRole) so the gating self-references the collection it
-// gates. Bootstrap: M08b's migration backfills the seeded admin's user_roles
-// row before this rule first evaluates against a real request.
+// setRolesRules: read open to any authed user (role slugs aren't sensitive);
+// mutate is nil because using `hasAdminRole` would create a chicken-and-egg
+// at first boot — roles registers before user_roles, and PB validates rules
+// at save time, so a rule referencing @collection.user_roles fails on the
+// initial save. Admin grants/revokes flow through the M8g custom routes
+// (`/api/admin/users/{id}/roles`) which call internal/roles.Grant/Revoke +
+// `app.Save` (bypasses rules). Direct SDK mutation by non-superusers is
+// closed off.
 func setRolesRules(c *core.Collection) {
 	read := "@request.auth.id != \"\""
-	mutate := hasAdminRole
 
 	c.ListRule = &read
 	c.ViewRule = &read
-	c.CreateRule = &mutate
-	c.UpdateRule = &mutate
-	c.DeleteRule = &mutate
+	c.CreateRule = nil
+	c.UpdateRule = nil
+	c.DeleteRule = nil
 }
 
 // baselineRoles is the M08 required-data set. Idempotent: seedBaselineRoles

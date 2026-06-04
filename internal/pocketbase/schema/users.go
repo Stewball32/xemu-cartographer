@@ -133,7 +133,15 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 	// without us touching the individual auth handlers. Other rules
 	// (ListRule/ViewRule/etc.) stay at PB defaults — admins can still
 	// see deleted rows through the superuser UI for moderation review.
-	authRule := "is_deleted = false"
+	//
+	// M8f extends with the ban + timeout gate. Admit when:
+	//   - not soft-deleted, AND
+	//   - either not banned at all, OR
+	//   - banned with a timeout that has already elapsed (passive expiry).
+	// An indefinite ban (`is_banned=true` + `banned_until=""`) fails the
+	// second branch entirely because the empty-string comparison short-
+	// circuits via the explicit `banned_until != ""` test.
+	authRule := `is_deleted = false && (is_banned = false || (banned_until != "" && banned_until < @now))`
 	users.AuthRule = &authRule
 
 	if err := app.Save(users); err != nil {

@@ -5,9 +5,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerAuditLogCollection)
-}
+// Registration is coordinated from identity.go (M08): audit_log's PB rule
+// references @collection.user_roles, so it must register after user_roles.
 
 // registerAuditLogCollection creates the audit_log collection per ADR-0002.
 // One row per state-changing admin/system event across every collection that

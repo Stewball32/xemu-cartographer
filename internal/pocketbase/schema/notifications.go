@@ -5,9 +5,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerNotificationsCollection)
-}
+// Registration is coordinated from identity.go (M08): notifications' PB rule
+// references @collection.user_roles, so it must register after user_roles.
 
 // registerNotificationsCollection creates the notifications collection landed
 // in M23a — the delivery surface that lets one user act on another's identity
