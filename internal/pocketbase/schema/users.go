@@ -84,11 +84,21 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 	// the past — so a stale is_banned=true row whose banned_until elapsed
 	// silently unblocks. State transitions are gated + audited by the
 	// users_ban_transitions hook (M8f).
+	//
+	// Both fields are public on the API: admins need them for the
+	// /admin/roles/ Assignments tab (see the list/view rules below that
+	// admit holders of the admin role), and a banned user themselves can
+	// read their own row only — knowing they're banned isn't sensitive.
 	if users.Fields.GetByName("is_banned") == nil {
 		users.Fields.Add(&core.BoolField{
-			Name:   "is_banned",
-			Hidden: true,
+			Name: "is_banned",
 		})
+	}
+	// M8g: flip the prior Hidden:true on is_banned to visible so the FE
+	// /admin/roles/ Assignments tab can render the state badge. Idempotent
+	// — only writes if the existing field still has Hidden=true.
+	if f, ok := users.Fields.GetByName("is_banned").(*core.BoolField); ok && f != nil && f.Hidden {
+		f.Hidden = false
 	}
 	if users.Fields.GetByName("banned_until") == nil {
 		users.Fields.Add(&core.DateField{
@@ -130,9 +140,7 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 
 	// Soft-deleted users cannot log in. AuthRule gates every auth method
 	// (password, OAuth, OTP) so a tombstoned account stays inaccessible
-	// without us touching the individual auth handlers. Other rules
-	// (ListRule/ViewRule/etc.) stay at PB defaults — admins can still
-	// see deleted rows through the superuser UI for moderation review.
+	// without us touching the individual auth handlers.
 	//
 	// M8f extends with the ban + timeout gate. Admit when:
 	//   - not soft-deleted, AND
@@ -143,6 +151,19 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 	// circuits via the explicit `banned_until != ""` test.
 	authRule := `is_deleted = false && (is_banned = false || (banned_until != "" && banned_until < @now))`
 	users.AuthRule = &authRule
+
+	// List/view/update rules. PB defaults to "self only" (`id = @request.auth.id`)
+	// for the built-in users collection; M8g extends to admit admins so the
+	// /admin/roles/ Assignments tab can enumerate users and so the ban routes
+	// (which use app.Save and would work regardless) round-trip cleanly when
+	// the FE re-fetches after a state change. The update rule stays self-only
+	// for the field-level concern — users_ban_transitions hook enforces the
+	// is_banned / banned_until gate; everything else is the user's own data.
+	// Admins still PATCH through the M8g custom routes (which app.Save), so
+	// no admin override on update is needed here.
+	listView := "id = @request.auth.id || (" + hasAdminRole + ")"
+	users.ListRule = &listView
+	users.ViewRule = &listView
 
 	if err := app.Save(users); err != nil {
 		return err

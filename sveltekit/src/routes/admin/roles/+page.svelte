@@ -41,12 +41,9 @@
 		updated: string;
 	}
 
-	interface UserRoleRow {
-		id: string;
+	interface RoleAssignment {
 		user: string;
-		role: string;
-		granted_by: string;
-		granted_at: string;
+		role_slug: string;
 	}
 
 	interface UserRow {
@@ -63,7 +60,7 @@
 
 	let activeTab = $state<'roles' | 'assignments'>('roles');
 	let roles = $state<RoleRow[]>([]);
-	let userRoles = $state<UserRoleRow[]>([]);
+	let assignments = $state<RoleAssignment[]>([]);
 	let users = $state<UserRow[]>([]);
 	let loading = $state(true);
 	let userFilter = $state('');
@@ -84,6 +81,17 @@
 
 	async function authHeaders() {
 		return { Authorization: pb.authStore.token };
+	}
+
+	async function getAdmin<T>(path: string): Promise<T> {
+		const res = await fetch(`${baseURL}${path}`, {
+			headers: { ...(await authHeaders()) }
+		});
+		if (!res.ok) {
+			const text = await res.text();
+			throw new Error(text || `HTTP ${res.status}`);
+		}
+		return (await res.json()) as T;
 	}
 
 	async function postAdmin(path: string, body: object) {
@@ -115,20 +123,17 @@
 	async function load() {
 		try {
 			loading = true;
-			const [rolesList, urList, userList] = await Promise.all([
+			const [rolesList, assignmentList, userList] = await Promise.all([
 				pb.collection('roles').getFullList<RoleRow>({ sort: '-level' }),
-				pb.collection('user_roles').getFullList<UserRoleRow>(),
+				getAdmin<RoleAssignment[]>('/api/admin/users/role-assignments'),
 				pb.collection('users').getFullList<UserRow>({ sort: 'username' })
 			]);
-			const rolesById: Record<string, string> = {};
-			for (const r of rolesList) rolesById[r.id] = r.slug;
 			const userRolesByUser: Record<string, string[]> = {};
-			for (const ur of urList) {
-				const slug = rolesById[ur.role] ?? ur.role;
-				(userRolesByUser[ur.user] ??= []).push(slug);
+			for (const a of assignmentList) {
+				(userRolesByUser[a.user] ??= []).push(a.role_slug);
 			}
 			roles = rolesList;
-			userRoles = urList;
+			assignments = assignmentList;
 			users = userList.map((u) => ({
 				...u,
 				roles: userRolesByUser[u.id] ?? []
@@ -207,8 +212,12 @@
 				banMode === 'ban'
 					? `/api/admin/users/${target.id}/ban`
 					: `/api/admin/users/${target.id}/timeout`;
+			// datetime-local inputs return "YYYY-MM-DDTHH:mm" in local time
+			// with no timezone — PB's date field silently rejects that shape
+			// and stores nothing. Convert to a UTC ISO string before POST.
+			const expiresAtISO = banExpiresAt ? new Date(banExpiresAt).toISOString() : '';
 			const body =
-				banMode === 'ban' ? { reason: banReason } : { reason: banReason, expires_at: banExpiresAt };
+				banMode === 'ban' ? { reason: banReason } : { reason: banReason, expires_at: expiresAtISO };
 			await toastPromise(postAdmin(path, body), {
 				loading: {
 					title: banMode === 'ban' ? 'Banning' : 'Timing out',
@@ -274,12 +283,12 @@
 
 	const rolesWithCount = $derived.by(() => {
 		const count: Record<string, number> = {};
-		for (const ur of userRoles) {
-			count[ur.role] = (count[ur.role] ?? 0) + 1;
+		for (const a of assignments) {
+			count[a.role_slug] = (count[a.role_slug] ?? 0) + 1;
 		}
 		const augmented = roles.map((r) => ({
 			...r,
-			memberCount: count[r.id] ?? 0
+			memberCount: count[r.slug] ?? 0
 		}));
 		const s = rolesSort;
 		if (!s) return augmented;
@@ -471,6 +480,7 @@
 								class="btn-icon preset-tonal-success btn-sm"
 								title="Unban"
 								onclick={() => unban(row)}
+								disabled={row.is_deleted}
 							>
 								<CheckIcon class="size-4" />
 							</button>
