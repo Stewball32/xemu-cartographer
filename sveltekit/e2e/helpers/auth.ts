@@ -36,8 +36,10 @@ const ADMIN_RECORD = {
 	emailVisibility: true,
 	verified: true,
 	username: 'admin',
-	isAdmin: true,
 	name: 'Test Admin',
+	is_deleted: false,
+	is_banned: false,
+	banned_until: '',
 	created: '2026-01-01T00:00:00.000Z',
 	updated: '2026-01-01T00:00:00.000Z'
 };
@@ -47,9 +49,13 @@ const AUTH_REFRESH_BODY = JSON.stringify({
 	record: ADMIN_RECORD
 });
 
+// M08: /api/me returns `roles: string[]`; `isAdmin` lives on as a derived
+// shorthand. auth.svelte.ts computes `isAdmin = isSuperuser || roles.includes('admin')`,
+// so the mocked roles[] must contain 'admin' for requireAdmin() to pass.
 const ME_BODY = JSON.stringify({
 	isAdmin: true,
-	isSuperuser: false
+	isSuperuser: false,
+	roles: ['member', 'admin']
 });
 
 export async function loginAsAdmin(page: Page): Promise<void> {
