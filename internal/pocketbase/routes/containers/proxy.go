@@ -61,11 +61,13 @@ func registerKioskProxy() {
 }
 
 func handleKioskProxy(e *core.RequestEvent) error {
-	if !authorizeAdminQueryToken(e) {
+	name := e.Request.PathValue("name")
+	// M09: admins reach any container's kiosk; a non-admin reaches only the
+	// container their gamertag is currently rostered in.
+	if !authorizeKioskAccess(e, name) {
 		return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 	}
 
-	name := e.Request.PathValue("name")
 	info, ok := Manager.Get(name)
 	if !ok {
 		return e.JSON(http.StatusNotFound, map[string]string{"error": "container not found"})

@@ -32,11 +32,13 @@ func registerVNCRelay() {
 }
 
 func handleVNCRelay(e *core.RequestEvent) error {
-	if !authorizeAdminQueryToken(e) {
+	name := e.Request.PathValue("name")
+	// M09: same per-container roster gate as the kiosk HTTP proxy — a player
+	// rostered in this container may drive their own controller.
+	if !authorizeKioskAccess(e, name) {
 		return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 	}
 
-	name := e.Request.PathValue("name")
 	info, ok := Manager.Get(name)
 	if !ok {
 		return e.JSON(http.StatusNotFound, map[string]string{"error": "container not found"})

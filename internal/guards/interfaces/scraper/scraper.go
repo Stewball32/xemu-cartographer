@@ -10,4 +10,5 @@ type Service interface {
 	EventsReply
 	ProbeReply
 	State
+	Membership
 }

@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 
+	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 )
 
@@ -22,6 +26,16 @@ func handleJoinRoom(e *Event) {
 	}
 
 	if err := rt.CheckGuards(e.Services, e.User); err != nil {
+		e.SendError("forbidden", err.Error())
+		return
+	}
+
+	// M09 9c: narrow host:* access beyond the room type's RequireAuth guard.
+	// The cross-instance summary feed stays admin-only; a per-instance
+	// host:<name> room additionally admits a non-admin whose gamertag is in
+	// that container's live roster. Non-host rooms (admin:, public:) already
+	// passed their own guard list above and are untouched.
+	if err := authorizeHostRoom(e); err != nil {
 		e.SendError("forbidden", err.Error())
 		return
 	}
@@ -58,4 +72,54 @@ func handleJoinRoom(e *Event) {
 			}
 		}
 	}
+}
+
+// authorizeHostRoom applies the M09 9c access rules to host:* rooms. Returns
+// nil when the room isn't a host room (already guarded elsewhere) or the
+// caller is admitted, and an error describing the denial otherwise. Fails
+// closed: any missing dependency or lookup error denies access.
+func authorizeHostRoom(e *Event) error {
+	isSummary := e.Room == rooms.HostAllRoom || e.Room == rooms.SummaryRoom
+	isInstance := strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":") && !isSummary
+	if !isSummary && !isInstance {
+		return nil // not a host room — leave it to the room type's guards
+	}
+
+	svc := e.Services
+	// Admins (superuser or admin role) always get in — any host room,
+	// regardless of roster membership.
+	if svc != nil && svc.App != nil && roles.IsAdminAuth(svc.App, e.User) {
+		return nil
+	}
+
+	// The cross-instance dashboard summary is admin-only.
+	if isSummary {
+		return errors.New("host summary is admin-only")
+	}
+
+	// Per-instance room: admit a roster member of that specific instance.
+	instance := hostRoomInstance(e.Room)
+	if instance == "" || svc == nil || svc.App == nil || svc.Scraper == nil || e.User == nil {
+		return errors.New("not in this match")
+	}
+	tags, err := gamertags.SanitizedForUser(svc.App, e.User.Id)
+	if err != nil || len(tags) == 0 {
+		return errors.New("not in this match")
+	}
+	if scraperiface.ContainerHasGamertag(svc.Scraper.Membership(), instance, tags) {
+		return nil
+	}
+	return errors.New("not in this match")
+}
+
+// hostRoomInstance extracts the instance name from a "host:<instance>" or
+// "host:<instance>:<class>" room name. Returns "" when room has no instance
+// segment (e.g. the bare "host" type or a non-host room).
+func hostRoomInstance(room string) string {
+	prefix := rooms.HostRoomPrefix + ":"
+	if !strings.HasPrefix(room, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(room, prefix)
+	return strings.SplitN(rest, ":", 2)[0]
 }

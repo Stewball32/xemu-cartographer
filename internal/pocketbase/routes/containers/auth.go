@@ -5,6 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
@@ -15,16 +17,14 @@ import (
 // the parent page rewriting URLs.
 const kioskTokenCookie = "kiosk_token"
 
-// authorizeAdminQueryToken validates a PocketBase JWT pulled from either
-// `?token=` (preferred — used by the parent page when constructing iframe and
-// WebSocket URLs) or the kiosk_token cookie (used by sub-resource fetches
-// originating inside the iframe). It then confirms the caller is a superuser
-// or has isAdmin=true on their users-record.
-//
-// Returns true when admitted; false when missing/invalid/non-admin.
-func authorizeAdminQueryToken(e *core.RequestEvent) bool {
+// kioskTokenRecord resolves the caller's auth record from a PocketBase JWT
+// pulled from either `?token=` (preferred — used by the parent page when
+// constructing iframe and WebSocket URLs) or the kiosk_token cookie (used by
+// sub-resource fetches originating inside the iframe). Returns nil when no
+// token is present or it doesn't validate.
+func kioskTokenRecord(e *core.RequestEvent) *core.Record {
 	if Services == nil || Services.App == nil {
-		return false
+		return nil
 	}
 	token := e.Request.URL.Query().Get("token")
 	if token == "" {
@@ -33,13 +33,36 @@ func authorizeAdminQueryToken(e *core.RequestEvent) bool {
 		}
 	}
 	if token == "" {
-		return false
+		return nil
 	}
 	record, err := Services.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
 	if err != nil || record == nil {
+		return nil
+	}
+	return record
+}
+
+// authorizeKioskAccess admits a caller to the kiosk/VNC proxy for container
+// `name` (M09 9b/9c). Admins (superuser or admin role) get in for any
+// container; a non-admin is admitted only when one of their gamertags is in
+// that specific container's live roster, re-checked on every request so access
+// lapses the moment they leave the match. Fails closed on any lookup error.
+func authorizeKioskAccess(e *core.RequestEvent, name string) bool {
+	record := kioskTokenRecord(e)
+	if record == nil {
 		return false
 	}
-	return roles.IsAdminAuth(Services.App, record)
+	if roles.IsAdminAuth(Services.App, record) {
+		return true
+	}
+	if Services.Scraper == nil {
+		return false
+	}
+	tags, err := gamertags.SanitizedForUser(Services.App, record.Id)
+	if err != nil || len(tags) == 0 {
+		return false
+	}
+	return scraperiface.ContainerHasGamertag(Services.Scraper.Membership(), name, tags)
 }
 
 // setKioskTokenCookie persists the validated ?token= as an HttpOnly cookie

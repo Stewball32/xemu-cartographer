@@ -78,6 +78,9 @@ func main() {
 		scrMgr = scrapermgr.New(svc)
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
+		// M09: the /api/me/match resolver (in the top-level routes package)
+		// reads live container rosters to route a player to their kiosk.
+		routes.SetScraper(scrMgr)
 
 		// Capture-policy loader: read the persisted (instance, class) rows
 		// now so runners started immediately after this (auto-start via the

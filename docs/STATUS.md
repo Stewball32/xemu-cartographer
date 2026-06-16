@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-06-04 (M08 closed; M09 promoted to Now)
+> **Last updated:** 2026-06-16 (M09 first increment landed — code-complete, pending live 4-container smoke test)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -14,11 +14,12 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Now
 
-- [ ] [M09 — Match-aware kiosk view](milestones/M09-match-aware-kiosk.md) (unblocked by M08 close)
+- [ ] [M09 — Match-aware kiosk view](milestones/M09-match-aware-kiosk.md) — **in progress.** 9a/9b/9c implemented end-to-end (membership lookup + `/api/me/match` + `/play/` page + WS & kiosk/VNC proxy roster-narrowing); all CI checks green. Remaining: the live 4-container smoke test (podman-gated, can't run in CI).
 
 ## Next
 
 Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31; M23 closed 2026-06-02; M08 closed 2026-06-04.
+
 - M10 — Overlay revamp + new browser sources
 - M11 — Game minimaps
 - M12 — POV marker overlay (stretch)
