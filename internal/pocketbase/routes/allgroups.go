@@ -2,6 +2,7 @@ package routes
 
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/admin"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/adminusers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/pod"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/rosters"
@@ -16,6 +17,7 @@ import (
 // To add a new group: import the group package and call its RegisterAll here.
 func registerAllGroups(se *core.ServeEvent) {
 	admin.RegisterAll(se)
+	adminusers.RegisterAll(se)
 	containers.RegisterAll(se)
 	pod.RegisterAll(se)
 	rosters.RegisterAll(se)

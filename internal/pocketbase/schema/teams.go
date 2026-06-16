@@ -158,8 +158,8 @@ func reconcileTeamsRules(app *pocketbase.PocketBase) error {
 func setTeamsRules(c *core.Collection) {
 	listView := "@request.auth.id != \"\""
 	create := "@request.auth.id != \"\""
-	update := "(created_by = @request.auth.id && status != \"blocked\") || @request.auth.isAdmin = true"
-	del := "(created_by = @request.auth.id && status != \"blocked\") || @request.auth.isAdmin = true"
+	update := "(created_by = @request.auth.id && status != \"blocked\") || (" + hasAdminRole + ")"
+	del := "(created_by = @request.auth.id && status != \"blocked\") || (" + hasAdminRole + ")"
 
 	c.ListRule = &listView
 	c.ViewRule = &listView

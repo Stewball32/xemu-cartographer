@@ -44,7 +44,12 @@ func WriteRef(app core.App, actor *core.Record, action Action, collection, id st
 	}
 
 	rec := core.NewRecord(auditCol)
-	if actor != nil {
+	if actor != nil && actor.Collection() != nil && actor.Collection().Name == "users" {
+		// The audit_log.actor field is a relation to the users collection.
+		// PB superusers live in _superusers and would fail the relation
+		// lookup if passed here; treat them as nil (system-triggered) and
+		// rely on the audit_log row's existence + action + target to carry
+		// the rest of the context.
 		rec.Set("actor", actor.Id)
 	}
 	rec.Set("action", string(action))

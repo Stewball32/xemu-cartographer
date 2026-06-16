@@ -203,9 +203,9 @@ func reconcileGamertagsRules(app *pocketbase.PocketBase) error {
 //     stay around so the (user, sanitized) constraint blocks resurrection.
 func setGamertagsRules(c *core.Collection) {
 	listView := "@request.auth.id != \"\""
-	create := "@request.auth.id = user.id || @request.auth.isAdmin = true"
-	update := "(@request.auth.id = user.id && status != \"blocked\") || @request.auth.isAdmin = true"
-	del := "(@request.auth.id = user.id && status != \"blocked\") || @request.auth.isAdmin = true"
+	create := "@request.auth.id = user.id || (" + hasAdminRole + ")"
+	update := "(@request.auth.id = user.id && status != \"blocked\") || (" + hasAdminRole + ")"
+	del := "(@request.auth.id = user.id && status != \"blocked\") || (" + hasAdminRole + ")"
 
 	c.ListRule = &listView
 	c.ViewRule = &listView

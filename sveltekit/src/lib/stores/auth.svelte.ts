@@ -4,53 +4,67 @@ import type { UsersResponse } from '$lib/types/pocketbase-types';
 
 const baseURL = apiBaseURL();
 
+// M08: /api/me returns `roles: string[]` (the slugs the caller holds via
+// user_roles). `isAdmin` is kept as a derived shorthand for FE backwards-
+// compat; new consumers should branch on `roles` so future M16-style gates
+// (`tournament_organizer`, `content_moderator`) work without another bump.
 interface MeResponse {
 	isAdmin: boolean;
 	isSuperuser: boolean;
+	roles: string[];
 }
 
 function createAuthStore() {
 	let user = $state<UsersResponse | null>(pb.authStore.record as UsersResponse | null);
 	let token = $state(pb.authStore.token);
-	let isAdmin = $state(false);
+	let roles = $state<string[]>([]);
+	let isSuperuser = $state(false);
+	const isAdmin = $derived(isSuperuser || roles.includes('admin'));
 	const isLoggedIn = $derived(token !== '' && user !== null);
 
 	let hydratePromise: Promise<void> | null = null;
 
-	async function fetchAdmin(authToken: string): Promise<boolean> {
+	async function fetchRoles(authToken: string): Promise<{ roles: string[]; isSuperuser: boolean }> {
 		try {
 			const res = await fetch(`${baseURL}/api/me`, {
 				headers: { Authorization: authToken }
 			});
-			if (!res.ok) return false;
+			if (!res.ok) return { roles: [], isSuperuser: false };
 			const data = (await res.json()) as MeResponse;
-			return data.isAdmin === true || data.isSuperuser === true;
+			return {
+				roles: Array.isArray(data.roles) ? data.roles : [],
+				isSuperuser: data.isSuperuser === true
+			};
 		} catch {
-			return false;
+			return { roles: [], isSuperuser: false };
 		}
 	}
 
-	async function refreshAdmin() {
+	async function refreshRoles() {
 		const authToken = pb.authStore.token;
 		if (!authToken) {
-			isAdmin = false;
+			roles = [];
+			isSuperuser = false;
 			return;
 		}
-		const result = await fetchAdmin(authToken);
+		const result = await fetchRoles(authToken);
 		// Drop the result if the token rotated while we were in flight.
-		if (pb.authStore.token === authToken) isAdmin = result;
+		if (pb.authStore.token === authToken) {
+			roles = result.roles;
+			isSuperuser = result.isSuperuser;
+		}
 	}
 
 	pb.authStore.onChange((newToken, record) => {
 		user = (record as UsersResponse | null) ?? null;
 		token = newToken;
-		void refreshAdmin();
+		void refreshRoles();
 	});
 
 	// Single-shot initial hydration. The root +layout.ts load awaits this
 	// before any child route's load runs, so guards see a settled isAdmin
-	// instead of racing the onChange listener. Subsequent login/logout flows
-	// update isAdmin via the onChange handler above.
+	// (derived from roles) instead of racing the onChange listener.
+	// Subsequent login/logout flows update via the onChange handler above.
 	function hydrate(): Promise<void> {
 		if (hydratePromise) return hydratePromise;
 		hydratePromise = (async () => {
@@ -65,7 +79,14 @@ function createAuthStore() {
 				}
 			}
 			const authToken = pb.authStore.token;
-			isAdmin = authToken ? await fetchAdmin(authToken) : false;
+			if (!authToken) {
+				roles = [];
+				isSuperuser = false;
+				return;
+			}
+			const result = await fetchRoles(authToken);
+			roles = result.roles;
+			isSuperuser = result.isSuperuser;
 		})();
 		return hydratePromise;
 	}
@@ -80,8 +101,17 @@ function createAuthStore() {
 		get isLoggedIn() {
 			return isLoggedIn;
 		},
+		get roles() {
+			return roles;
+		},
+		get isSuperuser() {
+			return isSuperuser;
+		},
 		get isAdmin() {
 			return isAdmin;
+		},
+		hasRole(slug: string): boolean {
+			return roles.includes(slug);
 		},
 		hydrate,
 		async register(email: string, password: string, passwordConfirm: string) {

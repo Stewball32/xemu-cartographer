@@ -45,6 +45,7 @@ export const mainGroups: NavGroup[] = [
 			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
 			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
+			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
 			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon }
 		]
 	}

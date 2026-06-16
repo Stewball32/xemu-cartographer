@@ -5,9 +5,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerReservedNamesCollection)
-}
+// Registration is coordinated from identity.go (M08): reserved_names' PB
+// rules reference @collection.user_roles, so it must register after
+// user_roles.
 
 // registerReservedNamesCollection creates the reserved_names collection
 // landed in M22e — an admin-curated list of substring patterns that auto-flag
@@ -91,7 +91,7 @@ func reconcileReservedNamesRules(app *pocketbase.PocketBase) error {
 //   - Create/Update/Delete: admin only.
 func setReservedNamesRules(c *core.Collection) {
 	listView := "@request.auth.id != \"\""
-	mutate := "@request.auth.isAdmin = true"
+	mutate := hasAdminRole
 
 	c.ListRule = &listView
 	c.ViewRule = &listView

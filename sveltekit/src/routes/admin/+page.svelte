@@ -67,10 +67,10 @@
 		},
 		{
 			title: 'Roles',
-			description: 'Role + permission management.',
+			description: 'Role grants + user ban/timeout moderation.',
 			icon: KeyIcon,
 			href: resolve('/admin/roles/'),
-			status: 'placeholder',
+			status: 'live',
 			milestone: 'M08'
 		},
 		{

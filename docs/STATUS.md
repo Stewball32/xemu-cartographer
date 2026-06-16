@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-06-02 (M23 closed; M08 promoted to Now)
+> **Last updated:** 2026-06-04 (M08 closed; M09 promoted to Now)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -14,12 +14,11 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Now
 
-- [ ] [M08 — Roles + permissions](milestones/M08-roles-permissions.md) (unblocked by M23 close)
+- [ ] [M09 — Match-aware kiosk view](milestones/M09-match-aware-kiosk.md) (unblocked by M08 close)
 
 ## Next
 
-Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31; M23 closed 2026-06-02.
-- M09 — Match-aware kiosk view
+Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31; M23 closed 2026-06-02; M08 closed 2026-06-04.
 - M10 — Overlay revamp + new browser sources
 - M11 — Game minimaps
 - M12 — POV marker overlay (stretch)

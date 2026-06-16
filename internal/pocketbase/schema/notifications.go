@@ -5,9 +5,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerNotificationsCollection)
-}
+// Registration is coordinated from identity.go (M08): notifications' PB rule
+// references @collection.user_roles, so it must register after user_roles.
 
 // registerNotificationsCollection creates the notifications collection landed
 // in M23a — the delivery surface that lets one user act on another's identity
@@ -95,7 +94,7 @@ func reconcileNotificationsRules(app *pocketbase.PocketBase) error {
 //     server-side notifications.Notify helper does (which bypasses rules via
 //     app.Save). Admin can still drop rows through the admin SDK if needed.
 func setNotificationsRules(c *core.Collection) {
-	own := "user = @request.auth.id || @request.auth.isAdmin = true"
+	own := "user = @request.auth.id || (" + hasAdminRole + ")"
 
 	c.ListRule = &own
 	c.ViewRule = &own

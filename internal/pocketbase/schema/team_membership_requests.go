@@ -124,7 +124,7 @@ func reconcileTeamMembershipRequestsRules(app *pocketbase.PocketBase) error {
 }
 
 func setTeamMembershipRequestsRules(c *core.Collection) {
-	read := "user = @request.auth.id || initiated_by = @request.auth.id || @request.auth.isAdmin = true"
+	read := "user = @request.auth.id || initiated_by = @request.auth.id || (" + hasAdminRole + ")"
 
 	c.ListRule = &read
 	c.ViewRule = &read
