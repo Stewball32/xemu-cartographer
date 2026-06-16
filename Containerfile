@@ -1,6 +1,6 @@
 # Stage 1: Build SvelteKit frontend
 FROM node:22-alpine AS frontend
-RUN corepack enable && corepack prepare pnpm@10 --activate
+RUN corepack enable && corepack prepare pnpm@11 --activate
 WORKDIR /app
 # Vite resolves $env/static/public at build time. The runtime value comes
 # from the orchestrator's .env, so any non-empty default works here.
