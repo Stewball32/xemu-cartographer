@@ -27,7 +27,29 @@ fi
 # Patch: Network interface
 # Ensures netif is set under [net.pcap], appending the full block if needed.
 # -----------------------------------------------------------------------------
-NETIF=$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n1)
+# Resolve a real interface for the pcap backend. xemu aborts when [net] is enabled
+# with backend='pcap' and netif is empty. Read /sys/class/net directly (don't
+# depend on `ip`), skipping loopback + virtual devices to land on the physical NIC
+# (container shares host netns via --network host).
+NETIF=""
+for cand in /sys/class/net/*; do
+    [ -e "$cand" ] || continue
+    name=$(basename "$cand")
+    case "$name" in
+        lo | docker* | cni* | veth* | br-* | virbr* | podman* | tap* | tun* | kube*) continue ;;
+    esac
+    NETIF="$name"
+    break
+done
+if [ -z "$NETIF" ]; then
+    for cand in /sys/class/net/*; do
+        [ -e "$cand" ] || continue
+        name=$(basename "$cand")
+        [ "$name" = "lo" ] && continue
+        NETIF="$name"
+        break
+    done
+fi
 
 if [ -z "$NETIF" ]; then
     echo "[02-patch-toml] WARNING: No network interface found, skipping netif patch."
@@ -36,8 +58,13 @@ elif grep -q "^netif\s*=" "$CURRENT_TOML"; then
 elif grep -q "^\[net\.pcap\]" "$CURRENT_TOML"; then
     sed -i "/^\[net\.pcap\]/a netif = '$NETIF'" "$CURRENT_TOML"
     echo "[02-patch-toml] Injected netif = '$NETIF' under existing [net.pcap]."
+elif grep -q "^\[net\]" "$CURRENT_TOML"; then
+    # [net] exists but xemu dropped the empty [net.pcap]; append only the subtable.
+    # A second [net] would be a duplicate table (invalid TOML) that xemu refuses.
+    printf "\n[net.pcap]\nnetif = '%s'\n" "$NETIF" >> "$CURRENT_TOML"
+    echo "[02-patch-toml] Appended [net.pcap] with netif = '$NETIF' under existing [net]."
 else
-    printf "\n[net]\nenable = true\nbackend = 'pcap'\n\n[net.pcap]\nnetif = '$NETIF'\n" >> "$CURRENT_TOML"
+    printf "\n[net]\nenable = true\nbackend = 'pcap'\n\n[net.pcap]\nnetif = '%s'\n" "$NETIF" >> "$CURRENT_TOML"
     echo "[02-patch-toml] Appended full [net] block with netif = '$NETIF'."
 fi
 

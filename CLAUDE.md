@@ -238,7 +238,7 @@ The scraper manager is special: it holds `*guards.Services` and broadcasts to pe
 
 The `internal/podman/` package shells out to the `podman` CLI to provision xemu + Firefox-kiosk container pairs. Routes live under `/api/admin/containers/*` (admin auth required). Disabled by default; opt in by setting `CONTAINERS_ENABLED=true` in `.env`.
 
-In-container boot logic lives in [containers/xemu/init/](containers/xemu/init/) (numbered shell scripts run in order: `01-setup-toml.sh`, `02-patch-toml.sh`, `03-setup-hdd.sh`). QMP sockets are bind-mounted into [containers/xemu/qmp/](containers/xemu/qmp/), which is what the discovery watcher polls.
+In-container boot logic lives in [containers/xemu/init/](containers/xemu/init/) (numbered shell scripts run in order: `01-setup-toml.sh`, `02-patch-toml.sh`, `03-setup-hdd.sh`, `04-patch-startwm.sh` — the last wraps labwc to try the GPU first and fall back to the pixman software renderer if wlroots can't initialize a renderer on its DRM node, e.g. a driverless GPU in passthrough, instead of crash-looping the desktop into a black screen). QMP sockets are bind-mounted into [containers/xemu/qmp/](containers/xemu/qmp/), which is what the discovery watcher polls.
 
 ### Prerequisites
 
