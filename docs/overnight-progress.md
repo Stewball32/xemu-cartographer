@@ -31,6 +31,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M12 — POV marker (stretch) | `wip/milestone-12` | foundation parked | green | perspective-projection kernel (`pov-projection.ts`) landed; rest blocked on 12a camera-offset audit (live xemu) — may defer to M21+ |
 | M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema (`series`/`games`/`game_players`) + `internal/games` writer + heuristic landed; `game_events` collision = **decision needed**; Live→Ready wiring + 13d deferred |
 | M14 — Series management | `wip/milestone-14` | logic core only | green | `internal/series.Progress` format-termination logic landed; setup/pick-ban/in-progress UIs + live wiring deferred |
+| M15 — Stats | `wip/milestone-15` | query+agg core | green | `internal/stats` pure roll-up + PB projection landed (unit-tested); stats/match-history/dummy UIs deferred |
 
 ## Environment notes (for reproducing my green checks)
 
