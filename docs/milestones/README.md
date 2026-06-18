@@ -22,7 +22,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M15  | [Per-user / per-team stats](M15-stats.md)                                                   | In progress |
 | M16  | [Tournament system](M16-tournament-system.md)                                               | In progress |
 | M17  | [Discord integration: stats lookup + per-guild channel posting](M17-discord-integration.md) | Planned     |
-| M18  | [Rating system + multiple leaderboards](M18-rating-leaderboards.md)                         | Planned     |
+| M18  | [Rating system + multiple leaderboards](M18-rating-leaderboards.md)                         | In progress |
 | M19  | [Robustness + offset validation](M19-robustness-offsets.md)                                 | Planned     |
 | M20  | [Halo 2 scraper (with known caveats)](M20-halo2-scraper.md)                                 | Planned     |
 | M21+ | [Open](M21-plus-open.md)                                                                    | Planned     |

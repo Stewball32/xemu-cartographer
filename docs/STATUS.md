@@ -22,14 +22,14 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 - [ ] [M14 — Series management](milestones/M14-series-management.md) — **in progress** (`wip/milestone-14`). Series-format termination logic (`internal/series.Progress`) landed (unit-tested). Setup / pick-ban / in-progress UIs + live wiring deferred (need live game + UI).
 - [ ] [M15 — Per-user / per-team stats](milestones/M15-stats.md) — **in progress** (`wip/milestone-15`). Stats aggregation + query layer (`internal/stats`) landed (unit-tested, pure + PB projection). Stats/match-history/dummy-override UIs deferred (need live data + UI).
 - [ ] [M16 — Tournament system](milestones/M16-tournament-system.md) — **in progress** (`wip/milestone-16`). Bracket generators (`internal/bracket`: single-elim + round-robin) landed (unit-tested). Schema/UI/wiring + double-elim/Swiss deferred.
+- [ ] [M18 — Rating system + leaderboards](milestones/M18-rating-leaderboards.md) — **in progress** (`wip/milestone-18`). Elo rating + leaderboard ranking (`internal/rating`) landed (unit-tested). Per-game-type hook, leaderboard pages, Discord cmds deferred.
 
 ## Next
 
 Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31; M23 closed 2026-06-02; M08 closed 2026-06-04.
 
-- M17 — Discord integration: stats lookup + per-guild channel posting
-- M18 — Rating system + multiple leaderboards
-- M19 — Robustness + offset validation
+- M17 — Discord integration: stats lookup + per-guild channel posting (needs live bot)
+- M19 — Robustness + offset validation (needs live xemu memory)
 - M20 — Halo 2 scraper (with known caveats)
 - M21+ — Open bucket
 

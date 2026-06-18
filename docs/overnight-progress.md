@@ -33,6 +33,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M14 — Series management | `wip/milestone-14` | logic core only | green | `internal/series.Progress` format-termination logic landed; setup/pick-ban/in-progress UIs + live wiring deferred |
 | M15 — Stats | `wip/milestone-15` | query+agg core | green | `internal/stats` pure roll-up + PB projection landed (unit-tested); stats/match-history/dummy UIs deferred |
 | M16 — Tournament | `wip/milestone-16` | generators only | green | `internal/bracket` single-elim + round-robin generators landed (unit-tested); schema/UI/wiring + double-elim/Swiss deferred |
+| M18 — Rating + leaderboards | `wip/milestone-18` | algorithm core | green | `internal/rating` Elo + leaderboard ranking landed (unit-tested); recompute hook + leaderboard pages + Discord cmds deferred |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -131,14 +132,29 @@ The biggest **fully-verifiable** milestone of the night (backend + unit tests).
 
 ## Where I stopped + recommended next steps
 
-Stopped after M13 — a strong, fully-tested persistence foundation — rather than
-push into M14 (series-setup / pick-ban / in-progress UI), which is mostly
-frontend + live-state work I can't verify here. Recommended next, in order:
-1. **Resolve the M13 `game_events` fork** (above) — unblocks the full
-   persistence path + the Live→Ready wiring.
-2. **M15 stats aggregation** has a fully-testable backend core (sum
-   kills/deaths/wins per gamertag over `game_players`) that builds directly on
-   M13 and could land verifiably even before M14's UI.
-3. **M14** series-management UI once a live xemu is available to drive it.
-4. Run the deferred **live smoke tests** (M09 4-container kiosk, M10/M11 OBS
-   overlays, M13 game-end persistence) on a podman-capable host.
+Two passes this session. **Pass 1:** M10–M13. **Pass 2** (after the "keep going"
+follow-up): the unit-testable cores of M14, M15, M16, M18. Stopped after M18
+because the entire remaining roadmap is genuinely live-hardware-only:
+- **M17** (Discord stats/posting) — needs the live bot + a test guild.
+- **M19** (offset validation) — needs live xemu memory (the M19 Log is already
+  full of live offset-probe work).
+- **M20** (Halo 2 scraper) — needs live xemu running Halo 2.
+
+Every milestone M09–M18 now has its tested logic/data core landed; what's left
+across all of them is the UI + live-wiring + on-hardware verification. Nothing
+more can be landed *green* without xemu/podman/OBS/Discord.
+
+Recommended next, in order:
+1. **Resolve the M13 `game_events` fork** — unblocks the M13 Live→Ready wiring,
+   which in turn feeds M14d (series attach), M15 (real stats), and M18b (rating
+   recompute). This one decision is upstream of a lot.
+2. **Wire the tested cores to live data** once a podman/xemu host is available:
+   M13 game-end persistence → M14d series attach (`series.Progress`) → M15
+   stats (`stats.Roll`) → M18b rating recompute (`rating.Update`). The
+   functions are all in place and tested; this is plumbing + a live game.
+3. **Build the deferred UIs** on the tested cores: M10/M11 overlays, M14
+   series pages, M15 stat/match-history pages, M16 bracket UI, M18 leaderboards.
+4. **Run the deferred live smoke tests** (M09 4-container kiosk, M10/M11 OBS
+   overlays, M13/M14/M15/M18 game-end → stats/ratings).
+5. **Then** the live-only milestones: M17 Discord, M19 offset validation, M20
+   Halo 2.
