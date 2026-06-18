@@ -18,12 +18,12 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 - [ ] [M10 — Overlay revamp + new browser sources](milestones/M10-overlay-revamp.md) — **in progress** (`wip/milestone-10`). Data foundation landed: 10d dummy-player filter (`internal/scraper/roster`) + `is_neutral_host` + `dummy_gamertags`. Live overlay surfaces (10a UI / 10b / 10c / 10e) deferred — need live data + OBS.
 - [ ] [M11 — Game minimaps](milestones/M11-game-minimaps.md) — **in progress** (`wip/milestone-11`). Projection + height math landed (`minimap.ts`, unit-tested). Traced map assets + renderer + flares deferred — need assets + live data + OBS.
 - [ ] [M12 — POV marker overlay (stretch)](milestones/M12-pov-marker-overlay.md) — **foundation parked** (`wip/milestone-12`). Perspective-projection kernel landed (`pov-projection.ts`, unit-tested). Rest blocked on the 12a camera-offset audit (needs live xemu); may defer to M21+ per the stretch flag.
+- [ ] [M13 — PocketBase persistence foundation](milestones/M13-pb-persistence-games-series.md) — **in progress** (`wip/milestone-13`). Schema (`series`/`games`/`game_players`) + `internal/games` writer + category heuristic landed (unit-tested). Deferred: the `game_events` collision (decision needed), Live→Ready wiring, 13d queue.
 
 ## Next
 
 Listed by intended execution order (not strict numerical order). M22 and M23 are claimed slots from the M21+ open bucket, drafted alongside M07's scope expansion on 2026-05-26. M07 closed 2026-05-26; M22 closed 2026-05-31; M23 closed 2026-06-02; M08 closed 2026-06-04.
 
-- M13 — PocketBase persistence foundation: games + series
 - M14 — Series management: setup, pick/ban, in-progress UI
 - M15 — Per-user / per-team stats
 - M16 — Tournament system

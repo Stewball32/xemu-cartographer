@@ -23,6 +23,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M10 — Overlay revamp | `wip/milestone-10` | foundation only | green | 10d filter + schema landed; live overlay UI (10a/b/c/e) deferred — needs live data + OBS |
 | M11 — Game minimaps | `wip/milestone-11` | math only | green | projection + height math (`minimap.ts`) landed; assets + renderer + flares deferred — needs assets + live data + OBS |
 | M12 — POV marker (stretch) | `wip/milestone-12` | foundation parked | green | perspective-projection kernel (`pov-projection.ts`) landed; rest blocked on 12a camera-offset audit (live xemu) — may defer to M21+ |
+| M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema (`series`/`games`/`game_players`) + `internal/games` writer + heuristic landed; `game_events` collision = **decision needed**; Live→Ready wiring + 13d deferred |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -101,3 +102,34 @@ Stretch-foundation only.
 - **Decision:** parked the projection kernel as a tested foundation rather
   than skip M12, but flagged it explicitly stretch/parked pending the offset
   audit. **For Stewart:** treat M12 as parked, not "in progress" in earnest.
+
+### M13 — PocketBase persistence foundation — `wip/milestone-13`
+The biggest **fully-verifiable** milestone of the night (backend + unit tests).
+- Landed: `series` / `games` / `game_players` collections (identity.go phase 4,
+  FK order); `internal/games.PersistFinishedGame` (writer, auto-creates a
+  1-game series) + `SuggestCategory` (13c heuristic). Both unit-tested
+  (`PersistFinishedGame` against `tests.NewTestApp()`).
+- **DECISION NEEDED (game_events collision):** a `game_events` collection
+  already exists — the M5 capture-sink firehose keyed by `instance`. M13's
+  spec wants a `game`-FK'd log under the same name. I did NOT touch the
+  existing one. Options: (a) extend it with an optional `game` FK + back-fill
+  at game-end [my lean]; (b) new `game_event_log` collection; (c) leave events
+  in the firehose, join by instance + time range. **This is the one M13 design
+  fork that needs Stewart before the persistence path is "done."**
+- Deferred (need a live game to verify): wiring `PersistFinishedGame` into the
+  scraper Live→Ready transition; 13d durable queue (retry/backoff vs
+  disk-spool); `snapshot_blob` format + `game_events` retention choices.
+
+## Where I stopped + recommended next steps
+
+Stopped after M13 — a strong, fully-tested persistence foundation — rather than
+push into M14 (series-setup / pick-ban / in-progress UI), which is mostly
+frontend + live-state work I can't verify here. Recommended next, in order:
+1. **Resolve the M13 `game_events` fork** (above) — unblocks the full
+   persistence path + the Live→Ready wiring.
+2. **M15 stats aggregation** has a fully-testable backend core (sum
+   kills/deaths/wins per gamertag over `game_players`) that builds directly on
+   M13 and could land verifiably even before M14's UI.
+3. **M14** series-management UI once a live xemu is available to drive it.
+4. Run the deferred **live smoke tests** (M09 4-container kiosk, M10/M11 OBS
+   overlays, M13 game-end persistence) on a podman-capable host.
