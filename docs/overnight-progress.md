@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → …
 
 Each milestone branches off the previous one's tip. To review in order, walk the
 stack bottom-up. Current tip is recorded in the **Status** table below.
@@ -20,6 +20,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | Milestone | Branch | State | Tests | Notes |
 | --------- | ------ | ----- | ----- | ----- |
 | M09 — Match-aware kiosk | `wip/milestone-9` | code-complete | green | Live 4-container smoke test can't run here (no podman) |
+| M10 — Overlay revamp | `wip/milestone-10` | foundation only | green | 10d filter + schema landed; live overlay UI (10a/b/c/e) deferred — needs live data + OBS |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -57,3 +58,21 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 ### M09 — Match-aware kiosk view (first increment) — `wip/milestone-9`
 Committed before this session (`57c566e`). Code-complete; only the live
 4-container smoke test remains (podman-gated). No further code changes needed.
+
+### M10 — Overlay revamp + new browser sources — `wip/milestone-10`
+Scoped to the **testable data foundation**; live overlay surfaces deferred.
+- Landed: 10d dummy-player/neutral-host filter (`internal/scraper/roster`,
+  pure + unit-tested), `is_neutral_host` container field, `dummy_gamertags`
+  collection (admin-gated, identity.go chain). 10a machine→container lookup
+  reuses M9's `MatchContainer` (no new code).
+- Deferred (need live multi-instance data + OBS): the overlay UI surfaces
+  (10a routing, 10b scoreboards, 10c event popups, 10e POV-correctness pass),
+  wiring `FilterRoster` into the live broadcast path, and the 10c animation-
+  library choice.
+- **Decision:** scoped M10 to the data layer rather than guessing on
+  unverifiable overlay UI. The filter is the piece M11/M15 actually depend on.
+- **Open question for Stewart (non-blocking):** overlay auth model. Existing
+  overlays connect via the authed `scraperWSV2` store; M09 9c narrowed
+  `host:<name>` to admin-or-roster-member. Fine for operator/admin-run OBS,
+  but if overlays must run from an unauthenticated/token-only OBS instance,
+  the room-auth model needs a deliberate design pass.

@@ -44,6 +44,7 @@ func init() {
 	// 2. Rule-only consumers of user_roles.
 	register(registerAuditLogCollection)
 	register(registerCapturePoliciesCollection)
+	register(registerDummyGamertagsCollection)
 	register(registerNotificationsCollection)
 	register(registerReservedNamesCollection)
 

@@ -67,6 +67,13 @@ func registerContainersCollection(app *pocketbase.PocketBase) error {
 			Hidden: true,
 			Max:    128,
 		},
+		// M10d: flags a modded neutral-host container. The roster filter
+		// (internal/scraper/roster) drops this container's local player(s) —
+		// the out-of-bounds dummy a neutral host fields — from overlays,
+		// minimaps, and stats. Defaults false; raw debug views are unaffected.
+		&core.BoolField{
+			Name: "is_neutral_host",
+		},
 	)
 
 	collection.AddIndex("idx_containers_name_unique", true, "name", "")
