@@ -30,3 +30,12 @@ OBS scene = kiosk video source layered with the POV overlay browser source above
 Smoke test: 1v1 Slayer on Wizard, single full-screen → enemy silhouette tracks the opponent through walls; teammate-tag-above-head test in a 2v2 game on Hang 'Em High. Split-screen verification: same setup with 2v2 on a single console.
 
 **Stretch flag.** This milestone is explicitly stretch — if M11 reveals that the projection math is brittle, defer M12 to M21+ open bucket and ship M11 alone. Also explicitly out of scope for v1: through-wall occlusion (rendering markers dimmed when behind geometry), since that requires BSP knowledge from M11a's deferred case.
+
+## Log
+
+_Append-only. Never edit past entries; add a new dated line._
+
+- 2026-06-18: Stretch-foundation increment — the **perspective-projection math** (12a/12b core), implemented during the autonomous overnight run. Only this part can be unit-tested; everything else depends on live data + the as-yet-unconfirmed camera offsets, so it's deferred (consistent with the stretch flag).
+  - New `sveltekit/src/lib/utils/pov-projection.ts` (pure, unit-tested via `pov-projection.test.ts`): `worldToScreen(world, CameraState{pos, forward, up, fovY, aspect}, w, h)` — a right-handed pinhole projection returning pixel coords + depth + an `onScreen` frustum flag, culling points behind the camera. Internal vector helpers (dot/cross/sub/normalize). M11's top-down projection held up fine, so the stretch isn't being abandoned — but the perspective path is harder and rides on camera offsets that 12a still has to confirm.
+  - **Deferred / blocked on live + reader work:** 12a's audit of whether the Halo: CE reader exposes a usable camera matrix (FOV, position, view dir, near/far) — **if the offsets aren't there, that's an M19 follow-up and M12 likely defers to M21+** per the stretch flag; 12b live alignment over the kiosk stream; 12c split-screen viewport partitioning; 12d marker rendering; 12e calibration. Through-wall occlusion stays out of scope for v1 (needs BSP).
+  - **Decision:** shipped the projection kernel as a tested foundation rather than skip M12 entirely, but kept it minimal given the stretch status + unverified camera offsets. Recommend Stewart treat M12 as "foundation parked" until the 12a offset audit can run against live xemu.

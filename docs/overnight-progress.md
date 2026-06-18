@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → …
 
 Each milestone branches off the previous one's tip. To review in order, walk the
 stack bottom-up. Current tip is recorded in the **Status** table below.
@@ -22,6 +22,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M09 — Match-aware kiosk | `wip/milestone-9` | code-complete | green | Live 4-container smoke test can't run here (no podman) |
 | M10 — Overlay revamp | `wip/milestone-10` | foundation only | green | 10d filter + schema landed; live overlay UI (10a/b/c/e) deferred — needs live data + OBS |
 | M11 — Game minimaps | `wip/milestone-11` | math only | green | projection + height math (`minimap.ts`) landed; assets + renderer + flares deferred — needs assets + live data + OBS |
+| M12 — POV marker (stretch) | `wip/milestone-12` | foundation parked | green | perspective-projection kernel (`pov-projection.ts`) landed; rest blocked on 12a camera-offset audit (live xemu) — may defer to M21+ |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -89,3 +90,14 @@ Scoped to the **projection + height math** (the numerically-correct core).
   (11d/e), projectile traces (11f), the 11g canvas-vs-library decision.
 - **Decision:** shipped the math, not the renderer. The projection is the part
   that has to be right; the rendering can only be verified by eye over OBS.
+
+### M12 — POV marker overlay (stretch) — `wip/milestone-12`
+Stretch-foundation only.
+- Landed: `sveltekit/src/lib/utils/pov-projection.ts` — `worldToScreen`
+  pinhole perspective projection + frustum cull. Pure + unit-tested.
+- Deferred / blocked: 12a camera-offset audit (needs live xemu — if the
+  reader lacks a usable camera matrix this becomes an M19 follow-up and M12
+  defers to M21+ per the stretch flag), 12b–12e live work.
+- **Decision:** parked the projection kernel as a tested foundation rather
+  than skip M12, but flagged it explicitly stretch/parked pending the offset
+  audit. **For Stewart:** treat M12 as parked, not "in progress" in earnest.
