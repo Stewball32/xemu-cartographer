@@ -19,3 +19,12 @@ New page at `/series/[id]/`. Shows series header (format, participants, category
 Extend M13b: when a game finishes and the host container is running under an active series (matched by container or gamertag), attach the new `games` row to that series instead of auto-creating a casual one. Series ends when format completion is reached (e.g. one team has won 3 of 5).
 
 Smoke test: create best-of-3 series with 2 teams + pick/ban → 3 maps committed. Play 2 games (one team wins both). Series UI shows 2-0, marks series complete, doesn't accept the 3rd map. Compare to a casual no-pick/ban series of "first-to-2": same termination behavior driven by the format field.
+
+## Log
+
+_Append-only. Never edit past entries; add a new dated line._
+
+- 2026-06-18: First increment — the **series-format termination logic** (14d core), the pure decision the rest of M14 hangs off. Implemented + unit-tested during the autonomous overnight run; the UI flows (14a setup, 14b pick/ban draft, 14c in-progress page) and the live game-end re-attachment wiring are deferred (need a live game + UI to verify).
+  - New `internal/series` package: `Progress(format, targetN, teamWins) Standing` — decides whether a series is complete + who won, for `single` / `exact-n` / `best-of-n` (majority clinch) / `first-to-x`. Pure, no PB/IO; handles >2 participants (round-robin), ties under exact-n (no winner), and degenerate configs (clamps so a bad series still terminates). Unit-tested across all formats + edge cases.
+  - Widened the M13 `series.format` SelectField to the full set (`single` / `exact-n` / `best-of-n` / `first-to-x`) so the schema, the format constants, and the logic agree.
+  - **Deferred:** 14a `/series/new/` setup page; 14b pick/ban draft (interactive — the draft *rules* could later move into `internal/series` as a tested state machine, but the flow itself is UI); 14c `/series/[id]/` in-progress page (PB-realtime UI); 14d's live wiring (extend `internal/games.PersistFinishedGame` to attach a finished game to an active series via container/gamertag match, then call `series.Progress` to auto-end it). The `series.Progress` core is exactly what that wiring will call.

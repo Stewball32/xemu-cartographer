@@ -18,7 +18,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M11  | [Game minimaps](M11-game-minimaps.md)                                                       | In progress |
 | M12  | [POV marker overlay (stretch)](M12-pov-marker-overlay.md)                                   | In progress |
 | M13  | [PocketBase persistence foundation: games + series](M13-pb-persistence-games-series.md)     | In progress |
-| M14  | [Series management: setup, pick/ban, in-progress UI](M14-series-management.md)              | Planned     |
+| M14  | [Series management: setup, pick/ban, in-progress UI](M14-series-management.md)              | In progress |
 | M15  | [Per-user / per-team stats](M15-stats.md)                                                   | Planned     |
 | M16  | [Tournament system](M16-tournament-system.md)                                               | Planned     |
 | M17  | [Discord integration: stats lookup + per-guild channel posting](M17-discord-integration.md) | Planned     |

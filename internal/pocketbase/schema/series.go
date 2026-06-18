@@ -35,7 +35,8 @@ func registerSeriesCollection(app *pocketbase.PocketBase) error {
 			Name:      "format",
 			Required:  true,
 			MaxSelect: 1,
-			Values:    []string{"exact-n", "first-to-x"},
+			// Mirrors internal/series format constants (M14 widens the set).
+			Values: []string{"single", "exact-n", "best-of-n", "first-to-x"},
 		},
 		&core.NumberField{Name: "target_n", OnlyInt: true, Min: f64(1)},
 		&core.SelectField{

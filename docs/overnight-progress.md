@@ -10,7 +10,13 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → …
+
+> M14–M18 (second overnight pass) skip the milestones whose remaining work is
+> purely live-hardware-bound (M17 Discord, M19 offset-validation against live
+> memory, M20 Halo 2) and land only the unit-testable cores of the rest. The
+> branch numbers follow milestone numbers, so M17/M19/M20 are intentionally
+> absent from the stack.
 
 Each milestone branches off the previous one's tip. To review in order, walk the
 stack bottom-up. Current tip is recorded in the **Status** table below.
@@ -24,6 +30,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M11 — Game minimaps | `wip/milestone-11` | math only | green | projection + height math (`minimap.ts`) landed; assets + renderer + flares deferred — needs assets + live data + OBS |
 | M12 — POV marker (stretch) | `wip/milestone-12` | foundation parked | green | perspective-projection kernel (`pov-projection.ts`) landed; rest blocked on 12a camera-offset audit (live xemu) — may defer to M21+ |
 | M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema (`series`/`games`/`game_players`) + `internal/games` writer + heuristic landed; `game_events` collision = **decision needed**; Live→Ready wiring + 13d deferred |
+| M14 — Series management | `wip/milestone-14` | logic core only | green | `internal/series.Progress` format-termination logic landed; setup/pick-ban/in-progress UIs + live wiring deferred |
 
 ## Environment notes (for reproducing my green checks)
 
