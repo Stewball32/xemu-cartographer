@@ -20,7 +20,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M13  | [PocketBase persistence foundation: games + series](M13-pb-persistence-games-series.md)     | In progress |
 | M14  | [Series management: setup, pick/ban, in-progress UI](M14-series-management.md)              | In progress |
 | M15  | [Per-user / per-team stats](M15-stats.md)                                                   | In progress |
-| M16  | [Tournament system](M16-tournament-system.md)                                               | Planned     |
+| M16  | [Tournament system](M16-tournament-system.md)                                               | In progress |
 | M17  | [Discord integration: stats lookup + per-guild channel posting](M17-discord-integration.md) | Planned     |
 | M18  | [Rating system + multiple leaderboards](M18-rating-leaderboards.md)                         | Planned     |
 | M19  | [Robustness + offset validation](M19-robustness-offsets.md)                                 | Planned     |

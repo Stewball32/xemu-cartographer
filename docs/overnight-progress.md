@@ -32,6 +32,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema (`series`/`games`/`game_players`) + `internal/games` writer + heuristic landed; `game_events` collision = **decision needed**; Live→Ready wiring + 13d deferred |
 | M14 — Series management | `wip/milestone-14` | logic core only | green | `internal/series.Progress` format-termination logic landed; setup/pick-ban/in-progress UIs + live wiring deferred |
 | M15 — Stats | `wip/milestone-15` | query+agg core | green | `internal/stats` pure roll-up + PB projection landed (unit-tested); stats/match-history/dummy UIs deferred |
+| M16 — Tournament | `wip/milestone-16` | generators only | green | `internal/bracket` single-elim + round-robin generators landed (unit-tested); schema/UI/wiring + double-elim/Swiss deferred |
 
 ## Environment notes (for reproducing my green checks)
 
