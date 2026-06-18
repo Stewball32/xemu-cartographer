@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → …
 
 Each milestone branches off the previous one's tip. To review in order, walk the
 stack bottom-up. Current tip is recorded in the **Status** table below.
@@ -21,6 +21,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | --------- | ------ | ----- | ----- | ----- |
 | M09 — Match-aware kiosk | `wip/milestone-9` | code-complete | green | Live 4-container smoke test can't run here (no podman) |
 | M10 — Overlay revamp | `wip/milestone-10` | foundation only | green | 10d filter + schema landed; live overlay UI (10a/b/c/e) deferred — needs live data + OBS |
+| M11 — Game minimaps | `wip/milestone-11` | math only | green | projection + height math (`minimap.ts`) landed; assets + renderer + flares deferred — needs assets + live data + OBS |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -76,3 +77,15 @@ Scoped to the **testable data foundation**; live overlay surfaces deferred.
   `host:<name>` to admin-or-roster-member. Fine for operator/admin-run OBS,
   but if overlays must run from an unauthenticated/token-only OBS instance,
   the room-auth model needs a deliberate design pass.
+
+### M11 — Game minimaps — `wip/milestone-11`
+Scoped to the **projection + height math** (the numerically-correct core).
+- Landed: `sveltekit/src/lib/utils/minimap.ts` — `projectToMinimap`,
+  `aimToScreenAngle`, `heightBand`, `iconScale`, `MAP_TRANSFORMS` registry +
+  `transformForMap`. Pure + unit-tested (`minimap.test.ts`).
+- Deferred (need traced assets + live data + OBS): the per-map SVG floor
+  tracings (11a — registry holds a placeholder Blood Gulch transform with
+  uncalibrated values), the `/overlays/minimap/<machine>/` route + renderer
+  (11d/e), projectile traces (11f), the 11g canvas-vs-library decision.
+- **Decision:** shipped the math, not the renderer. The projection is the part
+  that has to be right; the rendering can only be verified by eye over OBS.

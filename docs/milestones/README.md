@@ -15,7 +15,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M08  | [Roles + permissions](M08-roles-permissions.md)                                             | Done        |
 | M09  | [Match-aware kiosk view](M09-match-aware-kiosk.md)                                          | In progress |
 | M10  | [Overlay revamp + new browser sources](M10-overlay-revamp.md)                               | In progress |
-| M11  | [Game minimaps](M11-game-minimaps.md)                                                       | Planned     |
+| M11  | [Game minimaps](M11-game-minimaps.md)                                                       | In progress |
 | M12  | [POV marker overlay (stretch)](M12-pov-marker-overlay.md)                                   | Planned     |
 | M13  | [PocketBase persistence foundation: games + series](M13-pb-persistence-games-series.md)     | Planned     |
 | M14  | [Series management: setup, pick/ban, in-progress UI](M14-series-management.md)              | Planned     |

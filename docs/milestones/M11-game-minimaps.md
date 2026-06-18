@@ -42,3 +42,11 @@ Investigate whether the projectile data the reader currently exposes (visible in
 Raw canvas vs. animation library (PixiJS, two.js, Konva, motion-one). Decide during 11b/11c based on perf — 30Hz tick updates × 16 players (with size + tint deltas) × N projectiles + N flares may justify a real renderer. SVG with Svelte transitions might be enough for 11a-d; flares (11e) and projectiles (11f) probably push toward canvas.
 
 Smoke test: load `/overlays/minimap/<machine>/` for a Halo: CE match on Blood Gulch (or whatever map's been traced first). Player positions track correctly, view cones rotate with aim, height cues swap correctly when a player jumps a cliff, power weapons appear at spawn positions, kill flares fire on every kill captured by the M5 event stream, neutral-host dummy player is absent. Composite over OBS scene.
+
+## Log
+
+_Append-only. Never edit past entries; add a new dated line._
+
+- 2026-06-18: First increment — the **projection + height math** (11b/11c core), implemented during the autonomous overnight run. This is the part that has to be numerically correct; the SVG assets, canvas rendering, flares, and live OBS verification are deferred (can't run here).
+  - New `sveltekit/src/lib/utils/minimap.ts` (pure, unit-tested via `minimap.test.ts`): `projectToMinimap(pos, MapTransform)` (translate → rotate → scale → center, with Y-flip for SVG's downward axis), `aimToScreenAngle(facing, t)` for view cones (11b), `heightBand(z, …)` (11c Z-banded colour cue) + `iconScale(z, …)` (11c 0.7×–1.3× size cue), and a `MAP_TRANSFORMS` registry + `transformForMap()` lookup that returns null for un-traced maps so the overlay can render "minimap unavailable" instead of projecting onto the wrong asset.
+  - **Deferred (need traced map assets + live data + OBS):** 11a's committed per-map SVG floor tracings (the registry currently holds a single placeholder Blood Gulch transform — values are uncalibrated until a real tracing lands); the `/overlays/minimap/<machine>/` route + canvas/SVG renderer (11d power-item icons, 11e flares); 11f projectile traces; the 11g canvas-vs-library perf decision. The minimap consumes M10d's `FilterRoster` for the dummy player — that wiring rides along with the deferred overlay-data path.
