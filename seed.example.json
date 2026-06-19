@@ -1,0 +1,19 @@
+[
+  {
+    "collection": "users",
+    "records": [
+      {
+        "email": "alice@dev.com",
+        "password": "alice123",
+        "username": "alice"
+      },
+      {
+        "id": "admin1234567890",
+        "email": "admin@dev.com",
+        "password": "admin123",
+        "username": "admin",
+        "is_admin": true
+      }
+    ]
+  }
+]

@@ -35,6 +35,11 @@ sveltekit/.svelte-kit/
 !.env.example
 !sveltekit/.env.example
 
+# Local dev seed overrides — seed.local.json etc. are personal/local; only
+# the committed template (seed.example.json) is tracked.
+/seed.*.json
+!/seed.example.json
+
 # OS
 .DS_Store
 Thumbs.db
