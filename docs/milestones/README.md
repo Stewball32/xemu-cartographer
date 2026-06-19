@@ -28,6 +28,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M21+ | [Open](M21-plus-open.md)                                                                    | Planned     |
 | M22  | [Moderation + audit log](M22-moderation-audit.md)                                           | Done        |
 | M23  | [Team membership workflows](M23-team-membership-workflows.md)                               | Done        |
+| M24  | [Remote game setup (controller-free lobby write)](M24-remote-game-setup.md)                 | Planned     |
 
 ## Status values
 

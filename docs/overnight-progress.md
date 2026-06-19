@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → `wip/m09-roster-grace` (M09 grace window) → `wip/m10-overlay-auth` (M10 overlay auth) → `wip/m17-discord` (M17 Discord, offline) → `wip/m18-leaderboard` (M18 leaderboard, offline) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → `wip/m09-roster-grace` (M09 grace window) → `wip/m10-overlay-auth` (M10 overlay auth) → `wip/m17-discord` (M17 Discord, offline) → `wip/m18-leaderboard` (M18 leaderboard, offline) → `wip/m24-remote-setup-spec` (M24 spec only) → …
 
 > `wip/m09-roster-grace` logically belongs to M09 but is stacked on the tip to
 > keep the stack linear (no rebase of the whole stack). It can be cherry-picked
@@ -97,6 +97,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M10 overlay-token auth | `wip/m10-overlay-auth` | done + unit-tested | green | read-only revocable overlay tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI; render surface deferred |
 | M17 Discord (offline) | `wip/m17-discord` | offline-complete | green | config + filter + stats/recent/cartographer commands + embeds + games-post hook (no-op offline); gateway NOT connected — live verify deferred |
 | M18 leaderboard (offline) | `wip/m18-leaderboard` | offline-complete | green | `ratings` read + `/leaderboard` + `/rank` commands + embeds (unit-tested); handlers live-only, web pages deferred |
+| M24 remote game setup | `wip/m24-remote-setup-spec` | **spec only** | n/a | design doc for controller-free lobby write; build needs live xemu+Halo (write-and-observe) |
 
 ## Environment notes (for reproducing my green checks)
 
