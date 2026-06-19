@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → …
 
 > M14–M18 (second overnight pass) skip the milestones whose remaining work is
 > purely live-hardware-bound (M17 Discord, M19 offset-validation against live
@@ -29,11 +29,12 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M10 — Overlay revamp | `wip/milestone-10` | foundation only | green | 10d filter + schema landed; live overlay UI (10a/b/c/e) deferred — needs live data + OBS |
 | M11 — Game minimaps | `wip/milestone-11` | math only | green | projection + height math (`minimap.ts`) landed; assets + renderer + flares deferred — needs assets + live data + OBS |
 | M12 — POV marker (stretch) | `wip/milestone-12` | foundation parked | green | perspective-projection kernel (`pov-projection.ts`) landed; rest blocked on 12a camera-offset audit (live xemu) — may defer to M21+ |
-| M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema (`series`/`games`/`game_players`) + `internal/games` writer + heuristic landed; `game_events` collision = **decision needed**; Live→Ready wiring + 13d deferred |
+| M13 — PB persistence | `wip/milestone-13` | foundation only | green | schema + writer + heuristic landed (`game_events` fork resolved + chain wired on `wip/game-end-chain`) |
 | M14 — Series management | `wip/milestone-14` | logic core only | green | `internal/series.Progress` format-termination logic landed; setup/pick-ban/in-progress UIs + live wiring deferred |
 | M15 — Stats | `wip/milestone-15` | query+agg core | green | `internal/stats` pure roll-up + PB projection landed (unit-tested); stats/match-history/dummy UIs deferred |
 | M16 — Tournament | `wip/milestone-16` | generators only | green | `internal/bracket` single-elim + round-robin generators landed (unit-tested); schema/UI/wiring + double-elim/Swiss deferred |
 | M18 — Rating + leaderboards | `wip/milestone-18` | algorithm core | green | `internal/rating` Elo + leaderboard ranking landed (unit-tested); recompute hook + leaderboard pages + Discord cmds deferred |
+| M13 fork + chain wiring | `wip/game-end-chain` | wired + integ-tested | green | `game_events` option-a + game-end chain (events→series→stats→rating) + Live→Ready trigger; **one live gap** (GameData→FinishedGame mapping) |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -119,16 +120,35 @@ The biggest **fully-verifiable** milestone of the night (backend + unit tests).
   FK order); `internal/games.PersistFinishedGame` (writer, auto-creates a
   1-game series) + `SuggestCategory` (13c heuristic). Both unit-tested
   (`PersistFinishedGame` against `tests.NewTestApp()`).
-- **DECISION NEEDED (game_events collision):** a `game_events` collection
-  already exists — the M5 capture-sink firehose keyed by `instance`. M13's
-  spec wants a `game`-FK'd log under the same name. I did NOT touch the
-  existing one. Options: (a) extend it with an optional `game` FK + back-fill
-  at game-end [my lean]; (b) new `game_event_log` collection; (c) leave events
-  in the firehose, join by instance + time range. **This is the one M13 design
-  fork that needs Stewart before the persistence path is "done."**
-- Deferred (need a live game to verify): wiring `PersistFinishedGame` into the
-  scraper Live→Ready transition; 13d durable queue (retry/backoff vs
-  disk-spool); `snapshot_blob` format + `game_events` retention choices.
+- **game_events collision — RESOLVED.** Stewart picked option (a). Implemented
+  on `wip/game-end-chain` (see the dedicated section below); this flag is closed.
+- Deferred (need a live game to verify): the Live→Ready trigger's
+  `GameData→FinishedGame` mapping (wired, not live-verified); 13d durable queue;
+  `snapshot_blob` format.
+
+### Game-end chain — `wip/game-end-chain` (third follow-up)
+Stewart chose option (a) for the `game_events` fork and asked to wire the full
+chain. Stacked on `wip/milestone-18`.
+- **game_events option-a:** added an optional `game` relation + `idx_game_events_game`
+  to the existing firehose collection (shape otherwise unchanged); moved its
+  registration into `identity.go` phase 4 (after `games`) since it now relates to
+  it; reconciles the column onto an existing collection.
+- **Chain (`internal/games.PersistFinishedGame`):** stamp this instance's
+  in-window unstamped `game_events` with the game id (idempotent on `game=''`) →
+  advance the series (`series.Progress` → stamp `ended_at`) → per-game-type
+  two-team Elo (`rating.Update`) into a new `ratings` collection. Returns
+  `EventsStamped`/`SeriesStanding`/`RatingsUpdated`.
+- **Production trigger:** `runLive` defers `persistFinishedGame(svc)` after
+  `captureLiveAsPrevious` (`manager/games_persist.go`), best-effort goroutine.
+- **Integration-tested** against `tests.NewTestApp()`: event-window stamping +
+  idempotency (2nd persist stamps 0); best-of-3 completes at 2-0 with `ended_at`
+  set; winner Elo up / loser down / zero-sum / game counts.
+- **Retention decision:** keep `game_events` full; roll-up + prune is the
+  documented follow-up.
+- **ONE LIVE GAP (flagged, doesn't block):** the `GameData→FinishedGame`
+  projection + the trigger firing can only be verified against a real Halo: CE
+  match. `internal/games` is fully unit-tested against the same `FinishedGame`
+  shape, so the risk is confined to that mapping.
 
 ## Where I stopped + recommended next steps
 

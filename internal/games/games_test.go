@@ -20,7 +20,7 @@ func ensureCollections(t *testing.T, app core.App) {
 		c := core.NewBaseCollection("series")
 		c.Fields.Add(
 			&core.TextField{Name: "name"},
-			&core.SelectField{Name: "format", MaxSelect: 1, Values: []string{"exact-n", "first-to-x"}},
+			&core.SelectField{Name: "format", MaxSelect: 1, Values: []string{"single", "exact-n", "best-of-n", "first-to-x"}},
 			&core.NumberField{Name: "target_n", OnlyInt: true},
 			&core.SelectField{Name: "category", MaxSelect: 1, Values: []string{"casual", "competitive", "tournament", "custom"}},
 			&core.DateField{Name: "started_at"},
@@ -75,6 +75,40 @@ func ensureCollections(t *testing.T, app core.App) {
 		)
 		if err := app.Save(c); err != nil {
 			t.Fatalf("save game_players: %v", err)
+		}
+	}
+
+	// game_events: the instance-keyed firehose + the M13 option-a `game` FK.
+	if _, err := app.FindCollectionByNameOrId("game_events"); err != nil {
+		c := core.NewBaseCollection("game_events")
+		c.Fields.Add(
+			&core.TextField{Name: "instance", Required: true},
+			&core.TextField{Name: "type", Required: true},
+			&core.NumberField{Name: "seq", OnlyInt: true},
+			&core.NumberField{Name: "tick", OnlyInt: true},
+			&core.DateField{Name: "ts"},
+			&core.JSONField{Name: "data", MaxSize: 1 << 20},
+			&core.RelationField{Name: "game", CollectionId: gamesCol.Id, MaxSelect: 1},
+			&core.AutodateField{Name: "created", OnCreate: true},
+		)
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save game_events: %v", err)
+		}
+	}
+
+	// ratings: per-(gamertag, gametype) Elo store.
+	if _, err := app.FindCollectionByNameOrId("ratings"); err != nil {
+		c := core.NewBaseCollection("ratings")
+		c.Fields.Add(
+			&core.TextField{Name: "gamertag", Required: true},
+			&core.TextField{Name: "gametype", Required: true},
+			&core.NumberField{Name: "rating"},
+			&core.NumberField{Name: "games", OnlyInt: true},
+			&core.AutodateField{Name: "created", OnCreate: true},
+		)
+		c.AddIndex("idx_ratings_gamertag_gametype_unique", true, "gamertag, gametype", "")
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save ratings: %v", err)
 		}
 	}
 }

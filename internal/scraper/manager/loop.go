@@ -299,6 +299,9 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 // the data rather than dropping it. Ready inherits the populated
 // PreviousGame slot; Idle clears it (handled in releaseReader).
 func (r *runner) runLive(svc *guards.Services) (next Phase) {
+	// LIFO: persistFinishedGame runs after captureLiveAsPrevious, so
+	// cache.PreviousGame is populated when it reads it (M13 game-end trigger).
+	defer r.persistFinishedGame(svc)
 	defer r.captureLiveAsPrevious()
 
 	var lastBroadcastTick uint32

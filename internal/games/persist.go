@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/series"
 )
 
 // PlayerStat is one player's per-game line for a finished contest.
@@ -36,20 +38,34 @@ type FinishedGame struct {
 	Players         []PlayerStat
 }
 
-// Result reports what PersistFinishedGame created.
+// Result reports what PersistFinishedGame created + the downstream chain
+// outcome (events stamped, series standing after this game, ratings updated).
 type Result struct {
 	SeriesID       string
 	GameID         string
 	PlayerRowCount int
 	CreatedSeries  bool
+
+	// EventsStamped is how many game_events rows were back-linked to this game
+	// (M13 option-a). SeriesStanding is the series' standing after this game
+	// (M14). RatingsUpdated is how many ratings rows were upserted (M18).
+	EventsStamped  int
+	SeriesStanding series.Standing
+	RatingsUpdated int
 }
 
 // PersistFinishedGame writes one `games` row + N `game_players` rows for a
-// finished contest, auto-creating a 1-game series when SeriesID is empty.
-// Returns the created/linked ids. The caller (the scraper Live→Ready hook) is
-// best-effort: log + continue on error so a persistence hiccup never stalls
-// the scraper loop. Per-tick events stay in the existing instance-keyed
-// game_events firehose; linking them to a game is a deferred M13 decision.
+// finished contest, auto-creating a 1-game series when SeriesID is empty, then
+// runs the game-end chain: stamp this instance's in-window `game_events` rows
+// with the game id (M13 option-a), advance the series standing (M14
+// series.Progress, ending it when the format is satisfied), and apply the
+// per-game-type Elo rating update (M18). Returns the created ids + chain
+// outcome.
+//
+// The caller (the scraper Live→Ready hook) is best-effort: log + continue on
+// error so a persistence hiccup never stalls the scraper loop. Errors are
+// surfaced (with the game id already in Result) so tests catch regressions and
+// the caller can decide how loud to be.
 func PersistFinishedGame(app core.App, fg FinishedGame) (Result, error) {
 	var res Result
 
@@ -109,6 +125,25 @@ func PersistFinishedGame(app core.App, fg FinishedGame) (Result, error) {
 		}
 		res.PlayerRowCount++
 	}
+
+	// Game-end chain: stamp events → advance series → update ratings.
+	stamped, err := stampGameEvents(app, g.Id, fg.Container, fg.StartedAt, fg.EndedAt)
+	if err != nil {
+		return res, fmt.Errorf("games.PersistFinishedGame: stamp events: %w", err)
+	}
+	res.EventsStamped = stamped
+
+	std, err := advanceSeries(app, seriesID, fg.EndedAt)
+	if err != nil {
+		return res, fmt.Errorf("games.PersistFinishedGame: advance series: %w", err)
+	}
+	res.SeriesStanding = std
+
+	rated, err := updateRatings(app, fg.Gametype, fg.Players, fg.WinnerTeam)
+	if err != nil {
+		return res, fmt.Errorf("games.PersistFinishedGame: update ratings: %w", err)
+	}
+	res.RatingsUpdated = rated
 
 	return res, nil
 }

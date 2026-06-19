@@ -55,12 +55,15 @@ func init() {
 	register(registerTeamLogCollection)
 	register(registerTeamMembershipRequestsCollection)
 
-	// 4. M13 games-persistence FK chain — series → games → game_players.
-	//    Coordinated here (not via per-file init()s) because alphabetical
-	//    filename order ("game_players" < "games" < "series") is the reverse
-	//    of the dependency order. These relate only to each other + the
-	//    built-in users collection, not the M08 hasAdminRole subquery.
+	// 4. M13 games-persistence FK chain — series → games → game_players, then
+	//    game_events (gains an optional `game` relation in M13 option-a, so it
+	//    must follow games). Coordinated here (not via per-file init()s)
+	//    because alphabetical filename order ("game_events" / "game_players" /
+	//    "games" / "series") is the reverse of the dependency order. These
+	//    relate only to each other + the built-in users collection, not the
+	//    M08 hasAdminRole subquery.
 	register(registerSeriesCollection)
 	register(registerGamesCollection)
 	register(registerGamePlayersCollection)
+	register(registerGameEventsCollection)
 }
