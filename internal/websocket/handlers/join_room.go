@@ -3,10 +3,11 @@ package handlers
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
+	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 )
 
@@ -106,7 +107,9 @@ func authorizeHostRoom(e *Event) error {
 	if err != nil || len(tags) == 0 {
 		return errors.New("not in this match")
 	}
-	if scraperiface.ContainerHasGamertag(svc.Scraper.Membership(), instance, tags) {
+	// Grace window (M09): admits a roster member of this instance, and keeps
+	// them admitted for the rostergrace TTL after a transient roster drop.
+	if rostergrace.Default.Allow(svc.Scraper.Membership(), instance, tags, time.Now()) {
 		return nil
 	}
 	return errors.New("not in this match")

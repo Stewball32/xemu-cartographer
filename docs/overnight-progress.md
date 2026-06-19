@@ -10,7 +10,11 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → `wip/m09-roster-grace` (M09 grace window) → …
+
+> `wip/m09-roster-grace` logically belongs to M09 but is stacked on the tip to
+> keep the stack linear (no rebase of the whole stack). It can be cherry-picked
+> back onto `wip/milestone-9` if you'd rather it land with the rest of M09.
 
 > M14–M18 (second overnight pass) skip the milestones whose remaining work is
 > purely live-hardware-bound (M17 Discord, M19 offset-validation against live
@@ -35,6 +39,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M16 — Tournament | `wip/milestone-16` | generators only | green | `internal/bracket` single-elim + round-robin generators landed (unit-tested); schema/UI/wiring + double-elim/Swiss deferred |
 | M18 — Rating + leaderboards | `wip/milestone-18` | algorithm core | green | `internal/rating` Elo + leaderboard ranking landed (unit-tested); recompute hook + leaderboard pages + Discord cmds deferred |
 | M13 fork + chain wiring | `wip/game-end-chain` | wired + integ-tested | green | `game_events` option-a + game-end chain (events→series→stats→rating) + Live→Ready trigger; **one live gap** (GameData→FinishedGame mapping) |
+| M09 roster grace window | `wip/m09-roster-grace` | done + unit-tested | green | `internal/rostergrace` sliding TTL (default 5 min) on the kiosk/VNC + WS gate; fixes the too-aggressive instant kick on transient roster drop |
 
 ## Environment notes (for reproducing my green checks)
 
@@ -66,6 +71,12 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
   non-admin roster members (`authorizeKioskAccess`). Same predicate also opens
   `host:<name>` WS rooms to roster members. Unit-tested + fails closed, but the
   live stream to a non-admin is unverified (needs the podman smoke test).
+  **Update (2026-06-18):** Stewart live-tested this and it was too aggressive —
+  see `wip/m09-roster-grace`. The gate now keeps access for a **5-min sliding
+  grace window** after a transient roster drop (only live presence refreshes;
+  fail-closed after). Deliberate usability/security trade-off; the `DefaultTTL`
+  in `internal/rostergrace` is the knob. Still needs the live smoke test before
+  any merge.
 
 ## Per-milestone log
 

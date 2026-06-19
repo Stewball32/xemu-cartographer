@@ -2,12 +2,13 @@ package containers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
+	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
 )
 
 // kioskTokenCookie is the cookie name used to carry a JWT through the iframe's
@@ -44,9 +45,11 @@ func kioskTokenRecord(e *core.RequestEvent) *core.Record {
 
 // authorizeKioskAccess admits a caller to the kiosk/VNC proxy for container
 // `name` (M09 9b/9c). Admins (superuser or admin role) get in for any
-// container; a non-admin is admitted only when one of their gamertags is in
-// that specific container's live roster, re-checked on every request so access
-// lapses the moment they leave the match. Fails closed on any lookup error.
+// container; a non-admin is admitted when one of their gamertags is in that
+// specific container's live roster OR was seen there within the rostergrace
+// TTL — so a transient roster drop (e.g. editing the gametype) doesn't kick
+// them off mid-edit. Re-checked on every request; fails closed once the grace
+// window lapses or on any lookup error.
 func authorizeKioskAccess(e *core.RequestEvent, name string) bool {
 	record := kioskTokenRecord(e)
 	if record == nil {
@@ -62,7 +65,7 @@ func authorizeKioskAccess(e *core.RequestEvent, name string) bool {
 	if err != nil || len(tags) == 0 {
 		return false
 	}
-	return scraperiface.ContainerHasGamertag(Services.Scraper.Membership(), name, tags)
+	return rostergrace.Default.Allow(Services.Scraper.Membership(), name, tags, time.Now())
 }
 
 // setKioskTokenCookie persists the validated ?token= as an HttpOnly cookie
