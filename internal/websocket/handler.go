@@ -4,9 +4,12 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 )
 
 // ConnectHook is invoked once per accepted WebSocket connection, after the
@@ -32,13 +35,20 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 	opts := buildAcceptOptions()
 
 	return func(e *core.RequestEvent) error {
+		// Two doors, same socket: a logged-in user JWT (operator path,
+		// governed by the M09 roster gate in join_room) OR a scoped read-only
+		// overlay token (M10 OBS path). The overlay token binds the connection
+		// to one room and is strictly read-only (enforced in the Hub dispatch +
+		// join_room). A user JWT takes precedence if both somehow validate.
 		var user *core.Record
+		var overlayRoom string
 		if token := e.Request.URL.Query().Get("token"); token != "" {
-			record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth)
-			if err != nil {
-				log.Printf("ws: invalid auth token: %v", err)
-			} else {
+			if record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil {
 				user = record
+			} else if room, ok := overlaytoken.VerifyActive(app, token, time.Now()); ok {
+				overlayRoom = room
+			} else {
+				log.Printf("ws: token is neither a valid user JWT nor a live overlay token")
 			}
 		}
 
@@ -48,10 +58,11 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 		}
 
 		client := &Client{
-			hub:  hub,
-			conn: conn,
-			send: make(chan []byte, sendBufSize),
-			user: user,
+			hub:         hub,
+			conn:        conn,
+			send:        make(chan []byte, sendBufSize),
+			user:        user,
+			overlayRoom: overlayRoom,
 		}
 
 		hub.register <- client

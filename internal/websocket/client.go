@@ -22,6 +22,11 @@ type Client struct {
 	conn *websocket.Conn
 	send chan []byte
 	user *core.Record // nil for anonymous connections
+	// overlayRoom is the room a read-only M10 overlay token is bound to
+	// ("host:<name>"); empty for normal (user/anonymous) connections. When set,
+	// the Hub restricts this client to read-only message types scoped to this
+	// room.
+	overlayRoom string
 }
 
 // UserID returns the authenticated user's record ID, or "" for anonymous.
@@ -31,6 +36,10 @@ func (c *Client) UserID() string {
 	}
 	return ""
 }
+
+// OverlayRoom returns the room an overlay-token connection is bound to, or ""
+// for normal connections.
+func (c *Client) OverlayRoom() string { return c.overlayRoom }
 
 // readPump reads messages from the browser and forwards them to the Hub.
 // Runs on the handler goroutine until the connection closes.

@@ -2,17 +2,22 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"log"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
+	overlaysroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
@@ -30,6 +35,30 @@ import (
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 )
+
+// configureOverlayTokens wires the M10 overlay-token signer + default lifetime
+// from the environment. OVERLAY_TOKEN_SECRET is the HMAC secret; if unset, an
+// ephemeral random secret is used (tokens won't survive a restart — fine for
+// dev, set it in production). OVERLAY_TOKEN_TTL_HOURS overrides the long-lived
+// default lifetime. Must run before routes register + the WS handler mounts,
+// since both use the Default signer.
+func configureOverlayTokens() {
+	secret := []byte(os.Getenv("OVERLAY_TOKEN_SECRET"))
+	if len(secret) == 0 {
+		secret = make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			log.Printf("overlay tokens: failed to generate ephemeral secret: %v", err)
+		}
+		log.Printf("overlay tokens: OVERLAY_TOKEN_SECRET unset — using an ephemeral secret; minted tokens won't survive a restart. Set OVERLAY_TOKEN_SECRET in production.")
+	}
+	overlaytoken.Configure(secret)
+
+	if h := os.Getenv("OVERLAY_TOKEN_TTL_HOURS"); h != "" {
+		if hrs, err := strconv.Atoi(h); err == nil && hrs > 0 {
+			overlaysroutes.SetDefaultTTL(time.Duration(hrs) * time.Hour)
+		}
+	}
+}
 
 func main() {
 	app := pocketbase.New()
@@ -163,6 +192,7 @@ func main() {
 			}
 		}
 
+		configureOverlayTokens()
 		routes.RegisterAll(se)
 
 		hub = ws.NewHub(app)

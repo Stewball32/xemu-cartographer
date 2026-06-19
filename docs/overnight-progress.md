@@ -15,6 +15,34 @@ This file is the running decision + status log. Read the **Branch stack** and
 > `wip/m09-roster-grace` logically belongs to M09 but is stacked on the tip to
 > keep the stack linear (no rebase of the whole stack). It can be cherry-picked
 > back onto `wip/milestone-9` if you'd rather it land with the rest of M09.
+>
+> `wip/m10-overlay-auth` (overlay-token auth) stacks on `wip/m09-roster-grace`;
+> logically M10, cherry-pickable onto `wip/milestone-10`.
+
+### Overlay/spectator auth layer — `wip/m10-overlay-auth` (fourth follow-up)
+Stewart settled the OBS overlay-auth design; built the auth layer (render surface
+deferred). Resolves the M10 doc's prior "open question".
+- **Token** (`internal/overlaytoken`): pure HS256 sign/verify (`token.go`) +
+  PB registry mint/active/verify/revoke (`registry.go`) over a new
+  `overlay_tokens` collection. Read-only, room-scoped, revocable, audited.
+  Default TTL **90 days** (env/per-request tunable); secret from
+  `OVERLAY_TOKEN_SECRET` (ephemeral dev fallback).
+- **WS handshake = two doors**: user JWT (operator, M09 gate) OR overlay token
+  (OBS). Overlay connections are read-only (Hub join/leave whitelist) +
+  scoped to their bound instance (`join_room`), barred from the summary feed.
+- **Permission both ways**: admins inherently + a new `overlay_manager` M08
+  baseline role for non-admin stream helpers (`canManageOverlays`).
+- **API** `/api/overlay-tokens` (mint/list/revoke) + minimal `/overlays/manage/`
+  UI (mint, Copy URL, revoke).
+- Fully unit-tested (token sign/verify incl. expired/revoked/wrong-room,
+  read-only whitelist, room scoping, mint permission 403, audit rows). The
+  live overlay **render** pages stay deferred (need OBS + a live game).
+- **Decision/default to flag:** default token lifetime **90 days** — long-lived
+  per the design (revocation is the safety net). Tune via `OVERLAY_TOKEN_TTL_HOURS`.
+- **Known cosmetic:** `golang-jwt/jwt/v5` is used directly but still marked
+  `// indirect` in go.mod — `go mod tidy` can't run here (it walks the
+  root-owned `containers/` artifact dirs and hits permission-denied). Build /
+  vet / CI are unaffected. A clean-checkout `go mod tidy` will fix the marker.
 
 > M14–M18 (second overnight pass) skip the milestones whose remaining work is
 > purely live-hardware-bound (M17 Discord, M19 offset-validation against live
@@ -40,6 +68,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M18 — Rating + leaderboards | `wip/milestone-18` | algorithm core | green | `internal/rating` Elo + leaderboard ranking landed (unit-tested); recompute hook + leaderboard pages + Discord cmds deferred |
 | M13 fork + chain wiring | `wip/game-end-chain` | wired + integ-tested | green | `game_events` option-a + game-end chain (events→series→stats→rating) + Live→Ready trigger; **one live gap** (GameData→FinishedGame mapping) |
 | M09 roster grace window | `wip/m09-roster-grace` | done + unit-tested | green | `internal/rostergrace` sliding TTL (default 5 min) on the kiosk/VNC + WS gate; fixes the too-aggressive instant kick on transient roster drop |
+| M10 overlay-token auth | `wip/m10-overlay-auth` | done + unit-tested | green | read-only revocable overlay tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI; render surface deferred |
 
 ## Environment notes (for reproducing my green checks)
 

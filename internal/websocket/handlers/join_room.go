@@ -86,6 +86,20 @@ func authorizeHostRoom(e *Event) error {
 		return nil // not a host room — leave it to the room type's guards
 	}
 
+	// M10 overlay-token connection: scoped to its bound instance, read-only.
+	// It bypasses the user/admin/roster path (the overlay token IS the grant)
+	// and can never reach the admin-only summary feed. The Hub already limits
+	// it to join/leave message types.
+	if e.OverlayRoom != "" {
+		if isSummary {
+			return errors.New("overlay tokens cannot join the summary feed")
+		}
+		if hostRoomInstance(e.Room) == hostRoomInstance(e.OverlayRoom) {
+			return nil
+		}
+		return errors.New("overlay token is scoped to a different room")
+	}
+
 	svc := e.Services
 	// Admins (superuser or admin role) always get in — any host room,
 	// regardless of roster membership.

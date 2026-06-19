@@ -3,8 +3,8 @@ package handlers
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 // Event is passed to handlers when a WebSocket message arrives.
@@ -13,21 +13,25 @@ import (
 type Event struct {
 	Services *guards.Services // Cross-system access for guards and resolvers.
 	App      core.App         // PocketBase app for DB queries in guards/handlers.
-	UserID  string          // Authenticated user ID, "" for anonymous.
-	User    *core.Record    // Full PocketBase user record, nil for anonymous.
-	Type    string          // Message type that triggered this handler.
-	Room    string          // Target room (if applicable).
-	Target  string          // Target user ID (if applicable).
-	Payload json.RawMessage // Opaque project-specific data.
+	UserID   string           // Authenticated user ID, "" for anonymous.
+	User     *core.Record     // Full PocketBase user record, nil for anonymous.
+	// OverlayRoom is the room a read-only M10 overlay-token connection is bound
+	// to ("host:<name>"); "" for normal user/anonymous connections. join_room
+	// admits such a client only to its bound instance.
+	OverlayRoom string
+	Type        string          // Message type that triggered this handler.
+	Room        string          // Target room (if applicable).
+	Target      string          // Target user ID (if applicable).
+	Payload     json.RawMessage // Opaque project-specific data.
 
 	// Response capabilities (set by Hub before dispatch).
-	Broadcast    func(msg json.RawMessage)
-	SendToRoom   func(room string, msg json.RawMessage)
-	SendToUser   func(userID string, msg json.RawMessage)
-	SendRaw      func(data []byte)                  // Send pre-marshaled bytes back to the sender.
-	SendError    func(code string, message string)  // Send error back to sender.
-	JoinRoom     func(room string)
-	LeaveRoom    func(room string)
+	Broadcast  func(msg json.RawMessage)
+	SendToRoom func(room string, msg json.RawMessage)
+	SendToUser func(userID string, msg json.RawMessage)
+	SendRaw    func(data []byte)                 // Send pre-marshaled bytes back to the sender.
+	SendError  func(code string, message string) // Send error back to sender.
+	JoinRoom   func(room string)
+	LeaveRoom  func(room string)
 }
 
 // HandlerFunc processes a WebSocket event.

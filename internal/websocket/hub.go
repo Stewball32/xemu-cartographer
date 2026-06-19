@@ -130,6 +130,18 @@ func (h *Hub) Run() {
 
 // dispatch routes an incoming message to registered handlers or default broadcast.
 func (h *Hub) dispatch(im incomingMsg) {
+	// M10: an overlay-token connection is read-only. Restrict it to the
+	// subscription message types (join/leave its bound room) BEFORE the handler
+	// lookup or the broadcast fallback, so a control/command message can never
+	// ride an overlay token. Room scoping (its bound room only) is enforced in
+	// join_room via Event.OverlayRoom.
+	if im.sender.overlayRoom != "" && !overlayAllowedType(im.msg.Type) {
+		errPayload, _ := json.Marshal(map[string]string{"code": "forbidden", "message": "overlay tokens are read-only"})
+		errMsg, _ := json.Marshal(Message{Type: TypeError, Payload: errPayload})
+		h.trySend(im.sender, errMsg)
+		return
+	}
+
 	if handler, ok := handlers.Get(im.msg.Type); ok {
 		handler(h.buildEvent(im))
 		return
@@ -138,17 +150,29 @@ func (h *Hub) dispatch(im incomingMsg) {
 	h.broadcast(im.msg)
 }
 
+// overlayAllowedType is the read-only message-type whitelist for overlay-token
+// connections — only room subscription, never control or request/probe types.
+func overlayAllowedType(t string) bool {
+	switch t {
+	case "join_room", "leave_room":
+		return true
+	default:
+		return false
+	}
+}
+
 // buildEvent constructs a handlers.Event with closures scoped to the sender.
 func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 	return &handlers.Event{
-		Services: h.services,
-		App:      h.app,
-		UserID:   im.sender.UserID(),
-		User:     im.sender.user,
-		Type:     im.msg.Type,
-		Room:     im.msg.Room,
-		Target:   im.msg.Target,
-		Payload:  im.msg.Payload,
+		Services:    h.services,
+		App:         h.app,
+		UserID:      im.sender.UserID(),
+		User:        im.sender.user,
+		OverlayRoom: im.sender.overlayRoom,
+		Type:        im.msg.Type,
+		Room:        im.msg.Room,
+		Target:      im.msg.Target,
+		Payload:     im.msg.Payload,
 		Broadcast: func(payload json.RawMessage) {
 			h.broadcast(Message{Type: im.msg.Type, Payload: payload})
 		},

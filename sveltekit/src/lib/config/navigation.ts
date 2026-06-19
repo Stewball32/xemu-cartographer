@@ -1,6 +1,7 @@
 import {
 	BookmarkXIcon,
 	BoxIcon,
+	MonitorIcon,
 	PlayIcon,
 	SettingsIcon,
 	ShieldIcon,
@@ -46,7 +47,10 @@ export const mainGroups: NavGroup[] = [
 			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
-			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon }
+			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon },
+			// Routes to /overlays/manage/ (RequireAuth + manage-overlays gate, not
+			// the admin layout) so overlay_managers can use the same page directly.
+			{ label: 'Overlays', href: '/overlays/manage/', icon: MonitorIcon }
 		]
 	}
 ];

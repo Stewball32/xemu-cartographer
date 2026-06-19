@@ -121,6 +121,9 @@ var baselineRoles = []struct {
 }{
 	{Slug: "superuser", Label: "Superuser", Description: "PocketBase _superusers tier. Never granted via user_roles; the row exists for discoverability.", Level: 100},
 	{Slug: "admin", Label: "Admin", Description: "Full moderation access (gamertags, teams, reserved names, audit log, scraper, containers, xemu diagnostics).", Level: 50},
+	// M10: lets a non-admin "stream helper" mint/revoke read-only overlay
+	// tokens for OBS without any broader powers. Admins can do this inherently.
+	{Slug: "overlay_manager", Label: "Overlay manager", Description: "Can mint + revoke read-only OBS/spectator overlay tokens (M10), without other admin powers.", Level: 20},
 	{Slug: "member", Label: "Member", Description: "Default role for every authenticated user.", Level: 10},
 }
 
