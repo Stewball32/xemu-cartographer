@@ -135,6 +135,12 @@ func (b *Bot) SendNotification(channelID snowflake.ID, content string) error {
 	return actions.SendNotification(b.Client, channelID, content)
 }
 
+// PostEmbed posts a single embed to the given channel (M17 event posting).
+// Satisfies guards.DiscordService.
+func (b *Bot) PostEmbed(channelID snowflake.ID, embed discord.Embed) error {
+	return actions.PostEmbed(b.Client, channelID, embed)
+}
+
 // CreateVoiceChannel creates a new voice channel in the given guild.
 // Satisfies guards.DiscordService.
 func (b *Bot) CreateVoiceChannel(guildID snowflake.ID, name string) (discord.GuildChannel, error) {

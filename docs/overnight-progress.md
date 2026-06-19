@@ -10,7 +10,7 @@ This file is the running decision + status log. Read the **Branch stack** and
 
 ## Branch stack (bottom → top, nothing merged to main)
 
-`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → `wip/m09-roster-grace` (M09 grace window) → …
+`main` (M08 merged) → `wip/milestone-9` (M09) → `wip/milestone-10` (M10) → `wip/milestone-11` (M11) → `wip/milestone-12` (M12) → `wip/milestone-13` (M13) → `wip/milestone-14` (M14) → `wip/milestone-15` (M15) → `wip/milestone-16` (M16) → `wip/milestone-18` (M18) → `wip/game-end-chain` (M13 fork + chain wiring) → `wip/m09-roster-grace` (M09 grace window) → `wip/m10-overlay-auth` (M10 overlay auth) → `wip/m17-discord` (M17 Discord, offline) → …
 
 > `wip/m09-roster-grace` logically belongs to M09 but is stacked on the tip to
 > keep the stack linear (no rebase of the whole stack). It can be cherry-picked
@@ -18,6 +18,32 @@ This file is the running decision + status log. Read the **Branch stack** and
 >
 > `wip/m10-overlay-auth` (overlay-token auth) stacks on `wip/m09-roster-grace`;
 > logically M10, cherry-pickable onto `wip/milestone-10`.
+>
+> `wip/m17-discord` (M17, built offline) stacks on `wip/m10-overlay-auth`.
+
+### M17 Discord integration (OFFLINE) — `wip/m17-discord` (fifth follow-up)
+Stewart added Discord creds (shared test guild w/ NautsLadder) but said **do
+not connect the gateway overnight** (rate-limit risk + no human to click). Built
++ tested entirely offline against a test app; live verification deferred.
+- **Built + tested:** `discord_guilds` collection + `internal/discordcfg`
+  (config + opt-in category filter); `/stats`, `/recent`, `/cartographer`
+  (config + status) command definitions; embed builders (`UserStats`,
+  `RecentGames`, `GameResult`, `SeriesResult`, `TournamentAnnounce`); a
+  `games`-insert PB hook that resolves the series category, filters guild
+  configs, and FireAndForget-posts via `svc.Discord.PostEmbed` — **no-op when
+  the bot is nil** (so it's inert offline). New `discordiface.Notify.PostEmbed`
+  + Bot impl. `/cartographer` gated to Manage-Server users.
+- **Decisions:** stats commands are PUBLIC, `/cartographer` is Manage-Server
+  gated (config security). `posted_categories` is opt-in (empty = no posts) so
+  a guild can't be spammed before it's configured. Slash handlers are thin
+  wrappers over unit-tested resolvers (handlers only run on a live interaction).
+- **NEEDS LIVE DISCORD (supervised):** connecting the gateway (`NewBot` →
+  `syncCommands` is a live REST call — never run offline), registering commands,
+  handling interactions, real channel posts. **17d tournament announcements**
+  also need the M16 `tournaments` schema (not built yet) — only the embed
+  builder exists.
+- **Critical reminder for whoever connects it:** xemu + NautsLadder share the
+  test guild — watch for double-bot rate limiting when both are live.
 
 ### Overlay/spectator auth layer — `wip/m10-overlay-auth` (fourth follow-up)
 Stewart settled the OBS overlay-auth design; built the auth layer (render surface
@@ -69,6 +95,7 @@ stack bottom-up. Current tip is recorded in the **Status** table below.
 | M13 fork + chain wiring | `wip/game-end-chain` | wired + integ-tested | green | `game_events` option-a + game-end chain (events→series→stats→rating) + Live→Ready trigger; **one live gap** (GameData→FinishedGame mapping) |
 | M09 roster grace window | `wip/m09-roster-grace` | done + unit-tested | green | `internal/rostergrace` sliding TTL (default 5 min) on the kiosk/VNC + WS gate; fixes the too-aggressive instant kick on transient roster drop |
 | M10 overlay-token auth | `wip/m10-overlay-auth` | done + unit-tested | green | read-only revocable overlay tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI; render surface deferred |
+| M17 Discord (offline) | `wip/m17-discord` | offline-complete | green | config + filter + stats/recent/cartographer commands + embeds + games-post hook (no-op offline); gateway NOT connected — live verify deferred |
 
 ## Environment notes (for reproducing my green checks)
 
