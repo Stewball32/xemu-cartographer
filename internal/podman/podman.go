@@ -33,6 +33,15 @@ type Config struct {
 	// required (KVM/DRI/NET_ADMIN); requires a passwordless sudoers rule.
 	PodmanCmd string
 
+	// RootHDD is the basename of the canonical, read-only root qcow2 (the
+	// Halo-installed disk) inside SharedDir/hdds. Every per-instance overlay
+	// uses it as a copy-on-write backing file. Default "_default.qcow2".
+	RootHDD string
+
+	// QemuImgCmd is the qemu-img binary used to create overlays on the host.
+	// Default "qemu-img"; must be installed on the host running the server.
+	QemuImgCmd string
+
 	// Defaults for container environment variables.
 	Encoder          string
 	Framerate        int
@@ -86,6 +95,13 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		Index:   idx,
 		Ports:   ports,
 		Created: time.Now(),
+	}
+
+	// Provision the instance's copy-on-write HDD overlay (thin layer over the
+	// shared read-only root) before anything else, so a missing/locked root
+	// aborts cleanly without leaving orphan config dirs or containers behind.
+	if err := m.provisionOverlay(name); err != nil {
+		return nil, fmt.Errorf("provision hdd overlay: %w", err)
 	}
 
 	// Ensure per-container config directories exist.
@@ -396,6 +412,10 @@ func (m *Manager) Remove(name string) error {
 	if out, err := m.run("rm", "-f", name); err != nil {
 		log.Printf("podman: rm %s: %s: %s", name, err, out)
 	}
+
+	// Delete the instance's CoW overlay — it holds only this instance's deltas
+	// and is worthless without its container. The shared root is left untouched.
+	m.removeOverlayFile(name)
 
 	delete(m.containers, name)
 	if err := m.store.Delete(name); err != nil {

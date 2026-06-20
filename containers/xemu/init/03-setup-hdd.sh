@@ -1,9 +1,18 @@
 #!/bin/bash
 # =============================================================================
 # 03-setup-hdd.sh
-# Ensures an HDD image is set in the toml under [sys.files].
-# Checks for an instance-specific HDD in /shared/hdds/$HOSTNAME.qcow2.
-# If not found, copies the default HDD and updates the toml.
+# Ensures hdd_path under [sys.files] points at this instance's qcow2 OVERLAY.
+#
+# The overlay is a thin copy-on-write layer over the shared, read-only ROOT
+# image ($HDD_DIR/$DEFAULT_HDD_NAME). It records only this instance's deltas;
+# xemu reads the canonical disk from the root through qcow2's backing chain.
+#
+# The overlay is normally PRE-CREATED on the host by the podman provisioner
+# (internal/podman, Manager.Create) before the container starts — this script
+# then just injects its path into the toml. If the overlay is missing (e.g. a
+# standalone container run outside the provisioner) it is created here with
+# qemu-img when available. We NEVER fall back to a full copy of the multi-GiB
+# root — that slow, disk-heavy copy is exactly what the overlay scheme replaces.
 # =============================================================================
 
 ENV_FILE="/custom-cont-init.d/.env"
@@ -17,9 +26,10 @@ if [ -z "$TOML_PATH" ] || [ -z "$HDD_DIR" ]; then
 fi
 
 CURRENT_TOML="$TOML_PATH/xemu.toml"
-DEFAULT_HDD="$HDD_DIR/${DEFAULT_HDD_NAME:-default.qcow2}"
-HDD_EXT="${DEFAULT_HDD##*.}"
-INSTANCE_HDD="$HDD_DIR/$HOSTNAME.$HDD_EXT"
+ROOT_HDD_NAME="${DEFAULT_HDD_NAME:-_default.qcow2}"
+ROOT_HDD="$HDD_DIR/$ROOT_HDD_NAME"
+# Overlays are always qcow2 regardless of the root's extension.
+INSTANCE_HDD="$HDD_DIR/$HOSTNAME.qcow2"
 
 # -----------------------------------------------------------------------------
 # Check if hdd_path is already set in the toml
@@ -30,22 +40,34 @@ if grep -q "^hdd_path\s*=" "$CURRENT_TOML"; then
 fi
 
 # -----------------------------------------------------------------------------
-# Check for instance-specific HDD
+# Ensure the instance overlay exists (host provisioner normally created it)
 # -----------------------------------------------------------------------------
 if [ ! -f "$INSTANCE_HDD" ]; then
-    echo "[03-setup-hdd] No instance HDD found at $INSTANCE_HDD, copying default."
-    if [ ! -f "$DEFAULT_HDD" ]; then
-        echo "[03-setup-hdd] ERROR: Default HDD not found at $DEFAULT_HDD."
+    echo "[03-setup-hdd] Overlay $INSTANCE_HDD missing; attempting in-container creation."
+    if [ ! -f "$ROOT_HDD" ]; then
+        echo "[03-setup-hdd] ERROR: root image $ROOT_HDD not found; cannot create overlay."
         exit 1
     fi
-    cp "$DEFAULT_HDD" "$INSTANCE_HDD"
-    # Init runs as root inside the container, so the copy is root-owned.
-    # Hand it back to the PUID/PGID the actual xemu process runs as so
-    # subsequent reads from xemu (and host-side cleanup) don't need sudo.
-    chown "${PUID:-1000}:${PGID:-1000}" "$INSTANCE_HDD"
-    echo "[03-setup-hdd] Copied $DEFAULT_HDD -> $INSTANCE_HDD (owner=${PUID:-1000}:${PGID:-1000})"
+    if ! command -v qemu-img >/dev/null 2>&1; then
+        echo "[03-setup-hdd] ERROR: overlay missing and qemu-img unavailable in-container."
+        echo "[03-setup-hdd]        The host provisioner (internal/podman) should create"
+        echo "[03-setup-hdd]        $INSTANCE_HDD before start. Aborting (no full-copy fallback)."
+        exit 1
+    fi
+    # Relative backing: the root and overlay share $HDD_DIR, so the bare basename
+    # resolves regardless of the mount's absolute path. Create from $HDD_DIR so
+    # the stored backing string is the relative name, not an absolute path.
+    if ( cd "$HDD_DIR" && qemu-img create -f qcow2 -b "$ROOT_HDD_NAME" -F qcow2 "$HOSTNAME.qcow2" ); then
+        # Init runs as root; hand the overlay to the uid xemu actually runs as so
+        # xemu can write its deltas and host-side cleanup doesn't need sudo.
+        chown "${PUID:-1000}:${PGID:-1000}" "$INSTANCE_HDD" 2>/dev/null || true
+        echo "[03-setup-hdd] Created overlay $INSTANCE_HDD (backing $ROOT_HDD_NAME, owner=${PUID:-1000}:${PGID:-1000})."
+    else
+        echo "[03-setup-hdd] ERROR: qemu-img create overlay failed."
+        exit 1
+    fi
 else
-    echo "[03-setup-hdd] Found instance HDD at $INSTANCE_HDD."
+    echo "[03-setup-hdd] Found overlay $INSTANCE_HDD."
 fi
 
 # -----------------------------------------------------------------------------
