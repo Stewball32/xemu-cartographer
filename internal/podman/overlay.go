@@ -116,20 +116,3 @@ func (m *Manager) freezeRoot(root string) {
 	}
 	log.Printf("podman: froze root image %s read-only (0444)", root)
 }
-
-// removeOverlayFile deletes a per-instance overlay qcow2 during teardown.
-// Best-effort + sudo-aware (rootful podman stamps the file root-owned). Never
-// touches the shared root.
-func (m *Manager) removeOverlayFile(name string) {
-	overlay := m.overlayPath(name)
-	if _, err := os.Stat(overlay); err != nil {
-		return // nothing to remove
-	}
-	if err := os.Remove(overlay); err != nil {
-		if out, serr := m.runSudo("rm", "-f", overlay); serr != nil {
-			log.Printf("podman: warning: failed to remove overlay %s: %v (%s)", overlay, err, strings.TrimSpace(string(out)))
-			return
-		}
-	}
-	log.Printf("podman: removed hdd overlay %s", overlay)
-}

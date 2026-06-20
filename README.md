@@ -107,6 +107,7 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 - **pnpm** _(preferred)_ — package manager for the frontend; `npm install -g pnpm`. npm and yarn work but the project is developed with pnpm.
 - **Podman** _(optional)_ — for building and running containers; Docker works as a drop-in alternative.
 - **`qemu-img`** _(optional, only with containers)_ — the host needs `qemu-img` (`qemu-img`/`qemu-utils` package) so the provisioner can create each xemu instance's copy-on-write HDD overlay over the shared read-only root (`containers/xemu/shared/hdds/_default.qcow2`). See [CLAUDE.md → HDD overlays](CLAUDE.md).
+- **`qemu-storage-daemon` + `python3` + `pyfatx`** _(optional — only to name instances)_ — to stamp each container's name into its Xbox console name at create time, the host also needs `qemu-storage-daemon` (same qemu package) plus `python3` and `pip install pyfatx`. Missing any is non-fatal (the instance just gets the Xbox's random name); disable with `CONTAINERS_SET_CONSOLE_NAME=false`.
 - **Task** _(optional)_ — task runner for dev commands like `task dev` and `task build`; `sudo env GOBIN=/usr/local/bin go install github.com/go-task/task/v3/cmd/task@latest`. Without it, run `air` and `pnpm dev` in separate terminals.
 - **Air** _(optional)_ — Go hot-reload; auto-rebuilds the server on `.go` file saves; `sudo env GOBIN=/usr/local/bin go install github.com/air-verse/air@latest`. Without it, use `go run ./cmd/server serve` and restart manually.
 

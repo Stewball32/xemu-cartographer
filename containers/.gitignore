@@ -6,4 +6,5 @@ browser/*
 !browser/init/*
 xemu/configs/*
 !xemu/init/*
+!xemu/tools/*
 

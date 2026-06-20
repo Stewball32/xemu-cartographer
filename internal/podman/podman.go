@@ -42,6 +42,18 @@ type Config struct {
 	// Default "qemu-img"; must be installed on the host running the server.
 	QemuImgCmd string
 
+	// SetConsoleName, when true (default), writes the container name into the
+	// instance's Xbox console name (E:\UDATA\NICKNAME.XBN) inside its overlay at
+	// create time, so instances are distinguishable on system link / the
+	// dashboard. Best-effort: skipped with a warning if the tooling
+	// (qemu-storage-daemon + python3 + pyfatx) is unavailable.
+	SetConsoleName bool
+
+	// Tooling for the console-name write (all have sensible defaults).
+	QemuStorageDaemonCmd string // default "qemu-storage-daemon"
+	PythonCmd            string // default "python3"
+	FatxToolPath         string // default <InitDir>/../tools/fatx_console_name.py
+
 	// Defaults for container environment variables.
 	Encoder          string
 	Framerate        int
@@ -102,6 +114,16 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 	// aborts cleanly without leaving orphan config dirs or containers behind.
 	if err := m.provisionOverlay(name); err != nil {
 		return nil, fmt.Errorf("provision hdd overlay: %w", err)
+	}
+
+	// Stamp the container name into the instance's Xbox console name inside its
+	// overlay (before first boot), so instances are distinguishable on system
+	// link / the dashboard. Best-effort: a missing FATX toolchain just means the
+	// instance keeps the Xbox's random default name.
+	if m.consoleNamingEnabled() {
+		if err := m.writeConsoleName(m.overlayPath(name), name); err != nil {
+			log.Printf("podman: warning: set console name for %q failed (instance will use the Xbox random default): %v", name, err)
+		}
 	}
 
 	// Ensure per-container config directories exist.
@@ -413,9 +435,15 @@ func (m *Manager) Remove(name string) error {
 		log.Printf("podman: rm %s: %s: %s", name, err, out)
 	}
 
-	// Delete the instance's CoW overlay — it holds only this instance's deltas
-	// and is worthless without its container. The shared root is left untouched.
-	m.removeOverlayFile(name)
+	// Teardown is symmetric with Create: remove every per-instance (non-shared)
+	// file Create generated — the CoW overlay (with this instance's console
+	// name + deltas), the xemu config dir (per-instance eeprom, toml, ssl,
+	// shaders, X/labwc state) and the browser profile. The shared base is left
+	// untouched: the root qcow2, the bootrom/MCPX + flashrom/BIOS under
+	// shared/bios, and the default toml. See containerOwnedPaths.
+	if err := m.removeContainerFiles(name); err != nil {
+		log.Printf("podman: warning: remove %s per-instance files: %v", name, err)
+	}
 
 	delete(m.containers, name)
 	if err := m.store.Delete(name); err != nil {
@@ -449,6 +477,17 @@ func (m *Manager) DeleteFiles(name string) error {
 		}
 	}
 
+	return m.removeContainerFiles(name)
+}
+
+// removeContainerFiles rm -rf's every per-instance bind-mount source for the
+// container (xemu configs/<name>, browser config-<name>, the hdds/<name>.*
+// overlay) via the same privilege prefix used for podman (rootful podman stamps
+// them root-owned). Shared/base files — the root qcow2 (and any other
+// "_"-prefixed baseline), shared/bios firmware, shared/toml — are never in
+// containerOwnedPaths, so they are left untouched. Shared by Remove (full
+// teardown) and DeleteFiles (wipe-without-removing-record).
+func (m *Manager) removeContainerFiles(name string) error {
 	paths := m.containerOwnedPaths(name)
 	if len(paths) == 0 {
 		return nil

@@ -102,23 +102,78 @@ func TestProvisionOverlayConcurrentShareOneRoot(t *testing.T) {
 	}
 }
 
-func TestRemoveOverlayFileKeepsRoot(t *testing.T) {
-	m, root := newOverlayTestManager(t)
-	if err := m.provisionOverlay("gone"); err != nil {
+// TestRemoveContainerFilesKeepsShared is the symmetric-teardown contract: every
+// per-instance file (overlay + config dir + browser profile) is removed, while
+// the shared base (root qcow2, shared/bios firmware) is left untouched.
+func TestRemoveContainerFilesKeepsShared(t *testing.T) {
+	if _, err := exec.LookPath("qemu-img"); err != nil {
+		t.Skip("qemu-img not installed; skipping")
+	}
+	shared := t.TempDir()
+	hdds := filepath.Join(shared, "hdds")
+	if err := os.MkdirAll(hdds, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	overlay := m.overlayPath("gone")
-
-	m.removeOverlayFile("gone")
-	if _, err := os.Stat(overlay); !os.IsNotExist(err) {
-		t.Errorf("overlay still present after removeOverlayFile: err=%v", err)
+	root := filepath.Join(hdds, "_default.qcow2")
+	if out, err := exec.Command("qemu-img", "create", "-f", "qcow2", root, "32M").CombinedOutput(); err != nil {
+		t.Fatalf("create root: %v: %s", err, out)
 	}
-	if _, err := os.Stat(root); err != nil {
-		t.Errorf("root must survive overlay removal: %v", err)
+	// shared firmware that must survive teardown
+	bios := filepath.Join(shared, "bios")
+	mustMkdir(t, bios)
+	firmware := filepath.Join(bios, "mcpx_1.0.bin")
+	mustWrite(t, firmware, "rom")
+
+	configs := filepath.Join(t.TempDir(), "configs")
+	browser := filepath.Join(t.TempDir(), "browser")
+	m := &Manager{cfg: Config{
+		SharedDir: shared, ConfigsDir: configs, BrowserDir: browser,
+		RootHDD: "_default.qcow2", QemuImgCmd: "qemu-img", PodmanCmd: "podman",
+	}}
+
+	// per-instance files: overlay + config dir (with a per-instance eeprom) + browser profile
+	if err := m.provisionOverlay("inst"); err != nil {
+		t.Fatal(err)
+	}
+	instCfg := filepath.Join(configs, "inst")
+	mustMkdir(t, instCfg)
+	mustWrite(t, filepath.Join(instCfg, "eeprom.bin"), "ee") // per-instance eeprom lives here
+	instBrowser := filepath.Join(browser, "config-inst")
+	mustMkdir(t, instBrowser)
+
+	if err := m.removeContainerFiles("inst"); err != nil {
+		t.Fatalf("removeContainerFiles: %v", err)
 	}
 
-	// Removing a non-existent overlay is a quiet no-op.
-	m.removeOverlayFile("never-existed")
+	for _, p := range []string{m.overlayPath("inst"), instCfg, instBrowser} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("per-instance path should be removed: %s (err=%v)", p, err)
+		}
+	}
+	for _, p := range []string{root, firmware} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("shared base must survive teardown: %s (%v)", p, err)
+		}
+	}
+
+	// Removing files for an unknown container is a quiet no-op.
+	if err := m.removeContainerFiles("never-existed"); err != nil {
+		t.Errorf("removeContainerFiles(unknown) should be a no-op: %v", err)
+	}
+}
+
+func mustMkdir(t *testing.T, p string) {
+	t.Helper()
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWrite(t *testing.T, p, content string) {
+	t.Helper()
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestProvisionOverlayMissingRoot(t *testing.T) {

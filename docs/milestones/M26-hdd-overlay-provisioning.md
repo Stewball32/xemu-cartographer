@@ -19,8 +19,15 @@ qcow2's backing chain; the root is never written.
 - **In:** the big HDD qcow2 image only. Root designation + freeze, per-instance
   overlay create on container create, overlay delete on teardown, init-script
   migration, config + docs.
-- **Out:** eeprom / flashrom / bios. There is no per-instance eeprom/flashrom
-  provisioning today (xemu uses image-level defaults), so nothing there changes.
+- **In (follow-up):** **symmetric teardown** — `Remove` clears *all* per-instance
+  files (overlay + config dir + browser profile), never shared base/firmware; and
+  **create-time Xbox console naming** — stamp the container name into the
+  instance's `E:\UDATA\NICKNAME.XBN` inside its overlay before first boot.
+- **Out:** flashrom / bios firmware — shared, image-level (`shared/bios/`), never
+  per-instance, so untouched. The **eeprom is per-instance** but lives under the
+  config dir (`configs/<name>/.local/share/xemu/xemu/eeprom.bin`), so symmetric
+  teardown already removes it; create doesn't pre-provision it (xemu generates it
+  on first boot).
 - **Out:** auto-migrating the pre-existing full-copy instance disks
   (`nexy.qcow2`, `stew.qcow2`, `test*.qcow2`). They keep working as standalone
   images; an operator can delete them to reclaim space and re-create the
@@ -66,9 +73,17 @@ qcow2's backing chain; the root is never written.
 - [x] Migrate `03-setup-hdd.sh` from `cp` to overlay-aware path injection +
       in-container `qemu-img` fallback (no full-copy fallback).
 - [x] Unit tests (`overlay_test.go`): relative-backing store, root freeze,
-      reuse-idempotency, N overlays share one root, overlay delete keeps root,
-      missing-root error.
-- [x] Docs: CLAUDE.md (baseline + podman row + qemu-img prereq), README, CHANGELOG.
+      reuse-idempotency, N overlays share one root, missing-root error.
+- [x] **Symmetric teardown** — shared `removeContainerFiles` (used by `Remove` +
+      `DeleteFiles`) clears every per-instance path; shared base/firmware kept.
+      Test: `TestRemoveContainerFilesKeepsShared`.
+- [x] **Console naming** — `console_name.go` (`sanitizeConsoleName` +
+      `buildNicknameXBN` pure/unit-tested; `writeConsoleName` via
+      qemu-storage-daemon FUSE export + `tools/fatx_console_name.py` pyfatx
+      write-CREATE), wired into `Create` (best-effort). Config
+      `CONTAINERS_SET_CONSOLE_NAME` (+ tool overrides).
+- [x] Docs: CLAUDE.md (baseline + podman row + qemu-img/storage-daemon/pyfatx
+      prereqs + HDD-overlays section), README, CHANGELOG.
 
 ## Verification
 
@@ -86,8 +101,18 @@ and after the implementation:
 - **N concurrent overlays over one root:** 6 overlays written simultaneously,
   each isolated, root unchanged after all 6.
 - **Go path:** `go test ./internal/podman/` — overlay create stores relative
-  backing, freezes root 0444, is idempotent, deletes overlay while keeping root,
-  errors on missing root. `go build ./...` + `go vet ./...` green.
+  backing, freezes root 0444, is idempotent, errors on missing root;
+  `removeContainerFiles` removes per-instance overlay/config/profile while
+  `shared/bios` firmware + root survive. `go build` + `go vet` green.
+- **Console naming (real Go path, gated `CART_FATX_IT` integration test +
+  boot):** `Manager.writeConsoleName` created `E:\UDATA\NICKNAME.XBN="carto-99"`
+  in the overlay via FUSE export + pyfatx (file was **absent** in the root),
+  read it back byte-equal to `buildNicknameXBN`, root **sha256 unchanged**. Then
+  booted xemu against that Go-created overlay and read the name back from the
+  in-RAM NICK/KCIN record (`/proc/<pid>/mem`, the bridge mechanism):
+  named → `carto-99` **present**; a nameless overlay over the same root →
+  `carto-99` **absent** (Xbox random default). Root `NICKNAME.XBN` stayed absent
+  and the root stayed byte-identical the whole time.
 
 ## Log
 
@@ -97,3 +122,11 @@ _Append-only. Never edit past entries; add a new dated line._
   overlay boot honor the root read-only; moved provisioning host-side into
   `internal/podman/overlay.go`; migrated `03-setup-hdd.sh` off `cp`; froze root
   at 0444; relative backing path chosen for host/container path-parity.
+- 2026-06-20: follow-up — **symmetric teardown** (`removeContainerFiles`: all
+  per-instance files removed, shared base/firmware kept) + **create-time Xbox
+  console naming** (`console_name.go` + `tools/fatx_console_name.py`: write the
+  container name into the overlay's `E:\UDATA\NICKNAME.XBN` via qemu-storage-daemon
+  FUSE export + pyfatx write-CREATE; root keeps its absent/random-name default).
+  Chose the rootless FUSE export over qemu-nbd (no `/dev/nbd`/root needed; same
+  CoW-into-overlay guarantee, no convert round-trip). Verified end-to-end via a
+  real Go-path overlay boot (name in RAM) with the root byte-unchanged.
