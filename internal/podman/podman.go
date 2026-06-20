@@ -166,8 +166,8 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 
 	// --- browser container ---
 	if err := m.createBrowser(name, ports, browserCfgDir); err != nil {
-		// Best-effort cleanup of the xemu container.
-		_, _ = m.run("rm", "-f", name)
+		// Best-effort cleanup of the xemu container (-v: drop any anonymous volume).
+		_, _ = m.run("rm", "-f", "-v", name)
 		return nil, fmt.Errorf("create browser container: %w", err)
 	}
 
@@ -424,14 +424,19 @@ func (m *Manager) Remove(name string) error {
 		return fmt.Errorf("container %q not found", name)
 	}
 
-	// Stop + remove browser.
+	// Stop + remove both containers. `rm -f -v` removes the container, its
+	// read-write (writable) layer, AND any anonymous volume the image declared
+	// (defensive — the jlesage/firefox + linuxserver/xemu images currently
+	// declare none, and all their per-instance state is bind-mounted into the
+	// host dirs cleaned below, but -v guards against a future VOLUME). Named
+	// volumes are never created (we only use host-path bind mounts), so none
+	// leak. Firefox is its own container (<name>-browser); both halves go here.
 	_, _ = m.run("stop", name+"-browser")
-	if out, err := m.run("rm", "-f", name+"-browser"); err != nil {
+	if out, err := m.run("rm", "-f", "-v", name+"-browser"); err != nil {
 		log.Printf("podman: rm %s-browser: %s: %s", name, err, out)
 	}
-	// Stop + remove xemu.
 	_, _ = m.run("stop", name)
-	if out, err := m.run("rm", "-f", name); err != nil {
+	if out, err := m.run("rm", "-f", "-v", name); err != nil {
 		log.Printf("podman: rm %s: %s: %s", name, err, out)
 	}
 

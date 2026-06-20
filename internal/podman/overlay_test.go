@@ -138,8 +138,26 @@ func TestRemoveContainerFilesKeepsShared(t *testing.T) {
 	instCfg := filepath.Join(configs, "inst")
 	mustMkdir(t, instCfg)
 	mustWrite(t, filepath.Join(instCfg, "eeprom.bin"), "ee") // per-instance eeprom lives here
+
+	// Realistic per-instance Firefox artifacts. The jlesage/firefox container
+	// runs with HOME=/config bind-mounted to browser/config-<name>, so the whole
+	// Firefox footprint — profile, .mozilla, the cache (profile/cache2 + xdg
+	// cache), downloads, lock files, logs, machine-id — lands under this one dir.
 	instBrowser := filepath.Join(browser, "config-inst")
-	mustMkdir(t, instBrowser)
+	ffArtifacts := []string{
+		filepath.Join(instBrowser, "profile", "prefs.js"),
+		filepath.Join(instBrowser, "profile", "cache2", "entries", "DEADBEEF"),
+		filepath.Join(instBrowser, "profile", ".parentlock"),
+		filepath.Join(instBrowser, "profile", "lock"),
+		filepath.Join(instBrowser, ".mozilla", "firefox", "profiles.ini"),
+		filepath.Join(instBrowser, "xdg", "cache", "mozilla", "firefox", "x"),
+		filepath.Join(instBrowser, "downloads", "save.bin"),
+		filepath.Join(instBrowser, "log", "firefox.log"),
+		filepath.Join(instBrowser, "machine-id"),
+	}
+	for _, f := range ffArtifacts {
+		mustWriteTree(t, f, "x")
+	}
 
 	if err := m.removeContainerFiles("inst"); err != nil {
 		t.Fatalf("removeContainerFiles: %v", err)
@@ -148,6 +166,12 @@ func TestRemoveContainerFilesKeepsShared(t *testing.T) {
 	for _, p := range []string{m.overlayPath("inst"), instCfg, instBrowser} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Errorf("per-instance path should be removed: %s (err=%v)", p, err)
+		}
+	}
+	// Every individual Firefox artifact is gone (not just the top dir).
+	for _, f := range ffArtifacts {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Errorf("Firefox artifact should be removed: %s (err=%v)", f, err)
 		}
 	}
 	for _, p := range []string{root, firmware} {
@@ -174,6 +198,13 @@ func mustWrite(t *testing.T, p, content string) {
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// mustWriteTree writes a file, creating any missing parent directories.
+func mustWriteTree(t *testing.T, p, content string) {
+	t.Helper()
+	mustMkdir(t, filepath.Dir(p))
+	mustWrite(t, p, content)
 }
 
 func TestProvisionOverlayMissingRoot(t *testing.T) {
