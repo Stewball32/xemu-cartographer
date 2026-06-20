@@ -21,9 +21,30 @@
 	let tokens = $state<OverlayToken[]>([]);
 	let loading = $state(true);
 
-	function overlayURL(m: MintResult): string {
-		// Absolute URL for OBS (render page deferred; path is stable).
-		return `${window.location.origin}${m.url}`;
+	// m.url is "/overlays/<instance>/?token=<jwt>". Split it once so we can offer
+	// every overlay view bound to the same scoped token (the token is scoped to
+	// the instance, not the view) plus a token-free mock preview.
+	function parts(m: MintResult): { origin: string; base: string; query: string } {
+		const origin = window.location.origin;
+		const q = m.url.indexOf('?');
+		const base = q === -1 ? m.url : m.url.slice(0, q); // "/overlays/<instance>/"
+		const query = q === -1 ? '' : m.url.slice(q); // "?token=<jwt>"
+		return { origin, base, query };
+	}
+
+	function scoreboardURL(m: MintResult): string {
+		const { origin, base, query } = parts(m);
+		return `${origin}${base}${query}`;
+	}
+
+	function statusURL(m: MintResult): string {
+		const { origin, base, query } = parts(m);
+		return `${origin}${base}status/${query}`;
+	}
+
+	function mockURL(m: MintResult): string {
+		const { origin, base } = parts(m);
+		return `${origin}${base}?mock=1`;
 	}
 
 	async function refresh() {
@@ -119,16 +140,52 @@
 			</div>
 
 			{#if lastMinted}
-				<div class="flex flex-col gap-2 card preset-tonal-success p-3 text-sm">
-					<span class="font-medium">Overlay URL for <code>{lastMinted.room}</code></span>
-					<div class="flex items-center gap-2">
-						<input class="input flex-1 font-mono text-xs" readonly value={overlayURL(lastMinted)} />
-						<button class="btn-icon preset-tonal" onclick={() => copy(overlayURL(lastMinted!))}>
-							<CopyIcon class="size-4" />
-						</button>
-					</div>
+				<div class="flex flex-col gap-3 card preset-tonal-success p-3 text-sm">
+					<span class="font-medium">
+						Overlay URLs for <code>{lastMinted.room}</code> — add each as an OBS Browser Source (1920×1080,
+						transparent).
+					</span>
+
+					<label class="flex flex-col gap-1">
+						<span class="text-xs font-medium">Scoreboard / roster (primary)</span>
+						<div class="flex items-center gap-2">
+							<input
+								class="input flex-1 font-mono text-xs"
+								readonly
+								value={scoreboardURL(lastMinted)}
+							/>
+							<button
+								class="btn-icon preset-tonal"
+								onclick={() => copy(scoreboardURL(lastMinted!))}
+							>
+								<CopyIcon class="size-4" />
+							</button>
+						</div>
+					</label>
+
+					<label class="flex flex-col gap-1">
+						<span class="text-xs font-medium">Match-status strip</span>
+						<div class="flex items-center gap-2">
+							<input
+								class="input flex-1 font-mono text-xs"
+								readonly
+								value={statusURL(lastMinted)}
+							/>
+							<button class="btn-icon preset-tonal" onclick={() => copy(statusURL(lastMinted!))}>
+								<CopyIcon class="size-4" />
+							</button>
+						</div>
+					</label>
+
 					<span class="text-xs text-surface-600-400">
-						Paste into OBS as a Browser Source. Copy it now — the token isn't shown again.
+						Copy these now — the token isn't shown again. No live game?
+						<!-- mockURL is a runtime-computed absolute URL opened in a new tab, not a static route -->
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+						<a class="anchor" href={mockURL(lastMinted)} target="_blank" rel="noopener">
+							Preview with mock data
+						</a>
+						(append <code>?mock=1</code> to any overlay URL — no token needed). Add
+						<code>&amp;scale=1.5</code> to enlarge.
 					</span>
 				</div>
 			{/if}

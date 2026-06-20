@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-06-18 (autonomous overnight run — M09 + M10 increments landed on stacked branches; see [overnight-progress.md](overnight-progress.md))
+> **Last updated:** 2026-06-20 (M25 — OBS overlay render pages landed on `wip/obs-spectator-overlays`, mock-verified; live match pass pending. Prior: 2026-06-18 autonomous overnight run, see [overnight-progress.md](overnight-progress.md))
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -15,7 +15,8 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 ## Now
 
 - [ ] [M09 — Match-aware kiosk view](milestones/M09-match-aware-kiosk.md) — **in progress** (`wip/milestone-9`). 9a/9b/9c implemented end-to-end (membership lookup + `/api/me/match` + `/play/` page + WS & kiosk/VNC proxy roster-narrowing); all CI checks green. Remaining: the live 4-container smoke test (podman-gated, can't run in CI).
-- [ ] [M10 — Overlay revamp + new browser sources](milestones/M10-overlay-revamp.md) — **in progress** (`wip/milestone-10`; overlay-token auth on `wip/m10-overlay-auth`). Data foundation (10d filter + schema) + the **overlay/spectator auth layer** (read-only revocable tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI) landed. Live overlay render surfaces (10a UI / 10b / 10c / 10e) deferred — need live data + OBS.
+- [ ] [M10 — Overlay revamp + new browser sources](milestones/M10-overlay-revamp.md) — **in progress** (`wip/milestone-10`; overlay-token auth on `wip/m10-overlay-auth`). Data foundation (10d filter + schema) + the **overlay/spectator auth layer** (read-only revocable tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI) landed. The first **render surfaces** (scoreboard + status strip) landed under M25; remaining render surfaces (10a POV routing / 10c events / 10e POV pass) deferred — need live data + OBS.
+- [ ] [M25 — OBS spectator overlays](milestones/M25-obs-overlays.md) — **in progress** (`wip/obs-spectator-overlays`). Scoreboard/roster (`/overlays/[instance]/`) + match-status strip (`/overlays/[instance]/status/`) render pages on the shipped M10 overlay-token contract, with `?mock=1` sample mode; mint page emits both URLs. Pure builders unit-tested; check/lint/test/build + headless mock render green. Remaining: live match pass (K/D/A + team-score correctness) + wiring the M10d dummy filter into the broadcast.
 - [ ] [M11 — Game minimaps](milestones/M11-game-minimaps.md) — **in progress** (`wip/milestone-11`). Projection + height math landed (`minimap.ts`, unit-tested). Traced map assets + renderer + flares deferred — need assets + live data + OBS.
 - [ ] [M12 — POV marker overlay (stretch)](milestones/M12-pov-marker-overlay.md) — **foundation parked** (`wip/milestone-12`). Perspective-projection kernel landed (`pov-projection.ts`, unit-tested). Rest blocked on the 12a camera-offset audit (needs live xemu); may defer to M21+ per the stretch flag.
 - [ ] [M13 — PocketBase persistence foundation](milestones/M13-pb-persistence-games-series.md) — **in progress** (`wip/milestone-13`; chain wired on `wip/game-end-chain`). Schema + writer + heuristic landed. **`game_events` fork resolved (option a)** + full game-end chain wired (events stamping + series advance + rating) with the Live→Ready trigger; integration-tested. Remaining: live verification, 13d durable queue.

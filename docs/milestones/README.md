@@ -29,6 +29,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M22  | [Moderation + audit log](M22-moderation-audit.md)                                           | Done        |
 | M23  | [Team membership workflows](M23-team-membership-workflows.md)                               | Done        |
 | M24  | [Remote game setup (controller-free lobby write)](M24-remote-game-setup.md)                 | Planned     |
+| M25  | [OBS spectator overlays (token-auth render pages)](M25-obs-overlays.md)                      | In progress |
 
 ## Status values
 
