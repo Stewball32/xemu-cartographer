@@ -13,7 +13,6 @@ import type {
 	TickPayloadV2,
 	ObjectsPayload
 } from '$lib/types/scraper-v2';
-import { HEALTH_MAX, SHIELD_MAX } from '$lib/utils/overlay-view';
 
 /** Instance name the mock pretends to be. Any instance segment works in mock
  * mode — the URL's `[instance]` is ignored when ?mock=1 is set. */
@@ -204,8 +203,13 @@ function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][nu
 		aim: { x: 1, y: 0, z: 0 },
 		zoom_level: 0,
 		crouch_scale: 0,
-		health: health * HEALTH_MAX,
-		shields: shields * SHIELD_MAX,
+		// Emit the engine's 0..1 fraction, matching the live wire (health/shields
+		// at 0x90/0x94 are RUNTIME-VERIFIED 0..1, not 0..75). `health`/`shields`
+		// here are already clamped 0..1 above. Max* are the absolute ceilings.
+		health,
+		shields,
+		max_health: 75,
+		max_shields: 75,
 		has_camo: s.index === 0 && frame % 80 < 30,
 		has_overshield: s.index === 4,
 		frags: 2,

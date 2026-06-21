@@ -4,6 +4,25 @@
 // Game implementations (e.g. internal/scraper/haloce) register themselves via
 // init() + Register(). The poll loop in cmd/cartographer uses Detect() to pick
 // the right implementation at connect time.
+//
+// Adding a second game profile (e.g. Halo 2)
+// ------------------------------------------
+// The seam is title-ID-keyed and fully decoupled — no existing file changes:
+//
+//  1. Create internal/scraper/halo2/ with its own offsets.go (the game's
+//     verified offset constants — game-specific values live ONLY in that
+//     package, never in shared code) and a Reader implementing GameReader.
+//  2. Register the H2 title ID in the package's init() via scraper.Register,
+//     and blank-import the package from cmd/server/main.go so init() runs.
+//  3. Reuse the game-agnostic wire structs in this package (GameData,
+//     TickPlayer, TickProjectile, …). Their fields — health/shields/max,
+//     frags, scores, arming_time, etc. — are not CE-specific; H2 populates the
+//     same shapes from its own offsets. Add a field only if H2 surfaces
+//     something genuinely new.
+//
+// Offsets flow from the halo-offset-mapper export (export_cartographer.py) →
+// reconciled by hand into the game package's offsets.go (see that repo's
+// docs/CARTOGRAPHER-IMPORT.md). H2's export is pending; wire it when it lands.
 package scraper
 
 import (

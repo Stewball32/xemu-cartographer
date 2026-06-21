@@ -12,9 +12,9 @@ const ObjectTypeProjectile uint8 = 5
 // Each projectile's per-tick state lives at objDataAddr + itemDatumSize, so
 // this also reads RefAddrItemDatumSize once per call to determine the offset.
 //
-// Source: OffProj* + RefAddrItemDatumSize constants. M7 needs to verify both
-// the type filter (5 vs other) and the +0x1C overlap (target_object_index
-// vs arming_time — currently exposed as TargetObjectIndex int32).
+// Source: OffProj* + RefAddrItemDatumSize constants. The +0x1C overlap
+// (target_object_index vs arming_time) was resolved by the 2026-06-21 runtime
+// pass: it is arming_time (f32), exposed as ArmingTime.
 func (r *Reader) readProjectiles() []scraper.TickProjectile {
 	if r.ohdBase < HighGVAThreshold {
 		return nil
@@ -71,8 +71,9 @@ func (r *Reader) readProjectiles() []scraper.TickProjectile {
 		ignoreObj, _ := mem.ReadS32(pBase + OffProjIgnoreObjectIndex)
 		detTimer, _ := mem.ReadF32(pBase + OffProjDetonationTimer)
 		detTimerDelta, _ := mem.ReadF32(pBase + OffProjDetonationTimerDelta)
-		// 0x1C: HC bug — read as s32 here (target_object_index). M7 to confirm.
-		targetIdx, _ := mem.ReadS32(pBase + OffProjTargetObjectIndex)
+		// 0x1C: arming_time (f32) — RUNTIME-VERIFIED 2026-06-21. Was misread as
+		// s32 target_object_index (HaloCaster overlap); the s32 reading is garbage.
+		armTime, _ := mem.ReadF32(pBase + OffProjArmingTime)
 		armTimeDelta, _ := mem.ReadF32(pBase + OffProjArmingTimeDelta)
 		distTraveled, _ := mem.ReadF32(pBase + OffProjDistanceTraveled)
 		decelTimer, _ := mem.ReadF32(pBase + OffProjDecelerationTimer)
@@ -97,7 +98,7 @@ func (r *Reader) readProjectiles() []scraper.TickProjectile {
 			IgnoreObjectIndex:      ignoreObj,
 			DetonationTimer:        detTimer,
 			DetonationTimerDelta:   detTimerDelta,
-			TargetObjectIndex:      targetIdx,
+			ArmingTime:             armTime,
 			ArmingTimeDelta:        armTimeDelta,
 			DistanceTraveled:       distTraveled,
 			DecelerationTimer:      decelTimer,

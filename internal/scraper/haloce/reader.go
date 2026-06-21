@@ -887,6 +887,11 @@ func (r *Reader) readDynPlayerFull(tp *scraper.TickPlayer, ip *scraper.InternalP
 	tp.CrouchScale, _ = mem.ReadF32(objDataAddr + OffDynCrouchScale)
 	tp.Health, _ = mem.ReadF32(objDataAddr + OffDynHealth)
 	tp.Shields, _ = mem.ReadF32(objDataAddr + OffDynShields)
+	// Absolute health/shield caps (0x88/0x8C, RUNTIME-VERIFIED 2026-06-21).
+	// Health/Shields above are normalized fractions; Max* lets viewers render
+	// real HP. These offsets were previously defined but never read.
+	tp.MaxHealth, _ = mem.ReadF32(objDataAddr + OffDynMaxHealth)
+	tp.MaxShields, _ = mem.ReadF32(objDataAddr + OffDynMaxShields)
 
 	shieldsStatus, _ := mem.ReadU16(objDataAddr + OffDynShieldsStatus)
 	tp.HasOvershield = (shieldsStatus & ShieldsStatusOvershield) != 0

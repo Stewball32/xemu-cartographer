@@ -389,6 +389,8 @@ func convertTickPlayer(tp scraper.TickPlayer) TickPlayer {
 		CrouchScale:        tp.CrouchScale,
 		Health:             tp.Health,
 		Shields:            tp.Shields,
+		MaxHealth:          tp.MaxHealth,
+		MaxShields:         tp.MaxShields,
 		HasCamo:            tp.HasCamo,
 		HasOvershield:      tp.HasOvershield,
 		Frags:              tp.Frags,

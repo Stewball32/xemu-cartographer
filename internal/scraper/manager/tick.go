@@ -32,8 +32,10 @@ type TickPlayer struct {
 	Aim                scraper.Vec3      `json:"aim"`
 	ZoomLevel          int8              `json:"zoom_level"`
 	CrouchScale        float32           `json:"crouch_scale"`
-	Health             float32           `json:"health"`
-	Shields            float32           `json:"shields"`
+	Health             float32           `json:"health"`     // 0..1 engine body_vitality fraction
+	Shields            float32           `json:"shields"`    // 0..1 (>1 with overshield)
+	MaxHealth          float32           `json:"max_health"` // absolute ceiling (engine units, ~75)
+	MaxShields         float32           `json:"max_shields"`
 	HasCamo            bool              `json:"has_camo"`
 	HasOvershield      bool              `json:"has_overshield"`
 	Frags              uint8             `json:"frags"`

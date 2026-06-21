@@ -279,6 +279,8 @@ export interface TickPlayer {
 	crouchscale: number;
 	health: number;
 	shields: number;
+	max_health: number;
+	max_shields: number;
 	has_camo: boolean;
 	camo_timer: number | null;
 	has_overshield: boolean;
@@ -649,7 +651,7 @@ export interface TickProjectile {
 	ignore_object_index: number;
 	detonation_timer: number;
 	detonation_timer_delta: number;
-	target_object_index: number;
+	arming_time: number;
 	arming_time_delta: number;
 	distance_traveled: number;
 	deceleration_timer: number;

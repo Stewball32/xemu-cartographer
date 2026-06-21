@@ -10,8 +10,9 @@
 		tick: TickPlayerV2 | null;
 	};
 
-	const HEALTH_MAX = 75;
-	const SHIELD_MAX = 75;
+	// Wire health/shields arrive as the engine's 0..1 fraction (RUNTIME-VERIFIED
+	// at 0x90/0x94 — 1.0 = full), so bar widths use them directly. They are NOT
+	// 0..75 engine units; dividing by 75 rendered full health at ~1.3% width.
 
 	const TEAM_COLORS = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500'];
 
@@ -136,7 +137,7 @@
 								<div class="bar-track">
 									<div
 										class="bar-fill bar-shield"
-										style="width: {Math.max(0, Math.min(1, shields / SHIELD_MAX)) * 100}%"
+										style="width: {Math.max(0, Math.min(1, shields)) * 100}%"
 									></div>
 								</div>
 							</div>
@@ -145,7 +146,7 @@
 								<div class="bar-track">
 									<div
 										class="bar-fill bar-health"
-										style="width: {Math.max(0, Math.min(1, health / HEALTH_MAX)) * 100}%"
+										style="width: {Math.max(0, Math.min(1, health)) * 100}%"
 									></div>
 								</div>
 							</div>

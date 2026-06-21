@@ -12,8 +12,16 @@
 
 import type { GamePayload, ScenarioPayload, TickPayloadV2 } from '$lib/types/scraper-v2';
 
-/** Halo: CE biped health / shield ceilings — both 75 in engine units. The
- * overlay normalises to 0..1 against these for bar widths. */
+/** Halo: CE biped health / shield ceilings — both 75 engine units
+ * (RUNTIME-VERIFIED 2026-06-21 via OffDynMaxHealth 0x88 / OffDynMaxShields 0x8C).
+ *
+ * IMPORTANT: the wire `health` / `shields` fields already arrive normalised
+ * 0..1 (the engine's body_vitality fraction — 1.0 = full, RUNTIME-VERIFIED:
+ * 1.0 → 0.625 → 0.437 under fire). Bar widths therefore use them DIRECTLY and
+ * must NOT divide by these ceilings — doing so rendered a full-health bar at
+ * ~1.3% width against live data. These constants remain for absolute-HP display
+ * (absolute HP = fraction * ceiling), corroborated by the wire's new
+ * max_health / max_shields fields. */
 export const HEALTH_MAX = 75;
 export const SHIELD_MAX = 75;
 
@@ -69,7 +77,7 @@ export interface PlayerRow {
 	/** Live (tick) — only meaningful when the scoreboard's `hasTick` is true. */
 	alive: boolean;
 	respawnIn: number | null;
-	/** 0..1 normalised against HEALTH_MAX / SHIELD_MAX. */
+	/** 0..1 engine body_vitality fraction (clamped; shields >1 with overshield). */
 	health: number;
 	shields: number;
 	hasOvershield: boolean;
@@ -118,8 +126,12 @@ function joinRow(
 		isLocal: p.is_local === true,
 		alive: t ? t.alive : true,
 		respawnIn: t ? t.respawn_in_ticks : null,
-		health: t ? clamp01(t.health / HEALTH_MAX) : 0,
-		shields: t ? clamp01(t.shields / SHIELD_MAX) : 0,
+		// Wire health/shields are already the engine's 0..1 fraction
+		// (RUNTIME-VERIFIED) — use directly, do NOT divide by HEALTH_MAX.
+		// Shields can read >1 with overshield; clamp for the bar (the
+		// has_overshield flag carries the over-full state).
+		health: t ? clamp01(t.health) : 0,
+		shields: t ? clamp01(t.shields) : 0,
 		hasOvershield: t?.has_overshield ?? false,
 		hasCamo: t?.has_camo ?? false,
 		kills: p.kills ?? 0,

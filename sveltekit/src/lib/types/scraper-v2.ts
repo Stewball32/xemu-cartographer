@@ -346,8 +346,13 @@ export interface TickPlayerV2 {
 	aim: Vec3;
 	zoom_level: number;
 	crouch_scale: number;
+	/** 0..1 engine body_vitality fraction (1.0 = full). */
 	health: number;
+	/** 0..1 (can read >1 with overshield). */
 	shields: number;
+	/** Absolute health/shield ceilings in engine units (~75). */
+	max_health: number;
+	max_shields: number;
 	has_camo: boolean;
 	has_overshield: boolean;
 	frags: number;

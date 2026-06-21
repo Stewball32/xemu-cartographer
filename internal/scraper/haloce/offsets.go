@@ -58,11 +58,12 @@
 //	the same offset as a u32 "drop_time" for generic objects (HC:803). Both are
 //	valid in their respective contexts; OffDynCamo is biped-only here.
 //
-// 0x1C arming_time vs target_object_index (projectile):
+// 0x1C arming_time vs target_object_index (projectile): RESOLVED.
 //
-//	HC reads projectile +0x1C as both target_object_index s32 (HC:818) and
-//	arming_time f32 (HC:821). This is a HaloCaster bug — the two cannot share
-//	one offset. See offsets_reference.go for the documented overlap.
+//	HC read projectile +0x1C as both target_object_index s32 (HC:818) and
+//	arming_time f32 (HC:821). The 2026-06-21 xemu runtime pass confirmed the
+//	field is arming_time (f32) on a live frag projectile (s32 read = garbage).
+//	The const is OffProjArmingTime; the s32 target_object_index reading is gone.
 //
 // ----------------------------------------------------------------------
 // Skipped (debug-only / known-bad)
@@ -761,9 +762,13 @@ const (
 // Projectile sub-struct (at object_address + RefAddrItemDatumSize) — HC:813-832
 // ============================================================================
 //
-// NOTE: HC reads offset +0x1C twice: as `target_object_index` (s32, HC:818) and
-// as `arming_time` (f32, HC:821). One must be wrong. Documented as-is here; M7
-// runtime verification should resolve which is the real field.
+// RESOLVED: HC read offset +0x1C twice — as `target_object_index` (s32, HC:818)
+// and as `arming_time` (f32, HC:821). The 2026-06-21 xemu runtime pass settled
+// it on a live frag-grenade projectile: raw 0xBEAA0BA8 reads as -0.3321 f32
+// (plausible arming time) vs -1096152152 s32 (garbage, not a valid object
+// index). The field is `arming_time` (f32); the target_object_index reading was
+// wrong. It pairs with OffProjArmingTimeDelta@0x20, mirroring the
+// detonation_timer(0x14)/detonation_timer_delta(0x18) pair.
 const (
 	OffProjFlags                uint32 = 0x00 // u32 — halocaster.py:813
 	OffProjAction               uint32 = 0x04 // s16 — halocaster.py:815
@@ -771,8 +776,8 @@ const (
 	OffProjIgnoreObjectIndex    uint32 = 0x08 // s32 — halocaster.py:817
 	OffProjDetonationTimer      uint32 = 0x14 // f32 — halocaster.py:819
 	OffProjDetonationTimerDelta uint32 = 0x18 // f32 — halocaster.py:820
-	// 0x1C: HaloCaster bug — same offset read as both target_object_index s32 and arming_time f32
-	OffProjTargetObjectIndex      uint32 = 0x1C // s32 (HC:818) OR arming_time f32 (HC:821); resolve at M7
+	// 0x1C: arming_time f32 — RUNTIME-VERIFIED 2026-06-21 (was misread as s32 target_object_index per HC:818).
+	OffProjArmingTime             uint32 = 0x1C // f32 (HC:821) — RUNTIME-VERIFIED 2026-06-21
 	OffProjArmingTimeDelta        uint32 = 0x20 // f32 — halocaster.py:822
 	OffProjDistanceTraveled       uint32 = 0x24 // f32 — halocaster.py:823
 	OffProjDecelerationTimer      uint32 = 0x28 // f32 — halocaster.py:824

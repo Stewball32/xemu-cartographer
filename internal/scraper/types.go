@@ -557,7 +557,7 @@ type TickProjectile struct {
 	IgnoreObjectIndex      int32   `json:"ignore_object_index"`
 	DetonationTimer        float32 `json:"detonation_timer"`
 	DetonationTimerDelta   float32 `json:"detonation_timer_delta"`
-	TargetObjectIndex      int32   `json:"target_object_index"` // OR arming_time f32; HC bug
+	ArmingTime             float32 `json:"arming_time"` // projectile+0x1C — RUNTIME-VERIFIED 2026-06-21 f32 (was misread as s32 target_object_index)
 	ArmingTimeDelta        float32 `json:"arming_time_delta"`
 	DistanceTraveled       float32 `json:"distance_traveled"`
 	DecelerationTimer      float32 `json:"deceleration_timer"`
@@ -579,21 +579,29 @@ type TickPlayer struct {
 	Index int `json:"index"`
 
 	// Dynamic per-tick state.
-	Alive              bool         `json:"alive"`
-	RespawnInTicks     *uint32      `json:"respawn_in_ticks"`
-	X                  float32      `json:"x"`
-	Y                  float32      `json:"y"`
-	Z                  float32      `json:"z"`
-	VX                 float32      `json:"vx"`
-	VY                 float32      `json:"vy"`
-	VZ                 float32      `json:"vz"`
-	AimX               float32      `json:"aim_x"`
-	AimY               float32      `json:"aim_y"`
-	AimZ               float32      `json:"aim_z"`
-	ZoomLevel          int8         `json:"zoom_level"`
-	CrouchScale        float32      `json:"crouchscale"`
-	Health             float32      `json:"health"`
-	Shields            float32      `json:"shields"`
+	Alive          bool    `json:"alive"`
+	RespawnInTicks *uint32 `json:"respawn_in_ticks"`
+	X              float32 `json:"x"`
+	Y              float32 `json:"y"`
+	Z              float32 `json:"z"`
+	VX             float32 `json:"vx"`
+	VY             float32 `json:"vy"`
+	VZ             float32 `json:"vz"`
+	AimX           float32 `json:"aim_x"`
+	AimY           float32 `json:"aim_y"`
+	AimZ           float32 `json:"aim_z"`
+	ZoomLevel      int8    `json:"zoom_level"`
+	CrouchScale    float32 `json:"crouchscale"`
+	Health         float32 `json:"health"`
+	Shields        float32 `json:"shields"`
+	// MaxHealth/MaxShields are the biped's absolute health/shield caps
+	// (OffDynMaxHealth 0x88 / OffDynMaxShields 0x8C, RUNTIME-VERIFIED
+	// 2026-06-21 = 75/75 on cyborg). Health/Shields above are normalized
+	// fractions (1.0 = full), so a viewer needs Max* to render real HP
+	// (e.g. Health*MaxHealth). Previously the Max* offsets were defined
+	// but never read; now surfaced so overlays/stats can show actual HP.
+	MaxHealth          float32      `json:"max_health"`
+	MaxShields         float32      `json:"max_shields"`
 	HasCamo            bool         `json:"has_camo"`
 	CamoTimer          *uint32      `json:"camo_timer,omitempty"`
 	HasOvershield      bool         `json:"has_overshield"`

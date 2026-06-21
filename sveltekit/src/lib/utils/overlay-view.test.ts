@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-	buildScoreboard,
-	statusStrip,
-	teamMeta,
-	prettify,
-	HEALTH_MAX,
-	SHIELD_MAX
-} from './overlay-view';
+import { buildScoreboard, statusStrip, teamMeta, prettify } from './overlay-view';
 import type { GamePayload, TickPayloadV2, ScenarioPayload } from '$lib/types/scraper-v2';
 
 // Minimal roster-player factory — only the fields the builders read need to be
@@ -46,8 +39,10 @@ function tp(over: Partial<TickPayloadV2['players'][number]>): TickPayloadV2['pla
 		aim: { x: 0, y: 0, z: 0 },
 		zoom_level: 0,
 		crouch_scale: 0,
-		health: HEALTH_MAX,
-		shields: SHIELD_MAX,
+		health: 1,
+		shields: 1,
+		max_health: 75,
+		max_shields: 75,
 		has_camo: false,
 		has_overshield: false,
 		frags: 0,
@@ -194,15 +189,15 @@ describe('buildScoreboard', () => {
 		expect(vm.isTeamGame).toBe(true);
 	});
 
-	it('joins tick state and normalises health/shields to 0..1', () => {
+	it('passes through the wire 0..1 health/shields fraction', () => {
+		// Wire health/shields are the engine's 0..1 body_vitality fraction
+		// (RUNTIME-VERIFIED) — the builder must NOT re-divide by an engine ceiling.
 		const vm = buildScoreboard(
 			game({
 				config: { gametype: 'slayer', is_team_game: false, score_limit: 25, time_limit_ticks: 0 },
 				players: [rp({ index: 0, name: 'Alpha' })]
 			}),
-			tick([
-				tp({ index: 0, health: HEALTH_MAX / 2, shields: 0, alive: false, respawn_in_ticks: 90 })
-			])
+			tick([tp({ index: 0, health: 0.5, shields: 0, alive: false, respawn_in_ticks: 90 })])
 		);
 		expect(vm.hasTick).toBe(true);
 		const p = vm.players[0];
@@ -212,12 +207,12 @@ describe('buildScoreboard', () => {
 		expect(p.respawnIn).toBe(90);
 	});
 
-	it('clamps over-max health to 1', () => {
+	it('clamps over-full shields (overshield reads >1) to 1', () => {
 		const vm = buildScoreboard(
 			game({ players: [rp({ index: 0, name: 'A' })] }),
-			tick([tp({ index: 0, health: HEALTH_MAX * 3 })])
+			tick([tp({ index: 0, shields: 3 })])
 		);
-		expect(vm.players[0].health).toBe(1);
+		expect(vm.players[0].shields).toBe(1);
 	});
 
 	it('reports hasScores false when every stat is zero (unverified/absent)', () => {
