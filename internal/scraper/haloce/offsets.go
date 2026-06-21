@@ -9,9 +9,39 @@
 // every other corroborated offset lives in offsets_reference.go organized by struct.
 //
 // Each constant carries an origin tag of the form `// halocaster.py:NNN`. All
-// offsets are status `unverified` until M7's runtime sanity-check pass — they are
-// believed correct based on two-source agreement but have not been re-verified
+// offsets were status `unverified` until M7's runtime sanity-check pass — they
+// are believed correct based on two-source agreement but had not been re-verified
 // against the current xemu memory layout.
+//
+// ----------------------------------------------------------------------
+// Runtime-verified against live xemu memory — 2026-06-21
+// ----------------------------------------------------------------------
+// The halo-offset-mapper live pass (docs/RUNTIME-PASS-2026-06-21-CE.md, xemu
+// 0.8.136) confirmed the following active-read-path offsets against live guest
+// memory — values below match this file exactly, upgrading them from
+// two-source-agreement to runtime-verified. The scraper already reads every one
+// (see reader.go); no value changed, the verification just removes the doubt:
+//
+//	Globals/pointers : AddrMainMenuActive 0x2E4068 (1 menu / 0 in-map),
+//	                   AddrGameConnection 0x2E3684 (0 menu/SP, 2 hosting),
+//	                   AddrPlayerDatumArrayPtr 0x2FAD28 (datum 212),
+//	                   AddrObjectHeaderDatumPtr 0x2FC6AC, AddrTeamsPtr 0x2FAD24,
+//	                   AddrGameTimeGlobalsPtr 0x2F8CA0 + OffGTGGameTime 0x0C (30Hz),
+//	                   AddrGlobalTagInstancesPtr 0x39CE24, AddrTagHeaderPtr 0x2DF1C4.
+//	Player (212 B)   : OffPlrKills 0x98, OffPlrDeaths 0xAA, OffPlrObjectHandle 0x34
+//	                   (0xFFFFFFFF when dead), OffPlrTeam 0x20, OffPlrName 0x04.
+//	Biped (type 0)   : OffDynHealth 0x90, OffDynShields 0x94, OffDynMaxHealth 0x88,
+//	                   OffDynMaxShields 0x8C, OffDynFrags 0x2CE, OffDynCamo 0x1B4
+//	                   (=0x41 CamoStateNo), OffDynWeaponSlot0 0x2A8, OffObjectPosition 0x0C.
+//	Weapon (type 2)  : OffWepAmmoMag 0x260, OffWepAmmoPack 0x25E.
+//	Score/match      : AddrScoreSlayer 0x276710 (FFA u32[16]), AddrScoreLimitSlayer
+//	                   0x2F90E8, AddrGameEngineGlobalsPtr 0x2F9110 (+0x04 gametype),
+//	                   AddrPlayersGlobalsPtr 0x2FAD20 (+0x24 local count).
+//
+// MAP-DETECTION FIX: AddrGlobalStageName 0x2FAC20 is populated ONLY while
+// MP-hosting (empty in menu and singleplayer), so it can't name the current
+// map. The map identity now resolves from the cache tag header AddrTagHeaderPtr
+// 0x2DF1C4 (see readScenarioTagName + resolveMapName in map_detect.go).
 //
 // ----------------------------------------------------------------------
 // Investigations resolved
@@ -90,7 +120,7 @@ const (
 	AddrIsTeamGame      uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
 	AddrMainMenuActive  uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
 	AddrGameCanScore    uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
-	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII (host only) — halocaster.py:1891
+	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
 	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
 )
 
@@ -136,6 +166,7 @@ var AllLowGVAs = []uint32{
 	AddrGameTimeGlobalsPtr,
 	AddrGlobalTagInstancesPtr,
 	AddrGlobalScenarioPtr,
+	AddrTagHeaderPtr,
 	AddrGameEngineGlobalsPtr,
 	AddrGameVariantGlobalPtr,
 	// Direct value globals
@@ -414,6 +445,34 @@ const (
 	TagInstStride        = 32
 	OffTagNamePtr uint32 = 0x10 // u32 → null-terminated tag name string — halocaster.py:654
 	OffTagDataPtr uint32 = 0x14 // u32 → raw tag data struct — halocaster.py:655,1577
+)
+
+// ----------------------------------------------------------------------
+// Cache tag header — scenario (map) identity.
+//
+// AddrTagHeaderPtr derefs to the cache tag header. The header exposes the
+// active scenario's tag id, which indexes the tag array directly to the map's
+// tag-name string. This is the RELIABLE map identifier in EVERY in-game state
+// — menu ("levels\ui\uitest"), singleplayer, AND MP — unlike AddrGlobalStageName
+// (0x2FAC20), which the engine writes only while MP-hosting (empty in menu and
+// singleplayer). See readScenarioTagName + resolveMapName (map_detect.go).
+//
+//	header+0x00 → tag_array base (cache tag entries, stride ConstTagEntrySize)
+//	header+0x04 → scenario_tag_id (idx = scenario_tag_id & 0xFFFF)
+//	header+0x0C → tag_count
+//	tag_array[idx] + OffTagNamePtr (0x10) → map tag-name string
+//
+// RUNTIME-VERIFIED 2026-06-21 (halo-offset-mapper docs/RUNTIME-PASS-2026-06-21-CE.md,
+// Task 7): the cache-tag-header path returned the correct scenario in campaign,
+// singleplayer, and MP; deref 0x2DF1C4 → tag header (tag_array@0,
+// scenario_tag_id@4, count@0xC=1189). The cache tag entry stride matches the
+// tag-instance stride (TagInstStride=32) and shares the name pointer at +0x10.
+const (
+	AddrTagHeaderPtr          uint32 = 0x2DF1C4 // deref → cache tag header — RUNTIME-VERIFIED 2026-06-21
+	OffTagHeaderTagArray      uint32 = 0x00     // u32 → cache tag entry array
+	OffTagHeaderScenarioTagID uint32 = 0x04     // u32; scenario tag idx = value & 0xFFFF
+	OffTagHeaderTagCount      uint32 = 0x0C     // u32 → loaded tag count
+	ConstTagEntrySize         uint32 = 0x20     // cache tag entry stride (= TagInstStride)
 )
 
 // ----------------------------------------------------------------------

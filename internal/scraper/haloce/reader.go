@@ -209,10 +209,8 @@ func (r *Reader) composeGameData() scraper.GameData {
 	// flips once every critical reader has produced data); it must not gate
 	// the wire output, or fields that did populate (e.g. PlayerSpawns, Fog)
 	// get dropped just because ObjectTypes / PowerSpawnsScenario haven't
-	// filled yet. Fall back to a live readScenarioTagName when the cache
-	// hasn't gotten started or Map is still empty.
+	// filled yet.
 	if r.scenarioCache != nil {
-		out.Map = r.scenarioCache.MapName
 		out.GameDifficulty = r.scenarioCache.GameDifficulty
 		out.PlayerSpawns = r.scenarioCache.PlayerSpawns
 		out.Fog = r.scenarioCache.Fog
@@ -220,9 +218,21 @@ func (r *Reader) composeGameData() scraper.GameData {
 		out.TagCache = r.scenarioCache.TagCache
 		out.PowerItemSpawns = r.composePowerItemSpawns()
 	}
-	if out.Map == "" {
-		out.Map = r.readScenarioTagName()
+
+	// Map identity. The reliable cross-state source is the scenario tag path
+	// (cache tag header). Prefer the cached scenario name, fall back to a live
+	// read when the cache hasn't started or is still empty (menu / early
+	// pregame, where ensureScenarioStatic can't reach scenarioBase yet).
+	// resolveMapName applies the main-menu gate and folds in the MP-host
+	// stage-name hint (AddrGlobalStageName 0x2FAC20). See map_detect.go.
+	scenarioTag := ""
+	if r.scenarioCache != nil {
+		scenarioTag = r.scenarioCache.MapName
 	}
+	if scenarioTag == "" {
+		scenarioTag = r.readScenarioTagName()
+	}
+	out.Map = resolveMapName(scenarioTag, r.readMainMenuActive(), r.readStageName())
 
 	return out
 }
@@ -1360,53 +1370,85 @@ func (r *Reader) readTagName(tagIdx int16) (string, error) {
 	return name, nil
 }
 
-// scenarioTagScanLimit caps the tag-instance walk in readScenarioTagName.
-// Halo: CE scenarios typically expose ~600 tags; the scenario tag is at
-// index 0 in every known scenario, so the loop almost always wins on the
-// first iteration. The bound exists only so a stale tagInstBase can't run
-// away.
-const scenarioTagScanLimit = 1024
-
-// readScenarioTagName returns the active scenario tag's name (the map
-// path, e.g. "levels\\test\\downrush\\downrush") by walking the tag
-// instance array for the entry whose data_ptr matches the global
-// scenario pointer. Replaces the halocaster.py-era AddrMultiplayerMapName
-// (0x2E37CD) low-GVA read, which returned "" for active matches on the
-// Xbox build.
+// readScenarioTagName returns the active scenario tag's name (the map path,
+// e.g. "levels\\test\\downrush\\downrush") via the cache tag header
+// (AddrTagHeaderPtr 0x2DF1C4): deref → header, read scenario_tag_id, index the
+// tag array directly, and read the entry's name string.
 //
-// Self-resolves r.tagInstBase via DerefLowPtr if not yet cached so it
-// works from the Ready phase (before ReadTick's ensureBases pass runs).
-// Returns "" when either base pointer isn't reachable yet (early
-// pregame) or no tag entry matches inside the scan limit.
+//	header        = *AddrTagHeaderPtr
+//	tag_array     = *(header + OffTagHeaderTagArray)
+//	idx           = *(header + OffTagHeaderScenarioTagID) & 0xFFFF
+//	name_ptr      = *(tag_array + idx*ConstTagEntrySize + OffTagNamePtr)
+//	scenario_name =  string at name_ptr
+//
+// This replaces the prior approach, which derived scenarioBase from the
+// unverified AddrGlobalScenarioPtr (0x39BE5C, halocaster.py-era) and scanned
+// the tag-instance array for a matching data_ptr. The cache-tag-header path is
+// the one the 2026-06-21 runtime pass verified correct in menu, singleplayer,
+// AND MP (docs note: AddrGlobalStageName 0x2FAC20 is empty outside MP-hosting),
+// and it is O(1) — a direct index by scenario_tag_id, not a scan.
+//
+// Returns "" when the header or any link in the chain isn't reachable yet
+// (early pregame / between scenarios).
 func (r *Reader) readScenarioTagName() string {
-	if r.tagInstBase < HighGVAThreshold {
-		base, err := r.inst.DerefLowPtr(AddrGlobalTagInstancesPtr)
-		if err != nil || base < HighGVAThreshold {
-			return ""
-		}
-		r.tagInstBase = base
-	}
-	scenarioBase, err := r.inst.DerefLowPtr(AddrGlobalScenarioPtr)
-	if err != nil || scenarioBase < HighGVAThreshold {
+	tagHeader, err := r.inst.DerefLowPtr(AddrTagHeaderPtr)
+	if err != nil || tagHeader < HighGVAThreshold {
 		return ""
 	}
 	mem := r.inst.Mem
-	for i := uint32(0); i < scenarioTagScanLimit; i++ {
-		entry := r.tagInstBase + i*uint32(TagInstStride)
-		dataPtr, err := mem.ReadU32(entry + OffTagDataPtr)
-		if err != nil {
-			return ""
-		}
-		if dataPtr != scenarioBase {
-			continue
-		}
-		namePtr, err := mem.ReadU32(entry + OffTagNamePtr)
-		if err != nil || namePtr < HighGVAThreshold {
-			return ""
-		}
-		return r.readHighString(namePtr)
+	tagArray, err := mem.ReadU32(tagHeader + OffTagHeaderTagArray)
+	if err != nil || tagArray < HighGVAThreshold {
+		return ""
 	}
-	return ""
+	scenarioTagID, err := mem.ReadU32(tagHeader + OffTagHeaderScenarioTagID)
+	if err != nil {
+		return ""
+	}
+	idx := scenarioTagID & 0xFFFF
+	entry := tagArray + idx*ConstTagEntrySize
+	namePtr, err := mem.ReadU32(entry + OffTagNamePtr)
+	if err != nil || namePtr < HighGVAThreshold {
+		return ""
+	}
+	return r.readHighString(namePtr)
+}
+
+// readMainMenuActive reads AddrMainMenuActive (0x2E4068): 1 at the front-end
+// menu, 0 once a gameplay map is loaded. Returns 1 (menu) on any read failure
+// so a failed read never falsely claims a map is in play. Consumed by
+// resolveMapName as the in-map gate.
+func (r *Reader) readMainMenuActive() uint8 {
+	hva, err := r.inst.LowHVA(AddrMainMenuActive)
+	if err != nil {
+		return 1
+	}
+	v, err := r.inst.Mem.ReadU8At(hva)
+	if err != nil {
+		return 1
+	}
+	return v
+}
+
+// readStageName reads AddrGlobalStageName (0x2FAC20), the null-terminated ASCII
+// map name the engine writes only while MP-hosting (empty in menu and
+// singleplayer). Used purely as an MP-host hint by resolveMapName. The string
+// lives at the low GVA itself, so it's read via LowHVA, not the high-GVA
+// readHighString path.
+func (r *Reader) readStageName() string {
+	hva, err := r.inst.LowHVA(AddrGlobalStageName)
+	if err != nil {
+		return ""
+	}
+	b, err := r.inst.Mem.ReadBytesAt(hva, 64)
+	if err != nil {
+		return ""
+	}
+	for i, c := range b {
+		if c == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
 }
 
 func (r *Reader) readHighString(gva uint32) string {
