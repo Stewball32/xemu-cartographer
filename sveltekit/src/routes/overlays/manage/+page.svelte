@@ -47,6 +47,15 @@
 		return `${origin}${base}?mock=1`;
 	}
 
+	// The same scoped token drives the top-down live-map visualizer (it subscribes
+	// to the instance's per-class rooms under host:<instance>). Render page lives
+	// at /visualizer/<instance>/ — a spectator/debug view, not an OBS overlay.
+	function visualizerURL(m: MintResult): string {
+		const { origin, query } = parts(m);
+		const inst = m.room.replace(/^host:/, '');
+		return `${origin}/visualizer/${inst}/${query}`;
+	}
+
 	async function refresh() {
 		loading = true;
 		try {
@@ -172,6 +181,25 @@
 								value={statusURL(lastMinted)}
 							/>
 							<button class="btn-icon preset-tonal" onclick={() => copy(statusURL(lastMinted!))}>
+								<CopyIcon class="size-4" />
+							</button>
+						</div>
+					</label>
+
+					<label class="flex flex-col gap-1">
+						<span class="text-xs font-medium">
+							Live map — top-down visualizer (spectator / debug view, not a transparent overlay)
+						</span>
+						<div class="flex items-center gap-2">
+							<input
+								class="input flex-1 font-mono text-xs"
+								readonly
+								value={visualizerURL(lastMinted)}
+							/>
+							<button
+								class="btn-icon preset-tonal"
+								onclick={() => copy(visualizerURL(lastMinted!))}
+							>
 								<CopyIcon class="size-4" />
 							</button>
 						</div>

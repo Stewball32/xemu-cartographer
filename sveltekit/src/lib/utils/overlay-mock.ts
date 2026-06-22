@@ -138,6 +138,38 @@ function clamp01(n: number): number {
 	return n < 0 ? 0 : n > 1 ? 1 : n;
 }
 
+// Believable Bloodgulch-ish layout so the top-down VISUALIZER has something to
+// render in mock mode. The OBS scoreboard/status overlays ignore positions +
+// the objects/scenario-spawn layers, so populating them here is additive. Red
+// base sits NW, Blue base SE; players 0 and 4 roam toward mid-map so their dots
+// visibly move — the same movement that validates the position offsets live.
+const RED_BASE = { x: -55, y: 50 };
+const BLUE_BASE = { x: 55, y: -50 };
+
+function mockPlayerPos(s: MockSeed, frame: number): { x: number; y: number; z: number } {
+	const base = s.team === 0 ? RED_BASE : BLUE_BASE;
+	if (s.dead) return { x: base.x, y: base.y, z: 0 }; // respawning — sit at base
+	if (s.index === 0 || s.index === 4) {
+		// Roamer: ping-pong between base and mid-map.
+		const t = (Math.sin(frame / 30 + s.index) + 1) / 2;
+		return { x: base.x + (0 - base.x) * t, y: base.y + (0 - base.y) * t, z: 4 * t };
+	}
+	// Orbit near the base so each dot drifts a little.
+	const a = frame / 40 + s.index;
+	const r = 8 + (s.index % 3) * 4;
+	return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r, z: (s.index % 2) * 3 };
+}
+
+function mockPlayerAim(s: MockSeed): { x: number; y: number; z: number } {
+	// Face the enemy base.
+	const target = s.team === 0 ? BLUE_BASE : RED_BASE;
+	const base = s.team === 0 ? RED_BASE : BLUE_BASE;
+	const dx = target.x - base.x;
+	const dy = target.y - base.y;
+	const len = Math.hypot(dx, dy) || 1;
+	return { x: dx / len, y: dy / len, z: 0 };
+}
+
 export function mockGame(frame = 0): GamePayload {
 	// Score creeps every ~5s (the feed ticks ~5 fps) so the strip looks live.
 	const redDrift = Math.floor(frame / 40);
@@ -198,9 +230,9 @@ function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][nu
 		index: s.index,
 		alive,
 		respawn_in_ticks: s.dead ? Math.max(0, 90 - (frame % 120)) : null,
-		pos: { x: 0, y: 0, z: 0 },
+		pos: mockPlayerPos(s, frame),
 		vel: { x: 0, y: 0, z: 0 },
-		aim: { x: 1, y: 0, z: 0 },
+		aim: mockPlayerAim(s),
 		zoom_level: 0,
 		crouch_scale: 0,
 		// Emit the engine's 0..1 fraction, matching the live wire (health/shields
@@ -244,7 +276,34 @@ function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][nu
 export function mockTick(frame = 0): TickPayloadV2 {
 	return {
 		players: SEEDS.map((s) => mockTickPlayer(s, frame)),
-		power_items: [],
+		// Tracked power items: rockets sit mid-map, the sniper is held by Arbiter
+		// (4), the overshield is respawning (counted, off-map), camo is on the
+		// floor. spawn_ids line up with mockPowerItemSpawns() for labels.
+		power_items: [
+			{
+				spawn_id: 0,
+				status: 'world',
+				held_by: null,
+				pos: { x: 0, y: 0, z: 0 },
+				respawn_in_ticks: null
+			},
+			{ spawn_id: 1, status: 'held', held_by: 4, pos: null, respawn_in_ticks: null },
+			{
+				spawn_id: 2,
+				status: 'respawning',
+				held_by: null,
+				pos: null,
+				respawn_in_ticks: 300 - (frame % 300)
+			},
+			{
+				spawn_id: 3,
+				status: 'world',
+				held_by: null,
+				pos: { x: -20, y: -28, z: 2 },
+				respawn_in_ticks: null
+			}
+		],
+		// Slayer has no flags; the visualizer renders the flag layer live on CTF.
 		ctf_flags: [],
 		game_globals: {
 			map_loaded: 1,
@@ -264,12 +323,110 @@ export function mockScenario(): ScenarioPayload {
 		fog: null,
 		memory_regions: null,
 		object_types: [],
-		player_spawns: [],
-		power_item_spawns: [],
+		player_spawns: mockPlayerSpawns(),
+		power_item_spawns: mockPowerItemSpawns(),
 		tag_defs: {}
 	};
 }
 
+function mockPlayerSpawns(): ScenarioPayload['player_spawns'] {
+	const ring = (base: { x: number; y: number }, team: number, start: number) =>
+		[0, 1, 2, 3].map((i) => ({
+			index: start + i,
+			pos: {
+				x: base.x + Math.cos((i / 4) * Math.PI * 2) * 10,
+				y: base.y + Math.sin((i / 4) * Math.PI * 2) * 10,
+				z: 0
+			},
+			facing: 0,
+			team_index: team,
+			bsp_index: 0,
+			gametypes: []
+		}));
+	return [...ring(RED_BASE, 0, 0), ...ring(BLUE_BASE, 1, 4)];
+}
+
+function mockPowerItemSpawns(): ScenarioPayload['power_item_spawns'] {
+	return [
+		{
+			spawn_id: 0,
+			tag: 'weapons\\rocket launcher\\rocket launcher',
+			interval_ticks: 3600,
+			gametype_mask: 0,
+			pos: { x: 0, y: 0, z: 0 }
+		},
+		{
+			spawn_id: 1,
+			tag: 'weapons\\sniper rifle\\sniper rifle',
+			interval_ticks: 3600,
+			gametype_mask: 0,
+			pos: { x: 40, y: 22, z: 5 }
+		},
+		{
+			spawn_id: 2,
+			tag: 'powerups\\over shield\\over shield',
+			interval_ticks: 5400,
+			gametype_mask: 0,
+			pos: { x: -40, y: -22, z: 5 }
+		},
+		{
+			spawn_id: 3,
+			tag: 'powerups\\active camouflage\\active camouflage',
+			interval_ticks: 5400,
+			gametype_mask: 0,
+			pos: { x: -20, y: -28, z: 2 }
+		},
+		{
+			spawn_id: 4,
+			tag: 'weapons\\plasma rifle\\plasma rifle',
+			interval_ticks: 1800,
+			gametype_mask: 0,
+			pos: { x: 28, y: -12, z: 1 }
+		}
+	];
+}
+
 export function mockObjects(): ObjectsPayload {
-	return { objects: [], projectiles: [] };
+	const veh = (id: number, tag: string, x: number, y: number, owner: number | null) => ({
+		object_id: id,
+		tag,
+		type: 1,
+		flags: 0,
+		pos: { x, y, z: 0 },
+		ang_vel: { x: 0, y: 0, z: 0 },
+		time_existing: 600,
+		owner_unit: owner,
+		owner_object: null,
+		ultimate_parent: id
+	});
+	return {
+		objects: [
+			veh(5001, 'vehicles\\warthog\\warthog', -45, 42, null),
+			veh(5002, 'vehicles\\ghost\\ghost', 48, -44, 5), // occupied
+			veh(5003, 'vehicles\\banshee\\banshee', 60, -36, null),
+			{
+				object_id: 5100,
+				tag: 'weapons\\assault rifle\\assault rifle',
+				type: 2,
+				flags: 0,
+				pos: { x: 12, y: 6, z: 0 },
+				ang_vel: { x: 0, y: 0, z: 0 },
+				time_existing: 120,
+				owner_unit: null,
+				owner_object: null,
+				ultimate_parent: 5100
+			}
+		],
+		projectiles: [
+			{
+				object_id: 6001,
+				tag: 'weapons\\frag grenade\\frag grenade',
+				pos: { x: 6, y: -4, z: 1 },
+				flags: 0,
+				action: 0,
+				detonation_timer: 1.2,
+				distance_traveled: 4
+			}
+		]
+	};
 }
