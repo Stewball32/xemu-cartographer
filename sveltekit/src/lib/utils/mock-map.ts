@@ -21,7 +21,6 @@ import type {
 } from '$lib/utils/visualizer-view';
 import type { BspMesh } from '$lib/utils/game-geometry';
 import { buildFloorplan, type FloorTri } from '$lib/utils/floorplan';
-import { computeFloorBands } from '$lib/utils/floor-bands';
 
 export interface BoundsLike {
 	minX: number;
@@ -225,6 +224,45 @@ function spreadPoints(cands: { x: number; y: number; z: number }[], n: number) {
 	return chosen;
 }
 
+/** 3D squared distance with a Z weight (so vertical separation counts more). */
+function d3(
+	a: { x: number; y: number; z: number },
+	b: { x: number; y: number; z: number },
+	zw: number
+): number {
+	const dx = a.x - b.x;
+	const dy = a.y - b.y;
+	const dz = (a.z - b.z) * zw;
+	return dx * dx + dy * dy + dz * dz;
+}
+
+/** Farthest-point spread in 3D (Z-weighted), seeded from the HIGHEST point so a
+ *  top floor always anchors a squad. Picks spatially + vertically distinct rooms. */
+function spread3D(cands: { x: number; y: number; z: number }[], n: number, zw: number) {
+	if (cands.length === 0) return [];
+	let seedI = 0;
+	for (let i = 1; i < cands.length; i++) if (cands[i].z > cands[seedI].z) seedI = i;
+	const chosen = [cands[seedI]];
+	while (chosen.length < Math.min(n, cands.length)) {
+		let bestI = -1;
+		let bestD = -1;
+		for (let i = 0; i < cands.length; i++) {
+			let nearest = Infinity;
+			for (const c of chosen) {
+				const d = d3(cands[i], c, zw);
+				if (d < nearest) nearest = d;
+			}
+			if (nearest > bestD) {
+				bestD = nearest;
+				bestI = i;
+			}
+		}
+		if (bestI < 0) break;
+		chosen.push(cands[bestI]);
+	}
+	return chosen;
+}
+
 const STAGED_NAMES = [
 	'Stewball',
 	'gravemind',
@@ -244,48 +282,52 @@ const STAGED_NAMES = [
  * markers + camera-occlusion). Floors + bands come from the same extracted mesh
  * the visualizer renders, so every body sits on geometry by construction.
  *
- * Distribution: one player per floor band, lowest→highest (guarantees every band
- * is populated), then the remaining players cluster into the lowest band's main
- * room. Teams alternate so each floor mixes red/blue.
+ * Distribution: 2–3 squads, each clustered into ONE room on a DIFFERENT floor
+ * band (low / mid / high). Clustering keeps the occupancy reveal SELECTIVE — only
+ * those 2–3 rooms dim, the rest of the interior stays solid + colored — while the
+ * different floors still exercise elevation + through-wall. Teams alternate.
  */
 export function mockStagedModel(mesh: BspMesh, scenario: string, count = 8): VizModel {
 	const { floors } = buildFloorplan(mesh);
-	const bands = computeFloorBands(
-		floors.map((f) => f.z),
-		5
-	);
 
-	// Group floor triangles by band, keep each as a candidate standing point.
-	const byBand = new Map<number, { x: number; y: number; z: number }[]>();
-	for (const f of floors) {
-		const c = {
-			x: (f.pts[0].x + f.pts[1].x + f.pts[2].x) / 3,
-			y: (f.pts[0].y + f.pts[1].y + f.pts[2].y) / 3,
-			z: f.z
-		};
-		const b = bands.bandForZ(f.z);
-		const arr = byBand.get(b);
-		if (arr) arr.push(c);
-		else byBand.set(b, [c]);
-	}
-	const populatedBands = [...byBand.keys()].sort((a, b) => a - b);
-
-	// Build a target list: one slot per populated band (low→high), then pad the
-	// rest into the lowest band as a clustered room.
+	// One candidate standing point per floor triangle.
 	type Target = { x: number; y: number; z: number };
+	const cands: Target[] = floors.map((f) => ({
+		x: (f.pts[0].x + f.pts[1].x + f.pts[2].x) / 3,
+		y: (f.pts[0].y + f.pts[1].y + f.pts[2].y) / 3,
+		z: f.z
+	}));
+
+	const spanX = mesh.bounds.maxX - mesh.bounds.minX;
+	const spanY = mesh.bounds.maxY - mesh.bounds.minY;
+	const spanZ = mesh.bounds.maxZ - mesh.bounds.minZ;
+	const zw = spanZ > 1e-3 ? Math.max(spanX, spanY) / spanZ : 1; // normalise Z into XY scale
+	// Gather radius for a squad's room + a same-floor Z tolerance.
+	const roomR = Math.max(2, Math.max(spanX, spanY) * 0.16);
+	const zTol = Math.max(1, spanZ * 0.18);
+
+	// Choose up to 3 squad anchors that are spatially + vertically distinct, then
+	// build one tight squad per anchor (members spaced within the same room/floor).
+	const nSquads = Math.min(3, Math.max(1, cands.length));
+	const anchors = spread3D(cands, nSquads, zw);
+
 	const targets: Target[] = [];
-	for (const b of populatedBands) {
-		if (targets.length >= count) break;
-		const cands = byBand.get(b)!;
-		const pt = spreadPoints(cands, 1)[0];
-		if (pt) targets.push(pt);
-	}
-	if (populatedBands.length > 0) {
-		const lowest = byBand.get(populatedBands[0])!;
-		const cluster = spreadPoints(lowest, Math.max(1, count - targets.length) + 1).slice(1);
-		for (const pt of cluster) {
-			if (targets.length >= count) break;
-			targets.push(pt);
+	if (anchors.length > 0) {
+		const baseN = Math.floor(count / anchors.length);
+		const rem = count - baseN * anchors.length;
+		for (let ci = 0; ci < anchors.length; ci++) {
+			const n = baseN + (ci < rem ? 1 : 0);
+			const a = anchors[ci];
+			// Candidates in this anchor's room (near in XY, on the same floor).
+			let pool = cands.filter((c) => d2(c, a) <= roomR * roomR && Math.abs(c.z - a.z) <= zTol);
+			if (pool.length < n) {
+				pool = [...cands].sort((p, q) => d3(p, a, zw) - d3(q, a, zw)).slice(0, Math.max(n, 1));
+			}
+			const squad = spreadPoints(pool, n); // space members within the room
+			for (const pt of squad) {
+				if (targets.length >= count) break;
+				targets.push(pt);
+			}
 		}
 	}
 	// Final fallback: if a sparse mesh gave too few floor points, jitter around

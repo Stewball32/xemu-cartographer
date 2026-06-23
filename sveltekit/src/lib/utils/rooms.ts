@@ -93,49 +93,63 @@ function seed(cs: Centroid[], k: number): Centroid[] {
  * Z (lowest floor first), each with a tight AABB + its triangle ordinals. Empty
  * meshes / k<=1 yield a single room covering everything.
  */
-export function buildRooms(mesh: Pick<BspMesh, 'positions' | 'indices'>, k: number): Room[] {
+export function buildRooms(
+	mesh: Pick<BspMesh, 'positions' | 'indices'>,
+	k: number,
+	includeTris?: number[]
+): Room[] {
 	const cs = triCentroids(mesh);
 	const triCount = cs.length;
 	if (triCount === 0) return [];
-	const kk = Math.max(1, Math.min(k, triCount));
 
-	const centroids = seed(cs, kk);
-	const assign = new Array(triCount).fill(0);
+	// Cluster only `includeTris` when given (the interior set, after the exterior
+	// shell is culled), else every triangle. `work[j]` is the real triangle ordinal.
+	const work =
+		includeTris && includeTris.length > 0
+			? includeTris.filter((t) => t >= 0 && t < triCount)
+			: Array.from({ length: triCount }, (_, i) => i);
+	const n = work.length;
+	if (n === 0) return [];
+	const pts = work.map((t) => cs[t]);
+	const kk = Math.max(1, Math.min(k, n));
+
+	const centroids = seed(pts, kk);
+	const assign = new Array(n).fill(0);
 
 	for (let iter = 0; iter < 30; iter++) {
 		let moved = false;
-		for (let i = 0; i < triCount; i++) {
+		for (let j = 0; j < n; j++) {
 			let best = 0;
 			let bestD = Infinity;
 			for (let c = 0; c < kk; c++) {
-				const dx = cs[i].x - centroids[c].x;
-				const dy = cs[i].y - centroids[c].y;
-				const dz = (cs[i].z - centroids[c].z) * Z_WEIGHT;
+				const dx = pts[j].x - centroids[c].x;
+				const dy = pts[j].y - centroids[c].y;
+				const dz = (pts[j].z - centroids[c].z) * Z_WEIGHT;
 				const d = dx * dx + dy * dy + dz * dz;
 				if (d < bestD) {
 					bestD = d;
 					best = c;
 				}
 			}
-			if (assign[i] !== best) {
-				assign[i] = best;
+			if (assign[j] !== best) {
+				assign[j] = best;
 				moved = true;
 			}
 		}
 		const sx = new Array(kk).fill(0);
 		const sy = new Array(kk).fill(0);
 		const sz = new Array(kk).fill(0);
-		const n = new Array(kk).fill(0);
-		for (let i = 0; i < triCount; i++) {
-			const c = assign[i];
-			sx[c] += cs[i].x;
-			sy[c] += cs[i].y;
-			sz[c] += cs[i].z;
-			n[c] += 1;
+		const cnt = new Array(kk).fill(0);
+		for (let j = 0; j < n; j++) {
+			const c = assign[j];
+			sx[c] += pts[j].x;
+			sy[c] += pts[j].y;
+			sz[c] += pts[j].z;
+			cnt[c] += 1;
 		}
 		for (let c = 0; c < kk; c++) {
-			if (n[c] > 0) {
-				centroids[c] = { x: sx[c] / n[c], y: sy[c] / n[c], z: sz[c] / n[c] };
+			if (cnt[c] > 0) {
+				centroids[c] = { x: sx[c] / cnt[c], y: sy[c] / cnt[c], z: sz[c] / cnt[c] };
 			}
 		}
 		if (!moved) break;
@@ -152,11 +166,12 @@ export function buildRooms(mesh: Pick<BspMesh, 'positions' | 'indices'>, k: numb
 			maxY = -Infinity,
 			minZ = Infinity,
 			maxZ = -Infinity;
-		for (let i = 0; i < triCount; i++) {
-			if (assign[i] !== c) continue;
-			tris.push(i);
+		for (let j = 0; j < n; j++) {
+			if (assign[j] !== c) continue;
+			const t = work[j];
+			tris.push(t);
 			for (let v = 0; v < 3; v++) {
-				const o = idx[i * 3 + v] * 3;
+				const o = idx[t * 3 + v] * 3;
 				if (o + 2 >= pos.length) continue;
 				const x = pos[o],
 					y = pos[o + 1],
@@ -226,26 +241,89 @@ export function roomForPoint(rooms: Room[], p: Vec3, slack = 1.5): number {
 }
 
 /**
- * Outer-shell classification: rooms whose AABB hugs the world bounds on any axis
- * (within `margin` fraction of the span) form the map's enclosing shell. Toggling
- * these transparent is what opens up a fixed overview cam without touching the
- * interior rooms. Returns a boolean per room index.
+ * Per-triangle EXTERIOR-SHELL classification — the outer boundary that blocks the
+ * view from outside, culled so a spectator sees straight into the interior. A
+ * triangle is shell when it's either:
+ *   - a CEILING / roof underside (normal points down) — "cut the roof", OR
+ *   - a near-vertical WALL whose centroid hugs the XY perimeter — the outer walls.
+ * FLOORS are never shell (you stand on them; they don't block side views), and
+ * interior walls (away from the perimeter) stay so the rooms keep their structure.
+ *
+ * This is position-based on purpose: in an enclosed map the engine only renders
+ * the inward-facing side of every wall, so exterior and interior walls share a
+ * normal direction — what distinguishes the shell is sitting at the boundary.
+ * Returns a boolean per triangle ordinal (index/3).
  */
-export function classifyOuterShell(rooms: Room[], bounds: RoomAABB, margin = 0.12): boolean[] {
-	const spanX = Math.max(1e-6, bounds.maxX - bounds.minX);
-	const spanY = Math.max(1e-6, bounds.maxY - bounds.minY);
-	const spanZ = Math.max(1e-6, bounds.maxZ - bounds.minZ);
-	const mx = spanX * margin;
-	const my = spanY * margin;
-	const mz = spanZ * margin;
-	return rooms.map((r) => {
-		const a = r.aabb;
-		return (
-			a.minX <= bounds.minX + mx ||
-			a.maxX >= bounds.maxX - mx ||
-			a.minY <= bounds.minY + my ||
-			a.maxY >= bounds.maxY - my ||
-			a.maxZ >= bounds.maxZ - mz
-		);
-	});
+export function classifyShellTriangles(
+	mesh: Pick<BspMesh, 'positions' | 'indices' | 'bounds'>,
+	opts: { margin?: number; verticalT?: number; enclosedWallFrac?: number } = {}
+): boolean[] {
+	const margin = opts.margin ?? 0.18;
+	const verticalT = opts.verticalT ?? 0.4;
+	// Enclosed when the map is mostly walls (a boxed interior). Wall-ness uses the
+	// ABSOLUTE vertical normal component, so it's independent of the BSP's (often
+	// inconsistent) triangle winding — unlike the floor/ceiling sign. Real splits:
+	// Chill Out 0.60, Prisoner 0.56 (enclosed) vs Blood Gulch 0.30 (open terrain).
+	const enclosedWallFrac = opts.enclosedWallFrac ?? 0.45;
+	const { positions: pos, indices: idx, bounds } = mesh;
+	const mx = Math.max(1e-6, bounds.maxX - bounds.minX) * margin;
+	const my = Math.max(1e-6, bounds.maxY - bounds.minY) * margin;
+
+	// unit normal vertical component for a triangle (0 if degenerate / OOB).
+	const unzOf = (i: number): number => {
+		const a = idx[i] * 3;
+		const b = idx[i + 1] * 3;
+		const c = idx[i + 2] * 3;
+		if (a + 2 >= pos.length || b + 2 >= pos.length || c + 2 >= pos.length) return 0;
+		const ux = pos[b] - pos[a],
+			uy = pos[b + 1] - pos[a + 1],
+			uz = pos[b + 2] - pos[a + 2];
+		const vx = pos[c] - pos[a],
+			vy = pos[c + 1] - pos[a + 1],
+			vz = pos[c + 2] - pos[a + 2];
+		const nz = ux * vy - uy * vx;
+		const len = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, nz) || 1;
+		return nz / len;
+	};
+
+	// First pass: wall fraction → enclosed? OPEN maps (e.g. Blood Gulch) keep ALL
+	// their geometry — their boundary IS the playable map, and the winding-flipped
+	// normals would otherwise mass-cull the terrain as bogus "ceilings".
+	let wallish = 0;
+	let total = 0;
+	for (let i = 0; i + 2 < idx.length; i += 3) {
+		total++;
+		if (Math.abs(unzOf(i)) < verticalT) wallish++;
+	}
+	const enclosed = total > 0 && wallish / total >= enclosedWallFrac;
+	if (!enclosed) return new Array(Math.floor(idx.length / 3)).fill(false);
+
+	const out: boolean[] = [];
+	for (let i = 0; i + 2 < idx.length; i += 3) {
+		const a = idx[i] * 3;
+		const b = idx[i + 1] * 3;
+		const c = idx[i + 2] * 3;
+		if (a + 2 >= pos.length || b + 2 >= pos.length || c + 2 >= pos.length) {
+			out.push(false);
+			continue;
+		}
+		const unz = unzOf(i);
+		// Ceiling / roof underside → cull (cut the roof). Reliable enough on these
+		// enclosed indoor maps (consistent winding); open maps already bailed above.
+		if (unz <= -verticalT) {
+			out.push(true);
+			continue;
+		}
+		// Near-vertical wall hugging the XY perimeter → exterior wall → cull.
+		const isWall = Math.abs(unz) < verticalT;
+		const cx = (pos[a] + pos[b] + pos[c]) / 3;
+		const cy = (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3;
+		const nearPerim =
+			cx <= bounds.minX + mx ||
+			cx >= bounds.maxX - mx ||
+			cy <= bounds.minY + my ||
+			cy >= bounds.maxY - my;
+		out.push(isWall && nearPerim);
+	}
+	return out;
 }

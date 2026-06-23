@@ -5,7 +5,7 @@
 	import { teamMeta } from '$lib/utils/overlay-view';
 	import { loadBspMesh, meshKeyForScenario, type BspMesh } from '$lib/utils/game-geometry';
 	import { mockStagedModel } from '$lib/utils/mock-map';
-	import { buildRooms } from '$lib/utils/rooms';
+	import { buildRooms, classifyShellTriangles } from '$lib/utils/rooms';
 	import Scene3D from '$lib/components/visualizer/Scene3D.svelte';
 	import type { PageData } from './$types';
 
@@ -38,14 +38,20 @@
 			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
 	);
 
-	// Room ("BSP cluster") partition → independently-fadeable level sub-meshes.
-	// Cluster count scales with mesh complexity so small indoor maps don't
-	// over-fragment while Blood Gulch still splits into readable chunks.
+	// Exterior shell (ceilings + perimeter walls) → culled so the interior is
+	// visible. The remaining INTERIOR triangles are clustered into rooms (BSP-
+	// cluster approximation) for the occupancy/occlusion fades. Cluster count
+	// scales with mesh complexity so small indoor maps don't over-fragment.
+	const shell = $derived(mesh ? classifyShellTriangles(mesh) : null);
+	const shellTris = $derived(
+		mesh && shell ? shell.map((s, i) => (s ? i : -1)).filter((i) => i >= 0) : null
+	);
 	const rooms = $derived.by(() => {
 		if (!mesh) return null;
-		const triCount = mesh.indices.length / 3;
-		const k = Math.max(6, Math.min(10, Math.round(triCount / 500)));
-		return buildRooms(mesh, k);
+		const interior = shell ? shell.map((s, i) => (s ? -1 : i)).filter((i) => i >= 0) : undefined;
+		const triCount = interior ? interior.length : mesh.indices.length / 3;
+		const k = Math.max(6, Math.min(10, Math.round(triCount / 400)));
+		return buildRooms(mesh, k, interior);
 	});
 
 	let showSpawns = $state(untrack(() => data.showSpawns));
@@ -54,11 +60,13 @@
 	let showProjectiles = $state(true);
 	let showNames = $state(true);
 
-	// Readability toggles.
+	// Readability toggles. Occupancy reveal + through-wall on by default; occlusion
+	// fade is an opt-in (the shell cull already opens the interior, so leaving it
+	// off keeps the interior fully solid + colored — only occupied rooms dim).
 	let occupancyReveal = $state(true);
-	let occlusionFade = $state(true);
+	let occlusionFade = $state(false);
 	let throughWall = $state(true);
-	let outerShellTransparent = $state(false);
+	let showOuterShell = $state(false);
 
 	// Only the exported methods we call are typed here; bind:this fills it with the
 	// full Scene3D instance (structurally assignable).
@@ -162,10 +170,11 @@
 				{model}
 				{mesh}
 				{rooms}
+				{shellTris}
 				{occupancyReveal}
 				{occlusionFade}
 				{throughWall}
-				{outerShellTransparent}
+				{showOuterShell}
 				{showItems}
 				{showVehicles}
 				{showProjectiles}
@@ -174,17 +183,17 @@
 			/>
 			<div class="hud">
 				<div class="toggles readability">
-					<label title="Rooms fade when a player is inside them">
+					<label title="Interior rooms fade when a player is inside them">
 						<input type="checkbox" bind:checked={occupancyReveal} /> Occupancy reveal
 					</label>
-					<label title="Geometry between the camera and a player fades">
+					<label title="Interior geometry between the camera and a player fades">
 						<input type="checkbox" bind:checked={occlusionFade} /> Occlusion fade
 					</label>
 					<label title="Markers draw on top; dimmed when behind a wall">
 						<input type="checkbox" bind:checked={throughWall} /> Through-wall markers
 					</label>
-					<label title="Fade the map's outer shell for a fixed overview cam">
-						<input type="checkbox" bind:checked={outerShellTransparent} /> Outer shell
+					<label title="Bring the culled exterior shell back (faint, for context)">
+						<input type="checkbox" bind:checked={showOuterShell} /> Show outer shell
 					</label>
 					<button class="recenter" onclick={() => sceneRef?.overview()}>Overview cam</button>
 				</div>

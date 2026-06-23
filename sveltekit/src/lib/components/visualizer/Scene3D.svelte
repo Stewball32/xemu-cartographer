@@ -2,15 +2,18 @@
 	// Three.js render of a live VizModel inside the real structure-BSP mesh, with
 	// the spectator-readability set layered on top of the base scene:
 	//
-	//   - OCCUPANCY REVEAL: the level is split into rooms (BSP-cluster approximation
-	//     from $lib/utils/rooms); a room fades when a player stands inside it, so a
-	//     spectator sees into the occupied room instead of an opaque shell.
-	//   - CAMERA-OCCLUSION FADE: geometry between the camera and any player fades
-	//     (per-frame raycast camera→player), so walls never hide the action.
+	//   - EXTERIOR-SHELL CULL: the map's outer boundary (ceilings/roofs + perimeter
+	//     walls — `shellTris`) is removed entirely so you see straight into the
+	//     interior. The interior rooms stay SOLID + in their real texture-sampled
+	//     material colours; only the selective fades below touch them.
+	//   - OCCUPANCY REVEAL: interior rooms (BSP-cluster approximation from
+	//     $lib/utils/rooms); a room fades when a player stands inside it.
+	//   - CAMERA-OCCLUSION FADE: an interior room fades when it sits between the
+	//     camera and a player (per-frame raycast), so interior walls never hide them.
 	//   - THROUGH-WALL MARKERS: player markers draw always-on-top (depthTest off);
 	//     a marker dims when a wall is between it and the camera, full in the open.
-	//   - OUTER-SHELL TRANSPARENCY: an optional toggle fades the map's enclosing
-	//     shell for a fixed overview cam.
+	//   - SHOW OUTER SHELL: optional toggle to bring the culled shell back (faint,
+	//     for context).
 	//
 	// All data shaping + the coordinate remap + the clustering live in the pure
 	// utils; this component does only the GPU wiring + the per-frame raycasts.
@@ -21,7 +24,7 @@
 	import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 	import type { VizModel } from '$lib/utils/visualizer-view';
 	import type { BspMesh } from '$lib/utils/game-geometry';
-	import { roomForPoint, classifyOuterShell, type Room } from '$lib/utils/rooms';
+	import { roomForPoint, type Room } from '$lib/utils/rooms';
 	import {
 		haloToThree,
 		facingAngle,
@@ -33,10 +36,11 @@
 		model,
 		mesh = null,
 		rooms = null,
+		shellTris = null,
 		occupancyReveal = true,
 		occlusionFade = true,
 		throughWall = true,
-		outerShellTransparent = false,
+		showOuterShell = false,
 		showItems = true,
 		showVehicles = true,
 		showProjectiles = true,
@@ -45,12 +49,15 @@
 	}: {
 		model: VizModel;
 		mesh?: BspMesh | null;
-		/** Precomputed room clusters → independently-fadeable level sub-meshes. */
+		/** Precomputed INTERIOR room clusters → independently-fadeable sub-meshes. */
 		rooms?: Room[] | null;
+		/** Triangle ordinals forming the exterior shell (culled by default). */
+		shellTris?: number[] | null;
 		occupancyReveal?: boolean;
 		occlusionFade?: boolean;
 		throughWall?: boolean;
-		outerShellTransparent?: boolean;
+		/** Bring the culled exterior shell back (faint, for context). */
+		showOuterShell?: boolean;
 		showItems?: boolean;
 		showVehicles?: boolean;
 		showProjectiles?: boolean;
@@ -86,7 +93,9 @@
 		roomIndex: number;
 	}
 	let roomMeshes: RoomMesh[] = [];
-	let shellFlags: boolean[] = [];
+	// The culled exterior shell as one mesh, hidden by default (toggle to show).
+	let shellMesh: THREE.Mesh | undefined;
+	let shellMaterial: THREE.MeshStandardMaterial | undefined;
 
 	// Occupancy/occlusion state, recomputed off the model tick + camera moves.
 	const occupiedRooms = new Set<number>();
@@ -94,10 +103,13 @@
 	const playerOccluded = new Map<number, boolean>();
 	let occlusionDirty = true;
 
-	const SOLID_OP = 0.95;
-	const OCCUPIED_OP = 0.16;
-	const OCCLUDE_OP = 0.28;
-	const SHELL_OP = 0.08;
+	// Interior is SOLID + colored by default. The selective fades only DIM a room
+	// (keep its colour) rather than ghost it to gray — so the interior reads in its
+	// real material colours even where a player is revealed.
+	const SOLID_OP = 1.0;
+	const OCCUPIED_OP = 0.5;
+	const OCCLUDE_OP = 0.45;
+	const SHELL_SHOWN_OP = 0.1;
 
 	interface PlayerNode {
 		group: THREE.Group;
@@ -304,21 +316,23 @@
 		disposeLevelChildren();
 		levelGroup.clear();
 		roomMeshes = [];
-		shellFlags = [];
+		shellMesh = undefined;
+		shellMaterial = undefined;
 
 		if (mesh && rooms && rooms.length > 0) {
-			// Per-room cluster meshes — each independently fadeable.
 			const hasColor = !!mesh.colors && mesh.colors.length === mesh.positions.length;
+			// Interior room cluster meshes — SOLID + real material colours by default,
+			// each independently fadeable for occupancy/occlusion.
 			for (const room of rooms) {
 				const g = roomGeometry(mesh, room.triIndices);
 				const material = new THREE.MeshStandardMaterial({
 					color: hasColor ? '#ffffff' : '#5a6472',
 					vertexColors: hasColor,
-					roughness: 0.95,
+					roughness: 0.92,
 					metalness: 0,
 					flatShading: true,
 					side: THREE.DoubleSide,
-					transparent: true,
+					transparent: false,
 					opacity: SOLID_OP
 				});
 				const m = new THREE.Mesh(g, material);
@@ -326,36 +340,25 @@
 				levelGroup.add(m);
 				roomMeshes.push({ mesh: m, material, roomIndex: room.index });
 			}
-			shellFlags = classifyOuterShell(rooms, {
-				minX: mesh.bounds.minX,
-				maxX: mesh.bounds.maxX,
-				minY: mesh.bounds.minY,
-				maxY: mesh.bounds.maxY,
-				minZ: mesh.bounds.minZ,
-				maxZ: mesh.bounds.maxZ
-			});
-			// A constant faint wireframe of the whole level so ghosted (faded) rooms
-			// still read as structure rather than vanishing — the "x-ray" look.
-			const wireSrc = new Float32Array(mesh.positions.length);
-			for (let i = 0; i + 2 < mesh.positions.length; i += 3) {
-				const t = haloToThree({
-					x: mesh.positions[i],
-					y: mesh.positions[i + 1],
-					z: mesh.positions[i + 2]
+			// Exterior shell as ONE mesh — culled (hidden) by default; the toggle
+			// brings it back faint for context. Built in the same material colours.
+			if (shellTris && shellTris.length > 0) {
+				const sg = roomGeometry(mesh, shellTris);
+				shellMaterial = new THREE.MeshStandardMaterial({
+					color: hasColor ? '#ffffff' : '#5a6472',
+					vertexColors: hasColor,
+					roughness: 0.95,
+					metalness: 0,
+					flatShading: true,
+					side: THREE.DoubleSide,
+					transparent: true,
+					opacity: SHELL_SHOWN_OP,
+					depthWrite: false
 				});
-				wireSrc[i] = t[0];
-				wireSrc[i + 1] = t[1];
-				wireSrc[i + 2] = t[2];
+				shellMesh = new THREE.Mesh(sg, shellMaterial);
+				shellMesh.visible = showOuterShell;
+				levelGroup.add(shellMesh);
 			}
-			const wireGeom = new THREE.BufferGeometry();
-			wireGeom.setAttribute('position', new THREE.BufferAttribute(wireSrc, 3));
-			wireGeom.setIndex(mesh.indices.slice());
-			const wire = new THREE.LineSegments(
-				new THREE.WireframeGeometry(wireGeom),
-				new THREE.LineBasicMaterial({ color: 0x5a6b85, transparent: true, opacity: 0.14 })
-			);
-			wireGeom.dispose();
-			levelGroup.add(wire);
 		} else if (mesh && mesh.positions.length >= 9 && mesh.indices.length >= 3) {
 			// Single merged surface (mesh present but no room clustering).
 			const src = mesh.positions;
@@ -474,10 +477,12 @@
 			raycaster.near = 0.5;
 			raycaster.far = Math.max(0.6, dist - 1.0); // stop short of the player's own floor
 			const hits = raycaster.intersectObjects(meshes, false);
-			let blocked = false;
-			for (const h of hits) {
-				blocked = true;
-				const ri = (h.object.userData as { roomIndex?: number }).roomIndex;
+			const blocked = hits.length > 0;
+			// Selective: fade ONLY the nearest occluder room (the wall directly in
+			// front of the player), not every room the ray passes through — keeps the
+			// rest of the interior solid + colored.
+			if (blocked) {
+				const ri = (hits[0].object.userData as { roomIndex?: number }).roomIndex;
 				if (typeof ri === 'number') occludingRooms.add(ri);
 			}
 			playerOccluded.set(idx, blocked);
@@ -486,14 +491,17 @@
 
 	function applyRoomOpacities() {
 		for (const rm of roomMeshes) {
+			// Interior stays SOLID unless this room is occupied or is occluding the
+			// camera→player line — those are the only selective fades.
 			let target = SOLID_OP;
 			if (occupancyReveal && occupiedRooms.has(rm.roomIndex))
 				target = Math.min(target, OCCUPIED_OP);
 			if (occlusionFade && occludingRooms.has(rm.roomIndex)) target = Math.min(target, OCCLUDE_OP);
-			if (outerShellTransparent && shellFlags[rm.roomIndex]) target = Math.min(target, SHELL_OP);
 			const cur = rm.material.opacity;
 			const next = cur + (target - cur) * 0.18;
 			rm.material.opacity = Math.abs(next - target) < 0.005 ? target : next;
+			// Opaque (vivid colour) when solid; transparent only while faded.
+			rm.material.transparent = rm.material.opacity < 0.99;
 			rm.material.depthWrite = rm.material.opacity > 0.85;
 		}
 	}
@@ -691,8 +699,12 @@
 		void occupancyReveal;
 		void occlusionFade;
 		void throughWall;
-		void outerShellTransparent;
 		occlusionDirty = true;
+	});
+
+	// Show/hide the culled exterior shell on toggle (no rebuild needed).
+	$effect(() => {
+		if (shellMesh) shellMesh.visible = showOuterShell;
 	});
 </script>
 
