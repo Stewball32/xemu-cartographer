@@ -4,12 +4,10 @@
 	import { buildVizModel } from '$lib/utils/visualizer-view';
 	import { teamMeta } from '$lib/utils/overlay-view';
 	import { loadIconSet, emptyIconSet, type IconSet } from '$lib/utils/game-icons';
-	import {
-		loadTopProjection,
-		meshKeyForScenario,
-		type TopProjection
-	} from '$lib/utils/game-geometry';
-	import { mockMapModel } from '$lib/utils/mock-map';
+	import { loadBspMesh, meshKeyForScenario, type BspMesh } from '$lib/utils/game-geometry';
+	import { buildFloorplan } from '$lib/utils/floorplan';
+	import { computeFloorBands, bandColor } from '$lib/utils/floor-bands';
+	import { mockStagedModel } from '$lib/utils/mock-map';
 	import TopDownMap from '$lib/components/visualizer/TopDownMap.svelte';
 	import type { PageData } from './$types';
 
@@ -19,70 +17,95 @@
 	const GAME = 'haloce';
 
 	// Per-map demo mode (?map=<key>): no live feed/token — render that map's
-	// cached geometry populated with mock players placed within its real bounds.
+	// cached geometry populated with mock players STAGED on different floors.
 	const demoMap = untrack(() => data.map);
 	const isDemo = demoMap.length > 0;
 
 	const feed = createOverlayFeed();
 
-	// Real Halo HUD icons for the map markers, decoded from the user's game files
-	// into the served cache. Loads best-effort: if the cache was never
-	// regenerated, this stays empty and every marker uses its generic shape.
+	// Real Halo HUD icons for the map markers, decoded from the user's game files.
 	let iconSet = $state<IconSet>(emptyIconSet(GAME));
 
-	// BSP top-down projection drawn as the map background, so dots sit on the
-	// actual layout instead of empty space. Best-effort: null → blank grid.
-	let geometry = $state<TopProjection | null>(null);
-	let loadedGeoKey = '';
+	// Full structure-BSP mesh (positions/indices) → floorplan + elevation bands.
+	let mesh = $state<BspMesh | null>(null);
+	let loadedKey = '';
 
-	// Live/mock: model off the WS feed. Demo: synthesize a 4v4 inside the loaded
-	// map's exact bounds (waits for the projection so alignment is exact).
+	// Live/mock: model off the WS feed. Demo: stage a 4v4 across the loaded map's
+	// real floors (waits for the mesh so the staging sits on real geometry).
 	const model = $derived(
 		isDemo
-			? geometry
-				? mockMapModel(geometry.bounds, demoMap)
+			? mesh
+				? mockStagedModel(mesh, demoMap)
 				: buildVizModel(null, null, null, null)
 			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
 	);
 
-	// Layer toggles (debug controls). The spawn layer seeds from the URL once
-	// (untrack: a deliberate initial snapshot, not a live binding to the prop).
-	let showGeometry = $state(true);
+	// Floorplan + elevation bands derived from the mesh (pure; recomputed only when
+	// the mesh changes).
+	const floorplan = $derived(mesh ? buildFloorplan(mesh) : null);
+	const bands = $derived(floorplan ? computeFloorBands(floorplan.floorZs, 5) : null);
+
+	// Layer toggles (debug controls).
+	let showFloorplan = $state(true);
 	let showSpawns = $state(untrack(() => data.showSpawns));
 	let showItems = $state(true);
 	let showVehicles = $state(true);
 	let showProjectiles = $state(true);
 	let showNames = $state(true);
 
+	// Readability controls.
+	let shadeMode = $state<'absolute' | 'relative'>('absolute');
+	let followIndex = $state<number | null>(null);
+	let hiddenBands = $state<number[]>([]);
+
+	const activeBands = $derived(
+		bands ? bands.bands.map((b) => b.index).filter((i) => !hiddenBands.includes(i)) : null
+	);
+	const followZ = $derived(
+		shadeMode === 'relative' && followIndex != null
+			? (model.players.find((pl) => pl.index === followIndex)?.pos.z ?? null)
+			: null
+	);
+
+	function toggleBand(i: number) {
+		hiddenBands = hiddenBands.includes(i)
+			? hiddenBands.filter((x) => x !== i)
+			: [...hiddenBands, i];
+	}
+	function showAllBands() {
+		hiddenBands = [];
+	}
+	function setShadeMode(mode: 'absolute' | 'relative') {
+		shadeMode = mode;
+		if (mode === 'relative' && followIndex == null) {
+			const local = model.players.find((pl) => pl.isLocal) ?? model.players[0];
+			followIndex = local ? local.index : null;
+		}
+	}
+
 	onMount(() => {
-		// Demo mode drives everything from the cached geometry — no feed/token.
 		if (!isDemo)
 			feed.start({
 				instance: data.instance,
 				token: data.token,
 				mock: data.mock,
-				// game = roster/identity, tick = positions + health/shields, scenario =
-				// map + spawns (stable bounds), objects = vehicles / dropped items /
-				// projectiles (opt-in; absent → those layers stay empty placeholders).
 				classes: ['game', 'tick', 'scenario', 'objects']
 			});
 		loadIconSet(GAME).then((s) => (iconSet = s));
 	});
 	onDestroy(() => feed.stop());
 
-	// Load the map background when the map first becomes known (and again if it
-	// changes). Source is the demo map or the live feed's scenario. Keyed on the
-	// slugified name so a re-emit doesn't reload.
+	// Load the level mesh when the map first becomes known (and again if it
+	// changes). Source is the demo map or the live feed's scenario.
 	$effect(() => {
 		const raw = isDemo ? demoMap : (feed.scenario?.map ?? '');
 		const key = meshKeyForScenario(raw);
-		if (!key || key === loadedGeoKey) return;
-		loadedGeoKey = key;
-		loadTopProjection(GAME, raw).then((g) => (geometry = g));
+		if (!key || key === loadedKey) return;
+		loadedKey = key;
+		loadBspMesh(GAME, raw).then((m) => (mesh = m));
 	});
 
 	const teamLegend = $derived.by(() => {
-		// Group placed players by team (plain object — transient, not reactive state).
 		const acc: Record<number, { team: number; name: string; color: string; count: number }> = {};
 		for (const pl of model.players) {
 			const e = acc[pl.team];
@@ -93,19 +116,11 @@
 		return Object.values(acc).sort((a, b) => a.team - b.team);
 	});
 
-	const weaponItems = $derived(
-		model.items.filter((i) => i.kind === 'weapon' && i.heldBy == null).length
-	);
-	const powerupItems = $derived(
-		model.items.filter((i) => i.kind === 'powerup' && i.heldBy == null).length
-	);
 	const phaseTitle = $derived(model.phase.charAt(0).toUpperCase() + model.phase.slice(1));
 </script>
 
 <svelte:head>
 	<title>Visualizer · {data.instance}</title>
-	<!-- Standalone debug/spectator surface: own solid background, no theme body
-	     decorations bleeding through, no page scroll. -->
 	<style>
 		html,
 		body {
@@ -128,6 +143,7 @@
 			<span class="map">{model.mapName || '—'}</span>
 			{#if model.gametype}<span class="gametype">{model.gametype}</span>{/if}
 			<span class="phase phase-{model.phase}">{phaseTitle}</span>
+			<span class="tag2d">2D FLOORPLAN</span>
 		</div>
 		<div class="meta">
 			<span class="stat" title="Players placed on the map / named in the roster">
@@ -154,8 +170,12 @@
 				<TopDownMap
 					{model}
 					icons={iconSet}
-					{geometry}
-					{showGeometry}
+					{floorplan}
+					{bands}
+					{showFloorplan}
+					{shadeMode}
+					{followZ}
+					{activeBands}
 					{showSpawns}
 					{showItems}
 					{showVehicles}
@@ -167,7 +187,7 @@
 
 		<aside class="legend">
 			<div class="toggles">
-				<label><input type="checkbox" bind:checked={showGeometry} /> Map</label>
+				<label><input type="checkbox" bind:checked={showFloorplan} /> Floorplan</label>
 				<label><input type="checkbox" bind:checked={showNames} /> Names</label>
 				<label><input type="checkbox" bind:checked={showItems} /> Items</label>
 				<label><input type="checkbox" bind:checked={showVehicles} /> Vehicles</label>
@@ -175,12 +195,60 @@
 				<label><input type="checkbox" bind:checked={showSpawns} /> Spawns</label>
 			</div>
 
+			{#if bands}
+				<section class="readability">
+					<h3>Elevation shading</h3>
+					<div class="seg">
+						<button
+							class:active={shadeMode === 'absolute'}
+							onclick={() => setShadeMode('absolute')}
+						>
+							Absolute
+						</button>
+						<button
+							class:active={shadeMode === 'relative'}
+							onclick={() => setShadeMode('relative')}
+						>
+							Relative
+						</button>
+					</div>
+					{#if shadeMode === 'relative'}
+						<label class="follow">
+							Follow
+							<select bind:value={followIndex}>
+								{#each model.players as pl (pl.index)}
+									<option value={pl.index}>{pl.name}</option>
+								{/each}
+							</select>
+						</label>
+					{/if}
+
+					<h3 class="filterhead">
+						Floor filter
+						<button class="small" onclick={showAllBands}>Show all</button>
+					</h3>
+					<ul class="bandlist">
+						{#each [...bands.bands].reverse() as b (b.index)}
+							<li>
+								<label>
+									<input
+										type="checkbox"
+										checked={!hiddenBands.includes(b.index)}
+										onchange={() => toggleBand(b.index)}
+									/>
+									<span class="bswatch" style="--c: {bandColor(b.index, bands.count)}"></span>
+									<span class="brange">{b.minZ.toFixed(1)}–{b.maxZ.toFixed(1)} wu</span>
+								</label>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
 			<section>
 				<h3>Players <span class="muted">{model.placedCount}</span></h3>
-				{#if !model.hasTick}
-					<p class="note">No live tick — players not placed yet.</p>
-				{:else if model.players.length === 0}
-					<p class="note">Roster empty.</p>
+				{#if model.players.length === 0}
+					<p class="note">No players placed yet.</p>
 				{:else}
 					<ul class="keys">
 						{#each teamLegend as t (t.team)}
@@ -190,53 +258,8 @@
 								<span class="muted">{t.count}</span>
 							</li>
 						{/each}
-						<li class="sub"><span class="swatch ring"></span> health / shield rings</li>
+						<li class="sub"><span class="swatch ring"></span> ring = team · fill = floor height</li>
 						<li class="sub"><span class="swatch local"></span> local player</li>
-					</ul>
-				{/if}
-			</section>
-
-			<section>
-				<h3>Items <span class="muted">{weaponItems + powerupItems}</span></h3>
-				<ul class="keys">
-					<li>
-						<span class="swatch diamond" style="--c: #e0a32e"></span> weapon
-						<span class="muted">{weaponItems}</span>
-					</li>
-					<li>
-						<span class="swatch diamond" style="--c: #9b51e0"></span> powerup
-						<span class="muted">{powerupItems}</span>
-					</li>
-					{#if model.respawningItems > 0}
-						<li class="sub">{model.respawningItems} respawning (off-map)</li>
-					{/if}
-				</ul>
-			</section>
-
-			<section>
-				<h3>Vehicles <span class="muted">{model.vehicles.length}</span></h3>
-				{#if !model.hasObjects}
-					<p class="note">Objects class not in feed — vehicles &amp; dropped items unavailable.</p>
-				{:else}
-					<ul class="keys">
-						<li><span class="swatch sq"></span> empty</li>
-						<li><span class="swatch sq filled"></span> occupied</li>
-					</ul>
-				{/if}
-			</section>
-
-			<section>
-				<h3>Flags <span class="muted">{model.flags.length}</span></h3>
-				{#if model.flags.length === 0}
-					<p class="note">None this gametype.</p>
-				{:else}
-					<ul class="keys">
-						{#each model.flags as f, i (i)}
-							<li>
-								<span class="swatch dot" style="--c: {f.color}"></span>
-								{f.label} — {f.status}
-							</li>
-						{/each}
 					</ul>
 				{/if}
 			</section>
@@ -247,7 +270,7 @@
 					<li class:on={model.hasGame}>game</li>
 					<li class:on={model.hasTick}>tick</li>
 					<li class:on={model.hasScenario}>scenario</li>
-					<li class:on={model.hasObjects}>objects</li>
+					<li class:on={!!mesh} title="Real structure-BSP mesh decoded from game files">mesh</li>
 					<li class:on={iconSet.loaded} title="Real Halo HUD icons (decoded from game files)">
 						icons
 					</li>
@@ -314,6 +337,15 @@
 	.phase-ready {
 		background: rgba(224, 163, 46, 0.9);
 		color: #1a1300;
+	}
+	.tag2d {
+		font-size: 0.62rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		padding: 0.1rem 0.4rem;
+		border-radius: 0.25rem;
+		background: rgba(155, 200, 120, 0.18);
+		color: #b6d98a;
 	}
 
 	.meta {
@@ -384,7 +416,7 @@
 	}
 
 	.legend {
-		width: 16rem;
+		width: 17rem;
 		flex-shrink: 0;
 		border-left: 1px solid rgba(255, 255, 255, 0.08);
 		padding: 0.85rem 1rem;
@@ -416,6 +448,85 @@
 		opacity: 0.6;
 		margin: 0 0 0.35rem;
 		font-weight: 700;
+	}
+	.readability .seg {
+		display: inline-flex;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 0.4rem;
+		overflow: hidden;
+		margin-bottom: 0.5rem;
+	}
+	.readability .seg button {
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+		background: transparent;
+		color: #9aa4b2;
+		border: none;
+		padding: 0.2rem 0.7rem;
+	}
+	.readability .seg button.active {
+		background: rgba(92, 200, 255, 0.22);
+		color: #cdecff;
+	}
+	.follow {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		margin-bottom: 0.6rem;
+	}
+	.follow select {
+		font: inherit;
+		font-size: 0.8rem;
+		background: rgba(8, 12, 20, 0.9);
+		color: #e9edf2;
+		border: 1px solid rgba(255, 255, 255, 0.14);
+		border-radius: 0.3rem;
+		padding: 0.1rem 0.3rem;
+	}
+	.filterhead {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.small {
+		font: inherit;
+		font-size: 0.68rem;
+		text-transform: none;
+		letter-spacing: 0;
+		cursor: pointer;
+		background: rgba(255, 255, 255, 0.08);
+		color: #cbd5e1;
+		border: none;
+		border-radius: 0.25rem;
+		padding: 0.05rem 0.4rem;
+		opacity: 1;
+	}
+	.bandlist {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.bandlist label {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		cursor: pointer;
+	}
+	.bswatch {
+		display: inline-block;
+		width: 14px;
+		height: 14px;
+		border-radius: 3px;
+		background: var(--c);
+		flex-shrink: 0;
+	}
+	.brange {
+		font-variant-numeric: tabular-nums;
+		font-size: 0.8rem;
 	}
 	.muted {
 		opacity: 0.5;
@@ -455,19 +566,6 @@
 	.swatch.dot {
 		border-radius: 50%;
 		background: var(--c);
-	}
-	.swatch.diamond {
-		transform: rotate(45deg);
-		background: var(--c);
-		width: 10px;
-		height: 10px;
-	}
-	.swatch.sq {
-		border: 1.5px solid #cbd5e1;
-		border-radius: 2px;
-	}
-	.swatch.sq.filled {
-		background: rgba(203, 213, 225, 0.4);
 	}
 	.swatch.ring {
 		border-radius: 50%;

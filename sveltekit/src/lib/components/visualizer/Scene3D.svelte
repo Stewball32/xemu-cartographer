@@ -1,21 +1,19 @@
 <script lang="ts">
-	// Three.js render of a live VizModel inside the real Blood Gulch structure-BSP
-	// mesh (when the geometry cache is present; otherwise an auto-fit world-bounds
-	// box). All data shaping + the coordinate remap live in the pure utils
-	// ($lib/utils/visualizer-view + $lib/utils/viz3d) — this component does only
-	// the GPU wiring: scene/camera/lights, an orbit camera, the level mesh, and
-	// reconciled markers (team-colored player capsules with a heading arrow + name
-	// label; octahedra for items, boxes for vehicles, spheres for projectiles,
-	// discs for spawns, flags as bright octahedra). Everything is created once in
-	// onMount; effects sync the cheap per-frame transforms as the feed ticks, and
-	// the (expensive) level rebuild is gated on a key so it only runs when the
-	// level actually changes — never per tick.
+	// Three.js render of a live VizModel inside the real structure-BSP mesh, with
+	// the spectator-readability set layered on top of the base scene:
 	//
-	// This component bridges Svelte to an imperative Three.js renderer: it mounts a
-	// WebGL <canvas> + a CSS2D label layer into a bound host element and keeps
-	// non-reactive Map/Set caches of GPU objects (a SvelteMap would make the marker
-	// sync $effect self-trigger). Both are intentional + correct here, so the two
-	// lint rules that flag them don't apply to this file.
+	//   - OCCUPANCY REVEAL: the level is split into rooms (BSP-cluster approximation
+	//     from $lib/utils/rooms); a room fades when a player stands inside it, so a
+	//     spectator sees into the occupied room instead of an opaque shell.
+	//   - CAMERA-OCCLUSION FADE: geometry between the camera and any player fades
+	//     (per-frame raycast camera→player), so walls never hide the action.
+	//   - THROUGH-WALL MARKERS: player markers draw always-on-top (depthTest off);
+	//     a marker dims when a wall is between it and the camera, full in the open.
+	//   - OUTER-SHELL TRANSPARENCY: an optional toggle fades the map's enclosing
+	//     shell for a fixed overview cam.
+	//
+	// All data shaping + the coordinate remap + the clustering live in the pure
+	// utils; this component does only the GPU wiring + the per-frame raycasts.
 	/* eslint-disable svelte/no-dom-manipulating, svelte/prefer-svelte-reactivity */
 	import { onMount, onDestroy } from 'svelte';
 	import * as THREE from 'three';
@@ -23,6 +21,7 @@
 	import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 	import type { VizModel } from '$lib/utils/visualizer-view';
 	import type { BspMesh } from '$lib/utils/game-geometry';
+	import { roomForPoint, classifyOuterShell, type Room } from '$lib/utils/rooms';
 	import {
 		haloToThree,
 		facingAngle,
@@ -33,6 +32,11 @@
 	let {
 		model,
 		mesh = null,
+		rooms = null,
+		occupancyReveal = true,
+		occlusionFade = true,
+		throughWall = true,
+		outerShellTransparent = false,
 		showItems = true,
 		showVehicles = true,
 		showProjectiles = true,
@@ -41,6 +45,12 @@
 	}: {
 		model: VizModel;
 		mesh?: BspMesh | null;
+		/** Precomputed room clusters → independently-fadeable level sub-meshes. */
+		rooms?: Room[] | null;
+		occupancyReveal?: boolean;
+		occlusionFade?: boolean;
+		throughWall?: boolean;
+		outerShellTransparent?: boolean;
 		showItems?: boolean;
 		showVehicles?: boolean;
 		showProjectiles?: boolean;
@@ -50,8 +60,6 @@
 
 	let host: HTMLDivElement;
 	let webglFailed = $state(false);
-	// Flipped at the end of onMount so the scene-touching effects only fire once
-	// the renderer/scene/groups exist (avoids an effect racing onMount).
 	let ready = $state(false);
 
 	let renderer: THREE.WebGLRenderer | undefined;
@@ -61,6 +69,7 @@
 	let controls: OrbitControls | undefined;
 	let raf = 0;
 	let resizeObs: ResizeObserver | undefined;
+	const raycaster = new THREE.Raycaster();
 
 	let levelGroup: THREE.Group | undefined;
 	let playersGroup: THREE.Group | undefined;
@@ -70,8 +79,26 @@
 	let spawnsGroup: THREE.Group | undefined;
 	let flagsGroup: THREE.Group | undefined;
 
-	// Reconciled player markers, keyed by player index (capsule + heading arrow +
-	// name label in one sub-group so a single transform moves all three).
+	// Per-room level meshes (one independently-fadeable mesh per cluster).
+	interface RoomMesh {
+		mesh: THREE.Mesh;
+		material: THREE.MeshStandardMaterial;
+		roomIndex: number;
+	}
+	let roomMeshes: RoomMesh[] = [];
+	let shellFlags: boolean[] = [];
+
+	// Occupancy/occlusion state, recomputed off the model tick + camera moves.
+	const occupiedRooms = new Set<number>();
+	const occludingRooms = new Set<number>();
+	const playerOccluded = new Map<number, boolean>();
+	let occlusionDirty = true;
+
+	const SOLID_OP = 0.95;
+	const OCCUPIED_OP = 0.16;
+	const OCCLUDE_OP = 0.28;
+	const SHELL_OP = 0.08;
+
 	interface PlayerNode {
 		group: THREE.Group;
 		body: THREE.Mesh;
@@ -81,7 +108,6 @@
 	}
 	const playerNodes = new Map<number, PlayerNode>();
 
-	// Shared geometries — created once, reused across every marker of a kind.
 	const geom = {
 		capsule: new THREE.CapsuleGeometry(0.55, 1.4, 6, 12),
 		arrow: new THREE.ConeGeometry(0.32, 0.9, 10),
@@ -90,14 +116,14 @@
 		proj: new THREE.SphereGeometry(0.28, 8, 8),
 		spawn: new THREE.CylinderGeometry(0.9, 0.9, 0.12, 16)
 	};
-	// Materials cached by (hex, emissive, opacity) so we never allocate per tick.
 	const matCache = new Map<string, THREE.MeshStandardMaterial>();
 	function mat(
 		hex: string,
-		opts: { emissive?: boolean; opacity?: number } = {}
+		opts: { emissive?: boolean; opacity?: number; depthTest?: boolean } = {}
 	): THREE.MeshStandardMaterial {
 		const opacity = opts.opacity ?? 1;
-		const key = `${hex}|${opts.emissive ? 1 : 0}|${opacity}`;
+		const depthTest = opts.depthTest ?? true;
+		const key = `${hex}|${opts.emissive ? 1 : 0}|${opacity}|${depthTest ? 1 : 0}`;
 		let m = matCache.get(key);
 		if (!m) {
 			const c = new THREE.Color(hex);
@@ -106,8 +132,10 @@
 				emissive: opts.emissive ? c.clone().multiplyScalar(0.4) : new THREE.Color(0x000000),
 				roughness: 0.55,
 				metalness: 0,
-				transparent: opacity < 1,
-				opacity
+				transparent: opacity < 1 || !depthTest,
+				opacity,
+				depthTest,
+				depthWrite: depthTest
 			});
 			matCache.set(key, m);
 		}
@@ -150,7 +178,8 @@
 		controls.enableDamping = true;
 		controls.dampingFactor = 0.08;
 		controls.screenSpacePanning = false;
-		controls.maxPolarAngle = Math.PI * 0.495; // keep the camera above the floor
+		controls.maxPolarAngle = Math.PI * 0.495;
+		controls.addEventListener('change', () => (occlusionDirty = true));
 
 		const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x2a2418, 1.05);
 		scene.add(hemi);
@@ -185,6 +214,12 @@
 		const loop = () => {
 			raf = requestAnimationFrame(loop);
 			controls?.update();
+			if (occlusionDirty) {
+				recomputeOcclusion();
+				applyPlayerOcclusionStyles();
+				occlusionDirty = false;
+			}
+			applyRoomOpacities();
 			if (renderer && scene && camera) renderer.render(scene, camera);
 			if (labelRenderer && scene && camera) labelRenderer.render(scene, camera);
 		};
@@ -211,17 +246,15 @@
 		if (!renderer || !labelRenderer || !camera || !host) return;
 		const w = host.clientWidth || 1;
 		const h = host.clientHeight || 1;
-		renderer.setSize(w, h); // updateStyle=true so the canvas CSS size tracks the host
+		renderer.setSize(w, h);
 		labelRenderer.setSize(w, h);
 		camera.aspect = w / h;
 		camera.updateProjectionMatrix();
 	}
 
-	// --- Level geometry (BSP mesh or fallback box) -----------------------------
+	// --- Level geometry --------------------------------------------------------
 	function disposeLevelChildren() {
 		if (!levelGroup) return;
-		// Level geometries/materials are all created fresh in buildLevel (none
-		// shared), so disposing on rebuild is safe and prevents GPU leaks.
 		levelGroup.traverse((o) => {
 			const obj = o as Partial<THREE.Mesh>;
 			if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
@@ -232,16 +265,99 @@
 		});
 	}
 
+	/** Build a Three BufferGeometry (Halo→Three remapped, flat-shaded) from a set
+	 *  of triangle ordinals into the mesh, expanded to non-indexed so each room is
+	 *  self-contained. */
+	function roomGeometry(src: BspMesh, triOrdinals: number[]): THREE.BufferGeometry {
+		const pos = new Float32Array(triOrdinals.length * 9);
+		const hasColor = !!src.colors && src.colors.length === src.positions.length;
+		const col = hasColor ? new Float32Array(triOrdinals.length * 9) : null;
+		let w = 0;
+		for (const t of triOrdinals) {
+			for (let v = 0; v < 3; v++) {
+				const vi = src.indices[t * 3 + v] * 3;
+				const tt = haloToThree({
+					x: src.positions[vi],
+					y: src.positions[vi + 1],
+					z: src.positions[vi + 2]
+				});
+				pos[w] = tt[0];
+				pos[w + 1] = tt[1];
+				pos[w + 2] = tt[2];
+				if (col && src.colors) {
+					col[w] = src.colors[vi];
+					col[w + 1] = src.colors[vi + 1];
+					col[w + 2] = src.colors[vi + 2];
+				}
+				w += 3;
+			}
+		}
+		const g = new THREE.BufferGeometry();
+		g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+		if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+		g.computeVertexNormals();
+		return g;
+	}
+
 	function buildLevel() {
 		if (!levelGroup) return;
 		disposeLevelChildren();
 		levelGroup.clear();
+		roomMeshes = [];
+		shellFlags = [];
 
-		if (mesh && mesh.positions.length >= 9 && mesh.indices.length >= 3) {
-			// Real structure-BSP surfaces. Remap every vertex Halo→Three so it shares
-			// the marker frame, then flat-shade with computed normals (the cache
-			// carries positions + indices only).
-			const g = new THREE.BufferGeometry();
+		if (mesh && rooms && rooms.length > 0) {
+			// Per-room cluster meshes — each independently fadeable.
+			const hasColor = !!mesh.colors && mesh.colors.length === mesh.positions.length;
+			for (const room of rooms) {
+				const g = roomGeometry(mesh, room.triIndices);
+				const material = new THREE.MeshStandardMaterial({
+					color: hasColor ? '#ffffff' : '#5a6472',
+					vertexColors: hasColor,
+					roughness: 0.95,
+					metalness: 0,
+					flatShading: true,
+					side: THREE.DoubleSide,
+					transparent: true,
+					opacity: SOLID_OP
+				});
+				const m = new THREE.Mesh(g, material);
+				m.userData.roomIndex = room.index;
+				levelGroup.add(m);
+				roomMeshes.push({ mesh: m, material, roomIndex: room.index });
+			}
+			shellFlags = classifyOuterShell(rooms, {
+				minX: mesh.bounds.minX,
+				maxX: mesh.bounds.maxX,
+				minY: mesh.bounds.minY,
+				maxY: mesh.bounds.maxY,
+				minZ: mesh.bounds.minZ,
+				maxZ: mesh.bounds.maxZ
+			});
+			// A constant faint wireframe of the whole level so ghosted (faded) rooms
+			// still read as structure rather than vanishing — the "x-ray" look.
+			const wireSrc = new Float32Array(mesh.positions.length);
+			for (let i = 0; i + 2 < mesh.positions.length; i += 3) {
+				const t = haloToThree({
+					x: mesh.positions[i],
+					y: mesh.positions[i + 1],
+					z: mesh.positions[i + 2]
+				});
+				wireSrc[i] = t[0];
+				wireSrc[i + 1] = t[1];
+				wireSrc[i + 2] = t[2];
+			}
+			const wireGeom = new THREE.BufferGeometry();
+			wireGeom.setAttribute('position', new THREE.BufferAttribute(wireSrc, 3));
+			wireGeom.setIndex(mesh.indices.slice());
+			const wire = new THREE.LineSegments(
+				new THREE.WireframeGeometry(wireGeom),
+				new THREE.LineBasicMaterial({ color: 0x5a6b85, transparent: true, opacity: 0.14 })
+			);
+			wireGeom.dispose();
+			levelGroup.add(wire);
+		} else if (mesh && mesh.positions.length >= 9 && mesh.indices.length >= 3) {
+			// Single merged surface (mesh present but no room clustering).
 			const src = mesh.positions;
 			const pos = new Float32Array(src.length);
 			for (let i = 0; i + 2 < src.length; i += 3) {
@@ -250,36 +366,28 @@
 				pos[i + 1] = t[1];
 				pos[i + 2] = t[2];
 			}
+			const g = new THREE.BufferGeometry();
 			g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-			// Per-vertex material colors sampled from the real map textures (grass
-			// green, sand tan, base metal grey). Absent on legacy caches → flat grey.
 			const hasColor = !!mesh.colors && mesh.colors.length === src.length;
-			if (hasColor) {
+			if (hasColor)
 				g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(mesh.colors!), 3));
-			}
 			g.setIndex(mesh.indices.slice());
 			g.computeVertexNormals();
-			const surface = new THREE.Mesh(
-				g,
-				new THREE.MeshStandardMaterial({
-					color: hasColor ? '#ffffff' : '#5a6472',
-					vertexColors: hasColor,
-					roughness: 0.95,
-					metalness: 0,
-					flatShading: true,
-					side: THREE.DoubleSide
-				})
+			levelGroup.add(
+				new THREE.Mesh(
+					g,
+					new THREE.MeshStandardMaterial({
+						color: hasColor ? '#ffffff' : '#5a6472',
+						vertexColors: hasColor,
+						roughness: 0.95,
+						metalness: 0,
+						flatShading: true,
+						side: THREE.DoubleSide
+					})
+				)
 			);
-			levelGroup.add(surface);
-			// Faint wireframe so surface relief reads even under flat light.
-			const wire = new THREE.LineSegments(
-				new THREE.WireframeGeometry(g),
-				new THREE.LineBasicMaterial({ color: 0x0b1018, transparent: true, opacity: 0.1 })
-			);
-			levelGroup.add(wire);
 		} else {
-			// Fallback: a wire box of the auto-fit world bounds + a ground grid so
-			// markers still have spatial reference without the real mesh.
+			// Fallback: wire box of the auto-fit world bounds + a ground grid.
 			const b = model.bounds;
 			if (b.valid) {
 				const c1 = haloToThree({ x: b.minX, y: b.minY, z: b.minZ });
@@ -291,11 +399,12 @@
 				levelGroup.add(new THREE.Box3Helper(box, new THREE.Color(0x3a4860)));
 			}
 			const f = framingFromBounds(model.bounds);
-			const groundY = b.valid ? b.minZ : 0; // Halo Z → Three Y
+			const groundY = b.valid ? b.minZ : 0;
 			const grid = new THREE.GridHelper(Math.max(40, f.radius * 2.2), 24, 0x2a3850, 0x18202e);
 			grid.position.set(f.center[0], groundY, f.center[2]);
 			levelGroup.add(grid);
 		}
+		occlusionDirty = true;
 	}
 
 	function meshBoundsForFraming() {
@@ -312,12 +421,95 @@
 		controls.target.set(f.center[0], f.center[1], f.center[2]);
 		controls.update();
 		framedOnce = true;
+		occlusionDirty = true;
 	}
 
-	/** Re-centre the camera on demand (wired to the page's Recenter button). */
 	export function recenter() {
 		framedOnce = false;
 		frameCamera(true);
+	}
+
+	/** Fixed high overview camera — the use case for the outer-shell toggle. */
+	export function overview() {
+		if (!camera || !controls) return;
+		const f = framingFromBounds(meshBoundsForFraming());
+		camera.position.set(
+			f.center[0] + f.radius * 0.15,
+			f.center[1] + f.radius * 2.6,
+			f.center[2] + f.radius * 0.15
+		);
+		controls.target.set(f.center[0], f.center[1], f.center[2]);
+		controls.update();
+		occlusionDirty = true;
+	}
+
+	// --- Occupancy + occlusion -------------------------------------------------
+	function recomputeOcclusion() {
+		occupiedRooms.clear();
+		occludingRooms.clear();
+		playerOccluded.clear();
+		if (!rooms || rooms.length === 0 || !camera) return;
+
+		// Occupancy: which room each live player sits in (Halo coords).
+		for (const pl of model.players) {
+			if (!pl.alive) continue;
+			const r = roomForPoint(rooms, pl.pos);
+			if (r >= 0) occupiedRooms.add(r);
+		}
+
+		// Camera-occlusion + per-player blocked test (Three coords).
+		const meshes = roomMeshes.map((rm) => rm.mesh);
+		if (meshes.length === 0) return;
+		const camPos = camera.position;
+		for (const [idx, node] of playerNodes) {
+			const target = node.group.position;
+			const dir = new THREE.Vector3().subVectors(target, camPos);
+			const dist = dir.length();
+			if (dist < 1e-3) {
+				playerOccluded.set(idx, false);
+				continue;
+			}
+			dir.normalize();
+			raycaster.set(camPos, dir);
+			raycaster.near = 0.5;
+			raycaster.far = Math.max(0.6, dist - 1.0); // stop short of the player's own floor
+			const hits = raycaster.intersectObjects(meshes, false);
+			let blocked = false;
+			for (const h of hits) {
+				blocked = true;
+				const ri = (h.object.userData as { roomIndex?: number }).roomIndex;
+				if (typeof ri === 'number') occludingRooms.add(ri);
+			}
+			playerOccluded.set(idx, blocked);
+		}
+	}
+
+	function applyRoomOpacities() {
+		for (const rm of roomMeshes) {
+			let target = SOLID_OP;
+			if (occupancyReveal && occupiedRooms.has(rm.roomIndex))
+				target = Math.min(target, OCCUPIED_OP);
+			if (occlusionFade && occludingRooms.has(rm.roomIndex)) target = Math.min(target, OCCLUDE_OP);
+			if (outerShellTransparent && shellFlags[rm.roomIndex]) target = Math.min(target, SHELL_OP);
+			const cur = rm.material.opacity;
+			const next = cur + (target - cur) * 0.18;
+			rm.material.opacity = Math.abs(next - target) < 0.005 ? target : next;
+			rm.material.depthWrite = rm.material.opacity > 0.85;
+		}
+	}
+
+	function applyPlayerOcclusionStyles() {
+		for (const [idx, node] of playerNodes) {
+			const pl = model.players.find((q) => q.index === idx);
+			if (!pl) continue;
+			const occluded = throughWall && (playerOccluded.get(idx) ?? false);
+			const opacity = pl.alive ? (occluded ? 0.5 : 1) : 0.4;
+			node.body.material = mat(pl.color, { emissive: true, opacity, depthTest: !throughWall });
+			node.body.renderOrder = throughWall ? 20 : 0;
+			node.arrow.material = mat('#f4f7fb', { opacity, depthTest: !throughWall });
+			node.arrow.renderOrder = throughWall ? 20 : 0;
+			node.labelEl.style.opacity = pl.alive ? (occluded ? '0.7' : '1') : '0.5';
+		}
 	}
 
 	// --- Marker sync -----------------------------------------------------------
@@ -340,8 +532,6 @@
 				const group = new THREE.Group();
 				const body = new THREE.Mesh(geom.capsule, mat(pl.color, { emissive: true }));
 				const arrow = new THREE.Mesh(geom.arrow, mat('#f4f7fb'));
-				// Cone points +Y by default; lay it flat (pointing +X) and offset it
-				// forward; the group's Y-rotation then aims it along the heading.
 				arrow.rotation.z = -Math.PI / 2;
 				arrow.position.set(1.0, 0, 0);
 				const { obj, el } = makeLabel(pl.name);
@@ -351,16 +541,12 @@
 				playerNodes.set(pl.index, node);
 			}
 			const t = haloToThree(pl.pos);
-			node.group.position.set(t[0], t[1] + 1.0, t[2]); // lift so the capsule sits on the floor
-			// Pick a cached material by alive-opacity rather than mutating a shared one.
-			node.body.material = mat(pl.color, { emissive: true, opacity: pl.alive ? 1 : 0.4 });
+			node.group.position.set(t[0], t[1] + 1.0, t[2]);
 			node.body.scale.setScalar(pl.alive ? 1 : 0.85);
 
 			const ang = facingAngle(pl.heading);
 			if (ang != null && pl.alive) {
 				node.arrow.visible = true;
-				// World ground angle (CCW from +X) → rotation about Three's up (Y).
-				// world +Y maps to −Z, so a CCW world turn is CW about Y → negate.
 				node.group.rotation.y = -ang;
 			} else {
 				node.arrow.visible = false;
@@ -369,7 +555,6 @@
 			if (node.labelEl.textContent !== pl.name) node.labelEl.textContent = pl.name;
 			node.label.visible = showNames;
 			node.labelEl.style.color = pl.color;
-			node.labelEl.style.opacity = pl.alive ? '1' : '0.5';
 		}
 		for (const [idx, node] of playerNodes) {
 			if (!seen.has(idx)) {
@@ -377,6 +562,9 @@
 				playerNodes.delete(idx);
 			}
 		}
+		// Occlusion styling (opacity/depthTest/renderOrder) is applied separately so
+		// it also updates on camera moves; trigger a recompute now that nodes moved.
+		occlusionDirty = true;
 	}
 
 	interface SimpleEntry {
@@ -390,7 +578,7 @@
 
 	function rebuildSimple(group: THREE.Group | undefined, show: boolean, entries: SimpleEntry[]) {
 		if (!group) return;
-		group.clear(); // meshes only — geometry + material are shared, nothing to dispose
+		group.clear();
 		group.visible = show;
 		if (!show) return;
 		for (const e of entries) {
@@ -429,8 +617,8 @@
 		rebuildSimple(
 			projGroup,
 			showProjectiles,
-			model.projectiles.map((p) => ({
-				pos: p.pos,
+			model.projectiles.map((pp) => ({
+				pos: pp.pos,
 				g: geom.proj,
 				color: '#ffd27d',
 				lift: 0.4,
@@ -462,10 +650,10 @@
 	}
 
 	// Gate the (expensive) level rebuild on a key so it runs only when the level
-	// actually changes — NOT every model tick. Real mesh → key by identity;
-	// fallback box → key by validity + bounds rounded to 5wu so dynamic jitter
-	// doesn't churn it.
+	// actually changes — NOT every model tick.
 	function levelKey(): string {
+		if (mesh && rooms && rooms.length > 0)
+			return `rooms:${mesh.scenario}:${mesh.positions.length}:${rooms.length}`;
 		if (mesh) return `mesh:${mesh.scenario}:${mesh.positions.length}`;
 		const b = model.bounds;
 		if (!b.valid) return 'box:none';
@@ -482,7 +670,6 @@
 			lastLevelKey = k;
 			buildLevel();
 		}
-		// Re-frame the camera when a real mesh first arrives, else on first valid box.
 		const mk = mesh ? `${mesh.scenario}:${mesh.positions.length}` : '';
 		if (mesh && mk !== lastMeshKey) {
 			lastMeshKey = mk;
@@ -494,9 +681,18 @@
 
 	$effect(() => {
 		if (!ready) return;
-		// syncMarkers reads model + every show* prop, so this effect re-runs on any
-		// feed tick or toggle change — no explicit dependency list needed.
+		// syncMarkers reads model + every show* prop, so this re-runs on any tick or
+		// toggle change; it sets occlusionDirty so styling re-applies in the loop.
 		syncMarkers();
+	});
+
+	// Re-apply occlusion styling immediately when a readability toggle flips.
+	$effect(() => {
+		void occupancyReveal;
+		void occlusionFade;
+		void throughWall;
+		void outerShellTransparent;
+		occlusionDirty = true;
 	});
 </script>
 

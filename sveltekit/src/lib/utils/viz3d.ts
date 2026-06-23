@@ -77,7 +77,7 @@ export function framingFromBounds(b: WorldBounds | null | undefined): SceneFrami
  * centre along a fixed compass bearing so the level reads as a 3/4 aerial view.
  * `dist` scales the orbit radius (1.0 ≈ tight, larger pulls back).
  */
-export function defaultCameraPosition(f: SceneFraming, dist = 1.9): [number, number, number] {
+export function defaultCameraPosition(f: SceneFraming, dist = 1.6): [number, number, number] {
 	const r = f.radius * dist;
 	// Up-and-to-the-side: components chosen so no axis is zero (avoids a
 	// degenerate top-down or side-on start) and the view tilts down ~35°.

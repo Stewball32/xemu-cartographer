@@ -4,7 +4,8 @@
 	import { buildVizModel } from '$lib/utils/visualizer-view';
 	import { teamMeta } from '$lib/utils/overlay-view';
 	import { loadBspMesh, meshKeyForScenario, type BspMesh } from '$lib/utils/game-geometry';
-	import { mockMapModel } from '$lib/utils/mock-map';
+	import { mockStagedModel } from '$lib/utils/mock-map';
+	import { buildRooms } from '$lib/utils/rooms';
 	import Scene3D from '$lib/components/visualizer/Scene3D.svelte';
 	import type { PageData } from './$types';
 
@@ -27,15 +28,25 @@
 	let loadedKey = '';
 	let geometryTried = $state(false);
 
-	// Live/mock: model off the same WS feed. Demo: synthesize a 4v4 inside the
-	// loaded map's exact bounds (waits for the mesh so alignment is exact).
+	// Live/mock: model off the same WS feed. Demo: stage a 4v4 on the loaded map's
+	// real floors (waits for the mesh so every body sits on geometry).
 	const model = $derived(
 		isDemo
 			? mesh
-				? mockMapModel(mesh.bounds, mesh.scenario)
+				? mockStagedModel(mesh, mesh.scenario)
 				: buildVizModel(null, null, null, null)
 			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
 	);
+
+	// Room ("BSP cluster") partition → independently-fadeable level sub-meshes.
+	// Cluster count scales with mesh complexity so small indoor maps don't
+	// over-fragment while Blood Gulch still splits into readable chunks.
+	const rooms = $derived.by(() => {
+		if (!mesh) return null;
+		const triCount = mesh.indices.length / 3;
+		const k = Math.max(6, Math.min(10, Math.round(triCount / 500)));
+		return buildRooms(mesh, k);
+	});
 
 	let showSpawns = $state(untrack(() => data.showSpawns));
 	let showItems = $state(true);
@@ -43,9 +54,15 @@
 	let showProjectiles = $state(true);
 	let showNames = $state(true);
 
-	// Only the exported method we call is typed here; bind:this fills it with the
+	// Readability toggles.
+	let occupancyReveal = $state(true);
+	let occlusionFade = $state(true);
+	let throughWall = $state(true);
+	let outerShellTransparent = $state(false);
+
+	// Only the exported methods we call are typed here; bind:this fills it with the
 	// full Scene3D instance (structurally assignable).
-	let sceneRef = $state<{ recenter: () => void } | undefined>(undefined);
+	let sceneRef = $state<{ recenter: () => void; overview: () => void } | undefined>(undefined);
 
 	onMount(() => {
 		// Demo mode drives everything from the cached geometry — no feed/token.
@@ -144,6 +161,11 @@
 				bind:this={sceneRef}
 				{model}
 				{mesh}
+				{rooms}
+				{occupancyReveal}
+				{occlusionFade}
+				{throughWall}
+				{outerShellTransparent}
 				{showItems}
 				{showVehicles}
 				{showProjectiles}
@@ -151,6 +173,21 @@
 				{showNames}
 			/>
 			<div class="hud">
+				<div class="toggles readability">
+					<label title="Rooms fade when a player is inside them">
+						<input type="checkbox" bind:checked={occupancyReveal} /> Occupancy reveal
+					</label>
+					<label title="Geometry between the camera and a player fades">
+						<input type="checkbox" bind:checked={occlusionFade} /> Occlusion fade
+					</label>
+					<label title="Markers draw on top; dimmed when behind a wall">
+						<input type="checkbox" bind:checked={throughWall} /> Through-wall markers
+					</label>
+					<label title="Fade the map's outer shell for a fixed overview cam">
+						<input type="checkbox" bind:checked={outerShellTransparent} /> Outer shell
+					</label>
+					<button class="recenter" onclick={() => sceneRef?.overview()}>Overview cam</button>
+				</div>
 				<div class="toggles">
 					<label><input type="checkbox" bind:checked={showNames} /> Names</label>
 					<label><input type="checkbox" bind:checked={showItems} /> Items</label>
@@ -163,7 +200,9 @@
 					<span class="cap" class:on={model.hasGame}>game</span>
 					<span class="cap" class:on={model.hasTick}>tick</span>
 					<span class="cap" class:on={model.hasScenario}>scenario</span>
-					<span class="cap" class:on={model.hasObjects}>objects</span>
+					<span class="cap" class:on={!!rooms} title="Room clusters from the BSP mesh">
+						rooms: {rooms?.length ?? 0}
+					</span>
 					<span
 						class="cap"
 						class:on={!!mesh}
@@ -325,6 +364,11 @@
 		padding: 0.5rem 0.7rem;
 		pointer-events: auto;
 		font-size: 0.82rem;
+		max-width: 30rem;
+	}
+	.toggles.readability {
+		border-color: rgba(92, 200, 255, 0.35);
+		background: rgba(10, 20, 32, 0.82);
 	}
 	.toggles label {
 		display: inline-flex;
