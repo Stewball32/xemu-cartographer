@@ -10,11 +10,14 @@
 		type VizPlayer
 	} from '$lib/utils/visualizer-view';
 	import { emptyIconSet, type IconSet } from '$lib/utils/game-icons';
+	import type { TopProjection } from '$lib/utils/game-geometry';
 	import type { Vec2, Vec3 } from '$lib/types/scraper-v2';
 
 	let {
 		model,
 		icons = emptyIconSet('haloce'),
+		geometry = null,
+		showGeometry = true,
 		showSpawns = false,
 		showItems = true,
 		showVehicles = true,
@@ -25,6 +28,10 @@
 		/** Real-game-icon set (decoded from the user's game files); when a marker's
 		 * icon isn't available, that marker falls back to its generic shape. */
 		icons?: IconSet;
+		/** Real BSP top-down projection (PNG + world bounds) drawn as the map
+		 * background; null → blank grid (graceful degrade). */
+		geometry?: TopProjection | null;
+		showGeometry?: boolean;
 		showSpawns?: boolean;
 		showItems?: boolean;
 		showVehicles?: boolean;
@@ -37,6 +44,16 @@
 
 	const proj = $derived(makeProjection(model.bounds, VIEW, VIEW, PAD));
 	const p = (pos: Vec3): Vec2 => proj.project(pos);
+
+	// Place the geometry PNG by projecting its world-bounds corners through the
+	// SAME projection the live dots use → pixel-perfect alignment regardless of
+	// how the auto-fit bounds differ from the BSP bounds.
+	const geoRect = $derived.by(() => {
+		if (!geometry || !proj.valid) return null;
+		const tl = proj.project({ x: geometry.bounds.minX, y: geometry.bounds.maxY, z: 0 });
+		const br = proj.project({ x: geometry.bounds.maxX, y: geometry.bounds.minY, z: 0 });
+		return { x: tl.x, y: tl.y, w: Math.max(0, br.x - tl.x), h: Math.max(0, br.y - tl.y) };
+	});
 
 	const ITEM_COLOR: Record<string, string> = {
 		weapon: '#e0a32e',
@@ -131,6 +148,19 @@
 			Waiting for spatial data…
 		</text>
 	{:else}
+		<!-- real BSP top-down projection (map background); behind every marker -->
+		{#if showGeometry && geometry && geoRect}
+			<image
+				href={geometry.url}
+				x={geoRect.x}
+				y={geoRect.y}
+				width={geoRect.w}
+				height={geoRect.h}
+				preserveAspectRatio="none"
+				opacity="0.95"
+			/>
+		{/if}
+
 		<!-- static spawns (reference layer) -->
 		{#if showSpawns}
 			<g class="spawns">

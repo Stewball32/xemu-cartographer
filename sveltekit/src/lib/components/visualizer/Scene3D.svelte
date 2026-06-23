@@ -251,12 +251,19 @@
 				pos[i + 2] = t[2];
 			}
 			g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+			// Per-vertex material colors sampled from the real map textures (grass
+			// green, sand tan, base metal grey). Absent on legacy caches → flat grey.
+			const hasColor = !!mesh.colors && mesh.colors.length === src.length;
+			if (hasColor) {
+				g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(mesh.colors!), 3));
+			}
 			g.setIndex(mesh.indices.slice());
 			g.computeVertexNormals();
 			const surface = new THREE.Mesh(
 				g,
 				new THREE.MeshStandardMaterial({
-					color: '#5a6472',
+					color: hasColor ? '#ffffff' : '#5a6472',
+					vertexColors: hasColor,
 					roughness: 0.95,
 					metalness: 0,
 					flatShading: true,
@@ -267,7 +274,7 @@
 			// Faint wireframe so surface relief reads even under flat light.
 			const wire = new THREE.LineSegments(
 				new THREE.WireframeGeometry(g),
-				new THREE.LineBasicMaterial({ color: 0x0b1018, transparent: true, opacity: 0.16 })
+				new THREE.LineBasicMaterial({ color: 0x0b1018, transparent: true, opacity: 0.1 })
 			);
 			levelGroup.add(wire);
 		} else {

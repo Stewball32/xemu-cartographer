@@ -26,9 +26,16 @@ func handleJoinRoom(e *Event) {
 		return
 	}
 
-	if err := rt.CheckGuards(e.Services, e.User); err != nil {
-		e.SendError("forbidden", err.Error())
-		return
+	// M10 overlay-token connections carry no user, so the host room type's
+	// user-centric guards (RequireAuth) would reject them with "authentication
+	// required". They are instead authorized by authorizeHostRoom below (read-
+	// only, scoped to their bound instance). User connections still pass through
+	// the room type's guard list as before.
+	if e.OverlayRoom == "" {
+		if err := rt.CheckGuards(e.Services, e.User); err != nil {
+			e.SendError("forbidden", err.Error())
+			return
+		}
 	}
 
 	// M09 9c: narrow host:* access beyond the room type's RequireAuth guard.
@@ -82,22 +89,26 @@ func handleJoinRoom(e *Event) {
 func authorizeHostRoom(e *Event) error {
 	isSummary := e.Room == rooms.HostAllRoom || e.Room == rooms.SummaryRoom
 	isInstance := strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":") && !isSummary
-	if !isSummary && !isInstance {
-		return nil // not a host room — leave it to the room type's guards
-	}
 
-	// M10 overlay-token connection: scoped to its bound instance, read-only.
+	// M10 overlay-token connection: read-only, scoped to its bound instance.
 	// It bypasses the user/admin/roster path (the overlay token IS the grant)
-	// and can never reach the admin-only summary feed. The Hub already limits
-	// it to join/leave message types.
+	// and may ONLY join per-instance host rooms for its bound instance — never
+	// the summary feed, never another instance, never a non-host room. This is
+	// the SOLE authorization for an overlay connection, since handleJoinRoom
+	// skips the room type's user guards for it; the Hub already limits it to
+	// join/leave message types.
 	if e.OverlayRoom != "" {
-		if isSummary {
-			return errors.New("overlay tokens cannot join the summary feed")
+		if !isInstance {
+			return errors.New("overlay token may only join its instance's host rooms")
 		}
 		if hostRoomInstance(e.Room) == hostRoomInstance(e.OverlayRoom) {
 			return nil
 		}
 		return errors.New("overlay token is scoped to a different room")
+	}
+
+	if !isSummary && !isInstance {
+		return nil // not a host room — leave it to the room type's guards
 	}
 
 	svc := e.Services

@@ -50,12 +50,25 @@ export interface BspMesh {
 	bounds: Pick<WorldBounds, 'minX' | 'maxX' | 'minY' | 'maxY' | 'minZ' | 'maxZ'>;
 	/** xyz triples, length = 3 × vertex count. */
 	positions: number[];
+	/** rgb triples (0..1), length = 3 × vertex count — each vertex's material
+	 *  color sampled from the real map texture. Absent on legacy caches. */
+	colors?: number[];
 	/** Triangle vertex indices into `positions`, length = 3 × triangle count. */
 	indices: number[];
 }
 
+/** The 2D top-down projection of a level's BSP, for the minimap background. The
+ *  PNG covers exactly `bounds` (world rect, north up); the consumer places it by
+ *  projecting those bounds through the SAME transform the live dots use. */
+export interface TopProjection {
+	url: string;
+	bounds: BspMesh['bounds'];
+}
+
 interface GeometryManifestEntry {
 	file: string;
+	top_image?: string | null;
+	bounds?: BspMesh['bounds'];
 }
 
 interface GeometryManifest {
@@ -69,6 +82,7 @@ interface RawMeshFile {
 	source_map?: string;
 	bounds?: BspMesh['bounds'];
 	positions?: number[];
+	colors?: number[];
 	indices?: number[];
 }
 
@@ -116,14 +130,45 @@ export function normalizeMesh(
 	if (raw.positions.length < 9 || raw.indices.length < 3) return null; // < 1 triangle
 	if (raw.positions.length % 3 !== 0 || raw.indices.length % 3 !== 0) return null;
 	const bounds = raw.bounds ?? boundsFromPositions(raw.positions);
+	// Colors are optional + only used when they line up 1:1 with positions.
+	const colors =
+		Array.isArray(raw.colors) && raw.colors.length === raw.positions.length
+			? raw.colors
+			: undefined;
 	return {
 		game,
 		scenario: raw.scenario ?? key,
 		sourceMap: raw.source_map ?? '',
 		bounds,
 		positions: raw.positions,
+		colors,
 		indices: raw.indices
 	};
+}
+
+/**
+ * Load the 2D top-down projection (PNG + world bounds) for a scenario, or null
+ * when it isn't cached. Lightweight sibling of loadBspMesh for the 2D minimap
+ * background: reads only the manifest (no mesh download). Degrades to null on
+ * any failure so the minimap keeps its blank grid.
+ */
+export async function loadTopProjection(
+	game: string,
+	scenario: string | null | undefined,
+	fetchFn: typeof fetch = fetch
+): Promise<TopProjection | null> {
+	const key = meshKeyForScenario(scenario);
+	if (!key) return null;
+	try {
+		const manRes = await fetchFn(`${cacheRoot(game)}/manifest.json`);
+		if (!manRes.ok) return null;
+		const man = (await manRes.json()) as GeometryManifest;
+		const entry = man?.meshes?.[key];
+		if (!entry?.top_image || !entry.bounds) return null;
+		return { url: `${cacheRoot(game)}/${entry.top_image}`, bounds: entry.bounds };
+	} catch {
+		return null;
+	}
 }
 
 function boundsFromPositions(positions: number[]): BspMesh['bounds'] {

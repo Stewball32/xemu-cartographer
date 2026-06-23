@@ -4,6 +4,11 @@
 	import { buildVizModel } from '$lib/utils/visualizer-view';
 	import { teamMeta } from '$lib/utils/overlay-view';
 	import { loadIconSet, emptyIconSet, type IconSet } from '$lib/utils/game-icons';
+	import {
+		loadTopProjection,
+		meshKeyForScenario,
+		type TopProjection
+	} from '$lib/utils/game-geometry';
 	import TopDownMap from '$lib/components/visualizer/TopDownMap.svelte';
 	import type { PageData } from './$types';
 
@@ -21,8 +26,15 @@
 	// regenerated, this stays empty and every marker uses its generic shape.
 	let iconSet = $state<IconSet>(emptyIconSet(GAME));
 
+	// Real Blood Gulch BSP top-down projection drawn as the map background, so
+	// dots sit on the actual layout instead of empty space. Best-effort: null →
+	// blank grid (graceful degrade).
+	let geometry = $state<TopProjection | null>(null);
+	let loadedGeoKey = '';
+
 	// Layer toggles (debug controls). The spawn layer seeds from the URL once
 	// (untrack: a deliberate initial snapshot, not a live binding to the prop).
+	let showGeometry = $state(true);
 	let showSpawns = $state(untrack(() => data.showSpawns));
 	let showItems = $state(true);
 	let showVehicles = $state(true);
@@ -42,6 +54,16 @@
 		loadIconSet(GAME).then((s) => (iconSet = s));
 	});
 	onDestroy(() => feed.stop());
+
+	// Load the map background when the scenario first becomes known (and again if
+	// the map changes). Keyed on the slugified scenario so a re-emit doesn't reload.
+	$effect(() => {
+		const raw = feed.scenario?.map ?? '';
+		const key = meshKeyForScenario(raw);
+		if (!key || key === loadedGeoKey) return;
+		loadedGeoKey = key;
+		loadTopProjection(GAME, raw).then((g) => (geometry = g));
+	});
 
 	const teamLegend = $derived.by(() => {
 		// Group placed players by team (plain object — transient, not reactive state).
@@ -116,6 +138,8 @@
 				<TopDownMap
 					{model}
 					icons={iconSet}
+					{geometry}
+					{showGeometry}
 					{showSpawns}
 					{showItems}
 					{showVehicles}
@@ -127,6 +151,7 @@
 
 		<aside class="legend">
 			<div class="toggles">
+				<label><input type="checkbox" bind:checked={showGeometry} /> Map</label>
 				<label><input type="checkbox" bind:checked={showNames} /> Names</label>
 				<label><input type="checkbox" bind:checked={showItems} /> Items</label>
 				<label><input type="checkbox" bind:checked={showVehicles} /> Vehicles</label>

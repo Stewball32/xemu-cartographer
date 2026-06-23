@@ -3,7 +3,8 @@ import {
 	slugifyScenarioSegment,
 	meshKeyForScenario,
 	normalizeMesh,
-	loadBspMesh
+	loadBspMesh,
+	loadTopProjection
 } from './game-geometry';
 
 describe('slugifyScenarioSegment', () => {
@@ -41,6 +42,14 @@ describe('normalizeMesh', () => {
 		expect(m!.bounds).toEqual({ minX: 0, maxX: 10, minY: 0, maxY: 10, minZ: 0, maxZ: 0 });
 		// falls back to the key when scenario/source aren't carried
 		expect(m!.scenario).toBe('bloodgulch');
+	});
+
+	it('keeps per-vertex colors when they match positions length, else drops them', () => {
+		const base = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] };
+		const ok = normalizeMesh('haloce', 'bg', { ...base, colors: [1, 0, 0, 0, 1, 0, 0, 0, 1] });
+		expect(ok!.colors).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+		const bad = normalizeMesh('haloce', 'bg', { ...base, colors: [1, 0, 0] });
+		expect(bad!.colors).toBeUndefined();
 	});
 
 	it('keeps explicit bounds + scenario/source from the file', () => {
@@ -120,5 +129,48 @@ describe('loadBspMesh', () => {
 		}) as unknown as typeof fetch;
 		expect(await loadBspMesh('haloce', '', fetchFn)).toBeNull();
 		expect(called).toBe(false);
+	});
+});
+
+describe('loadTopProjection', () => {
+	const manifest = {
+		game: 'haloce',
+		meshes: {
+			bloodgulch: {
+				file: 'bloodgulch.json',
+				top_image: 'bloodgulch_top.png',
+				bounds: { minX: -70, maxX: 70, minY: -70, maxY: 70, minZ: -5, maxZ: 30 }
+			}
+		}
+	};
+	function fetchManifest(): typeof fetch {
+		return (async (url: string) =>
+			url.endsWith('manifest.json')
+				? new Response(JSON.stringify(manifest), { status: 200 })
+				: new Response('nf', { status: 404 })) as unknown as typeof fetch;
+	}
+
+	it('returns the PNG url + world bounds for a cached scenario', async () => {
+		const t = await loadTopProjection(
+			'haloce',
+			'levels\\test\\bloodgulch\\bloodgulch',
+			fetchManifest()
+		);
+		expect(t).not.toBeNull();
+		expect(t!.url).toBe('/game-geometry/haloce/bloodgulch_top.png');
+		expect(t!.bounds.maxZ).toBe(30);
+	});
+
+	it('returns null when the manifest entry has no top_image', async () => {
+		const m = { game: 'haloce', meshes: { bloodgulch: { file: 'bloodgulch.json' } } };
+		const f = (async () =>
+			new Response(JSON.stringify(m), { status: 200 })) as unknown as typeof fetch;
+		expect(await loadTopProjection('haloce', 'bloodgulch', f)).toBeNull();
+	});
+
+	it('returns null on missing cache (404) or empty scenario', async () => {
+		const f404 = (async () => new Response('nf', { status: 404 })) as unknown as typeof fetch;
+		expect(await loadTopProjection('haloce', 'bloodgulch', f404)).toBeNull();
+		expect(await loadTopProjection('haloce', '', fetchManifest())).toBeNull();
 	});
 });

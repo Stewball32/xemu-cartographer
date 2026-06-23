@@ -1,57 +1,44 @@
 #!/usr/bin/env python3
 """
-Extract the Halo structure-BSP RENDERED GEOMETRY (vertices + triangles) from a
-stock `.map` cache file into the 3D visualizer's served geometry cache (a JSON
-mesh per level + a manifest).
+Extract the Halo structure-BSP RENDERED GEOMETRY (vertices + triangles + per-
+material color) from a stock `.map` cache file into the visualizer's served
+geometry cache: a JSON mesh (for the 3D `/visualizer3d`) AND a top-down PNG
+projection (background for the 2D minimap) + a manifest. ONE shared extraction
+feeds both surfaces.
 
-This is the geometry analogue of the HUD-icon extractor
-(scripts/game-icons/extract_icons.py): it REUSES halo-offset-mapper's `.map`
-cache parser (`halomap.py`) to resolve the tag space, walks the scenario →
-structure-BSP → lightmaps → materials chain, and accumulates every material's
-vertex buffer + triangle list into one mesh in Halo world coordinates (X/Y
-ground, Z up — the SAME frame the live marker positions use, so the frontend
-maps both through one transform and they line up).
+Reuses halo-offset-mapper's `.map` cache parser (`halomap.py`) to resolve the
+tag space and its swizzle-aware bitmap decoder (`bitmaps.py`) to sample texture
+color, then walks scenario -> structure-BSP -> lightmaps -> materials,
+accumulating each material's vertex buffer + triangle list into one mesh in Halo
+world coordinates (X/Y ground, Z up — the SAME frame the live marker positions
+use, so the frontend maps both through one transform and they line up).
 
-HALO 1 (Xbox) STRUCTURE-BSP LAYOUT (verified empirically against the stock
-bloodgulch.map in the dropzone; offsets are constants below):
+COLOR (per Stewart's tier: real-texture-sampled > flat). Each BSP material
+references a shader -> base/diffuse bitmap; we decode that bitmap and average its
+RGB so grass reads grass-green, sand tan, metal gray. That per-material color is
+emitted as per-vertex colors on the 3D mesh AND painted into the 2D top-down
+PNG. (Full UV texturing is the documented stretch goal; missing/undecodable
+textures fall back to a neutral material color.)
 
-  * The scenario's `structure_bsps` reflexive points to a ScenarioBSP reference
-    holding the BSP chunk's file offset / size / load magic. The chunk opens
-    with a header whose first dword points at the sbsp meta (in BSP address
-    space; an 'sbsp' signature sits a few dwords in).
-  * sbsp meta: world_bounds_x/y/z at 0xC8/0xD0/0xD8 (two floats each); the
-    `surfaces` reflexive (render triangles, 3×u16 each) at 0xF8; the `lightmaps`
-    reflexive at 0x104.
-  * lightmap element = 0x20 bytes, its `materials` reflexive at 0x14.
-  * material element = 0x100 bytes: shader dependency at 0x00, first-surface
-    index (s32) at 0x14, surface_count (s32) at 0x18, rendered-vertex count
-    (u32) at 0xB4. A material's triangle indices are LOCAL to its own vertex
-    buffer.
-  * Xbox stores the rendered vertices as 32-byte records (position = the leading
-    3 floats) whose buffers are laid out contiguously in BSP order — but the
-    material's vertex POINTER is a D3D/AGP offset, not a file offset. So we
-    locate each material's vertex block by walking forward and matching its
-    known vertex count to a run of in-world-bounds positions (every accepted
-    vertex is validated against world_bounds).
+HALO 1 (Xbox) STRUCTURE-BSP LAYOUT (verified empirically against stock
+bloodgulch.map): ScenarioBSP reference (file offset/size/magic) via the
+scenario's structure_bsps reflexive; BSP chunk header dword[0] -> sbsp meta;
+sbsp meta world_bounds_x/y/z @ 0xC8/0xD0/0xD8, surfaces reflexive (3xu16 tris) @
+0xF8, lightmaps reflexive @ 0x104; lightmap = 0x20 bytes, materials reflexive @
+0x14; material = 0x100 bytes, shader dependency @ 0x00 (tag_id @ +0x0C),
+surfaces(s32) @ 0x14, surface_count(s32) @ 0x18, rendered-vertex count(u32) @
+0xB4; surface indices are material-local. Xbox rendered vertices are 32-byte
+records (position = leading 3 floats) whose buffers sit contiguously in BSP
+order but are addressed by D3D offsets, so each material's block is located by a
+world_bounds-validated forward scan.
 
-ROBUSTNESS. The well-known anchors are constants; the one thing that can't be
-read as a plain file pointer (the Xbox vertex buffer location) is discovered by
-the bounds-validated forward scan. A wrong sbsp-meta offset yields implausible
-world_bounds and is rejected, so the extractor fails loudly rather than emitting
-garbage; the frontend then degrades to the auto-fit world-bounds box.
-
-LEGAL: the decoded mesh is game-derived geometry. Like the map-preview PNGs and
-the HUD icons, it is a LOCAL, git-ignored cache regenerated from the user's own
-legally-owned game files — never committed.
+LEGAL: the decoded mesh + PNG are game-derived assets — a LOCAL, git-ignored
+cache regenerated from the user's own legally-owned game files, never committed.
 
 Usage:
   python3 scripts/game-geometry/extract_bsp.py \
-      [--game haloce] \
-      [--mapper-dir ../halo-offset-mapper/scripts/mapmanifest] \
-      [--maps-dir "../halo-offset-mapper/xbe-dropzone/Halo CE/maps"] \
-      [--map bloodgulch.map] \
-      [--out sveltekit/static/game-geometry] \
-      [--verbose]
+      [--game haloce] [--mapper-dir ...] [--maps-dir ...] \
+      [--map bloodgulch.map] [--out sveltekit/static/game-geometry] [--verbose]
 """
 
 from __future__ import annotations
@@ -64,34 +51,34 @@ import re
 import struct
 import sys
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # bumped: adds per-vertex colors + top-down PNG
 GENERATOR = "xemu-cartographer/game-geometry"
 
 # --- verified Halo 1 (Xbox) structure_bsp offsets ---------------------------
-REFLEXIVE_SIZE = 0x0C  # count(u32) + pointer(u32) + 4 runtime-zero bytes
-
 SBSP_WORLD_BOUNDS_X = 0xC8  # (min f32, max f32); y at +8, z at +0x10
-SBSP_SURFACES_REFLEXIVE = 0xF8  # render triangles, 3×u16 each
+SBSP_SURFACES_REFLEXIVE = 0xF8  # render triangles, 3xu16 each
 SBSP_LIGHTMAPS_REFLEXIVE = 0x104
 
 LIGHTMAP_SIZE = 0x20
 LM_MATERIALS_REFLEXIVE = 0x14
 
 MATERIAL_SIZE = 0x100
+MAT_SHADER_TAG_ID = 0x0C  # tag_id within the shader TagDependency at material+0x00
 MAT_SURFACES = 0x14  # s32 first-surface index (local to this material)
 MAT_SURFACE_COUNT = 0x18  # s32
 MAT_VERTEX_COUNT = 0xB4  # u32 rendered-vertex count
 
-SURFACE_SIZE = 6  # 3 × u16 vertex indices
+SURFACE_SIZE = 6  # 3 x u16 vertex indices
 VERTEX_STRIDE = 32  # Xbox compressed BSP vertex; position = leading 3 floats
-BOUNDS_SLACK = 3.0  # world-bounds tolerance when validating vertices
+BOUNDS_SLACK = 3.0
+
+NEUTRAL_COLOR = (0.5, 0.5, 0.52)  # fallback when a texture can't be sampled
 
 # 'sbsp' in both byte orders (Halo stores dependency fourccs byte-reversed).
 _SBSP_BYTES = (b"sbsp", b"psbs")
 
 
 def slugify(s: str) -> str:
-    """Match the frontend's mesh-key derivation (game-geometry.ts)."""
     return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
 
 
@@ -133,8 +120,6 @@ def _has_sbsp(window):
 
 
 def _looks_like_bsp_ref(m, o):
-    """Does the ScenarioBSP reference element at file offset `o` frame a real BSP
-    chunk (file offset / size / magic + an 'sbsp' dependency)?"""
     filesize = len(m.image)
     if o < 0 or o + 0x30 > filesize:
         return None
@@ -153,8 +138,6 @@ def _looks_like_bsp_ref(m, o):
 
 
 def find_bsp_reference(m, scnr, log):
-    """Locate the structure BSP chunk via the scenario's structure_bsps reflexive
-    (its target's first element frames the chunk); falls back to an inline scan."""
     base = m.off(scnr.meta_vaddr)
     filesize = len(m.image)
     for p in range(base, base + 0x600, 4):
@@ -178,9 +161,6 @@ def find_bsp_reference(m, scnr, log):
 
 
 def sbsp_meta_candidates(m, ba, log):
-    """Candidate file offsets for the sbsp meta. The chunk header's first dword
-    points at the meta (in BSP space); also offer fixed header sizes. The caller
-    keeps the first whose world_bounds validate."""
     cands = []
     head_ptr = _u32(m.image, ba.start)
     if ba.valid(head_ptr):
@@ -210,7 +190,6 @@ def bounds_plausible(b):
         return False
     if not (xmax > xmin and ymax > ymin and zmax >= zmin):
         return False
-    # A real level spans more than a hair and less than the engine's max.
     span = max(xmax - xmin, ymax - ymin)
     return 1.0 < span < 100000.0
 
@@ -226,9 +205,6 @@ def read_surfaces(img, ba, meta_off, log):
 
 
 def find_vertex_block(img, ba, cursor, count, bounds):
-    """Find the next material's 32-byte-stride vertex block: the first 4-byte-
-    aligned offset at/after `cursor` where `count` consecutive positions all fall
-    inside world_bounds. Returns the file offset, or None."""
     (xmin, xmax), (ymin, ymax), (zmin, zmax) = bounds
     sl = BOUNDS_SLACK
     xlo, xhi = xmin - sl, xmax + sl
@@ -239,7 +215,6 @@ def find_vertex_block(img, ba, cursor, count, bounds):
     span = count * VERTEX_STRIDE
     last = count - 1
     while o + span <= end:
-        # Cheap reject: first / mid / last must be in-bounds before the full scan.
         ok = True
         for k in (0, last >> 1, last):
             p = o + k * VERTEX_STRIDE
@@ -267,7 +242,103 @@ def find_vertex_block(img, ba, cursor, count, bounds):
     return None
 
 
-def extract_mesh(m, ba, meta_off, log):
+# --- per-material color sampled from the real map textures ------------------
+def build_tag_by_id(m):
+    return {t.tag_id: t for t in m.tags}
+
+
+def _avg_bitmap_color(m, B, bitmap_tag):
+    import numpy as np
+
+    bds = B.all_bitmap_data(m, bitmap_tag)
+    if not bds:
+        return None
+    img = B.decode_to_image(m.image, bds[0]).convert("RGBA")
+    arr = np.asarray(img, dtype=np.float32)
+    if arr.size == 0:
+        return None
+    rgb = arr[..., :3].reshape(-1, 3)
+    alpha = arr[..., 3].reshape(-1)
+    mask = alpha > 16
+    px = rgb[mask] if int(mask.sum()) >= 8 else rgb
+    mean = px.mean(axis=0) / 255.0
+    return (float(mean[0]), float(mean[1]), float(mean[2]))
+
+
+def _first_bitmap_of_shader(m, shader_tag, tag_by_id):
+    """The base/diffuse map is the first bitmap dependency in the shader meta —
+    works across shader types (senv/soso/schi/...) without per-type offsets."""
+    if not m.in_image(shader_tag.meta_vaddr):
+        return None
+    o = m.off(shader_tag.meta_vaddr)
+    end = min(len(m.image), o + 0x400)
+    p = o
+    while p + 16 <= end:
+        if m.image[p : p + 4] == b"mtib":  # 'bitm' reversed (dependency tag class)
+            tid = _u32(m.image, p + 0x0C)
+            t = tag_by_id.get(tid)
+            if t is not None and t.group == "bitm":
+                return t
+        p += 4
+    return None
+
+
+def material_color(m, B, mat_off, tag_by_id, cache, log):
+    shader_tid = _u32(m.image, mat_off + MAT_SHADER_TAG_ID)
+    if shader_tid in cache:
+        return cache[shader_tid]
+    col = None
+    sh = tag_by_id.get(shader_tid)
+    if sh is not None:
+        bt = _first_bitmap_of_shader(m, sh, tag_by_id)
+        if bt is not None:
+            try:
+                col = _avg_bitmap_color(m, B, bt)
+            except Exception as e:  # noqa: BLE001 — texture decode is best-effort
+                log(f"    color decode failed ({sh.path!r}): {e}")
+    if col is None:
+        col = NEUTRAL_COLOR
+    cache[shader_tid] = col
+    return col
+
+
+def rasterize_top(positions, indices, colors, bounds, out_path, px_per_unit=9.0):
+    """Top-down 2D projection PNG: triangles filled with their material color,
+    painted low-Z first so higher terrain occludes lower (elevation reads). World
+    X/Y -> pixels over the mesh bounds (Y flipped = north up), transparent
+    background. Aligns to live coordinates because the frontend places it by
+    projecting these SAME bounds through the live map projection."""
+    from PIL import Image, ImageDraw
+
+    minx, maxx = bounds["minX"], bounds["maxX"]
+    miny, maxy = bounds["minY"], bounds["maxY"]
+    spanx = max(1e-3, maxx - minx)
+    spany = max(1e-3, maxy - miny)
+    W = max(64, min(2048, int(round(spanx * px_per_unit))))
+    H = max(64, min(2048, int(round(spany * px_per_unit))))
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(img, "RGBA")
+    tris = []
+    for i in range(0, len(indices), 3):
+        a, b, c = indices[i], indices[i + 1], indices[i + 2]
+        zavg = (positions[a * 3 + 2] + positions[b * 3 + 2] + positions[c * 3 + 2]) / 3.0
+        tris.append((zavg, a, b, c))
+    tris.sort(key=lambda t: t[0])
+    for _, a, b, c in tris:
+        pts = []
+        for vi in (a, b, c):
+            x = positions[vi * 3]
+            y = positions[vi * 3 + 1]
+            pts.append(((x - minx) / spanx * W, (maxy - y) / spany * H))
+        r = int(max(0.0, min(1.0, colors[a * 3])) * 255)
+        g = int(max(0.0, min(1.0, colors[a * 3 + 1])) * 255)
+        bl = int(max(0.0, min(1.0, colors[a * 3 + 2])) * 255)
+        dr.polygon(pts, fill=(r, g, bl, 255))
+    img.save(out_path)
+    return W, H
+
+
+def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
     img = m.image
     bounds = read_world_bounds(img, meta_off)
     log(f"  world_bounds x={bounds[0]} y={bounds[1]} z={bounds[2]}")
@@ -289,7 +360,9 @@ def extract_mesh(m, ba, meta_off, log):
     log(f"  lightmaps: {lm_count}")
 
     positions = []
+    colors = []
     indices = []
+    color_cache = {}
     cursor = ba.start
     materials = 0
     skipped = 0
@@ -315,10 +388,12 @@ def extract_mesh(m, ba, meta_off, log):
             if block is None:
                 skipped += 1
                 continue
+            col = material_color(m, B, mat_off, tag_by_id, color_cache, log)
             base = len(positions)
             for k in range(vc):
                 p = block + k * VERTEX_STRIDE
                 positions.append((_f32(img, p), _f32(img, p + 4), _f32(img, p + 8)))
+                colors.append(col)
             for a, b, c in surfaces[s0 : s0 + sc]:
                 if a < vc and b < vc and c < vc:
                     indices.append((base + a, base + b, base + c))
@@ -333,18 +408,24 @@ def extract_mesh(m, ba, meta_off, log):
     xs = [p[0] for p in positions]
     ys = [p[1] for p in positions]
     zs = [p[2] for p in positions]
-    log(f"  materials={materials} skipped={skipped} dropped_tris={dropped_tris}")
+    sampled = sum(1 for v in color_cache.values() if v != NEUTRAL_COLOR)
+    log(f"  materials={materials} skipped={skipped} dropped_tris={dropped_tris} "
+        f"shaders={len(color_cache)} texture-sampled={sampled}")
     log(f"  mesh: {len(positions)} verts, {len(indices)} tris, "
         f"bounds x[{min(xs):.1f},{max(xs):.1f}] y[{min(ys):.1f},{max(ys):.1f}] z[{min(zs):.1f},{max(zs):.1f}]")
 
     flat_pos = []
     for x, y, z in positions:
         flat_pos.extend((round(x, 4), round(y, 4), round(z, 4)))
+    flat_col = []
+    for r, g, b in colors:
+        flat_col.extend((round(r, 4), round(g, 4), round(b, 4)))
     flat_idx = []
     for tri in indices:
         flat_idx.extend(tri)
     return {
         "positions": flat_pos,
+        "colors": flat_col,
         "indices": flat_idx,
         "bounds": {"minX": min(xs), "maxX": max(xs), "minY": min(ys),
                    "maxY": max(ys), "minZ": min(zs), "maxZ": max(zs)},
@@ -356,6 +437,7 @@ def extract_mesh(m, ba, meta_off, log):
 def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
     sys.path.insert(0, mapper_dir)
     import halomap as H  # noqa: E402 (reused cache parser — see module docstring)
+    import bitmaps as B  # noqa: E402 (reused swizzle-aware bitmap decoder)
 
     def log(msg):
         if verbose:
@@ -365,6 +447,7 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
     if not os.path.isfile(map_path):
         raise SystemExit(f"map not found: {map_path}\n(set --maps-dir to your Halo CE maps dir)")
     m = H.parse_map(map_path)
+    tag_by_id = build_tag_by_id(m)
     log(f"map {map_file}: name={m.name!r} type={m.map_type_name} vbase={m.vbase:#x}")
 
     scnr = next((t for t in m.tags if t.group == "scnr"), None)
@@ -381,7 +464,7 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
     mesh = None
     for meta_off in sbsp_meta_candidates(m, ba, log):
         log(f"  trying sbsp meta @ file {meta_off:#x}")
-        mesh = extract_mesh(m, ba, meta_off, log)
+        mesh = extract_mesh(m, B, ba, meta_off, tag_by_id, log)
         if mesh is not None:
             break
     if mesh is None:
@@ -389,6 +472,17 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
 
     out_dir = os.path.join(out_root, game)
     os.makedirs(out_dir, exist_ok=True)
+
+    # 2D top-down projection PNG (minimap background).
+    top_file = f"{key}_top.png"
+    try:
+        W, Hh = rasterize_top(mesh["positions"], mesh["indices"], mesh["colors"],
+                              mesh["bounds"], os.path.join(out_dir, top_file))
+        log(f"  top projection: {W}x{Hh} -> {top_file}")
+    except Exception as e:  # noqa: BLE001 — PNG is best-effort
+        log(f"  top projection failed: {e}")
+        top_file = None
+
     mesh_file = f"{key}.json"
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -401,6 +495,7 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
         "vertex_count": mesh["vertex_count"],
         "triangle_count": mesh["triangle_count"],
         "positions": mesh["positions"],
+        "colors": mesh["colors"],
         "indices": mesh["indices"],
     }
     with open(os.path.join(out_dir, mesh_file), "w") as fh:
@@ -417,6 +512,7 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
             pass
     manifest["meshes"][key] = {
         "file": mesh_file,
+        "top_image": top_file,
         "scenario": scenario_path,
         "source_map": map_file,
         "vertex_count": mesh["vertex_count"],
@@ -427,7 +523,7 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
     with open(man_path, "w") as fh:
         json.dump(manifest, fh, indent=2)
 
-    return key, payload, out_dir
+    return key, payload, top_file, out_dir
 
 
 def main():
@@ -440,7 +536,7 @@ def main():
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--game", default="haloce")
-    ap.add_argument("--mapper-dir", default=default_mapper, help="halo-offset-mapper mapmanifest dir (parser reuse)")
+    ap.add_argument("--mapper-dir", default=default_mapper, help="halo-offset-mapper mapmanifest dir (parser/bitmap reuse)")
     ap.add_argument("--maps-dir", default=default_maps, help="directory of unpacked stock .map files")
     ap.add_argument("--map", default="bloodgulch.map", help="specific .map file to read")
     ap.add_argument("--out", default=default_out, help="served geometry cache root (per-game subdir created)")
@@ -451,13 +547,14 @@ def main():
         raise SystemExit(f"mapper-dir not found: {args.mapper_dir}\n"
                          f"(clone halo-offset-mapper beside xemu-cartographer, or pass --mapper-dir)")
 
-    key, payload, out_dir = extract(args.game, args.mapper_dir, args.maps_dir, args.map, args.out, args.verbose)
+    key, payload, top_file, out_dir = extract(
+        args.game, args.mapper_dir, args.maps_dir, args.map, args.out, args.verbose)
     print(json.dumps({
         "game": args.game, "scenario": payload["scenario"], "source_map": payload["source_map"],
         "key": key, "vertex_count": payload["vertex_count"], "triangle_count": payload["triangle_count"],
-        "bounds": payload["bounds"],
+        "top_image": top_file, "bounds": payload["bounds"],
     }, indent=2))
-    print(f"  -> {os.path.join(out_dir, key)}.json")
+    print(f"  -> {os.path.join(out_dir, key)}.json  (+ {top_file})")
 
 
 if __name__ == "__main__":

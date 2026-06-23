@@ -65,3 +65,28 @@ _Append-only. Never edit past entries; add a new dated line._
   Three (x, z, −y), applied to both markers and the BSP mesh so they share one
   space. The live `GameData→positions` path is already proven by the 2D
   visualizer; this reuses the identical feed + model.
+- 2026-06-23 (overnight): **Live + color + 2D background.**
+  - **Live 3D confirmed** against the real `ce-viz-5` Blood Gulch CE match on the
+    127.0.0.1:8093 dev backend (`/visualizer3d/5/?token=…`, host:5 overlay
+    token): real players (Stew/Shadow) render + move in the real 3D map.
+  - **Overlay WS join bug fixed** (`internal/websocket/handlers/join_room.go`):
+    the host RoomType's `RequireAuth` guard rejected overlay-token connections
+    (no user) with "authentication required" BEFORE the overlay-aware
+    `authorizeHostRoom` ran — so overlay tokens could never join host rooms
+    (both visualizers starved live). Overlay connections now skip the user
+    guards and are gated solely by `authorizeHostRoom` (scoped to their bound
+    instance, summary/other-instance/non-host denied). Unit test green.
+  - **Texture-sampled per-material color** (shared extraction): each BSP
+    material → shader → base bitmap is decoded (halo-offset-mapper `bitmaps.py`)
+    and averaged, so terrain reads by real color (tan cliffs, olive floor, grey
+    bases). 17/17 Blood Gulch shaders sampled. Emitted as per-vertex colors on
+    the 3D mesh AND a top-down PNG. (Full UV texturing is the remaining stretch.)
+  - **2D minimap geometry background**: the SAME extraction emits a top-down PNG
+    (`<key>_top.png`); `TopDownMap` draws it placed by projecting the BSP bounds
+    through the live projection (pixel-aligned with the dots), toggleable (“Map”),
+    degrades to the blank grid when uncached. Dots/icons now sit on the real map.
+  - **Mock relocated** into real Blood Gulch world-bounds so `?mock=1` sits on
+    the geometry. `pnpm lint/check/test (150)/build` green.
+  - **Known follow-ups:** the dev `OVERLAY_TOKEN_SECRET` is ephemeral, so a
+    server restart rotates it and invalidates minted tokens (re-mint via the
+    admin route); real UV textures + H2 are stage-3.
