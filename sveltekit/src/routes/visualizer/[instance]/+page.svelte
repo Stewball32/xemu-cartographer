@@ -3,14 +3,23 @@
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { buildVizModel } from '$lib/utils/visualizer-view';
 	import { teamMeta } from '$lib/utils/overlay-view';
+	import { loadIconSet, emptyIconSet, type IconSet } from '$lib/utils/game-icons';
 	import TopDownMap from '$lib/components/visualizer/TopDownMap.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
+	// CE today; when an H2 plugin lands its game id would come off the feed.
+	const GAME = 'haloce';
+
 	const feed = createOverlayFeed();
 	// One model off the same WS feed the OBS overlays consume.
 	const model = $derived(buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects));
+
+	// Real Halo HUD icons for the map markers, decoded from the user's game files
+	// into the served cache. Loads best-effort: if the cache was never
+	// regenerated, this stays empty and every marker uses its generic shape.
+	let iconSet = $state<IconSet>(emptyIconSet(GAME));
 
 	// Layer toggles (debug controls). The spawn layer seeds from the URL once
 	// (untrack: a deliberate initial snapshot, not a live binding to the prop).
@@ -20,7 +29,7 @@
 	let showProjectiles = $state(true);
 	let showNames = $state(true);
 
-	onMount(() =>
+	onMount(() => {
 		feed.start({
 			instance: data.instance,
 			token: data.token,
@@ -29,8 +38,9 @@
 			// map + spawns (stable bounds), objects = vehicles / dropped items /
 			// projectiles (opt-in; absent → those layers stay empty placeholders).
 			classes: ['game', 'tick', 'scenario', 'objects']
-		})
-	);
+		});
+		loadIconSet(GAME).then((s) => (iconSet = s));
+	});
 	onDestroy(() => feed.stop());
 
 	const teamLegend = $derived.by(() => {
@@ -103,7 +113,15 @@
 	<div class="body">
 		<div class="mapwrap">
 			<div class="mapbox">
-				<TopDownMap {model} {showSpawns} {showItems} {showVehicles} {showProjectiles} {showNames} />
+				<TopDownMap
+					{model}
+					icons={iconSet}
+					{showSpawns}
+					{showItems}
+					{showVehicles}
+					{showProjectiles}
+					{showNames}
+				/>
 			</div>
 		</div>
 
@@ -189,6 +207,9 @@
 					<li class:on={model.hasTick}>tick</li>
 					<li class:on={model.hasScenario}>scenario</li>
 					<li class:on={model.hasObjects}>objects</li>
+					<li class:on={iconSet.loaded} title="Real Halo HUD icons (decoded from game files)">
+						icons
+					</li>
 				</ul>
 				<p class="note">
 					Bounds: {model.bounds.source}{model.bounds.valid ? '' : ' (none)'}

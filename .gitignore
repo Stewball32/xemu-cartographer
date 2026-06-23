@@ -30,6 +30,12 @@ ROADMAP-*.md
 sveltekit/node_modules/
 sveltekit/.svelte-kit/
 
+# Game-derived HUD icon cache (visualizer minimap markers). Decoded from the
+# user's own legally-owned Halo game files by scripts/game-icons/extract_icons.py
+# — game art, never committed (same legal stance as the map-preview PNGs). The
+# extractor + the frontend fallback are the committed product; regenerate locally.
+sveltekit/static/game-icons/
+
 # Environment
 .env
 !.env.example

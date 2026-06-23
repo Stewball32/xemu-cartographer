@@ -9,10 +9,18 @@
 		type VizModel,
 		type VizPlayer
 	} from '$lib/utils/visualizer-view';
+	import {
+		iconKeyForItem,
+		iconKeyForVehicle,
+		OBJECTIVE_FLAG_KEY,
+		emptyIconSet,
+		type IconSet
+	} from '$lib/utils/game-icons';
 	import type { Vec2, Vec3 } from '$lib/types/scraper-v2';
 
 	let {
 		model,
+		icons = emptyIconSet('haloce'),
 		showSpawns = false,
 		showItems = true,
 		showVehicles = true,
@@ -20,6 +28,9 @@
 		showNames = true
 	}: {
 		model: VizModel;
+		/** Real-game-icon set (decoded from the user's game files); when a marker's
+		 * icon isn't available, that marker falls back to its generic shape. */
+		icons?: IconSet;
 		showSpawns?: boolean;
 		showItems?: boolean;
 		showVehicles?: boolean;
@@ -81,6 +92,29 @@
 	});
 </script>
 
+<!-- A real-game-icon marker: the white HUD glyph on a dark disc with a thin
+     category/team-colored ring, sized into a fixed box (aspect-preserved). -->
+{#snippet iconMarker(cx: number, cy: number, href: string, ring: string, size: number)}
+	<circle {cx} {cy} r={size * 0.6} class="icon-bg" />
+	<image
+		{href}
+		x={cx - size / 2}
+		y={cy - size / 2}
+		width={size}
+		height={size}
+		preserveAspectRatio="xMidYMid meet"
+	/>
+	<circle
+		{cx}
+		{cy}
+		r={size * 0.6}
+		fill="none"
+		stroke={ring}
+		stroke-width="1.4"
+		stroke-opacity="0.8"
+	/>
+{/snippet}
+
 <svg
 	viewBox="0 0 {VIEW} {VIEW}"
 	class="map"
@@ -132,17 +166,27 @@
 			<g class="vehicles">
 				{#each model.vehicles as v (v.id)}
 					{@const c = p(v.pos)}
-					<rect
-						x={c.x - 8}
-						y={c.y - 6}
-						width="16"
-						height="12"
-						rx="3"
-						class="veh"
-						class:occupied={v.occupied}
-					/>
+					{@const href = icons.url(iconKeyForVehicle(v.tag))}
+					{#if href}
+						{@render iconMarker(c.x, c.y, href, v.occupied ? '#e9edf2' : '#cbd5e1', 26)}
+						{#if v.occupied}
+							<circle cx={c.x} cy={c.y} r="2.5" fill="#e9edf2" opacity="0.85" />
+						{/if}
+					{:else}
+						<rect
+							x={c.x - 8}
+							y={c.y - 6}
+							width="16"
+							height="12"
+							rx="3"
+							class="veh"
+							class:occupied={v.occupied}
+						/>
+					{/if}
 					{#if showNames}
-						<text x={c.x} y={c.y + 18} class="vlabel" text-anchor="middle">{v.label}</text>
+						<text x={c.x} y={c.y + (href ? 22 : 18)} class="vlabel" text-anchor="middle"
+							>{v.label}</text
+						>
 					{/if}
 				{/each}
 			</g>
@@ -154,14 +198,21 @@
 				{#each model.items.filter((it) => it.heldBy == null) as it (it.id)}
 					{@const c = p(it.pos)}
 					{@const col = ITEM_COLOR[it.kind] ?? ITEM_COLOR.other}
-					<path
-						d="M {c.x} {c.y - 7} L {c.x + 7} {c.y} L {c.x} {c.y + 7} L {c.x - 7} {c.y} Z"
-						fill={col}
-						stroke="rgba(0,0,0,0.5)"
-						stroke-width="1"
-					/>
+					{@const href = icons.url(iconKeyForItem(it.tag, it.kind))}
+					{#if href}
+						{@render iconMarker(c.x, c.y, href, col, 24)}
+					{:else}
+						<path
+							d="M {c.x} {c.y - 7} L {c.x + 7} {c.y} L {c.x} {c.y + 7} L {c.x - 7} {c.y} Z"
+							fill={col}
+							stroke="rgba(0,0,0,0.5)"
+							stroke-width="1"
+						/>
+					{/if}
 					{#if showNames}
-						<text x={c.x} y={c.y - 11} class="ilabel" text-anchor="middle">{it.label}</text>
+						<text x={c.x} y={c.y - (href ? 15 : 11)} class="ilabel" text-anchor="middle"
+							>{it.label}</text
+						>
 					{/if}
 				{/each}
 			</g>
@@ -171,10 +222,18 @@
 		<g class="flags">
 			{#each model.flags as f, i (i)}
 				{@const c = p(f.pos)}
-				<line x1={c.x} y1={c.y + 8} x2={c.x} y2={c.y - 12} stroke="#e9edf2" stroke-width="2" />
-				<path d="M {c.x} {c.y - 12} L {c.x + 12} {c.y - 8} L {c.x} {c.y - 4} Z" fill={f.color} />
-				{#if f.carrier != null}
-					<circle cx={c.x} cy={c.y} r="3" fill={f.color} opacity="0.6" />
+				{@const href = icons.url(OBJECTIVE_FLAG_KEY)}
+				{#if href}
+					{@render iconMarker(c.x, c.y, href, f.color, 24)}
+					{#if f.carrier != null}
+						<circle cx={c.x} cy={c.y} r="2.5" fill={f.color} opacity="0.85" />
+					{/if}
+				{:else}
+					<line x1={c.x} y1={c.y + 8} x2={c.x} y2={c.y - 12} stroke="#e9edf2" stroke-width="2" />
+					<path d="M {c.x} {c.y - 12} L {c.x + 12} {c.y - 8} L {c.x} {c.y - 4} Z" fill={f.color} />
+					{#if f.carrier != null}
+						<circle cx={c.x} cy={c.y} r="3" fill={f.color} opacity="0.6" />
+					{/if}
 				{/if}
 			{/each}
 		</g>
@@ -308,6 +367,10 @@
 	}
 	.ring.shield {
 		stroke: #5cc8ff;
+	}
+
+	.icon-bg {
+		fill: rgba(8, 11, 18, 0.78);
 	}
 
 	.veh {
