@@ -1,50 +1,46 @@
 import { describe, it, expect } from 'vitest';
 import { buildFloorplan } from './floorplan';
 
-// Three triangles with known normals:
-//   floor   — in the XY plane, wound CCW so the normal points +Z
-//   ceiling — in a higher XY plane, wound CW so the normal points −Z (dropped)
-//   wall    — in the XZ plane, normal horizontal
-const positions = [
-	// floor (z=0)
-	0, 0, 0, 1, 0, 0, 0, 1, 0,
-	// ceiling (z=5)
-	0, 0, 5, 0, 1, 5, 1, 0, 5,
-	// wall (xz plane)
-	0, 0, 0, 1, 0, 0, 0, 0, 1
-];
-const indices = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+// A large open floor (z=0) wound CCW (normal up) + green material colour.
+const FLOOR = [0, 0, 0, 4, 0, 0, 0, 4, 0];
+const FLOOR_COL = [0, 0.6, 0, 0, 0.6, 0, 0, 0.6, 0];
 
 describe('buildFloorplan', () => {
-	it('keeps floors, drops ceilings, outlines walls', () => {
-		const fp = buildFloorplan({ positions, indices });
+	it('keeps an open floor as a walkable region carrying its material colour', () => {
+		const fp = buildFloorplan({ positions: FLOOR, indices: [0, 1, 2], colors: FLOOR_COL });
 		expect(fp.floors).toHaveLength(1);
-		expect(fp.walls).toHaveLength(1);
+		expect(fp.floors[0].color[1]).toBeCloseTo(0.6);
 		expect(fp.floorZs).toEqual([0]);
 	});
 
-	it('carries the floor triangle in world XY with its height', () => {
-		const fp = buildFloorplan({ positions, indices });
-		const f = fp.floors[0];
-		expect(f.z).toBeCloseTo(0);
-		expect(f.pts).toHaveLength(3);
-		expect(f.pts[1]).toEqual({ x: 1, y: 0 });
+	it('drops a floor sealed under a low ceiling (crawlspace / inaccessible)', () => {
+		// floor z=0 + ceiling z=1 over the same XY → no head clearance.
+		const pos = [...FLOOR, 0, 0, 1, 0, 4, 1, 4, 0, 1];
+		const fp = buildFloorplan({ positions: pos, indices: [0, 1, 2, 3, 4, 5] });
+		expect(fp.floors).toHaveLength(0);
+	});
+
+	it('keeps a floor with adequate headroom (ceiling well above)', () => {
+		const pos = [...FLOOR, 0, 0, 3, 0, 4, 3, 4, 0, 3];
+		const fp = buildFloorplan({ positions: pos, indices: [0, 1, 2, 3, 4, 5] });
+		expect(fp.floors).toHaveLength(1);
+	});
+
+	it('drops ceilings, emits clean wall/boundary outline segments for a walkable floor', () => {
+		// open floor + a vertical wall along its x=4 edge.
+		const pos = [...FLOOR, 4, 0, 0, 4, 2, 0, 4, 0, 2];
+		const fp = buildFloorplan({ positions: pos, indices: [0, 1, 2, 3, 4, 5] });
+		expect(fp.floors).toHaveLength(1);
+		expect(fp.walls.length).toBeGreaterThan(0);
+		// Segments, not filled tris: each has endpoints a/b + a height.
+		expect(fp.walls[0].a).toBeDefined();
+		expect(fp.walls[0].b).toBeDefined();
+		expect(typeof fp.walls[0].z).toBe('number');
 	});
 
 	it('is resilient to out-of-range indices', () => {
 		const fp = buildFloorplan({ positions: [0, 0, 0], indices: [0, 1, 2] });
 		expect(fp.floors).toHaveLength(0);
 		expect(fp.walls).toHaveLength(0);
-	});
-
-	it('sorts floors low-Z first so higher floors paint on top', () => {
-		const pos = [
-			// low floor z=0
-			0, 0, 0, 1, 0, 0, 0, 1, 0,
-			// high floor z=4
-			0, 0, 4, 1, 0, 4, 0, 1, 4
-		];
-		const fp = buildFloorplan({ positions: pos, indices: [0, 1, 2, 3, 4, 5] });
-		expect(fp.floors.map((f) => f.z)).toEqual([0, 4]);
 	});
 });

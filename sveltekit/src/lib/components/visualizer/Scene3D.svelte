@@ -120,12 +120,15 @@
 	}
 	const playerNodes = new Map<number, PlayerNode>();
 
+	// Player marker at REAL Halo CE biped scale: ~0.64 wu wide × ~2.0 wu tall
+	// (radius 0.32 + cylinder 1.36 = 2.0 total height), so a body reads proportional
+	// to the map instead of oversized. Items/flags shrunk to match.
 	const geom = {
-		capsule: new THREE.CapsuleGeometry(0.55, 1.4, 6, 12),
-		arrow: new THREE.ConeGeometry(0.32, 0.9, 10),
-		item: new THREE.OctahedronGeometry(0.7),
+		capsule: new THREE.CapsuleGeometry(0.32, 1.36, 6, 12),
+		arrow: new THREE.ConeGeometry(0.18, 0.5, 10),
+		item: new THREE.OctahedronGeometry(0.42),
 		vehicle: new THREE.BoxGeometry(2.2, 1.1, 3.4),
-		proj: new THREE.SphereGeometry(0.28, 8, 8),
+		proj: new THREE.SphereGeometry(0.22, 8, 8),
 		spawn: new THREE.CylinderGeometry(0.9, 0.9, 0.12, 16)
 	};
 	const matCache = new Map<string, THREE.MeshStandardMaterial>();
@@ -526,7 +529,7 @@
 		el.className = 'viz3d-label';
 		el.textContent = text;
 		const obj = new CSS2DObject(el);
-		obj.position.set(0, 1.7, 0);
+		obj.position.set(0, 1.5, 0); // floating nameplate just above the ~2u-tall head
 		return { obj, el };
 	}
 
@@ -541,7 +544,7 @@
 				const body = new THREE.Mesh(geom.capsule, mat(pl.color, { emissive: true }));
 				const arrow = new THREE.Mesh(geom.arrow, mat('#f4f7fb'));
 				arrow.rotation.z = -Math.PI / 2;
-				arrow.position.set(1.0, 0, 0);
+				arrow.position.set(0.6, 0, 0); // just in front of the body
 				const { obj, el } = makeLabel(pl.name);
 				group.add(body, arrow, obj);
 				playersGroup.add(group);

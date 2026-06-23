@@ -20,7 +20,7 @@
 	import { emptyIconSet, type IconSet } from '$lib/utils/game-icons';
 	import type { TopProjection } from '$lib/utils/game-geometry';
 	import type { Floorplan } from '$lib/utils/floorplan';
-	import { shadeForZ, bandColor, type FloorBands } from '$lib/utils/floor-bands';
+	import { bandColor, type FloorBands } from '$lib/utils/floor-bands';
 	import type { Vec2, Vec3 } from '$lib/types/scraper-v2';
 
 	let {
@@ -79,19 +79,52 @@
 		return bands ? bands.bandForZ(pl.pos.z) : 0;
 	}
 
-	function elevShade(z: number): string {
-		if (!bands) return '#8b97a7';
-		// Absolute → discrete per-band step (crisp floor bands that match the legend
-		// exactly). Relative → smooth gradient around the followed player's height.
+	function clamp01(n: number): number {
+		return n < 0 ? 0 : n > 1 ? 1 : n;
+	}
+
+	/** Reach-radar elevation brightness for a world Z: lower = darker, higher =
+	 * lighter, smooth gradient. Absolute spans the map's Z range; relative centres
+	 * the followed player's height at a neutral mid-tone. */
+	function brightnessForZ(z: number): number {
+		if (!bands) return 1;
+		let t: number;
 		if (shadeMode === 'relative') {
-			return shadeForZ(z, {
-				mode: 'relative',
-				minZ: bands.minZ,
-				maxZ: bands.maxZ,
-				focusZ: followZ ?? undefined
-			});
+			const focus = Number.isFinite(followZ ?? NaN)
+				? (followZ as number)
+				: (bands.minZ + bands.maxZ) / 2;
+			const range = Math.max(1, (bands.maxZ - bands.minZ) / 2);
+			t = clamp01(0.5 + (z - focus) / (2 * range));
+		} else {
+			const span = bands.maxZ - bands.minZ;
+			t = span > 1e-6 ? clamp01((z - bands.minZ) / span) : 0.5;
 		}
-		return bandColor(bands.bandForZ(z), bands.count);
+		return 0.42 + 1.03 * t; // 0.42 (lowest floor) → 1.45 (highest) — distinct levels
+	}
+
+	function hexToRgb01(hex: string): [number, number, number] {
+		const h = hex.replace('#', '');
+		return [
+			parseInt(h.slice(0, 2), 16) / 255,
+			parseInt(h.slice(2, 4), 16) / 255,
+			parseInt(h.slice(4, 6), 16) / 255
+		];
+	}
+	function rgbStr(c: [number, number, number], mul = 1): string {
+		return `rgb(${Math.round(clamp01(c[0] * mul) * 255)}, ${Math.round(
+			clamp01(c[1] * mul) * 255
+		)}, ${Math.round(clamp01(c[2] * mul) * 255)})`;
+	}
+	/** Floor fill: real material colour modulated by elevation brightness. */
+	function floorFill(c: [number, number, number], z: number): string {
+		return rgbStr(c, brightnessForZ(z));
+	}
+
+	/** Player body fill: team colour modulated by the floor's elevation brightness
+	 * (a high-floor player reads brighter), so team + height both read at a glance. */
+	function playerBodyFill(pl: VizPlayer): string {
+		if (!bands) return pl.color;
+		return rgbStr(hexToRgb01(pl.color), brightnessForZ(pl.pos.z));
 	}
 
 	// --- Floorplan canvas layer (1000×1000 buffer; container is square so it
@@ -110,10 +143,12 @@
 		ctx.clearRect(0, 0, VIEW, VIEW);
 		if (!fp || !bd || !showFloorplan || !proj.valid) return;
 
-		// Floors filled low→high (already sorted) so upper floors land on top.
+		// WALKABLE FLOORS — filled solid (low→high, so upper floors land on top) in
+		// real material colour × elevation brightness. Fill + same-colour hairline
+		// stroke so adjacent triangles read as one continuous region (no seams, no
+		// per-edge clutter).
 		for (const f of fp.floors) {
-			const b = bd.bandForZ(f.z);
-			if (!bandActive(b)) continue;
+			if (!bandActive(bd.bandForZ(f.z))) continue;
 			const a = p({ x: f.pts[0].x, y: f.pts[0].y, z: f.z });
 			const c2 = p({ x: f.pts[1].x, y: f.pts[1].y, z: f.z });
 			const c3 = p({ x: f.pts[2].x, y: f.pts[2].y, z: f.z });
@@ -122,20 +157,27 @@
 			ctx.lineTo(c2.x, c2.y);
 			ctx.lineTo(c3.x, c3.y);
 			ctx.closePath();
-			ctx.fillStyle = elevShade(f.z);
+			const col = floorFill(f.color, f.z);
+			ctx.fillStyle = col;
+			ctx.strokeStyle = col;
+			ctx.lineWidth = 0.8;
 			ctx.fill();
+			ctx.stroke();
 		}
-		// Wall outlines on top (faint, so room boundaries read).
-		ctx.lineWidth = 1;
-		ctx.strokeStyle = 'rgba(8, 11, 18, 0.55)';
+
+		// WALL OUTLINES — clean architectural lines (walkable-region boundary + wall
+		// footprints, already deduped), crisp light strokes over the floors.
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.strokeStyle = 'rgba(214, 222, 234, 0.9)';
+		ctx.lineWidth = 2;
 		ctx.beginPath();
 		for (const w of fp.walls) {
-			const b = bd.bandForZ(w.z);
-			if (!bandActive(b)) continue;
+			if (!bandActive(bd.bandForZ(w.z))) continue;
 			const a = p({ x: w.a.x, y: w.a.y, z: w.z });
-			const c = p({ x: w.b.x, y: w.b.y, z: w.z });
+			const b = p({ x: w.b.x, y: w.b.y, z: w.z });
 			ctx.moveTo(a.x, a.y);
-			ctx.lineTo(c.x, c.y);
+			ctx.lineTo(b.x, b.y);
 		}
 		ctx.stroke();
 	});
@@ -385,7 +427,7 @@
 					{@const c = p(pl.pos)}
 					{@const eb = playerBand(pl)}
 					{@const dimmed = bands ? !bandActive(eb) : false}
-					{@const bodyFill = bands ? elevShade(pl.pos.z) : pl.color}
+					{@const bodyFill = playerBodyFill(pl)}
 					<g
 						class="player"
 						class:dead={!pl.alive}
