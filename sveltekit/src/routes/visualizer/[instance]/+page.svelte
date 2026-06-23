@@ -9,6 +9,7 @@
 		meshKeyForScenario,
 		type TopProjection
 	} from '$lib/utils/game-geometry';
+	import { mockMapModel } from '$lib/utils/mock-map';
 	import TopDownMap from '$lib/components/visualizer/TopDownMap.svelte';
 	import type { PageData } from './$types';
 
@@ -17,20 +18,32 @@
 	// CE today; when an H2 plugin lands its game id would come off the feed.
 	const GAME = 'haloce';
 
+	// Per-map demo mode (?map=<key>): no live feed/token — render that map's
+	// cached geometry populated with mock players placed within its real bounds.
+	const demoMap = untrack(() => data.map);
+	const isDemo = demoMap.length > 0;
+
 	const feed = createOverlayFeed();
-	// One model off the same WS feed the OBS overlays consume.
-	const model = $derived(buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects));
 
 	// Real Halo HUD icons for the map markers, decoded from the user's game files
 	// into the served cache. Loads best-effort: if the cache was never
 	// regenerated, this stays empty and every marker uses its generic shape.
 	let iconSet = $state<IconSet>(emptyIconSet(GAME));
 
-	// Real Blood Gulch BSP top-down projection drawn as the map background, so
-	// dots sit on the actual layout instead of empty space. Best-effort: null →
-	// blank grid (graceful degrade).
+	// BSP top-down projection drawn as the map background, so dots sit on the
+	// actual layout instead of empty space. Best-effort: null → blank grid.
 	let geometry = $state<TopProjection | null>(null);
 	let loadedGeoKey = '';
+
+	// Live/mock: model off the WS feed. Demo: synthesize a 4v4 inside the loaded
+	// map's exact bounds (waits for the projection so alignment is exact).
+	const model = $derived(
+		isDemo
+			? geometry
+				? mockMapModel(geometry.bounds, demoMap)
+				: buildVizModel(null, null, null, null)
+			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
+	);
 
 	// Layer toggles (debug controls). The spawn layer seeds from the URL once
 	// (untrack: a deliberate initial snapshot, not a live binding to the prop).
@@ -42,23 +55,26 @@
 	let showNames = $state(true);
 
 	onMount(() => {
-		feed.start({
-			instance: data.instance,
-			token: data.token,
-			mock: data.mock,
-			// game = roster/identity, tick = positions + health/shields, scenario =
-			// map + spawns (stable bounds), objects = vehicles / dropped items /
-			// projectiles (opt-in; absent → those layers stay empty placeholders).
-			classes: ['game', 'tick', 'scenario', 'objects']
-		});
+		// Demo mode drives everything from the cached geometry — no feed/token.
+		if (!isDemo)
+			feed.start({
+				instance: data.instance,
+				token: data.token,
+				mock: data.mock,
+				// game = roster/identity, tick = positions + health/shields, scenario =
+				// map + spawns (stable bounds), objects = vehicles / dropped items /
+				// projectiles (opt-in; absent → those layers stay empty placeholders).
+				classes: ['game', 'tick', 'scenario', 'objects']
+			});
 		loadIconSet(GAME).then((s) => (iconSet = s));
 	});
 	onDestroy(() => feed.stop());
 
-	// Load the map background when the scenario first becomes known (and again if
-	// the map changes). Keyed on the slugified scenario so a re-emit doesn't reload.
+	// Load the map background when the map first becomes known (and again if it
+	// changes). Source is the demo map or the live feed's scenario. Keyed on the
+	// slugified name so a re-emit doesn't reload.
 	$effect(() => {
-		const raw = feed.scenario?.map ?? '';
+		const raw = isDemo ? demoMap : (feed.scenario?.map ?? '');
 		const key = meshKeyForScenario(raw);
 		if (!key || key === loadedGeoKey) return;
 		loadedGeoKey = key;
@@ -117,8 +133,8 @@
 			<span class="stat" title="Players placed on the map / named in the roster">
 				<strong>{model.placedCount}</strong>/{model.playerCount} players
 			</span>
-			<span class="conn" class:ok={feed.connected} class:mock={feed.mock}>
-				{#if feed.mock}MOCK{:else if feed.connected}● LIVE{:else}○ Connecting…{/if}
+			<span class="conn" class:ok={feed.connected} class:mock={feed.mock || isDemo}>
+				{#if feed.mock || isDemo}MOCK{:else if feed.connected}● LIVE{:else}○ Connecting…{/if}
 			</span>
 			<span class="inst">{data.instance}</span>
 		</div>

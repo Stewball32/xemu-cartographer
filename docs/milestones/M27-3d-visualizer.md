@@ -90,3 +90,13 @@ _Append-only. Never edit past entries; add a new dated line._
   - **Known follow-ups:** the dev `OVERLAY_TOKEN_SECRET` is ephemeral, so a
     server restart rotates it and invalidates minted tokens (re-mint via the
     admin route); real UV textures + H2 are stage-3.
+- 2026-06-23: **Multi-map proof (Chill Out + Prisoner).** Ran the same
+  extraction + render on `chillout.map` (3108 tris, 22/22 shaders sampled) and
+  `prisoner.map` (5234 tris, 18/18 sampled) with ZERO per-map code — both emit
+  mesh + colors + top-down PNG. Added a `?map=<key>` demo path to both
+  visualizer pages (`mock-map.ts`: places a 4v4 within a map's real world-bounds,
+  bounds set to the geometry's exact bounds so the 2D background + 3D camera
+  align by construction). Confirmed 2D + 3D for both maps (screenshots). The
+  per-map auto-fit holds across scales — Blood Gulch ~126×145 wu (20-wu scale
+  bar) vs Chill Out / Prisoner ~±13 wu (5-wu scale bar). Open with e.g.
+  `/visualizer3d/demo/?map=chillout` or `/visualizer/demo/?map=prisoner`.

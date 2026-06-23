@@ -15,6 +15,10 @@ export const load: PageLoad = async ({ params, url, parent }) => {
 		instance: params.instance,
 		token: url.searchParams.get('token') ?? '',
 		mock: mockParam === '1' || mockParam === 'true',
+		// Per-map demo: render the named map's cached geometry populated with mock
+		// players placed within its real world-bounds (no live feed / token). Proves
+		// the pipeline on any extracted map. e.g. ?map=chillout
+		map: url.searchParams.get('map') ?? '',
 		// Optional initial toggle for the static spawn-point reference layer.
 		showSpawns: url.searchParams.get('spawns') === '1'
 	};

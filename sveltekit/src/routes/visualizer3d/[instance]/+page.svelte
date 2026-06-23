@@ -4,6 +4,7 @@
 	import { buildVizModel } from '$lib/utils/visualizer-view';
 	import { teamMeta } from '$lib/utils/overlay-view';
 	import { loadBspMesh, meshKeyForScenario, type BspMesh } from '$lib/utils/game-geometry';
+	import { mockMapModel } from '$lib/utils/mock-map';
 	import Scene3D from '$lib/components/visualizer/Scene3D.svelte';
 	import type { PageData } from './$types';
 
@@ -12,17 +13,29 @@
 	// CE today; when an H2 plugin lands its game id would come off the feed.
 	const GAME = 'haloce';
 
-	const feed = createOverlayFeed();
-	// One model off the same WS feed the OBS overlays + 2D map consume.
-	const model = $derived(buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects));
+	// Per-map demo mode (?map=<key>): no live feed/token — render that map's
+	// cached geometry populated with mock players placed within its real bounds.
+	const demoMap = untrack(() => data.map);
+	const isDemo = demoMap.length > 0;
 
-	// Real Blood Gulch structure-BSP mesh, decoded from the user's game files into
-	// the served geometry cache. Loads best-effort once the feed reports a
-	// scenario: if the cache was never regenerated this stays null and the scene
-	// degrades to the auto-fit world-bounds box.
+	const feed = createOverlayFeed();
+
+	// Structure-BSP mesh, decoded from the user's game files into the served
+	// geometry cache. Loads best-effort once the map is known (feed scenario, or
+	// the demo map): no cache → null → scene degrades to the world-bounds box.
 	let mesh = $state<BspMesh | null>(null);
 	let loadedKey = '';
 	let geometryTried = $state(false);
+
+	// Live/mock: model off the same WS feed. Demo: synthesize a 4v4 inside the
+	// loaded map's exact bounds (waits for the mesh so alignment is exact).
+	const model = $derived(
+		isDemo
+			? mesh
+				? mockMapModel(mesh.bounds, mesh.scenario)
+				: buildVizModel(null, null, null, null)
+			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
+	);
 
 	let showSpawns = $state(untrack(() => data.showSpawns));
 	let showItems = $state(true);
@@ -35,20 +48,22 @@
 	let sceneRef = $state<{ recenter: () => void } | undefined>(undefined);
 
 	onMount(() => {
-		feed.start({
-			instance: data.instance,
-			token: data.token,
-			mock: data.mock,
-			classes: ['game', 'tick', 'scenario', 'objects']
-		});
+		// Demo mode drives everything from the cached geometry — no feed/token.
+		if (!isDemo)
+			feed.start({
+				instance: data.instance,
+				token: data.token,
+				mock: data.mock,
+				classes: ['game', 'tick', 'scenario', 'objects']
+			});
 	});
 	onDestroy(() => feed.stop());
 
-	// Load the level mesh when the scenario first becomes known (and again if the
-	// map changes mid-session). Keyed on the slugified scenario so the feed
-	// re-emitting an identical scenario doesn't reload.
+	// Load the level mesh when the map first becomes known (and again if it
+	// changes). Source is the demo map or the live feed's scenario. Keyed on the
+	// slugified name so a re-emit doesn't reload.
 	$effect(() => {
-		const raw = feed.scenario?.map ?? '';
+		const raw = isDemo ? demoMap : (feed.scenario?.map ?? '');
 		const key = meshKeyForScenario(raw);
 		if (!key || key === loadedKey) return;
 		loadedKey = key;
@@ -108,8 +123,8 @@
 			<span class="stat" title="Players placed on the map / named in the roster">
 				<strong>{model.placedCount}</strong>/{model.playerCount} players
 			</span>
-			<span class="conn" class:ok={feed.connected} class:mock={feed.mock}>
-				{#if feed.mock}MOCK{:else if feed.connected}● LIVE{:else}○ Connecting…{/if}
+			<span class="conn" class:ok={feed.connected} class:mock={feed.mock || isDemo}>
+				{#if feed.mock || isDemo}MOCK{:else if feed.connected}● LIVE{:else}○ Connecting…{/if}
 			</span>
 			<span class="inst">{data.instance}</span>
 		</div>
