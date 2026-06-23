@@ -1,0 +1,6953 @@
+{
+ "schema_version": 1,
+ "generated_by": "xemu-cartographer/halo-assets",
+ "generated_at": "2026-06-23T07:25:17+00:00",
+ "source": "Xbox Halo: CE monolithic .map files (no shared bitmaps.map/sounds.map/loc.map; each map embeds its tags)",
+ "maps_dir": "/home/stew/repos/xemu-cartographer/../halo-offset-mapper/xbe-dropzone/Halo CE/maps",
+ "errors": [],
+ "totals": {
+  "maps": 24,
+  "unique_tags_by_group": {
+   "snd!": 2879,
+   "bitm": 1325,
+   "DeLa": 561,
+   "effe": 477,
+   "lsnd": 362,
+   "mode": 336,
+   "soso": 300,
+   "sotr": 282,
+   "senv": 222,
+   "scen": 200,
+   "antr": 168,
+   "coll": 167,
+   "ligh": 154,
+   "ustr": 147,
+   "part": 143,
+   "lens": 110,
+   "jpt!": 102,
+   "deca": 102,
+   "actv": 89,
+   "mach": 82,
+   "sbsp": 82,
+   "schi": 79,
+   "pphy": 48,
+   "bipd": 43,
+   "ssce": 39,
+   "actr": 32,
+   "sky ": 28,
+   "pctl": 28,
+   "proj": 28,
+   "sgla": 26,
+   "vehi": 25,
+   "scnr": 24,
+   "weap": 23,
+   "wphi": 20,
+   "cont": 17,
+   "lifi": 17,
+   "wind": 16,
+   "itmc": 16,
+   "udlg": 15,
+   "fog ": 15,
+   "eqip": 14,
+   "mgs2": 13,
+   "garb": 11,
+   "trak": 11,
+   "unhi": 11,
+   "phys": 11,
+   "hmt ": 11,
+   "snde": 11,
+   "foot": 9,
+   "ctrl": 9,
+   "dobc": 9,
+   "elec": 9,
+   "swat": 8,
+   "smet": 7,
+   "spla": 4,
+   "font": 4,
+   "colo": 4,
+   "rain": 4,
+   "ant!": 3,
+   "Soul": 3,
+   "grhi": 2,
+   "metr": 2,
+   "glw!": 2,
+   "matg": 1,
+   "hudg": 1,
+   "str#": 1,
+   "hud#": 1,
+   "flag": 1,
+   "vcky": 1,
+   "mply": 1
+  },
+  "tag_instances_by_group": {
+   "snd!": 15698,
+   "bitm": 9327,
+   "effe": 7300,
+   "soso": 2498,
+   "part": 2333,
+   "DeLa": 1705,
+   "mode": 1481,
+   "jpt!": 1477,
+   "deca": 921,
+   "ligh": 905,
+   "coll": 854,
+   "lsnd": 734,
+   "sotr": 707,
+   "pphy": 663,
+   "lens": 641,
+   "antr": 628,
+   "schi": 502,
+   "senv": 496,
+   "ustr": 418,
+   "proj": 365,
+   "wphi": 361,
+   "scen": 360,
+   "actv": 336,
+   "weap": 316,
+   "eqip": 276,
+   "pctl": 201,
+   "cont": 191,
+   "mgs2": 171,
+   "bipd": 169,
+   "sgla": 163,
+   "itmc": 155,
+   "foot": 137,
+   "trak": 132,
+   "actr": 131,
+   "smet": 129,
+   "mach": 122,
+   "unhi": 120,
+   "udlg": 102,
+   "vehi": 96,
+   "font": 96,
+   "colo": 96,
+   "phys": 86,
+   "sbsp": 82,
+   "snde": 63,
+   "ssce": 54,
+   "ant!": 49,
+   "grhi": 48,
+   "metr": 48,
+   "garb": 46,
+   "spla": 39,
+   "hmt ": 34,
+   "sky ": 31,
+   "scnr": 24,
+   "matg": 24,
+   "hudg": 24,
+   "str#": 24,
+   "hud#": 24,
+   "Soul": 24,
+   "wind": 24,
+   "lifi": 23,
+   "ctrl": 17,
+   "fog ": 16,
+   "elec": 14,
+   "flag": 13,
+   "dobc": 10,
+   "swat": 8,
+   "glw!": 8,
+   "rain": 4,
+   "vcky": 1,
+   "mply": 1
+  }
+ },
+ "entity_summary": {
+  "sbsp": {
+   "unique": 82,
+   "campaign_only": 68,
+   "mp_only": 13
+  },
+  "mode": {
+   "unique": 336,
+   "campaign_only": 237,
+   "mp_only": 24
+  },
+  "vehi": {
+   "unique": 25,
+   "campaign_only": 22,
+   "mp_only": 2
+  },
+  "bipd": {
+   "unique": 43,
+   "campaign_only": 41,
+   "mp_only": 1
+  },
+  "weap": {
+   "unique": 23,
+   "campaign_only": 8,
+   "mp_only": 3
+  },
+  "eqip": {
+   "unique": 14,
+   "campaign_only": 0,
+   "mp_only": 1
+  },
+  "scen": {
+   "unique": 200,
+   "campaign_only": 154,
+   "mp_only": 12
+  },
+  "mach": {
+   "unique": 82,
+   "campaign_only": 80,
+   "mp_only": 1
+  },
+  "ctrl": {
+   "unique": 9,
+   "campaign_only": 9,
+   "mp_only": 0
+  },
+  "proj": {
+   "unique": 28,
+   "campaign_only": 12,
+   "mp_only": 0
+  }
+ },
+ "maps": [
+  {
+   "file": "a10.map",
+   "name": "a10",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 262,
+   "tags": 3357,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1468,
+    "bitm": 485,
+    "effe": 255,
+    "soso": 127,
+    "part": 105,
+    "DeLa": 83,
+    "mode": 76,
+    "deca": 62,
+    "lsnd": 50,
+    "antr": 49,
+    "ligh": 48,
+    "coll": 47,
+    "senv": 45,
+    "jpt!": 43,
+    "sotr": 39,
+    "lens": 39,
+    "scen": 33,
+    "pphy": 30,
+    "schi": 27,
+    "mach": 19,
+    "ustr": 18,
+    "actv": 16,
+    "bipd": 14,
+    "pctl": 13,
+    "vehi": 13,
+    "proj": 12,
+    "udlg": 10,
+    "wphi": 10,
+    "unhi": 9,
+    "actr": 9,
+    "sbsp": 9,
+    "sgla": 8,
+    "mgs2": 7,
+    "trak": 7,
+    "ssce": 7,
+    "foot": 6,
+    "weap": 6,
+    "eqip": 6,
+    "cont": 6,
+    "phys": 5,
+    "smet": 4,
+    "font": 4,
+    "colo": 4,
+    "ant!": 3,
+    "sky ": 2,
+    "garb": 2,
+    "hmt ": 2,
+    "spla": 2,
+    "grhi": 2,
+    "metr": 2,
+    "snde": 2,
+    "scnr": 1,
+    "matg": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "fog ": 1
+   }
+  },
+  {
+   "file": "a30.map",
+   "name": "a30",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 203,
+   "tags": 3215,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1465,
+    "bitm": 445,
+    "effe": 298,
+    "soso": 126,
+    "part": 102,
+    "DeLa": 83,
+    "mode": 56,
+    "lsnd": 55,
+    "jpt!": 54,
+    "ligh": 43,
+    "schi": 39,
+    "deca": 34,
+    "coll": 33,
+    "lens": 31,
+    "antr": 29,
+    "sotr": 24,
+    "pphy": 24,
+    "senv": 24,
+    "actv": 21,
+    "ustr": 19,
+    "scen": 15,
+    "bipd": 14,
+    "proj": 13,
+    "wphi": 13,
+    "actr": 13,
+    "udlg": 11,
+    "weap": 10,
+    "sgla": 9,
+    "cont": 8,
+    "pctl": 8,
+    "trak": 7,
+    "mgs2": 7,
+    "eqip": 7,
+    "foot": 6,
+    "unhi": 6,
+    "vehi": 6,
+    "phys": 6,
+    "ssce": 6,
+    "smet": 4,
+    "font": 4,
+    "colo": 4,
+    "snde": 3,
+    "sky ": 2,
+    "swat": 2,
+    "mach": 2,
+    "dobc": 2,
+    "spla": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "sbsp": 2,
+    "wind": 2,
+    "scnr": 1,
+    "ant!": 1,
+    "garb": 1,
+    "ctrl": 1,
+    "matg": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "fog ": 1
+   }
+  },
+  {
+   "file": "a50.map",
+   "name": "a50",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 239,
+   "tags": 3311,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1510,
+    "bitm": 458,
+    "effe": 291,
+    "soso": 135,
+    "part": 103,
+    "DeLa": 83,
+    "mode": 75,
+    "jpt!": 52,
+    "coll": 49,
+    "lsnd": 47,
+    "deca": 44,
+    "ligh": 37,
+    "sotr": 35,
+    "antr": 34,
+    "schi": 26,
+    "scen": 25,
+    "senv": 25,
+    "actv": 24,
+    "lens": 23,
+    "pphy": 20,
+    "ustr": 20,
+    "bipd": 15,
+    "actr": 15,
+    "udlg": 12,
+    "wphi": 12,
+    "proj": 12,
+    "weap": 11,
+    "pctl": 10,
+    "eqip": 9,
+    "mach": 9,
+    "mgs2": 7,
+    "foot": 7,
+    "cont": 7,
+    "sgla": 7,
+    "trak": 6,
+    "vehi": 4,
+    "phys": 4,
+    "font": 4,
+    "colo": 4,
+    "sbsp": 4,
+    "lifi": 3,
+    "ssce": 3,
+    "snde": 3,
+    "sky ": 2,
+    "smet": 2,
+    "spla": 2,
+    "unhi": 2,
+    "ctrl": 2,
+    "hmt ": 2,
+    "glw!": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "matg": 1,
+    "garb": 1,
+    "dobc": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "wind": 1
+   }
+  },
+  {
+   "file": "b30.map",
+   "name": "b30",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 214,
+   "tags": 3325,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1435,
+    "bitm": 467,
+    "effe": 288,
+    "soso": 142,
+    "part": 102,
+    "mode": 86,
+    "DeLa": 83,
+    "jpt!": 59,
+    "ligh": 53,
+    "coll": 49,
+    "lsnd": 49,
+    "sotr": 39,
+    "lens": 34,
+    "deca": 33,
+    "antr": 32,
+    "schi": 27,
+    "scen": 27,
+    "pphy": 27,
+    "actv": 22,
+    "senv": 22,
+    "ustr": 19,
+    "proj": 15,
+    "wphi": 14,
+    "weap": 13,
+    "actr": 13,
+    "bipd": 11,
+    "udlg": 11,
+    "eqip": 11,
+    "pctl": 10,
+    "mach": 10,
+    "sgla": 9,
+    "mgs2": 9,
+    "cont": 8,
+    "snde": 8,
+    "trak": 7,
+    "unhi": 7,
+    "foot": 7,
+    "vehi": 7,
+    "lifi": 7,
+    "phys": 6,
+    "smet": 4,
+    "ssce": 4,
+    "font": 4,
+    "colo": 4,
+    "ctrl": 3,
+    "wind": 3,
+    "spla": 2,
+    "glw!": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "sbsp": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "ant!": 1,
+    "garb": 1,
+    "dobc": 1,
+    "matg": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "swat": 1,
+    "fog ": 1,
+    "rain": 1
+   }
+  },
+  {
+   "file": "b40.map",
+   "name": "b40",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 267,
+   "tags": 3647,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1503,
+    "bitm": 517,
+    "effe": 340,
+    "soso": 148,
+    "part": 108,
+    "DeLa": 83,
+    "mode": 82,
+    "jpt!": 68,
+    "sotr": 65,
+    "lsnd": 62,
+    "coll": 54,
+    "ligh": 53,
+    "deca": 44,
+    "lens": 41,
+    "antr": 40,
+    "senv": 35,
+    "actv": 31,
+    "pphy": 30,
+    "schi": 27,
+    "scen": 26,
+    "proj": 19,
+    "ustr": 19,
+    "wphi": 17,
+    "weap": 16,
+    "cont": 13,
+    "pctl": 13,
+    "actr": 13,
+    "sbsp": 13,
+    "bipd": 12,
+    "sgla": 12,
+    "udlg": 11,
+    "trak": 10,
+    "unhi": 10,
+    "mgs2": 10,
+    "mach": 10,
+    "eqip": 9,
+    "vehi": 8,
+    "phys": 8,
+    "foot": 7,
+    "snde": 7,
+    "ssce": 6,
+    "smet": 4,
+    "font": 4,
+    "colo": 4,
+    "ctrl": 3,
+    "ant!": 3,
+    "fog ": 3,
+    "spla": 2,
+    "elec": 2,
+    "lifi": 2,
+    "glw!": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "wind": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "garb": 1,
+    "dobc": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "rain": 1
+   }
+  },
+  {
+   "file": "beavercreek.map",
+   "name": "beavercreek",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 42,
+   "tags": 1755,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 357,
+    "effe": 318,
+    "snd!": 316,
+    "soso": 98,
+    "part": 96,
+    "jpt!": 66,
+    "mode": 53,
+    "deca": 39,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 28,
+    "sotr": 21,
+    "antr": 21,
+    "lens": 20,
+    "schi": 19,
+    "wphi": 17,
+    "proj": 16,
+    "lsnd": 15,
+    "senv": 15,
+    "weap": 15,
+    "eqip": 14,
+    "itmc": 12,
+    "scen": 9,
+    "cont": 8,
+    "ustr": 8,
+    "pctl": 7,
+    "mgs2": 7,
+    "smet": 7,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "ssce": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "swat": 1,
+    "fog ": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "bloodgulch.map",
+   "name": "bloodgulch",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 42,
+   "tags": 1806,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 368,
+    "effe": 318,
+    "snd!": 315,
+    "soso": 106,
+    "part": 96,
+    "jpt!": 66,
+    "mode": 63,
+    "deca": 39,
+    "coll": 36,
+    "ligh": 32,
+    "pphy": 30,
+    "DeLa": 30,
+    "sotr": 26,
+    "lens": 22,
+    "schi": 20,
+    "scen": 19,
+    "antr": 19,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "lsnd": 14,
+    "senv": 14,
+    "eqip": 14,
+    "itmc": 12,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "smet": 7,
+    "pctl": 7,
+    "sgla": 6,
+    "trak": 5,
+    "unhi": 5,
+    "foot": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "bipd": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "spla": 1,
+    "udlg": 1,
+    "ssce": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "boardingaction.map",
+   "name": "boardingaction",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 43,
+   "tags": 1735,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 346,
+    "effe": 318,
+    "snd!": 317,
+    "part": 96,
+    "soso": 90,
+    "jpt!": 66,
+    "mode": 51,
+    "deca": 47,
+    "coll": 30,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "lens": 21,
+    "schi": 19,
+    "sotr": 19,
+    "antr": 18,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "lsnd": 14,
+    "senv": 14,
+    "eqip": 14,
+    "itmc": 12,
+    "cont": 8,
+    "ustr": 8,
+    "scen": 7,
+    "mgs2": 7,
+    "pctl": 7,
+    "smet": 7,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "fog ": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "c10.map",
+   "name": "c10",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 241,
+   "tags": 3369,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 1346,
+    "bitm": 476,
+    "effe": 300,
+    "soso": 140,
+    "part": 103,
+    "mode": 100,
+    "DeLa": 83,
+    "ligh": 68,
+    "scen": 64,
+    "jpt!": 59,
+    "lsnd": 55,
+    "deca": 53,
+    "coll": 52,
+    "sotr": 48,
+    "antr": 39,
+    "actv": 37,
+    "lens": 36,
+    "senv": 28,
+    "pphy": 25,
+    "schi": 21,
+    "ustr": 20,
+    "bipd": 18,
+    "actr": 16,
+    "proj": 14,
+    "wphi": 12,
+    "mach": 12,
+    "udlg": 11,
+    "eqip": 10,
+    "pctl": 10,
+    "weap": 9,
+    "garb": 9,
+    "sgla": 9,
+    "mgs2": 7,
+    "foot": 7,
+    "cont": 7,
+    "sbsp": 6,
+    "trak": 5,
+    "ssce": 4,
+    "font": 4,
+    "colo": 4,
+    "snde": 4,
+    "spla": 3,
+    "elec": 3,
+    "lifi": 3,
+    "unhi": 2,
+    "vehi": 2,
+    "phys": 2,
+    "smet": 2,
+    "dobc": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "swat": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "ctrl": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "fog ": 1,
+    "rain": 1,
+    "wind": 1
+   }
+  },
+  {
+   "file": "c20.map",
+   "name": "c20",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 135,
+   "tags": 1860,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 371,
+    "bitm": 334,
+    "effe": 261,
+    "part": 97,
+    "DeLa": 83,
+    "soso": 82,
+    "mode": 63,
+    "jpt!": 59,
+    "sotr": 49,
+    "lsnd": 35,
+    "coll": 34,
+    "ligh": 34,
+    "deca": 32,
+    "antr": 30,
+    "lens": 28,
+    "actv": 24,
+    "pphy": 23,
+    "ustr": 19,
+    "senv": 17,
+    "proj": 14,
+    "wphi": 13,
+    "mach": 12,
+    "schi": 11,
+    "scen": 10,
+    "eqip": 10,
+    "weap": 9,
+    "bipd": 8,
+    "pctl": 7,
+    "cont": 7,
+    "actr": 7,
+    "garb": 7,
+    "mgs2": 6,
+    "elec": 5,
+    "foot": 5,
+    "smet": 5,
+    "sgla": 4,
+    "ssce": 4,
+    "font": 4,
+    "colo": 4,
+    "sbsp": 4,
+    "spla": 3,
+    "udlg": 3,
+    "snde": 3,
+    "trak": 2,
+    "unhi": 2,
+    "ctrl": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "fog ": 1
+   }
+  },
+  {
+   "file": "c40.map",
+   "name": "c40",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 244,
+   "tags": 3208,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 935,
+    "bitm": 510,
+    "effe": 394,
+    "soso": 134,
+    "part": 108,
+    "mode": 102,
+    "DeLa": 83,
+    "jpt!": 80,
+    "sotr": 73,
+    "lsnd": 66,
+    "ligh": 65,
+    "coll": 61,
+    "lens": 51,
+    "antr": 48,
+    "actv": 47,
+    "senv": 35,
+    "deca": 34,
+    "scen": 27,
+    "pphy": 26,
+    "schi": 23,
+    "proj": 22,
+    "actr": 19,
+    "ustr": 19,
+    "weap": 18,
+    "bipd": 17,
+    "wphi": 17,
+    "mach": 14,
+    "cont": 13,
+    "sbsp": 13,
+    "pctl": 12,
+    "sgla": 11,
+    "mgs2": 10,
+    "garb": 9,
+    "foot": 9,
+    "eqip": 9,
+    "udlg": 8,
+    "trak": 8,
+    "unhi": 7,
+    "snde": 7,
+    "vehi": 6,
+    "phys": 6,
+    "ssce": 5,
+    "spla": 4,
+    "ctrl": 4,
+    "smet": 4,
+    "font": 4,
+    "colo": 4,
+    "elec": 3,
+    "sky ": 2,
+    "lifi": 2,
+    "glw!": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "fog ": 2,
+    "scnr": 1,
+    "matg": 1,
+    "ant!": 1,
+    "dobc": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "rain": 1,
+    "wind": 1
+   }
+  },
+  {
+   "file": "carousel.map",
+   "name": "carousel",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 40,
+   "tags": 1716,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 336,
+    "effe": 318,
+    "snd!": 316,
+    "part": 96,
+    "soso": 90,
+    "jpt!": 66,
+    "mode": 50,
+    "deca": 35,
+    "ligh": 30,
+    "pphy": 30,
+    "DeLa": 30,
+    "coll": 29,
+    "sotr": 25,
+    "lens": 21,
+    "schi": 19,
+    "antr": 18,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "lsnd": 14,
+    "itmc": 14,
+    "eqip": 14,
+    "senv": 12,
+    "cont": 8,
+    "ustr": 8,
+    "pctl": 7,
+    "sgla": 7,
+    "mgs2": 7,
+    "smet": 7,
+    "scen": 5,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "lifi": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "chillout.map",
+   "name": "chillout",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 40,
+   "tags": 1702,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 334,
+    "effe": 318,
+    "snd!": 316,
+    "part": 96,
+    "soso": 89,
+    "jpt!": 66,
+    "mode": 47,
+    "deca": 35,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 26,
+    "lens": 20,
+    "sotr": 19,
+    "senv": 18,
+    "schi": 18,
+    "antr": 18,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "lsnd": 14,
+    "eqip": 14,
+    "itmc": 13,
+    "cont": 8,
+    "ustr": 8,
+    "smet": 7,
+    "mgs2": 7,
+    "sgla": 7,
+    "pctl": 7,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "scen": 4,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "fog ": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "d20.map",
+   "name": "d20",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 196,
+   "tags": 2743,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 757,
+    "bitm": 472,
+    "effe": 350,
+    "soso": 131,
+    "part": 116,
+    "mode": 89,
+    "DeLa": 83,
+    "jpt!": 70,
+    "lsnd": 51,
+    "coll": 49,
+    "ligh": 46,
+    "deca": 43,
+    "actv": 40,
+    "sotr": 35,
+    "antr": 34,
+    "scen": 30,
+    "lens": 30,
+    "pphy": 30,
+    "senv": 24,
+    "schi": 19,
+    "ustr": 19,
+    "proj": 18,
+    "wphi": 17,
+    "bipd": 15,
+    "weap": 15,
+    "actr": 14,
+    "eqip": 12,
+    "pctl": 10,
+    "foot": 9,
+    "mgs2": 9,
+    "cont": 9,
+    "mach": 9,
+    "trak": 6,
+    "udlg": 6,
+    "sgla": 6,
+    "snde": 6,
+    "vehi": 5,
+    "phys": 5,
+    "smet": 5,
+    "ssce": 5,
+    "sbsp": 5,
+    "unhi": 4,
+    "garb": 4,
+    "font": 4,
+    "colo": 4,
+    "sky ": 2,
+    "spla": 2,
+    "lifi": 2,
+    "dobc": 2,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "matg": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "swat": 1,
+    "fog ": 1,
+    "wind": 1
+   }
+  },
+  {
+   "file": "d40.map",
+   "name": "d40",
+   "type": "campaign",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 262,
+   "tags": 2978,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "snd!": 769,
+    "bitm": 525,
+    "effe": 357,
+    "soso": 127,
+    "part": 108,
+    "mode": 98,
+    "DeLa": 83,
+    "lsnd": 78,
+    "jpt!": 70,
+    "coll": 62,
+    "senv": 61,
+    "ligh": 60,
+    "lens": 52,
+    "antr": 52,
+    "deca": 49,
+    "actv": 35,
+    "schi": 31,
+    "sotr": 30,
+    "scen": 28,
+    "pphy": 25,
+    "mach": 23,
+    "ustr": 20,
+    "bipd": 19,
+    "proj": 16,
+    "pctl": 15,
+    "weap": 14,
+    "wphi": 14,
+    "actr": 12,
+    "garb": 11,
+    "sbsp": 10,
+    "foot": 9,
+    "eqip": 9,
+    "cont": 9,
+    "trak": 8,
+    "mgs2": 8,
+    "sgla": 7,
+    "ssce": 7,
+    "snde": 7,
+    "unhi": 6,
+    "udlg": 6,
+    "vehi": 6,
+    "sky ": 5,
+    "phys": 5,
+    "spla": 4,
+    "smet": 4,
+    "font": 4,
+    "colo": 4,
+    "hmt ": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "matg": 1,
+    "elec": 1,
+    "ant!": 1,
+    "ctrl": 1,
+    "hudg": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "fog ": 1
+   }
+  },
+  {
+   "file": "damnation.map",
+   "name": "damnation",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 46,
+   "tags": 1758,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 355,
+    "effe": 320,
+    "snd!": 319,
+    "part": 97,
+    "soso": 92,
+    "jpt!": 66,
+    "mode": 52,
+    "deca": 36,
+    "ligh": 31,
+    "pphy": 30,
+    "DeLa": 30,
+    "coll": 29,
+    "schi": 23,
+    "lens": 23,
+    "sotr": 21,
+    "antr": 18,
+    "senv": 17,
+    "wphi": 17,
+    "lsnd": 16,
+    "proj": 16,
+    "weap": 15,
+    "eqip": 14,
+    "itmc": 12,
+    "cont": 8,
+    "ustr": 8,
+    "pctl": 7,
+    "mgs2": 7,
+    "smet": 7,
+    "scen": 6,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "lifi": 2,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "swat": 1,
+    "flag": 1,
+    "ssce": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "fog ": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "hangemhigh.map",
+   "name": "hangemhigh",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 42,
+   "tags": 1681,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 329,
+    "effe": 318,
+    "snd!": 314,
+    "part": 96,
+    "soso": 89,
+    "jpt!": 66,
+    "mode": 46,
+    "deca": 37,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 25,
+    "lens": 20,
+    "schi": 19,
+    "antr": 18,
+    "sotr": 17,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "eqip": 14,
+    "itmc": 13,
+    "lsnd": 13,
+    "senv": 10,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "smet": 7,
+    "pctl": 7,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "scen": 2,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "longest.map",
+   "name": "longest",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 40,
+   "tags": 1696,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 337,
+    "effe": 318,
+    "snd!": 314,
+    "part": 96,
+    "soso": 89,
+    "jpt!": 66,
+    "mode": 46,
+    "deca": 41,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 26,
+    "sotr": 20,
+    "lens": 20,
+    "schi": 18,
+    "antr": 18,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "eqip": 14,
+    "senv": 13,
+    "lsnd": 13,
+    "itmc": 10,
+    "cont": 8,
+    "ustr": 8,
+    "smet": 7,
+    "mgs2": 7,
+    "pctl": 7,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "scen": 2,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "prisoner.map",
+   "name": "prisoner",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 42,
+   "tags": 1685,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 331,
+    "effe": 318,
+    "snd!": 314,
+    "part": 96,
+    "soso": 89,
+    "jpt!": 66,
+    "mode": 45,
+    "deca": 35,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 25,
+    "sotr": 22,
+    "lens": 20,
+    "schi": 19,
+    "antr": 18,
+    "wphi": 17,
+    "proj": 16,
+    "weap": 15,
+    "eqip": 14,
+    "lsnd": 13,
+    "itmc": 12,
+    "senv": 11,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "pctl": 7,
+    "sgla": 7,
+    "smet": 7,
+    "trak": 5,
+    "unhi": 5,
+    "foot": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "bipd": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "scen": 1,
+    "spla": 1,
+    "udlg": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "putput.map",
+   "name": "putput",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 39,
+   "tags": 1675,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 325,
+    "effe": 318,
+    "snd!": 316,
+    "part": 96,
+    "soso": 89,
+    "jpt!": 66,
+    "mode": 45,
+    "deca": 37,
+    "pphy": 30,
+    "DeLa": 30,
+    "ligh": 29,
+    "coll": 25,
+    "lens": 20,
+    "antr": 18,
+    "schi": 17,
+    "wphi": 17,
+    "proj": 16,
+    "senv": 15,
+    "weap": 15,
+    "sotr": 14,
+    "lsnd": 14,
+    "eqip": 14,
+    "itmc": 10,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "smet": 7,
+    "pctl": 7,
+    "sgla": 6,
+    "foot": 5,
+    "trak": 5,
+    "unhi": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "scen": 2,
+    "grhi": 2,
+    "bipd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "spla": 1,
+    "udlg": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "ratrace.map",
+   "name": "ratrace",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 45,
+   "tags": 1710,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 342,
+    "effe": 319,
+    "snd!": 318,
+    "part": 96,
+    "soso": 91,
+    "jpt!": 66,
+    "mode": 47,
+    "deca": 35,
+    "pphy": 30,
+    "ligh": 30,
+    "DeLa": 30,
+    "coll": 27,
+    "sotr": 21,
+    "lens": 20,
+    "antr": 18,
+    "schi": 17,
+    "wphi": 17,
+    "senv": 16,
+    "proj": 16,
+    "lsnd": 15,
+    "weap": 15,
+    "eqip": 14,
+    "itmc": 9,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "pctl": 7,
+    "smet": 7,
+    "sgla": 6,
+    "trak": 5,
+    "unhi": 5,
+    "foot": 5,
+    "font": 4,
+    "colo": 4,
+    "scen": 3,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "bipd": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "spla": 1,
+    "udlg": 1,
+    "lifi": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "sidewinder.map",
+   "name": "sidewinder",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 46,
+   "tags": 1757,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 354,
+    "effe": 318,
+    "snd!": 316,
+    "part": 96,
+    "soso": 93,
+    "jpt!": 66,
+    "mode": 56,
+    "deca": 37,
+    "ligh": 32,
+    "coll": 31,
+    "pphy": 30,
+    "DeLa": 30,
+    "sotr": 23,
+    "lens": 22,
+    "schi": 20,
+    "antr": 19,
+    "wphi": 17,
+    "proj": 16,
+    "senv": 15,
+    "weap": 15,
+    "lsnd": 14,
+    "eqip": 14,
+    "itmc": 13,
+    "scen": 12,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "smet": 7,
+    "pctl": 7,
+    "sgla": 6,
+    "trak": 5,
+    "unhi": 5,
+    "foot": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "bipd": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "spla": 1,
+    "udlg": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  },
+  {
+   "file": "ui.map",
+   "name": "ui",
+   "type": "ui",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 32,
+   "tags": 983,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "DeLa": 485,
+    "bitm": 195,
+    "ustr": 122,
+    "part": 32,
+    "snd!": 29,
+    "effe": 29,
+    "pphy": 13,
+    "soso": 10,
+    "ligh": 7,
+    "mode": 5,
+    "lens": 5,
+    "jpt!": 5,
+    "deca": 5,
+    "schi": 4,
+    "font": 4,
+    "colo": 4,
+    "sotr": 3,
+    "grhi": 2,
+    "eqip": 2,
+    "pctl": 2,
+    "proj": 2,
+    "lsnd": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "scen": 1,
+    "matg": 1,
+    "trak": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "wphi": 1,
+    "str#": 1,
+    "hud#": 1,
+    "Soul": 1,
+    "vcky": 1,
+    "mply": 1,
+    "sbsp": 1
+   }
+  },
+  {
+   "file": "wizard.map",
+   "name": "wizard",
+   "type": "multiplayer",
+   "build": "01.10.12.2276",
+   "compressed": true,
+   "decompressed_mb": 39,
+   "tags": 1704,
+   "hud_atlas_sequences": {
+    "hud_msg_icons": 24,
+    "hud_waypoints": 7
+   },
+   "groups": {
+    "bitm": 329,
+    "snd!": 319,
+    "effe": 318,
+    "part": 96,
+    "soso": 91,
+    "jpt!": 66,
+    "mode": 48,
+    "deca": 35,
+    "ligh": 33,
+    "pphy": 30,
+    "DeLa": 30,
+    "coll": 27,
+    "lens": 22,
+    "antr": 20,
+    "sotr": 19,
+    "schi": 19,
+    "wphi": 17,
+    "proj": 16,
+    "lsnd": 15,
+    "weap": 15,
+    "eqip": 14,
+    "itmc": 13,
+    "senv": 10,
+    "cont": 8,
+    "ustr": 8,
+    "mgs2": 7,
+    "pctl": 7,
+    "smet": 7,
+    "sgla": 6,
+    "trak": 5,
+    "unhi": 5,
+    "foot": 5,
+    "font": 4,
+    "colo": 4,
+    "vehi": 3,
+    "phys": 3,
+    "ant!": 3,
+    "actv": 3,
+    "scen": 2,
+    "bipd": 2,
+    "mach": 2,
+    "grhi": 2,
+    "metr": 2,
+    "scnr": 1,
+    "sky ": 1,
+    "spla": 1,
+    "udlg": 1,
+    "matg": 1,
+    "hudg": 1,
+    "hmt ": 1,
+    "str#": 1,
+    "hud#": 1,
+    "flag": 1,
+    "Soul": 1,
+    "sbsp": 1,
+    "wind": 1,
+    "snde": 1
+   }
+  }
+ ],
+ "assets": {
+  "sbsp": {
+   "levels\\a10\\a10_space": [
+    "a10"
+   ],
+   "levels\\a10\\a10a": [
+    "a10"
+   ],
+   "levels\\a10\\a10b": [
+    "a10"
+   ],
+   "levels\\a10\\a10c": [
+    "a10"
+   ],
+   "levels\\a10\\a10d": [
+    "a10"
+   ],
+   "levels\\a10\\a10e": [
+    "a10"
+   ],
+   "levels\\a10\\a10f": [
+    "a10"
+   ],
+   "levels\\a10\\a10g": [
+    "a10"
+   ],
+   "levels\\a10\\x10hangar": [
+    "a10"
+   ],
+   "levels\\a30\\a30_a": [
+    "a30"
+   ],
+   "levels\\a30\\a30_b": [
+    "a30"
+   ],
+   "levels\\a50\\a50_control": [
+    "a50"
+   ],
+   "levels\\a50\\a50_exterior": [
+    "a50"
+   ],
+   "levels\\a50\\a50_hangar": [
+    "a50"
+   ],
+   "levels\\a50\\a50_muster": [
+    "a50"
+   ],
+   "levels\\b30\\b30a": [
+    "b30"
+   ],
+   "levels\\b30\\b30b": [
+    "b30"
+   ],
+   "levels\\b40\\b40_a": [
+    "b40"
+   ],
+   "levels\\b40\\b40_a1": [
+    "b40"
+   ],
+   "levels\\b40\\b40_a2": [
+    "b40"
+   ],
+   "levels\\b40\\b40_a3": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b1": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b2": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b3": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b4": [
+    "b40"
+   ],
+   "levels\\b40\\b40_b5": [
+    "b40"
+   ],
+   "levels\\b40\\b40_c": [
+    "b40"
+   ],
+   "levels\\b40\\b40_c1": [
+    "b40"
+   ],
+   "levels\\b40\\b40_c2": [
+    "b40"
+   ],
+   "levels\\c10\\c10_exteriora": [
+    "c10"
+   ],
+   "levels\\c10\\c10_exteriorb": [
+    "c10"
+   ],
+   "levels\\c10\\c10_interiora": [
+    "c10"
+   ],
+   "levels\\c10\\c10_interiorb": [
+    "c10"
+   ],
+   "levels\\c10\\c10_interiorc": [
+    "c10"
+   ],
+   "levels\\c10\\c10_interiord": [
+    "c10"
+   ],
+   "levels\\c20\\c20_1": [
+    "c20"
+   ],
+   "levels\\c20\\c20_2": [
+    "c20"
+   ],
+   "levels\\c20\\c20_3": [
+    "c20"
+   ],
+   "levels\\c20\\c20_4": [
+    "c20"
+   ],
+   "levels\\c40\\c40_a": [
+    "c40"
+   ],
+   "levels\\c40\\c40_a1": [
+    "c40"
+   ],
+   "levels\\c40\\c40_a2": [
+    "c40"
+   ],
+   "levels\\c40\\c40_a3": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b1": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b2": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b3": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b4": [
+    "c40"
+   ],
+   "levels\\c40\\c40_b5": [
+    "c40"
+   ],
+   "levels\\c40\\c40_c": [
+    "c40"
+   ],
+   "levels\\c40\\c40_c1": [
+    "c40"
+   ],
+   "levels\\c40\\c40_c2": [
+    "c40"
+   ],
+   "levels\\d20\\d20_control": [
+    "d20"
+   ],
+   "levels\\d20\\d20_exterior": [
+    "d20"
+   ],
+   "levels\\d20\\d20_hangar": [
+    "d20"
+   ],
+   "levels\\d20\\d20_muster": [
+    "d20"
+   ],
+   "levels\\d20\\d20_start": [
+    "d20"
+   ],
+   "levels\\d40\\d40_space": [
+    "d40"
+   ],
+   "levels\\d40\\d40_terrain": [
+    "d40"
+   ],
+   "levels\\d40\\d40a": [
+    "d40"
+   ],
+   "levels\\d40\\d40b": [
+    "d40"
+   ],
+   "levels\\d40\\d40c": [
+    "d40"
+   ],
+   "levels\\d40\\d40d": [
+    "d40"
+   ],
+   "levels\\d40\\d40e": [
+    "d40"
+   ],
+   "levels\\d40\\d40f": [
+    "d40"
+   ],
+   "levels\\d40\\d40g": [
+    "d40"
+   ],
+   "levels\\d40\\d40h": [
+    "d40"
+   ],
+   "levels\\test\\beavercreek\\beavercreek": [
+    "beavercreek"
+   ],
+   "levels\\test\\bloodgulch\\bloodgulch": [
+    "bloodgulch"
+   ],
+   "levels\\test\\boardingaction\\boardingaction": [
+    "boardingaction"
+   ],
+   "levels\\test\\carousel\\carousel": [
+    "carousel"
+   ],
+   "levels\\test\\chillout\\chillout": [
+    "chillout"
+   ],
+   "levels\\test\\damnation\\damnation": [
+    "damnation"
+   ],
+   "levels\\test\\hangemhigh\\hangemhigh": [
+    "hangemhigh"
+   ],
+   "levels\\test\\longest\\longest": [
+    "longest"
+   ],
+   "levels\\test\\prisoner\\prisoner": [
+    "prisoner"
+   ],
+   "levels\\test\\putput\\putput": [
+    "putput"
+   ],
+   "levels\\test\\ratrace\\ratrace": [
+    "ratrace"
+   ],
+   "levels\\test\\sidewinder\\sidewinder": [
+    "sidewinder"
+   ],
+   "levels\\test\\wizard\\wizard": [
+    "wizard"
+   ],
+   "levels\\ui\\ui": [
+    "ui"
+   ]
+  },
+  "mode": {
+   "characters\\captain\\captain": [
+    "a10",
+    "a50",
+    "c10",
+    "d40"
+   ],
+   "characters\\captain_ingame\\captain_ingame": [
+    "a50"
+   ],
+   "characters\\captain_ingame\\fatigues\\fatigues": [
+    "c10"
+   ],
+   "characters\\cortana\\cortana": [
+    "a10",
+    "d40"
+   ],
+   "characters\\cortana\\halo_enhanced\\halo_enhanced": [
+    "b40",
+    "c40"
+   ],
+   "characters\\crewman\\crewman": [
+    "a10",
+    "a30"
+   ],
+   "characters\\cyborg\\cyborg": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "characters\\cyborg\\fp\\fp": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "characters\\elite\\elite": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20"
+   ],
+   "characters\\elite\\elite_corpse\\elite_corpse": [
+    "c10"
+   ],
+   "characters\\elite\\elite_special\\elite_special": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\engineer\\engineer": [
+    "b30"
+   ],
+   "characters\\flood_captain\\flood_captain": [
+    "d20"
+   ],
+   "characters\\flood_infection\\flood_infection": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcarrier\\floodcarrier": [
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat elite\\floodcombat elite": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\flood_bit_h-head\\flood_bit_h-head": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\flood_bit_innards\\flood_bit_innards": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\flood_bit_limbs\\flood_bit_limbs": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\flood_bit_skin\\flood_bit_skin": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\floodcombat_human": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\grunt\\grunt": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\hunter\\hunter": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\jackal\\jackal": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20"
+   ],
+   "characters\\marine\\marine": [
+    "a30",
+    "a50",
+    "c10"
+   ],
+   "characters\\marine_armored\\marine_armored": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10"
+   ],
+   "characters\\monitor\\monitor": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "characters\\pilot\\pilot": [
+    "a10",
+    "a30"
+   ],
+   "characters\\sentinel\\sentinel": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "characters\\sentinel\\sentinel arm bit\\sentinel arm bit": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "characters\\sentinel\\sentinel fuselage bit\\sentinel fuselage bit": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "characters\\sentinel\\sentinel head bit\\sentinel head bit": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "cinematics\\effects\\cortana effects\\cortana effects": [
+    "a10"
+   ],
+   "cinematics\\effects\\cortana powerup fx\\cortana powerup fx": [
+    "c40"
+   ],
+   "cinematics\\effects\\lights\\covenant blast bolt\\covenant blast bolt": [
+    "a10"
+   ],
+   "cinematics\\effects\\lights\\shaft open lens\\shaft open lens": [
+    "b30"
+   ],
+   "cinematics\\effects\\teleport device\\teleport device": [
+    "c10",
+    "c20",
+    "c40",
+    "d20"
+   ],
+   "cinematics\\effects\\teleportation\\teleportation": [
+    "c10",
+    "c20",
+    "c40",
+    "d20"
+   ],
+   "cinematics\\johnson\\johnson": [
+    "d40"
+   ],
+   "cinematics\\scenery\\pipe\\pipe": [
+    "a10",
+    "d20"
+   ],
+   "cinematics\\scenery\\planets\\halo_closeup\\halo_closeup": [
+    "a10"
+   ],
+   "effects\\debris objects\\forerunner dark structure\\forerunner dark structure": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d40"
+   ],
+   "effects\\debris objects\\forerunner light structure\\forerunner light structure": [
+    "a10",
+    "c10",
+    "c40",
+    "d40"
+   ],
+   "item collections\\powerups\\powerups": [
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "levels\\a10\\devices\\alert_light\\alert_light": [
+    "a10",
+    "d40",
+    "wizard"
+   ],
+   "levels\\a10\\devices\\bulletin board\\bulletin board": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\chairs\\chair pilot\\chair pilot": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\chairs\\chair pod\\chair pod": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\command display\\command display": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\cryo vis test\\cryo vis test": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\cryotube\\cryotube": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\doors\\door airlock burnt\\door airlock burnt": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door airlock\\door airlock": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\doors\\door blast closed\\door blast closed": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door blast half\\door blast half": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door blast\\door blast": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door cryo chamber\\door cryo chamber": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door jeff tube burnt\\door jeff tube burnt": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door jeff tube\\door jeff tube": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small burnt\\door small burnt": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small no glass\\door small no glass": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small\\door small": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door_blast_collision\\door_blast_collision": [
+    "a10",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d40",
+    "sidewinder"
+   ],
+   "levels\\a10\\devices\\elevator\\elevator": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\engine louvre\\engine louvre": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\engine piston\\engine piston": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\h computer bank burnt\\h computer bank burnt": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\h computer bank\\h computer bank": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\h gun rack\\h gun rack": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\h oxy tank\\h oxy tank": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "levels\\a10\\devices\\hushed casket-off\\hushed casket-off": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\hushed casket-on\\hushed casket-on": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\hushed casket\\hushed casket": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\lifepod device\\lifepod device": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\shield charge\\shield charge": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\signal light\\signal light": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\space_battle\\space_battle": [
+    "a10"
+   ],
+   "levels\\a30\\devices\\beam emitter\\beam emitter": [
+    "a30"
+   ],
+   "levels\\a30\\devices\\torpedo_bridge\\torpedo_bridge": [
+    "a30"
+   ],
+   "levels\\a30\\scenery\\holo control indicator\\holo control indicator": [
+    "a30"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo command control\\holo command control": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control dual\\holo control dual": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control sphere\\holo control sphere": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control\\holo control": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo map\\holo map": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\light_ceiling\\light_ceiling": [
+    "a50",
+    "d20",
+    "damnation"
+   ],
+   "levels\\a50\\devices\\light_ceiling_large\\light_ceiling_large": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\light_ground\\light_ground": [
+    "a50",
+    "c10"
+   ],
+   "levels\\a50\\devices\\mustering_door\\mustering_door": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\prison door\\prison door": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\shuttle bay doors\\shuttle bay doors": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\small door\\small door": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\scenery\\a50_nutblocker\\a50_nutblocker": [
+    "a50",
+    "d20"
+   ],
+   "levels\\b30\\devices\\doors\\door small\\door small": [
+    "b30",
+    "b40",
+    "c10",
+    "c40"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo beam tube\\holo beam tube": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control equipment\\holo control equipment": [
+    "b30",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control ring\\holo control ring": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control room display\\holo control room display": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control\\holo control": [
+    "a30",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display square\\holo display square": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display tall\\holo display tall": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display wide\\holo display wide": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo panel\\holo panel": [
+    "b30",
+    "c20"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture ceiling1\\light fixture ceiling1": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture ceiling2\\light fixture ceiling2": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture floor1\\light fixture floor1": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture floor2\\light fixture floor2": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture wall1\\light fixture wall1": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture wall2\\light fixture wall2": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\light fixtures\\light fixture wall3\\light fixture wall3": [
+    "b30",
+    "c10"
+   ],
+   "levels\\b40\\devices\\b40_foglight\\b40_foglight": [
+    "b40",
+    "c10",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_garagedoor\\b40_garagedoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_generator_fx\\b40_generator_fx": [
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_giantdoor\\b40_giantdoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_lift1600\\b40_lift1600": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_lift4800\\b40_lift4800": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_outerdoor\\b40_outerdoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_spotlight\\b40_spotlight": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_towerlift\\b40_towerlift": [
+    "b40"
+   ],
+   "levels\\b40\\devices\\holo halo control\\holo halo control": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\holo halo ring\\holo halo ring": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\holo halo solar system\\holo halo solar system": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_cpanel\\b40_cpanel": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_ctorch\\b40_ctorch": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_doorblinker\\b40_doorblinker": [
+    "b40",
+    "bloodgulch",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_metal_small\\b40_metal_small": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_metal_tall\\b40_metal_tall": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_metal_wide\\b40_metal_wide": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_shaftring\\b40_shaftring": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_snowbush\\b40_snowbush": [
+    "b40"
+   ],
+   "levels\\b40\\scenery\\b40_snowbushsmall\\b40_snowbushsmall": [
+    "b40"
+   ],
+   "levels\\b40\\scenery\\bridge lightning markers\\bridge lightning markers": [
+    "b40",
+    "c40"
+   ],
+   "levels\\c10\\devices\\bridge\\bridge": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\door_small_bashed\\door_small_bashed": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\falling lift\\falling lift": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\helmet\\helmet": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\lift\\lift": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_bigplant\\c10_bigplant": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypad\\c10_lilypad": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadbunch\\c10_lilypadbunch": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadbunchb\\c10_lilypadbunchb": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadcluster\\c10_lilypadcluster": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadclusterb\\c10_lilypadclusterb": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_plantclump\\c10_plantclump": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_smallplant\\c10_smallplant": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\cyan point light": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\green point light": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\mri lightning\\mri lightning": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\orange point light": [
+    "a30",
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\red point light": [
+    "a10",
+    "c10"
+   ],
+   "levels\\c20\\devices\\door_large\\door_large": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\door_mainshaft\\door_mainshaft": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo control\\holo control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo radial control\\holo radial control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo tri control\\holo tri control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\index platform\\index platform": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\platform\\platform": [
+    "c20"
+   ],
+   "levels\\c40\\devices\\c40_brokendoor\\c40_brokendoor": [
+    "c40"
+   ],
+   "levels\\c40\\scenery\\c40_snowbush_dark\\c40_snowbush_dark": [
+    "c40"
+   ],
+   "levels\\c40\\scenery\\c40_snowbushsmall_dark\\c40_snowbushsmall_dark": [
+    "c40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd abort text\\sd abort text": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd background\\sd background": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd countdown display\\sd countdown display": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_door_small_bashed\\d40_door_small_bashed": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_door_small_noglass_bashed\\d40_door_small_noglass_bashed": [
+    "a10",
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_invisible_manifold_control\\invisible manifold control": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\invisible_collision_object\\invisible_collision_object": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\temp critical\\temp critical": [
+    "d40"
+   ],
+   "levels\\test\\carousel\\devices\\car_spotlight\\car_spotlight": [
+    "carousel",
+    "ratrace"
+   ],
+   "levels\\test\\damnation\\devices\\dam_spotlight\\dam_spotlight": [
+    "damnation"
+   ],
+   "levels\\test\\wizard\\devices\\wiz_alert_light\\wiz_alert_light": [
+    "wizard"
+   ],
+   "powerups\\active camoflage\\active camoflage": [
+    "a10",
+    "a50",
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\assault rifle ammo\\assault rifle ammo": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\flamethrower ammo\\flamethrower ammo": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\healthpack\\healthpack": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\needler ammo\\needler ammo": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\over shield\\over shield": [
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\pistol ammo\\pistol ammo": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\rocket launcher ammo\\rocket launcher ammo": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\shotgun ammo\\shotgun ammo": [
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\sniper rifle ammo\\sniper rifle ammo": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "scenery\\baton\\baton": [
+    "a10",
+    "c10"
+   ],
+   "scenery\\blood_pool\\blood_pool": [
+    "c10"
+   ],
+   "scenery\\blue landing beacon\\blue landing beacon": [
+    "a30",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\c_field_generator\\c_field_generator": [
+    "a10",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40",
+    "ratrace"
+   ],
+   "scenery\\c_metalsmall\\c_metalsmall": [
+    "d20"
+   ],
+   "scenery\\c_metaltall\\c_metaltall": [
+    "d20"
+   ],
+   "scenery\\c_metalwide\\c_metalwide": [
+    "d20"
+   ],
+   "scenery\\c_storage\\c_storage": [
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "damnation"
+   ],
+   "scenery\\c_storage_large\\c_storage_large": [
+    "c10",
+    "damnation"
+   ],
+   "scenery\\c_uplink\\c_uplink": [
+    "b30",
+    "c10",
+    "damnation"
+   ],
+   "scenery\\captain_implant\\captain_implant": [
+    "d20"
+   ],
+   "scenery\\cortana_chip\\cortana_chip": [
+    "a10",
+    "b40",
+    "c40",
+    "d40"
+   ],
+   "scenery\\cutscene_small_rock\\cutscene_small_rock": [
+    "b30"
+   ],
+   "scenery\\cyborg_helmet\\cyborg_helmet": [
+    "d40"
+   ],
+   "scenery\\debris\\banshee_crashed\\banshee_crashed": [
+    "d20"
+   ],
+   "scenery\\debris\\rocks_smoldering\\rocks_smoldering": [
+    "b30",
+    "d20"
+   ],
+   "scenery\\emitters\\burning_flame\\burning_flame": [
+    "a10",
+    "c10",
+    "d20",
+    "d40"
+   ],
+   "scenery\\emitters\\plasma_flame\\plasma_flame": [
+    "d20"
+   ],
+   "scenery\\emitters\\single_marker_forward\\single_marker_forward": [
+    "a10",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40",
+    "damnation"
+   ],
+   "scenery\\emitters\\single_marker_up\\single_marker_up": [
+    "a30",
+    "a50",
+    "b30",
+    "d20",
+    "d40"
+   ],
+   "scenery\\flag_base\\flag_base": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "scenery\\floor_arrow\\floor_arrow": [
+    "beavercreek",
+    "bloodgulch",
+    "hangemhigh"
+   ],
+   "scenery\\h_barricade_large\\h_barricade_large": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\h_barricade_large_gap\\h_barricade_large_gap": [
+    "a10",
+    "boardingaction",
+    "d40",
+    "longest"
+   ],
+   "scenery\\h_barricade_small\\h_barricade_small": [
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\h_barricade_small_visor\\h_barricade_small_visor": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\halo\\halo": [
+    "a10",
+    "ui"
+   ],
+   "scenery\\halo_destroyed\\halo_destroyed": [
+    "d40"
+   ],
+   "scenery\\helmet_chip\\helmet_chip": [
+    "c10"
+   ],
+   "scenery\\hilltop\\hilltop": [
+    "chillout"
+   ],
+   "scenery\\index\\index": [
+    "c20"
+   ],
+   "scenery\\index_hold\\index_hold": [
+    "c20",
+    "c40"
+   ],
+   "scenery\\index_hold_hologram\\index_hold_hologram": [
+    "c40"
+   ],
+   "scenery\\landing beacon\\landing beacon": [
+    "a30",
+    "b40",
+    "c10",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\lockpick\\lockpick": [
+    "c10"
+   ],
+   "scenery\\plants\\plant fern\\plant fern": [
+    "beavercreek",
+    "bloodgulch",
+    "c10"
+   ],
+   "scenery\\plants\\plant_broadleaf_short\\plant_broadleaf_short": [
+    "bloodgulch"
+   ],
+   "scenery\\plants\\plant_broadleaf_tall\\plant_broadleaf_tall": [
+    "beavercreek"
+   ],
+   "scenery\\plants\\plant_yellowbig\\plant_yellowbig": [
+    "d20"
+   ],
+   "scenery\\plants\\plant_yellowsmall\\plant_yellowsmall": [
+    "d20"
+   ],
+   "scenery\\plants\\vines_hanging\\vines_hanging": [
+    "b30"
+   ],
+   "scenery\\rocks\\a50_rock_large\\a50_rock_large": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\b40_snowrocks\\snowrock": [
+    "sidewinder"
+   ],
+   "scenery\\rocks\\b40_snowrocksmall\\snowrocksmall": [
+    "sidewinder"
+   ],
+   "scenery\\rocks\\boulder\\boulder": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_crouch\\boulder_crouch": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_doublewide\\boulder_doublewide": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_granite_gigantic\\boulder_granite_gigantic": [
+    "a30",
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_granite_large\\boulder_granite_large": [
+    "a30",
+    "a50",
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_granite_medium\\boulder_granite_medium": [
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_granite_small\\boulder_granite_small": [
+    "a30",
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_large_grey\\boulder_large_grey": [
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_moss_gigantic\\boulder_moss_gigantic": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_moss_large\\boulder_moss_large": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_moss_small\\boulder_moss_small": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_snow_gigantic\\boulder_snow_gigantic": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_snow_large\\boulder_snow_large": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_snow_small\\boulder_snow_small": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\rock_shardlong\\rock_shardlong": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardmed\\rock_shardmed": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardrubble\\rock_shardrubble": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardsmall\\rock_shardsmall": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardwide\\rock_shardwide": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_sharpcurly\\rock_sharpcurly": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharphole\\rock_sharphole": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharpsmall\\rock_sharpsmall": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharptall\\rock_sharptall": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharpwedge\\rock_sharpwedge": [
+    "a50"
+   ],
+   "scenery\\shrubs\\shrub_large\\shrub_large": [
+    "a50",
+    "b30",
+    "b40",
+    "bloodgulch"
+   ],
+   "scenery\\shrubs\\shrub_small\\shrubsmall": [
+    "a50"
+   ],
+   "scenery\\small beacon\\small beacon": [
+    "bloodgulch",
+    "sidewinder"
+   ],
+   "scenery\\small beacon\\small blue beacon": [
+    "bloodgulch",
+    "sidewinder"
+   ],
+   "scenery\\teleporter_base\\teleporter_base": [
+    "bloodgulch",
+    "chillout",
+    "sidewinder"
+   ],
+   "scenery\\teleporter_shield\\teleporter_shield": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "scenery\\trees\\tree_desert_dead\\tree_desert_dead": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_desert_whitebark\\tree_desert_whitebark": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafy\\tree_leafy": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_doublewide\\tree_leafy_doublewide": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_fallentrunk\\tree_leafy_fallentrunk": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafy_fallentrunk_short\\tree_leafy_fallentrunk_short": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_medium\\tree_leafy_medium": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_sapling\\tree_leafy_sapling": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_stump\\tree_leafy_stump": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_stump_crouch\\tree_leafy_stump_crouch": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafydense_doublewide\\tree_leafydense_doublewide": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_pine\\tree_pine": [
+    "a30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_pine_snow\\tree_pine_snow": [
+    "b40",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\trees\\tree_pine_snowsmall\\tree_pine_snowsmall": [
+    "b40",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\trees\\tree_pine_tall\\tree_pine_tall": [
+    "a30"
+   ],
+   "scenery\\trees\\tree_wall1\\tree_wall1": [
+    "a50"
+   ],
+   "scenery\\trees\\tree_wallbig\\tree_wallbig": [
+    "a50"
+   ],
+   "scenery\\tubewire\\tubewire": [
+    "a10"
+   ],
+   "scenery\\vehicles\\c_dropship_crashed\\c_dropship_crashed": [
+    "c10"
+   ],
+   "scenery\\vehicles\\lifepod_atmosphere_entry\\lifepod_atmosphere_entry": [
+    "a10"
+   ],
+   "scenery\\vehicles\\lifepod_crashed\\lifepod_crashed": [
+    "a30"
+   ],
+   "scenery\\vehicles\\pelican_crashed\\pelican_crashed": [
+    "b30",
+    "c10"
+   ],
+   "scenery\\waterfalls\\spray_emitter_medium\\spray_emitter_medium": [
+    "a30"
+   ],
+   "scenery\\waterfalls\\waterfall_emitter\\waterfall_emitter": [
+    "a30"
+   ],
+   "sky\\clear afternoon\\clear afternoon": [
+    "b30"
+   ],
+   "sky\\mp clear afternoon\\mp clear afternoon": [
+    "beavercreek",
+    "bloodgulch",
+    "hangemhigh",
+    "prisoner",
+    "wizard"
+   ],
+   "sky\\mp_dusk\\mp_dusk": [
+    "damnation"
+   ],
+   "sky\\sky_a30\\skydusk0\\skydusk0": [
+    "a30"
+   ],
+   "sky\\sky_a30\\skydusk1\\skydusk1": [
+    "a30"
+   ],
+   "sky\\sky_a50\\skynight0\\skynight0": [
+    "a50"
+   ],
+   "sky\\sky_a50\\skynight1\\skynight1": [
+    "a50"
+   ],
+   "sky\\sky_d20\\sky_exterior\\sky_exterior": [
+    "d20"
+   ],
+   "sky\\sky_d20\\sky_start\\sky_start": [
+    "d20"
+   ],
+   "sky\\sky_d40\\skyofdoom\\skyofdoom": [
+    "d40"
+   ],
+   "sky\\sky_sidewinder\\sky_sidewinder": [
+    "longest",
+    "sidewinder"
+   ],
+   "sky\\sky_ui\\sky_ui": [
+    "ui"
+   ],
+   "sky\\sky_x10\\sky_x10": [
+    "a10",
+    "carousel",
+    "d40"
+   ],
+   "sky\\space\\space": [
+    "a10",
+    "boardingaction"
+   ],
+   "vehicles\\banshee\\banshee": [
+    "a30",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c gun turret\\c gun turret": [
+    "a50",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c_dropship\\c_dropship": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c_dropship\\cd_gun\\cd_gun": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\fighterbomber\\fighterbomber": [
+    "a10",
+    "d40"
+   ],
+   "vehicles\\ghost\\ghost": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\lifepod\\lifepod": [
+    "a10",
+    "a30",
+    "b30"
+   ],
+   "vehicles\\lifepod_entry\\lifepod_entry": [
+    "a30"
+   ],
+   "vehicles\\pelican\\pelican": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "d40"
+   ],
+   "vehicles\\scorpion\\scorpion": [
+    "a10",
+    "b40"
+   ],
+   "vehicles\\scorpion\\scorpion_mp\\scorpion_mp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\warthog\\warthog": [
+    "a10",
+    "a30",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\wraith\\wraith": [
+    "a50",
+    "b40",
+    "c40",
+    "d20"
+   ],
+   "weapons\\assault rifle\\assault rifle": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\assault rifle\\fp\\fp": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\ball\\ball": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\ball\\fp\\fp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\energy sword\\energy sword": [
+    "a50",
+    "b30",
+    "b40",
+    "c40"
+   ],
+   "weapons\\flag\\flag": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\flag\\fp\\fp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\flamethrower\\flamethrower": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\flamethrower\\fp\\fp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\frag grenade\\frag grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "weapons\\fuel rod gun\\fuel rod gun": [
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "weapons\\fuel rod gun\\projectile\\projectile": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "weapons\\gravity rifle\\gravity rifle": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\needler\\fp\\fp": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\needler\\needler": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\needler\\projectile\\projectile": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\pistol\\fp\\fp": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\pistol\\pistol": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma grenade\\plasma grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "weapons\\plasma pistol\\fp\\fp": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma pistol\\plasma pistol": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma rifle\\fp\\fp": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma rifle\\plasma rifle": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\rocket launcher\\fp\\fp": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\rocket launcher\\projectile\\projectile": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\rocket launcher\\rocket launcher": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\shotgun\\fp\\fp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\shotgun\\shotgun": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\sniper rifle\\fp\\fp": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\sniper rifle\\sniper rifle": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ]
+  },
+  "vehi": {
+   "cinematics\\props\\b30_falling_box": [
+    "b30"
+   ],
+   "levels\\a10\\devices\\chairs\\chair pilot\\chair pilot": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\chairs\\chair pod\\chair pod": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\cryotube\\cryotube": [
+    "a10"
+   ],
+   "scenery\\halo\\halo": [
+    "a10"
+   ],
+   "scenery\\vehicles\\lifepod_atmosphere_entry\\lifepod_atmosphere_entry": [
+    "a10"
+   ],
+   "vehicles\\banshee\\banshee": [
+    "a30",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\banshee\\banshee_cinematic": [
+    "d40"
+   ],
+   "vehicles\\banshee\\banshee_oldplayback": [
+    "d20"
+   ],
+   "vehicles\\c gun turret\\c gun turret": [
+    "a50",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c_dropship\\c_dropship": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\fighterbomber\\fighterbomber": [
+    "a10"
+   ],
+   "vehicles\\ghost\\ghost": [
+    "b30",
+    "b40",
+    "c40",
+    "d20"
+   ],
+   "vehicles\\ghost\\ghost_mp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\lifepod\\lifepod": [
+    "a10",
+    "a30",
+    "b30"
+   ],
+   "vehicles\\lifepod_docked\\lifepod_docked": [
+    "a10"
+   ],
+   "vehicles\\lifepod_entry\\lifepod_entry": [
+    "a30"
+   ],
+   "vehicles\\pelican\\pelican": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10"
+   ],
+   "vehicles\\pelican\\pelican_astral": [
+    "a10"
+   ],
+   "vehicles\\pelican\\pelican_crashing": [
+    "d40"
+   ],
+   "vehicles\\scorpion\\scorpion": [
+    "a10",
+    "b40"
+   ],
+   "vehicles\\scorpion\\scorpion_cinematic": [
+    "a10"
+   ],
+   "vehicles\\scorpion\\scorpion_mp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\warthog\\warthog": [
+    "a10",
+    "a30",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\wraith\\wraith": [
+    "a50",
+    "b40",
+    "c40"
+   ]
+  },
+  "bipd": {
+   "characters\\captain\\captain": [
+    "a10",
+    "a50",
+    "c10",
+    "d40"
+   ],
+   "characters\\captain_ingame\\captain_ingame": [
+    "a50"
+   ],
+   "characters\\captain_ingame\\fatigues\\captain_fatigues": [
+    "c10"
+   ],
+   "characters\\captain_ingame\\fatigues\\captain_fatigues_unarmed": [
+    "c10"
+   ],
+   "characters\\cortana\\cortana": [
+    "a10",
+    "d40"
+   ],
+   "characters\\cortana\\halo_enhanced\\halo_enhanced": [
+    "b40",
+    "c40"
+   ],
+   "characters\\crewman\\crewman": [
+    "a10",
+    "a30"
+   ],
+   "characters\\cyborg\\cyborg": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "characters\\cyborg\\cyborg_cinematic": [
+    "a10"
+   ],
+   "characters\\cyborg\\cyborg_unarmed": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\cyborg_mp\\cyborg_mp": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "characters\\elite\\elite": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20"
+   ],
+   "characters\\elite\\elite special": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\elite\\elite special cinematic": [
+    "d40"
+   ],
+   "characters\\engineer\\engineer": [
+    "b30"
+   ],
+   "characters\\flood_captain\\flood_captain": [
+    "d20"
+   ],
+   "characters\\flood_infection\\flood_infection": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\flood_infection\\flood_infection nopop": [
+    "c10"
+   ],
+   "characters\\floodcarrier\\floodcarrier": [
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat elite\\floodcombat elite": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\floodcombat_human\\floodcombat_human": [
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\grunt\\grunt": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\grunt\\grunt specops": [
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\hunter\\hunter": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "characters\\jackal\\jackal": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20"
+   ],
+   "characters\\jackal\\jackal major": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20"
+   ],
+   "characters\\marine\\marine": [
+    "a30",
+    "a50",
+    "c10"
+   ],
+   "characters\\marine\\marine unarmed": [
+    "a50",
+    "c10"
+   ],
+   "characters\\marine\\marine_plasma_rifle": [
+    "a50"
+   ],
+   "characters\\marine_armored\\marine_armored": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10"
+   ],
+   "characters\\marine_armored\\marine_armored_sniper": [
+    "a30",
+    "b40"
+   ],
+   "characters\\marine_armored\\marine_armored_unarmed": [
+    "a10",
+    "a30"
+   ],
+   "characters\\marine_suicidal\\marine_suicidal": [
+    "c10"
+   ],
+   "characters\\marine_wounded\\prone_1\\prone_1": [
+    "a10"
+   ],
+   "characters\\marine_wounded\\sitting_1\\sitting_1": [
+    "a10",
+    "a30"
+   ],
+   "characters\\marine_wounded\\sitting_2\\sitting_2": [
+    "a10"
+   ],
+   "characters\\monitor\\monitor": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "characters\\monitor\\monitor_no_light": [
+    "d40"
+   ],
+   "characters\\pilot\\pilot": [
+    "a10",
+    "a30"
+   ],
+   "characters\\sentinel\\sentinel": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "cinematics\\johnson\\johnson": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\invisible_collision_object\\invisible damage detector": [
+    "d40"
+   ],
+   "vehicles\\c_dropship\\cd_gun\\cd_gun": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ]
+  },
+  "weap": {
+   "characters\\sentinel\\sentinel": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "vehicles\\banshee\\banshee gun": [
+    "a30",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c gun turret\\c gun turret gun": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c_dropship\\cd_gun\\cd gun turret gun": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\ghost\\ghost gun": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\scorpion\\scorpion cannon": [
+    "a10",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\warthog\\warthog gun": [
+    "a10",
+    "a30",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\wraith\\wraith mortar": [
+    "a50",
+    "b40",
+    "c40"
+   ],
+   "weapons\\assault rifle\\assault rifle": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\ball\\ball": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\energy sword\\energy sword": [
+    "a50",
+    "b30",
+    "b40",
+    "c40"
+   ],
+   "weapons\\flag\\flag": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\flamethrower\\flamethrower": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\fuel rod gun\\fuel rod": [
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "weapons\\fuel rod gun\\hunter fuel rod": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "weapons\\gravity rifle\\gravity rifle": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\needler\\needler": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\pistol\\pistol": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma pistol\\plasma pistol": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma rifle\\plasma rifle": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\rocket launcher\\rocket launcher": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\shotgun\\shotgun": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\sniper rifle\\sniper rifle": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ]
+  },
+  "eqip": {
+   "powerups\\active camouflage": [
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\assault rifle ammo\\assault rifle ammo": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\double speed": [
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\flamethrower ammo\\flamethrower ammo": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\full-spectrum vision": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\health pack": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\needler ammo\\needler ammo": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\over shield": [
+    "a10",
+    "a50",
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\pistol ammo\\pistol ammo": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\rocket launcher ammo\\rocket launcher ammo": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\shotgun ammo\\shotgun ammo": [
+    "b30",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "powerups\\sniper rifle ammo\\sniper rifle ammo": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\frag grenade\\frag grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "weapons\\plasma grenade\\plasma grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ]
+  },
+  "scen": {
+   "characters\\elite\\elite_corpse\\elite_corpse": [
+    "c10"
+   ],
+   "characters\\flood_captain\\flood_captain": [
+    "d20"
+   ],
+   "cinematics\\effects\\cortana effects\\cortana vol": [
+    "a10"
+   ],
+   "cinematics\\effects\\lights\\shaft open lens\\open lens": [
+    "b30"
+   ],
+   "cinematics\\scenery\\assault rifle\\assault": [
+    "a30",
+    "c10",
+    "d40"
+   ],
+   "cinematics\\scenery\\grenade\\grenade": [
+    "d40"
+   ],
+   "cinematics\\scenery\\needler\\needer": [
+    "a50"
+   ],
+   "cinematics\\scenery\\pipe\\pipe": [
+    "a10",
+    "d20"
+   ],
+   "cinematics\\scenery\\pistol\\pistol": [
+    "a10"
+   ],
+   "cinematics\\scenery\\planets\\halo_closeup\\halo_closeup": [
+    "a10"
+   ],
+   "cinematics\\scenery\\plasma_rifle\\plasma_rifle": [
+    "a50"
+   ],
+   "cinematics\\scenery\\shotgun\\shotgun": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "levels\\a10\\devices\\bulletin board\\bulletin board": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\doors\\door_blast_collision\\door_blast_collision": [
+    "a10",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d40",
+    "sidewinder"
+   ],
+   "levels\\a10\\devices\\h computer bank burnt\\h computer bank burnt": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\h computer bank\\h computer bank": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\h gun rack\\h gun rack": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\h oxy tank\\h oxy tank": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "levels\\a10\\devices\\hushed casket-off\\hushed casket-off": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\hushed casket-on\\hushed casket-on": [
+    "a10"
+   ],
+   "levels\\a10\\poa_explosions\\poa_fire_emitter": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\poa_explosions\\poa_fire_emitter large": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\scenery\\large exhaust": [
+    "a10"
+   ],
+   "levels\\a10\\scenery\\small exhaust": [
+    "a10"
+   ],
+   "levels\\a30\\scenery\\holo control indicator\\holo control indicator": [
+    "a30"
+   ],
+   "levels\\a50\\devices\\grav_lift_particles\\grav_lift_particles": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\scenery\\a50_nutblocker\\a50_nutblocker": [
+    "a50",
+    "d20"
+   ],
+   "levels\\b40\\scenery\\b40_cpanel\\b40_cpanel": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_ctorch\\ctorch": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_doorblinker\\doorblinker": [
+    "b40",
+    "bloodgulch",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_metal_small\\metal_small": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_metal_tall\\metal_tall": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_metal_wide\\metal_wide": [
+    "b40",
+    "c10",
+    "c40",
+    "carousel"
+   ],
+   "levels\\b40\\scenery\\b40_shaftring\\b40_shaftring": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\scenery\\b40_snowbush\\b40_snowbush": [
+    "b40"
+   ],
+   "levels\\b40\\scenery\\b40_snowbushsmall\\b40_snowbushsmall": [
+    "b40"
+   ],
+   "levels\\b40\\scenery\\bridge lightning markers\\bridge lightning": [
+    "b40",
+    "c40"
+   ],
+   "levels\\c10\\devices\\helmet\\helmet": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_bigplant\\c10_bigplant": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypad\\c10_lilypad": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadbunch\\c10_lilypadbunch": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadbunchb\\c10_lilypadbunchb": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadcluster\\c10_lilypadcluster": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_lilypadclusterb\\c10_lilypadclusterb": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_plantclump\\c10_plantclump": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\c10_smallplant\\c10_smallplant": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light blink cyan": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light blink cyan dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light cyan": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light cyan dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light jitter cyan": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\cyan point light\\light jitter cyan dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light blink green": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light blink green dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light green": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light green dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light jitter green": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\green point light\\light jitter green dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\mri lightning\\mri lightning": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light blink orange": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light blink orange dynamic": [
+    "a30",
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light jitter orange": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light jitter orange dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light orange": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\orange point light\\light orange dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\blink red dynamic nomodel": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light blink red": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light blink red dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light jitter red": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light jitter red dynamic": [
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light red": [
+    "a10",
+    "c10"
+   ],
+   "levels\\c10\\scenery\\red point light\\light red dynamic": [
+    "c10"
+   ],
+   "levels\\c20\\devices\\index platform\\index platform": [
+    "c20"
+   ],
+   "levels\\c40\\scenery\\c40_snowbush_dark\\c40_snowbush_dark": [
+    "c40"
+   ],
+   "levels\\c40\\scenery\\c40_snowbushsmall_dark\\c40_snowbushsmall_dark": [
+    "c40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd abort text\\abort": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd background\\background": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\countdown timer\\sd countdown display\\countdown": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\temp critical\\temp critical": [
+    "d40"
+   ],
+   "scenery\\baton\\baton": [
+    "a10"
+   ],
+   "scenery\\baton\\baton dynamic": [
+    "c10"
+   ],
+   "scenery\\blood_pool\\blood_pool": [
+    "c10"
+   ],
+   "scenery\\blue landing beacon\\blue landing beacon": [
+    "a30",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\c_field_generator\\c_field_generator": [
+    "a10",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40",
+    "ratrace"
+   ],
+   "scenery\\c_metalsmall\\c_metalsmall": [
+    "d20"
+   ],
+   "scenery\\c_metaltall\\c_metaltall": [
+    "d20"
+   ],
+   "scenery\\c_metalwide\\c_metalwide": [
+    "d20"
+   ],
+   "scenery\\c_storage\\c_storage": [
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "damnation"
+   ],
+   "scenery\\c_storage_large\\c_storage_large": [
+    "c10",
+    "damnation"
+   ],
+   "scenery\\c_uplink\\c_uplink": [
+    "b30",
+    "c10",
+    "damnation"
+   ],
+   "scenery\\captain_implant\\captain_implant": [
+    "d20"
+   ],
+   "scenery\\cortana_chip\\cortana_chip": [
+    "a10",
+    "b40",
+    "c40",
+    "d40"
+   ],
+   "scenery\\cutscene_small_rock\\cutscene_small_rock": [
+    "b30"
+   ],
+   "scenery\\cyborg_helmet\\cyborg_helmet": [
+    "d40"
+   ],
+   "scenery\\debris\\banshee_crashed\\banshee_crashed": [
+    "d20"
+   ],
+   "scenery\\debris\\rocks_smoldering\\rocks_smoldering": [
+    "b30",
+    "d20"
+   ],
+   "scenery\\emitters\\burning_flame\\burning_flame": [
+    "a10",
+    "c10",
+    "d20",
+    "d40"
+   ],
+   "scenery\\emitters\\burning_flame_nondynamic\\burning_flame_nondynamic": [
+    "a10"
+   ],
+   "scenery\\emitters\\condensation\\condensation": [
+    "b30",
+    "d20"
+   ],
+   "scenery\\emitters\\coolant bubble\\coolant bubble": [
+    "d20"
+   ],
+   "scenery\\emitters\\dust\\dust": [
+    "b30"
+   ],
+   "scenery\\emitters\\glowingdrip\\glowingdrip": [
+    "c10",
+    "c20",
+    "d20",
+    "d40",
+    "damnation"
+   ],
+   "scenery\\emitters\\heavysmoke\\heavysmoke": [
+    "c10",
+    "c20",
+    "d20",
+    "d40"
+   ],
+   "scenery\\emitters\\plasma_flame\\plasma_flame": [
+    "d20"
+   ],
+   "scenery\\emitters\\smoldering_debris\\smoldering_debris": [
+    "a30",
+    "b30",
+    "d40"
+   ],
+   "scenery\\emitters\\sparks constant\\sparks constant": [
+    "b40",
+    "c10",
+    "c20",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "scenery\\emitters\\sparks friction\\sparks friction": [
+    "c20"
+   ],
+   "scenery\\emitters\\sparks spurt\\sparks spurt": [
+    "a10",
+    "c10",
+    "d40"
+   ],
+   "scenery\\emitters\\steam jets\\steam jets": [
+    "a10",
+    "b40",
+    "c10",
+    "c40"
+   ],
+   "scenery\\emitters\\steam jets\\steam jets fast": [
+    "c10"
+   ],
+   "scenery\\flag_base\\flag_base": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "scenery\\floor_arrow\\floor_arrow": [
+    "beavercreek",
+    "bloodgulch",
+    "hangemhigh"
+   ],
+   "scenery\\h_barricade_large\\h_barricade_large": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\h_barricade_large_gap\\h_barricade_large_gap": [
+    "a10",
+    "boardingaction",
+    "d40",
+    "longest"
+   ],
+   "scenery\\h_barricade_small\\h_barricade_small": [
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\h_barricade_small_visor\\h_barricade_small_visor": [
+    "a10",
+    "boardingaction",
+    "d40"
+   ],
+   "scenery\\halo\\halo": [
+    "ui"
+   ],
+   "scenery\\helmet_chip\\helmet_chip": [
+    "c10"
+   ],
+   "scenery\\hilltop\\hilltop": [
+    "chillout"
+   ],
+   "scenery\\index\\index": [
+    "c20"
+   ],
+   "scenery\\index_hold\\index_hold": [
+    "c20",
+    "c40"
+   ],
+   "scenery\\index_hold_hologram\\index_hold_hologram": [
+    "c40"
+   ],
+   "scenery\\landing beacon\\landing beacon": [
+    "a30",
+    "b40",
+    "c10",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\light lens flare\\light lens flare green": [
+    "a10"
+   ],
+   "scenery\\light lens flare\\light lens flare yellow": [
+    "a10"
+   ],
+   "scenery\\lockpick\\lockpick": [
+    "c10"
+   ],
+   "scenery\\plants\\plant fern\\plant fern": [
+    "beavercreek",
+    "bloodgulch",
+    "c10"
+   ],
+   "scenery\\plants\\plant_broadleaf_short\\plant_broadleaf_short": [
+    "bloodgulch"
+   ],
+   "scenery\\plants\\plant_broadleaf_tall\\plant_broadleaf_tall": [
+    "beavercreek"
+   ],
+   "scenery\\plants\\plant_yellowbig\\plant_yellowbig": [
+    "d20"
+   ],
+   "scenery\\plants\\plant_yellowsmall\\plant_yellowsmall": [
+    "d20"
+   ],
+   "scenery\\plants\\vines_hanging\\vines_hanging": [
+    "b30"
+   ],
+   "scenery\\rocks\\a50_rock_large\\a50_rock_large": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\b40_snowrocks\\snowrock": [
+    "sidewinder"
+   ],
+   "scenery\\rocks\\b40_snowrocksmall\\snowrocksmall": [
+    "sidewinder"
+   ],
+   "scenery\\rocks\\boulder\\boulder": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_crouch\\boulder_crouch": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_doublewide\\boulder_doublewide": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_granite_gigantic\\boulder_granite_gigantic": [
+    "a30"
+   ],
+   "scenery\\rocks\\boulder_granite_large\\boulder_granite_large": [
+    "a30",
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_granite_small\\boulder_granite_small": [
+    "a30"
+   ],
+   "scenery\\rocks\\boulder_large_grey\\boulder_large_grey": [
+    "bloodgulch"
+   ],
+   "scenery\\rocks\\boulder_moss_gigantic\\boulder_moss_gigantic": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_moss_large\\boulder_moss_large": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_moss_small\\boulder_moss_small": [
+    "c10"
+   ],
+   "scenery\\rocks\\boulder_redrock_gigantic\\boulder_redrock_gigantic": [
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_redrock_large\\boulder_redrock_large": [
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_redrock_medium\\boulder_redrock_medium": [
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_redrock_small\\boulder_redrock_small": [
+    "a50"
+   ],
+   "scenery\\rocks\\boulder_snow_gigantic\\boulder_snow_gigantic": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_snow_large\\boulder_snow_large": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\boulder_snow_small\\boulder_snow_small": [
+    "b40",
+    "c40"
+   ],
+   "scenery\\rocks\\rock_shardlong\\rock_shardlong": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardmed\\rock_shardmed": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardrubble\\rock_shardrubble": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardsmall\\rock_shardsmall": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_shardwide\\rock_shardwide": [
+    "d20"
+   ],
+   "scenery\\rocks\\rock_sharpcurly\\rock_sharpcurly": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharphole\\rock_sharphole": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharpsmall\\rock_sharpsmall": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharptall\\rock_sharptall": [
+    "a50"
+   ],
+   "scenery\\rocks\\rock_sharpwedge\\rock_sharpwedge": [
+    "a50"
+   ],
+   "scenery\\shrubs\\shrub_large\\shrub_large": [
+    "a50",
+    "b30",
+    "b40",
+    "bloodgulch"
+   ],
+   "scenery\\shrubs\\shrub_small\\shrubsmall": [
+    "a50"
+   ],
+   "scenery\\small beacon\\small blue beacon": [
+    "bloodgulch",
+    "sidewinder"
+   ],
+   "scenery\\small beacon\\small red beacon": [
+    "bloodgulch",
+    "sidewinder"
+   ],
+   "scenery\\teleporter_base\\teleporter_base": [
+    "bloodgulch",
+    "chillout",
+    "sidewinder"
+   ],
+   "scenery\\teleporter_shield\\teleporter": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "scenery\\trees\\tree_desert_dead\\tree_desert_dead": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_desert_whitebark\\tree_desert_whitebark": [
+    "a50",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafy\\tree_leafy": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_doublewide\\tree_leafy_doublewide": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_fallentrunk\\tree_leafy_fallentrunk": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafy_fallentrunk_short\\tree_leafy_fallentrunk_short": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_medium\\tree_leafy_medium": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_sapling\\tree_leafy_sapling": [
+    "b30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_leafy_stump\\tree_leafy_stump": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_leafy_stump_crouch\\tree_leafy_stump_crouch": [
+    "b30",
+    "bloodgulch"
+   ],
+   "scenery\\trees\\tree_leafydense_doublewide\\tree_leafydense_doublewide": [
+    "b30"
+   ],
+   "scenery\\trees\\tree_pine\\tree_pine": [
+    "a30",
+    "beavercreek"
+   ],
+   "scenery\\trees\\tree_pine_snow\\tree_pine_snow": [
+    "b40",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\trees\\tree_pine_snowsmall\\tree_pine_snowsmall": [
+    "b40",
+    "c40",
+    "sidewinder"
+   ],
+   "scenery\\trees\\tree_pine_tall\\tree_pine_tall": [
+    "a30"
+   ],
+   "scenery\\trees\\tree_wall1\\tree_wall": [
+    "a50"
+   ],
+   "scenery\\trees\\tree_wallbig\\tree_wallbig": [
+    "a50"
+   ],
+   "scenery\\tubewire\\tubewire": [
+    "a10"
+   ],
+   "scenery\\vehicles\\c_dropship_crashed\\c_dropship_crashed": [
+    "c10"
+   ],
+   "scenery\\vehicles\\ghost\\ghost": [
+    "d20"
+   ],
+   "scenery\\vehicles\\lifepod_atmosphere_entry\\lifepod_atmosphere_entry": [
+    "a10"
+   ],
+   "scenery\\vehicles\\lifepod_crashed\\lifepod_crashed": [
+    "a30"
+   ],
+   "scenery\\vehicles\\pelican\\pelican": [
+    "a10"
+   ],
+   "scenery\\vehicles\\pelican_crashed\\pelican_crashed": [
+    "b30",
+    "c10"
+   ],
+   "scenery\\vehicles\\wraith\\wraith": [
+    "a50",
+    "d20"
+   ],
+   "scenery\\waterfalls\\spray_emitter_medium\\spray_emitter_medium": [
+    "a30"
+   ],
+   "scenery\\waterfalls\\waterfall_emitter\\waterfall_emitter": [
+    "a30"
+   ],
+   "scenery\\white dynamic light\\white dynamic light": [
+    "d20"
+   ],
+   "sound\\sfx\\ambience\\b30\\waves_sound": [
+    "b30"
+   ],
+   "vehicles\\c_dropship\\c_dropship": [
+    "a50"
+   ],
+   "vehicles\\fighterbomber\\fighterbomber_scenery": [
+    "a10",
+    "d40"
+   ],
+   "vehicles\\pelican\\pelican": [
+    "b40"
+   ]
+  },
+  "mach": {
+   "cinematics\\effects\\cortana powerup fx\\cortana powerup fx": [
+    "c40"
+   ],
+   "cinematics\\effects\\lights\\shaft open lens\\shaft open lens": [
+    "b30"
+   ],
+   "cinematics\\effects\\teleportation\\teleportation": [
+    "c10",
+    "c20",
+    "c40"
+   ],
+   "cinematics\\effects\\teleportation\\teleportation short": [
+    "c10",
+    "c40",
+    "d20"
+   ],
+   "levels\\a10\\devices\\alert_light\\alert_light": [
+    "a10",
+    "d40",
+    "wizard"
+   ],
+   "levels\\a10\\devices\\command display\\command display": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\cryo vis test\\cryo vis test": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\cryotube\\cryotube": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\doors\\door airlock burnt\\door airlock burnt": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door airlock\\door airlock": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\doors\\door blast closed\\door blast closed": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door blast half\\door blast half": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door blast\\door blast": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door cryo chamber\\door cryo chamber": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door engineering\\door engineering": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door jeff tube burnt\\door jeff tube burnt": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door jeff tube\\door jeff tube": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small burnt\\door small burnt": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small no glass\\door small no glass": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small\\door small": [
+    "a10",
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door small\\door small platformicated": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\doors\\door_small_noglass_bashed\\door_small_noglass_bashed": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\elevator\\elevator": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\engine louvre\\engine louvre": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\engine piston\\engine piston": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\hushed casket\\hushed_casket": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\lifepod device\\lifepod device": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\shield charge\\shield charge": [
+    "a10"
+   ],
+   "levels\\a10\\devices\\signal light\\signal light": [
+    "d40"
+   ],
+   "levels\\a10\\devices\\space_battle\\space_battle": [
+    "a10"
+   ],
+   "levels\\a30\\devices\\beam emitter\\beam emitter": [
+    "a30"
+   ],
+   "levels\\a30\\devices\\torpedo_bridge\\torpedo_bridge": [
+    "a30"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo command control\\holo command control": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control dual\\holo control dual": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control sphere\\holo control sphere": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control\\holo control": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo map\\holo map": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\mustering_door\\mustering_door": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\prison door\\prison door": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\shuttle bay doors\\shuttle bay doors": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\small door\\small door": [
+    "a50",
+    "d20"
+   ],
+   "levels\\a50\\devices\\small door\\small end door": [
+    "d20"
+   ],
+   "levels\\b30\\devices\\doors\\door small\\door small": [
+    "b30",
+    "b40",
+    "c10",
+    "c40"
+   ],
+   "levels\\b30\\devices\\doors\\door small\\door small platform": [
+    "b30",
+    "c10"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo beam tube\\holo beam tube": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control ring\\holo control ring": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control room display\\holo control room display": [
+    "b30"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display square\\holo display square": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display tall\\holo display tall": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo display wide\\holo display wide": [
+    "b30",
+    "c10",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo panel\\holo panel": [
+    "b30",
+    "c20"
+   ],
+   "levels\\b40\\devices\\b40_garagedoor\\b40_garagedoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_generator_fx\\generator fx": [
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_giantdoor\\b40_giantdoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_lift1600\\b40_lift1600": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_lift4800\\b40_lift4800": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_outerdoor\\b40_outerdoor": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\b40_towerlift\\b40_towerlift": [
+    "b40"
+   ],
+   "levels\\b40\\devices\\holo halo control\\holo halo control": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\holo halo ring\\holo halo ring": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b40\\devices\\holo halo solar system\\holo halo solar system": [
+    "b40",
+    "c40"
+   ],
+   "levels\\c10\\devices\\bridge\\bridge": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\bridge\\bridge fast": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\door_small_bashed\\door_small_bashed": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\falling lift\\falling lift": [
+    "c10"
+   ],
+   "levels\\c10\\devices\\lift\\lift": [
+    "c10"
+   ],
+   "levels\\c20\\devices\\door_large\\door_large": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\door_mainshaft\\door_mainshaft": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo control\\holo control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo radial control\\holo radial control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\holo tri control\\holo tri control": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\index platform\\index platform": [
+    "c20"
+   ],
+   "levels\\c20\\devices\\platform\\platform": [
+    "c20"
+   ],
+   "levels\\c40\\devices\\c40_brokendoor\\c40_brokendoor": [
+    "c40"
+   ],
+   "levels\\d20\\devices\\a50_small_door_copies\\small door (platformicated)": [
+    "d20"
+   ],
+   "levels\\d40\\devices\\d40_door_small_bashed\\d40_door_small_bashed": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_door_small_bashed\\d40_door_small_bashed_platformed": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_door_small_noglass_bashed\\d40_door_small_noglass_bashed": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\d40_door_small_noglass_bashed\\d40_door_small_noglass_bashed_platformed": [
+    "d40"
+   ],
+   "levels\\d40\\devices\\poa_explosion\\poa_explosion": [
+    "d40"
+   ],
+   "levels\\test\\wizard\\devices\\wiz_alert_light\\wiz_alert_light": [
+    "wizard"
+   ],
+   "scenery\\halo_destroyed\\halo_destroyed": [
+    "d40"
+   ]
+  },
+  "ctrl": {
+   "levels\\a50\\devices\\interior tech objects\\holo control dual\\holo control dual": [
+    "a50"
+   ],
+   "levels\\a50\\devices\\interior tech objects\\holo control\\holo control": [
+    "a50"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control equipment\\holo control equipment": [
+    "b30",
+    "c20"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control\\holo control": [
+    "a30",
+    "b30",
+    "b40",
+    "c10",
+    "c20",
+    "c40"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo control\\holo state control": [
+    "b40",
+    "c40"
+   ],
+   "levels\\b30\\devices\\interior tech objects\\holo panel\\holo panel": [
+    "b30"
+   ],
+   "levels\\b40\\devices\\holo control\\b40_holo control": [
+    "c40"
+   ],
+   "levels\\b40\\devices\\holo halo control\\holo halo control": [
+    "b40",
+    "c40"
+   ],
+   "levels\\d40\\devices\\d40_invisible_manifold_control\\invisible manifold control": [
+    "d40"
+   ]
+  },
+  "proj": {
+   "characters\\sentinel\\beam": [
+    "c10",
+    "c20",
+    "c40",
+    "d40"
+   ],
+   "cinematics\\effects\\cortana powerup fx\\info": [
+    "c40"
+   ],
+   "cinematics\\effects\\lights\\covenant blast bolt\\covenant blast bolt": [
+    "a10"
+   ],
+   "cinematics\\effects\\teleportation\\teleport ring": [
+    "c10",
+    "c20",
+    "c40"
+   ],
+   "cinematics\\effects\\teleportation\\teleport ring fast": [
+    "c10",
+    "c40",
+    "d20"
+   ],
+   "levels\\a30\\devices\\beam emitter\\beam": [
+    "a10"
+   ],
+   "levels\\c20\\devices\\index platform\\light": [
+    "c20"
+   ],
+   "vehicles\\banshee\\banshee bolt": [
+    "a30",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\banshee\\banshee fuel rod": [
+    "a30",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\c gun turret\\c gun turret": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "c10",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "vehicles\\ghost\\ghost bolt": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\scorpion\\bullet": [
+    "a10",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\scorpion\\tank shell": [
+    "a10",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "carousel",
+    "chillout",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\warthog\\bullet": [
+    "a10",
+    "a30",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "vehicles\\wraith\\wraith mortar": [
+    "a50",
+    "b40",
+    "c40"
+   ],
+   "weapons\\assault rifle\\bullet": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\flamethrower\\flame": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c20",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\frag grenade\\frag grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "weapons\\fuel rod gun\\fuel rod": [
+    "a50",
+    "b30",
+    "b40",
+    "c40",
+    "d20",
+    "d40"
+   ],
+   "weapons\\needler\\needle": [
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\pistol\\bullet": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma grenade\\plasma grenade": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "ui",
+    "wizard"
+   ],
+   "weapons\\plasma pistol\\bolt": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma rifle\\bolt": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\plasma rifle\\charged bolt": [
+    "a10",
+    "a30",
+    "a50",
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\rocket launcher\\rocket": [
+    "b30",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\shotgun\\pellet": [
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c10",
+    "c20",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "d40",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ],
+   "weapons\\sniper rifle\\sniper bullet": [
+    "a30",
+    "a50",
+    "b40",
+    "beavercreek",
+    "bloodgulch",
+    "boardingaction",
+    "c40",
+    "carousel",
+    "chillout",
+    "d20",
+    "damnation",
+    "hangemhigh",
+    "longest",
+    "prisoner",
+    "putput",
+    "ratrace",
+    "sidewinder",
+    "wizard"
+   ]
+  }
+ }
+}
