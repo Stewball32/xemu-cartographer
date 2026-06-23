@@ -31,6 +31,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M24  | [Remote game setup (controller-free lobby write)](M24-remote-game-setup.md)                 | Planned     |
 | M25  | [OBS spectator overlays (token-auth render pages)](M25-obs-overlays.md)                      | In progress |
 | M26  | [HDD copy-on-write overlay provisioning](M26-hdd-overlay-provisioning.md)                    | Done        |
+| M27  | [3D visualizer (live markers + real BSP geometry)](M27-3d-visualizer.md)                     | In progress |
 
 ## Status values
 

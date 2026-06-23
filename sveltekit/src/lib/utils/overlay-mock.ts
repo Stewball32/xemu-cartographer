@@ -143,21 +143,35 @@ function clamp01(n: number): number {
 // the objects/scenario-spawn layers, so populating them here is additive. Red
 // base sits NW, Blue base SE; players 0 and 4 roam toward mid-map so their dots
 // visibly move — the same movement that validates the position offsets live.
-const RED_BASE = { x: -55, y: 50 };
-const BLUE_BASE = { x: 55, y: -50 };
+// Real Blood Gulch coordinates: the extracted structure-BSP mesh spans
+// x[6,132] y[-190,-45] z[-0.3,26], so the mock markers sit INSIDE the real map in
+// the 3D visualizer (and the 2D map auto-fits the same layout). Red base near the
+// canyon's north mouth, Blue near the south, MID between them; z ~ floor height.
+const RED_BASE = { x: 60, y: -70 };
+const BLUE_BASE = { x: 70, y: -165 };
+const MID = { x: 65, y: -118 };
+const FLOOR_Z = 2;
 
 function mockPlayerPos(s: MockSeed, frame: number): { x: number; y: number; z: number } {
 	const base = s.team === 0 ? RED_BASE : BLUE_BASE;
-	if (s.dead) return { x: base.x, y: base.y, z: 0 }; // respawning — sit at base
+	if (s.dead) return { x: base.x, y: base.y, z: FLOOR_Z }; // respawning — sit at base
 	if (s.index === 0 || s.index === 4) {
 		// Roamer: ping-pong between base and mid-map.
 		const t = (Math.sin(frame / 30 + s.index) + 1) / 2;
-		return { x: base.x + (0 - base.x) * t, y: base.y + (0 - base.y) * t, z: 4 * t };
+		return {
+			x: base.x + (MID.x - base.x) * t,
+			y: base.y + (MID.y - base.y) * t,
+			z: FLOOR_Z + 4 * t
+		};
 	}
 	// Orbit near the base so each dot drifts a little.
 	const a = frame / 40 + s.index;
 	const r = 8 + (s.index % 3) * 4;
-	return { x: base.x + Math.cos(a) * r, y: base.y + Math.sin(a) * r, z: (s.index % 2) * 3 };
+	return {
+		x: base.x + Math.cos(a) * r,
+		y: base.y + Math.sin(a) * r,
+		z: FLOOR_Z + (s.index % 2) * 3
+	};
 }
 
 function mockPlayerAim(s: MockSeed): { x: number; y: number; z: number } {
@@ -284,7 +298,7 @@ export function mockTick(frame = 0): TickPayloadV2 {
 				spawn_id: 0,
 				status: 'world',
 				held_by: null,
-				pos: { x: 0, y: 0, z: 0 },
+				pos: { x: 65, y: -118, z: 2 },
 				respawn_in_ticks: null
 			},
 			{ spawn_id: 1, status: 'held', held_by: 4, pos: null, respawn_in_ticks: null },
@@ -299,7 +313,7 @@ export function mockTick(frame = 0): TickPayloadV2 {
 				spawn_id: 3,
 				status: 'world',
 				held_by: null,
-				pos: { x: -20, y: -28, z: 2 },
+				pos: { x: 52, y: -148, z: 2 },
 				respawn_in_ticks: null
 			}
 		],
@@ -353,35 +367,35 @@ function mockPowerItemSpawns(): ScenarioPayload['power_item_spawns'] {
 			tag: 'weapons\\rocket launcher\\rocket launcher',
 			interval_ticks: 3600,
 			gametype_mask: 0,
-			pos: { x: 0, y: 0, z: 0 }
+			pos: { x: 65, y: -118, z: 2 }
 		},
 		{
 			spawn_id: 1,
 			tag: 'weapons\\sniper rifle\\sniper rifle',
 			interval_ticks: 3600,
 			gametype_mask: 0,
-			pos: { x: 40, y: 22, z: 5 }
+			pos: { x: 95, y: -100, z: 5 }
 		},
 		{
 			spawn_id: 2,
 			tag: 'powerups\\over shield\\over shield',
 			interval_ticks: 5400,
 			gametype_mask: 0,
-			pos: { x: -40, y: -22, z: 5 }
+			pos: { x: 45, y: -135, z: 5 }
 		},
 		{
 			spawn_id: 3,
 			tag: 'powerups\\active camouflage\\active camouflage',
 			interval_ticks: 5400,
 			gametype_mask: 0,
-			pos: { x: -20, y: -28, z: 2 }
+			pos: { x: 52, y: -148, z: 2 }
 		},
 		{
 			spawn_id: 4,
 			tag: 'weapons\\plasma rifle\\plasma rifle',
 			interval_ticks: 1800,
 			gametype_mask: 0,
-			pos: { x: 28, y: -12, z: 1 }
+			pos: { x: 80, y: -95, z: 1 }
 		}
 	];
 }
@@ -401,15 +415,15 @@ export function mockObjects(): ObjectsPayload {
 	});
 	return {
 		objects: [
-			veh(5001, 'vehicles\\warthog\\warthog', -45, 42, null),
-			veh(5002, 'vehicles\\ghost\\ghost', 48, -44, 5), // occupied
-			veh(5003, 'vehicles\\banshee\\banshee', 60, -36, null),
+			veh(5001, 'vehicles\\warthog\\warthog', 55, -78, null),
+			veh(5002, 'vehicles\\ghost\\ghost', 82, -158, 5), // occupied
+			veh(5003, 'vehicles\\banshee\\banshee', 95, -150, null),
 			{
 				object_id: 5100,
 				tag: 'weapons\\assault rifle\\assault rifle',
 				type: 2,
 				flags: 0,
-				pos: { x: 12, y: 6, z: 0 },
+				pos: { x: 68, y: -110, z: 0 },
 				ang_vel: { x: 0, y: 0, z: 0 },
 				time_existing: 120,
 				owner_unit: null,
@@ -421,7 +435,7 @@ export function mockObjects(): ObjectsPayload {
 			{
 				object_id: 6001,
 				tag: 'weapons\\frag grenade\\frag grenade',
-				pos: { x: 6, y: -4, z: 1 },
+				pos: { x: 60, y: -115, z: 2 },
 				flags: 0,
 				action: 0,
 				detonation_timer: 1.2,

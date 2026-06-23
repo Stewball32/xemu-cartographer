@@ -36,6 +36,13 @@ sveltekit/.svelte-kit/
 # extractor + the frontend fallback are the committed product; regenerate locally.
 sveltekit/static/game-icons/
 
+# Game-derived level-geometry cache (3D visualizer structure-BSP meshes).
+# Decoded from the user's own legally-owned Halo .map files by
+# scripts/game-geometry/extract_bsp.py — game geometry, never committed (same
+# legal stance as the icons / map-preview PNGs). The extractor + the frontend
+# degrade-to-bounds-box fallback are the committed product; regenerate locally.
+sveltekit/static/game-geometry/
+
 # Environment
 .env
 !.env.example
