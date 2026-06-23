@@ -9,13 +9,7 @@
 		type VizModel,
 		type VizPlayer
 	} from '$lib/utils/visualizer-view';
-	import {
-		iconKeyForItem,
-		iconKeyForVehicle,
-		OBJECTIVE_FLAG_KEY,
-		emptyIconSet,
-		type IconSet
-	} from '$lib/utils/game-icons';
+	import { emptyIconSet, type IconSet } from '$lib/utils/game-icons';
 	import type { Vec2, Vec3 } from '$lib/types/scraper-v2';
 
 	let {
@@ -166,7 +160,7 @@
 			<g class="vehicles">
 				{#each model.vehicles as v (v.id)}
 					{@const c = p(v.pos)}
-					{@const href = icons.url(iconKeyForVehicle(v.tag))}
+					{@const href = icons.vehicleUrl(v.tag)}
 					{#if href}
 						{@render iconMarker(c.x, c.y, href, v.occupied ? '#e9edf2' : '#cbd5e1', 26)}
 						{#if v.occupied}
@@ -198,7 +192,7 @@
 				{#each model.items.filter((it) => it.heldBy == null) as it (it.id)}
 					{@const c = p(it.pos)}
 					{@const col = ITEM_COLOR[it.kind] ?? ITEM_COLOR.other}
-					{@const href = icons.url(iconKeyForItem(it.tag, it.kind))}
+					{@const href = icons.itemUrl(it.tag, it.kind)}
 					{#if href}
 						{@render iconMarker(c.x, c.y, href, col, 24)}
 					{:else}
@@ -222,7 +216,7 @@
 		<g class="flags">
 			{#each model.flags as f, i (i)}
 				{@const c = p(f.pos)}
-				{@const href = icons.url(OBJECTIVE_FLAG_KEY)}
+				{@const href = icons.flagUrl()}
 				{#if href}
 					{@render iconMarker(c.x, c.y, href, f.color, 24)}
 					{#if f.carrier != null}

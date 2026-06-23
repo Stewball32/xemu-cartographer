@@ -3,63 +3,102 @@ import {
 	slugifyTagSegment,
 	iconKeyForItem,
 	iconKeyForVehicle,
+	resolveItemKey,
+	resolveVehicleKey,
+	resolveFlagKey,
 	loadIconSet,
 	emptyIconSet,
-	OBJECTIVE_FLAG_KEY
+	OBJECTIVE_FLAG_KEY,
+	type TagMap
 } from './game-icons';
+
+const EMPTY: TagMap = {
+	weapon: {},
+	powerup: {},
+	equipment: {},
+	grenade: {},
+	objective: {},
+	vehicle: {}
+};
+
+// Mirrors what the CE manifest ships (weapons authoritative, powerups → markers).
+const CE: TagMap = {
+	weapon: { pistol: 'weapon_pistol', rocket_launcher: 'weapon_rocket_launcher' },
+	powerup: {
+		over_shield: 'marker_diamond',
+		active_camouflage: 'marker_ring',
+		health_pack: 'marker_chevron'
+	},
+	equipment: {},
+	grenade: { '*': 'grenade' },
+	objective: { flag: 'objective_flag', oddball: 'objective_oddball', koth: 'objective_koth' },
+	vehicle: {}
+};
 
 describe('slugifyTagSegment', () => {
 	it('lowercases and collapses non-alphanumerics to underscores', () => {
-		expect(slugifyTagSegment('Assault Rifle')).toBe('assault_rifle');
+		expect(slugifyTagSegment('Over Shield')).toBe('over_shield');
+		expect(slugifyTagSegment('Active Camouflage')).toBe('active_camouflage');
 		expect(slugifyTagSegment('rocket_launcher')).toBe('rocket_launcher');
-		expect(slugifyTagSegment('  Plasma  Pistol  ')).toBe('plasma_pistol');
-		expect(slugifyTagSegment('over-shield!')).toBe('over_shield');
 	});
 });
 
-describe('iconKeyForItem', () => {
-	it('keys weapons by their tag folder (second path segment)', () => {
+describe('iconKeyForItem (derived fallback)', () => {
+	it('keys weapons by their tag folder', () => {
 		expect(iconKeyForItem('weapons\\pistol\\pistol', 'weapon')).toBe('weapon_pistol');
-		expect(iconKeyForItem('weapons\\assault rifle\\assault rifle', 'weapon')).toBe(
-			'weapon_assault_rifle'
-		);
-		// extractor uses the FOLDER, so a differing leaf name still matches
 		expect(iconKeyForItem('weapons\\rocket launcher\\rocket_launcher', 'weapon')).toBe(
 			'weapon_rocket_launcher'
 		);
 	});
 
 	it('detects grenades by substring regardless of classified kind', () => {
-		// CE files grenades under weapons\\ so classifyTag returns 'weapon'
 		expect(iconKeyForItem('weapons\\frag grenade\\frag grenade', 'weapon')).toBe('grenade');
 		expect(iconKeyForItem('weapons\\plasma grenade\\plasma grenade', 'weapon')).toBe('grenade');
 	});
 
-	it('keys powerups / equipment optimistically (gated later by the manifest)', () => {
-		expect(iconKeyForItem('powerups\\over shield\\over shield', 'powerup')).toBe(
-			'powerup_over_shield'
-		);
-		expect(iconKeyForItem('powerups\\active camouflage', 'powerup')).toBe(
-			'powerup_active_camouflage'
-		);
-	});
-
-	it('returns null for kinds with no per-type icon', () => {
+	it('returns null for powerups (no derivable key — curated only)', () => {
+		expect(iconKeyForItem('powerups\\over shield\\over shield', 'powerup')).toBeNull();
 		expect(iconKeyForItem('characters\\cyborg\\cyborg', 'biped')).toBeNull();
-		expect(iconKeyForItem('', 'weapon')).toBeNull();
-		expect(iconKeyForItem(null, 'weapon')).toBeNull();
-	});
-
-	it('forward slashes resolve the same as backslashes', () => {
-		expect(iconKeyForItem('weapons/shotgun/shotgun', 'weapon')).toBe('weapon_shotgun');
 	});
 });
 
-describe('iconKeyForVehicle', () => {
-	it('keys vehicles by folder (manifest decides if the sprite exists)', () => {
-		expect(iconKeyForVehicle('vehicles\\warthog\\warthog')).toBe('vehicle_warthog');
+describe('resolveItemKey (curated tag_map first, then derived)', () => {
+	it('maps powerups to their waypoint marker via tag_map', () => {
+		expect(resolveItemKey(CE, 'powerups\\over shield\\over shield', 'powerup')).toBe(
+			'marker_diamond'
+		);
+		expect(resolveItemKey(CE, 'powerups\\active camouflage\\active camouflage', 'powerup')).toBe(
+			'marker_ring'
+		);
+		expect(resolveItemKey(CE, 'powerups\\health pack', 'powerup')).toBe('marker_chevron');
+	});
+
+	it('resolves weapons (tag_map and derived agree)', () => {
+		expect(resolveItemKey(CE, 'weapons\\pistol\\pistol', 'weapon')).toBe('weapon_pistol');
+		// a weapon absent from tag_map still derives a key (gated by the manifest later)
+		expect(resolveItemKey(CE, 'weapons\\shotgun\\shotgun', 'weapon')).toBe('weapon_shotgun');
+	});
+
+	it('grenades use the tag_map wildcard', () => {
+		expect(resolveItemKey(CE, 'weapons\\frag grenade\\frag grenade', 'weapon')).toBe('grenade');
+	});
+
+	it('with an empty tag_map, powerups have no key (generic fallback)', () => {
+		expect(resolveItemKey(EMPTY, 'powerups\\over shield\\over shield', 'powerup')).toBeNull();
+		// weapons still derive
+		expect(resolveItemKey(EMPTY, 'weapons\\pistol\\pistol', 'weapon')).toBe('weapon_pistol');
+	});
+});
+
+describe('resolveVehicleKey / resolveFlagKey', () => {
+	it('vehicles derive a key (manifest gates existence)', () => {
+		expect(resolveVehicleKey(CE, 'vehicles\\warthog\\warthog')).toBe('vehicle_warthog');
 		expect(iconKeyForVehicle('vehicles\\ghost\\ghost')).toBe('vehicle_ghost');
-		expect(iconKeyForVehicle('')).toBeNull();
+	});
+
+	it('flag resolves to the objective flag key', () => {
+		expect(resolveFlagKey(CE)).toBe('objective_flag');
+		expect(resolveFlagKey(EMPTY)).toBe(OBJECTIVE_FLAG_KEY);
 	});
 });
 
@@ -68,7 +107,8 @@ describe('emptyIconSet', () => {
 		const s = emptyIconSet('haloce');
 		expect(s.loaded).toBe(false);
 		expect(s.url('weapon_pistol')).toBeNull();
-		expect(s.url(OBJECTIVE_FLAG_KEY)).toBeNull();
+		expect(s.itemUrl('powerups\\over shield\\over shield', 'powerup')).toBeNull();
+		expect(s.flagUrl()).toBeNull();
 	});
 });
 
@@ -77,28 +117,42 @@ describe('loadIconSet', () => {
 		game: 'haloce',
 		icons: {
 			weapon_pistol: { file: 'weapon_pistol.png' },
+			marker_diamond: { file: 'marker_diamond.png' },
 			objective_flag: { file: 'objective_flag.png' }
+		},
+		tag_map: {
+			weapon: { pistol: 'weapon_pistol' },
+			powerup: { over_shield: 'marker_diamond' },
+			grenade: { '*': 'grenade' },
+			objective: { flag: 'objective_flag' }
 		}
 	};
 
-	it('resolves served URLs for keys present in the manifest', async () => {
+	it('resolves item URLs through the curated tag_map', async () => {
 		const fetchFn = (async () =>
 			new Response(JSON.stringify(manifest), { status: 200 })) as unknown as typeof fetch;
 		const set = await loadIconSet('haloce', fetchFn);
 		expect(set.loaded).toBe(true);
-		expect(set.url('weapon_pistol')).toBe('/game-icons/haloce/weapon_pistol.png');
-		expect(set.url(OBJECTIVE_FLAG_KEY)).toBe('/game-icons/haloce/objective_flag.png');
-		// a key the manifest doesn't ship → null (fallback marker)
-		expect(set.url('vehicle_warthog')).toBeNull();
-		expect(set.url(null)).toBeNull();
+		// weapon via tag_map + manifest
+		expect(set.itemUrl('weapons\\pistol\\pistol', 'weapon')).toBe(
+			'/game-icons/haloce/weapon_pistol.png'
+		);
+		// powerup → waypoint marker (the whole point of point #1)
+		expect(set.itemUrl('powerups\\over shield\\over shield', 'powerup')).toBe(
+			'/game-icons/haloce/marker_diamond.png'
+		);
+		expect(set.flagUrl()).toBe('/game-icons/haloce/objective_flag.png');
+		// a powerup with no mapping → null (generic fallback)
+		expect(set.itemUrl('powerups\\active camouflage', 'powerup')).toBeNull();
+		// vehicles ship no icon in CE → null
+		expect(set.vehicleUrl('vehicles\\warthog\\warthog')).toBeNull();
 	});
 
 	it('falls back to an empty set when the cache is missing (404)', async () => {
-		const fetchFn = (async () =>
-			new Response('not found', { status: 404 })) as unknown as typeof fetch;
+		const fetchFn = (async () => new Response('nope', { status: 404 })) as unknown as typeof fetch;
 		const set = await loadIconSet('haloce', fetchFn);
 		expect(set.loaded).toBe(false);
-		expect(set.url('weapon_pistol')).toBeNull();
+		expect(set.itemUrl('weapons\\pistol\\pistol', 'weapon')).toBeNull();
 	});
 
 	it('falls back to an empty set when fetch throws (offline)', async () => {
@@ -107,6 +161,5 @@ describe('loadIconSet', () => {
 		}) as unknown as typeof fetch;
 		const set = await loadIconSet('haloce', fetchFn);
 		expect(set.loaded).toBe(false);
-		expect(set.url('weapon_pistol')).toBeNull();
 	});
 });

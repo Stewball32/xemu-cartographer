@@ -73,15 +73,40 @@ GAMES = {
         "default_map": "bloodgulch.map",
         "msg_icons_tag": r"combined\hud_msg_icons",
         "waypoints_tag": r"combined\hud_waypoints",
-        # generic grenade glyph in hud_msg_icons (frag + plasma share it)
+        # generic grenade glyph in hud_msg_icons. VERIFIED frag + plasma share
+        # it: both grenade_hud_interface (grhi) tags use the same pickup-message
+        # icon AND the same HUD-counter glyph (hud_ammo_type_icons #2); only a
+        # HUD tint color differs. So stock CE has no distinct frag/plasma sprite.
         "grenade_seq": 13,
-        # hud_waypoints sequence index → objective key (sequences are unnamed in
-        # the tag; identified by eye from the decoded atlas and documented here)
-        "objectives": {
-            "flag": 2,      # CTF flag
-            "oddball": 4,   # skull
-            "koth": 5,      # crown (King of the Hill)
-            "nav": 0,       # generic downward marker (race / unclassified)
+        # The FULL hud_waypoints palette (every sequence; sequences are unnamed
+        # in the tag, identified by eye from the decoded atlas). The semantic
+        # ones (flag/oddball/koth) are the stock objective markers; the generic
+        # shape markers (arrow/chevron/ring/diamond) are the "unused waypoint
+        # slots" Stewart's MODDED build repurposes as power-weapon / powerup
+        # waypoints — stock has NO dedicated 2D powerup HUD icon (only 3D model
+        # textures), so these are the only clean marker source on disk.
+        "waypoints": {
+            "objective_flag": 2,      # CTF flag
+            "objective_oddball": 4,   # skull
+            "objective_koth": 5,      # crown (King of the Hill)
+            "marker_arrow": 0,        # single downward arrow
+            "marker_chevron": 1,      # double downward chevron
+            "marker_ring": 3,         # concentric ring / target
+            "marker_diamond": 6,      # solid diamond (canonical powerup waypoint)
+        },
+        # Curated powerup tag-folder (slug) → waypoint-marker key. Replaces the
+        # generic-diamond fallback so over shield / active camo / health read as
+        # real waypoint markers. DEFAULT assignment — the exact glyph each one
+        # gets in Stewart's mod needs his modded files to confirm; adjust this
+        # one table (and the manifest regenerates the mapping). Power WEAPONS
+        # keep their own weapon silhouette (more informative than a generic
+        # waypoint); override here with a marker_* key to match the mod exactly.
+        "powerups": {
+            "over_shield": "marker_diamond",
+            "active_camouflage": "marker_ring",
+            "health_pack": "marker_chevron",
+            "full_spectrum_vision": "marker_arrow",
+            "double_speed": "marker_arrow",
         },
     },
 }
@@ -224,7 +249,8 @@ def extract(game: str, mapper_dir: str, maps_dir: str, map_file: str | None,
                          f"({spec['msg_icons_tag']})")
 
     icons: dict[str, dict] = {}
-    tag_map: dict[str, dict] = {"weapon": {}, "grenade": {}, "objective": {}}
+    tag_map: dict[str, dict] = {
+        "weapon": {}, "grenade": {}, "objective": {}, "powerup": {}}
     flags: list[str] = []
 
     def save(key: str, img, source: str, category: str):
@@ -255,18 +281,28 @@ def extract(game: str, mapper_dir: str, maps_dir: str, map_file: str | None,
     else:
         flags.append("grenade glyph crop failed")
 
-    # --- objective markers (curated index map over hud_waypoints) ---
+    # --- the full hud_waypoints palette (objective markers + the generic
+    #     "unused slot" markers the modded build repurposes for powerups) ---
     if wp_tag is None:
         flags.append(f"waypoints atlas not found ({spec['waypoints_tag']})")
     else:
-        for name, seq in spec["objectives"].items():
+        for key, seq in spec["waypoints"].items():
             img = crop_sprite(B, m, wp_tag, seq)
             if img is None:
-                flags.append(f"objective '{name}' seq {seq} crop failed")
+                flags.append(f"waypoint '{key}' seq {seq} crop failed")
                 continue
-            key = f"objective_{name}"
-            save(key, img, f"hud_waypoints#{seq}", "objective")
-            tag_map["objective"][name] = key
+            category = "objective" if key.startswith("objective_") else "marker"
+            save(key, img, f"hud_waypoints#{seq}", category)
+            if key.startswith("objective_"):
+                tag_map["objective"][key[len("objective_"):]] = key
+
+    # --- powerup tag → waypoint-marker mapping (curated; replaces the generic
+    #     diamond fallback). Only wire entries whose target marker was saved. ---
+    for slug, marker_key in spec.get("powerups", {}).items():
+        if marker_key in icons:
+            tag_map["powerup"][slug] = marker_key
+        else:
+            flags.append(f"powerup '{slug}' -> missing marker '{marker_key}'")
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
