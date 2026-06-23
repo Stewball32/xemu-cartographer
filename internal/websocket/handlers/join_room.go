@@ -26,9 +26,23 @@ func handleJoinRoom(e *Event) {
 		return
 	}
 
-	if err := rt.CheckGuards(e.Services, e.User); err != nil {
-		e.SendError("forbidden", err.Error())
-		return
+	// M10 overlay-token fix: an overlay-token connection carries no user JWT
+	// (e.User is nil), so the host room's RequireAuth guard would reject it
+	// here — before authorizeHostRoom's overlay-scope bypass below ever runs —
+	// and minted overlay tokens (OBS overlays + the ?token= visualizer URL)
+	// could never join a host room. For such a connection the overlay token IS
+	// the credential, and authorizeHostRoom is the sole authority: it validates
+	// the token's room scope and bars the admin-only summary feed. Skip the
+	// generic guard list ONLY in that case. Every other connection — and every
+	// non-host room — still runs CheckGuards unchanged, so auth isn't weakened
+	// elsewhere (a missing/invalid token leaves OverlayRoom == "" and falls
+	// through to RequireAuth, which rejects the nil user).
+	overlayHostJoin := e.OverlayRoom != "" && isHostRoom(e.Room)
+	if !overlayHostJoin {
+		if err := rt.CheckGuards(e.Services, e.User); err != nil {
+			e.SendError("forbidden", err.Error())
+			return
+		}
 	}
 
 	// M09 9c: narrow host:* access beyond the room type's RequireAuth guard.
@@ -81,7 +95,7 @@ func handleJoinRoom(e *Event) {
 // closed: any missing dependency or lookup error denies access.
 func authorizeHostRoom(e *Event) error {
 	isSummary := e.Room == rooms.HostAllRoom || e.Room == rooms.SummaryRoom
-	isInstance := strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":") && !isSummary
+	isInstance := isHostRoom(e.Room) && !isSummary
 	if !isSummary && !isInstance {
 		return nil // not a host room — leave it to the room type's guards
 	}
@@ -127,6 +141,16 @@ func authorizeHostRoom(e *Event) error {
 		return nil
 	}
 	return errors.New("not in this match")
+}
+
+// isHostRoom reports whether room is any host:* room — a per-instance room
+// ("host:<inst>" / "host:<inst>:<class>") or an aggregate feed (host:all /
+// host:summary), all of which begin with the "host:" prefix. These are exactly
+// the rooms authorizeHostRoom is the authority for, which is why the join
+// handler skips the generic guard list for an overlay-token connection only
+// when the target is one of them.
+func isHostRoom(room string) bool {
+	return strings.HasPrefix(room, rooms.HostRoomPrefix+":")
 }
 
 // hostRoomInstance extracts the instance name from a "host:<instance>" or
