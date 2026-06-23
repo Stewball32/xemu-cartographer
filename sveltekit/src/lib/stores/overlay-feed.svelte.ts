@@ -12,6 +12,7 @@
 // for an overlay connection.
 
 import type {
+	AnyEvent,
 	EnvelopeTypeV2,
 	GamePayload,
 	ObjectsPayload,
@@ -19,7 +20,7 @@ import type {
 	TickPayloadV2
 } from '$lib/types/scraper-v2';
 import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
-import { mockGame, mockObjects, mockScenario, mockTick } from '$lib/utils/overlay-mock';
+import { mockEvents, mockGame, mockObjects, mockScenario, mockTick } from '$lib/utils/overlay-mock';
 
 export interface OverlayFeedOptions {
 	instance: string;
@@ -98,6 +99,15 @@ export function createOverlayFeed() {
 		get objects(): ObjectsPayload | null {
 			if (!opts) return null;
 			return opts.mock ? mockObjects() : (scraperWSV2.objects[opts.instance] ?? null);
+		},
+		/** Rolling per-instance event log, newest-first (kill feed). Live path:
+		 * an overlay connection may join the per-class `host:<instance>:event`
+		 * room (it's a normal class room, unlike the rejected `request_events`),
+		 * so the kill-feed page subscribes to the `event` class and reads the
+		 * store's collected stream here. Mock path: a frame-driven synthetic feed. */
+		get events(): AnyEvent[] {
+			if (!opts) return [];
+			return opts.mock ? mockEvents(frame) : (scraperWSV2.events[opts.instance] ?? []);
 		}
 	};
 }

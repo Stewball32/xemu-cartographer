@@ -8,10 +8,14 @@
 // confirms the overlay reacts to feed updates.
 
 import type {
+	AnyEvent,
+	DeathCause,
+	DeathEvent,
 	GamePayload,
+	ObjectsPayload,
+	PlayerRef,
 	ScenarioPayload,
-	TickPayloadV2,
-	ObjectsPayload
+	TickPayloadV2
 } from '$lib/types/scraper-v2';
 
 /** Instance name the mock pretends to be. Any instance segment works in mock
@@ -398,6 +402,70 @@ function mockPowerItemSpawns(): ScenarioPayload['power_item_spawns'] {
 			pos: { x: 80, y: -95, z: 1 }
 		}
 	];
+}
+
+// Mock kill feed — a believable rolling Slayer exchange built from the same
+// SEEDS roster so names/teams line up with the scoreboard. The feed factory
+// ticks `frame` a few times a second; mockEvents derives "how many kills have
+// happened so far" from it and returns the most recent ones NEWEST-FIRST, which
+// is exactly how the live WS store keeps the per-instance event log — so the
+// kill-feed overlay renders identically from either source.
+
+function seedRef(i: number): PlayerRef {
+	const s = SEEDS[i];
+	return { index: s.index, name: s.name, team: s.team, armor_color: s.team };
+}
+
+interface KillStep {
+	/** null = no killer (suicide / fall). */
+	killer: number | null;
+	victim: number;
+	weapon: string;
+	cause: DeathCause;
+}
+
+// One loop of the scripted exchange: cross-team kills, a fall death, a botched
+// grenade suicide, and a same-team betrayal — enough variety to exercise every
+// kill-feed render branch.
+const KILL_SCRIPT: KillStep[] = [
+	{ killer: 0, victim: 5, weapon: 'weapons\\pistol\\pistol', cause: 'kill' },
+	{ killer: 4, victim: 1, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
+	{ killer: 0, victim: 4, weapon: 'weapons\\assault rifle\\assault rifle', cause: 'kill' },
+	{ killer: null, victim: 3, weapon: '', cause: 'fall' },
+	{ killer: 6, victim: 0, weapon: 'weapons\\plasma rifle\\plasma rifle', cause: 'kill' },
+	{ killer: null, victim: 1, weapon: 'weapons\\frag grenade\\frag grenade', cause: 'suicide' },
+	{ killer: 4, victim: 2, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
+	{ killer: 5, victim: 6, weapon: 'weapons\\needler\\needler', cause: 'betrayal' }
+];
+
+/** Cadence: a new kill roughly every ~2.4s (12 frames at the ~5 fps mock tick). */
+const FRAMES_PER_KILL = 12;
+/** Seed a few kills so the preview is populated immediately rather than empty. */
+const KILL_BASELINE = 3;
+
+export function mockEvents(frame = 0): AnyEvent[] {
+	const total = KILL_BASELINE + Math.floor(Math.max(0, frame) / FRAMES_PER_KILL);
+	const show = Math.min(total, 8);
+	const out: DeathEvent[] = [];
+	for (let k = 0; k < show; k++) {
+		const idx = total - 1 - k; // newest first
+		const step = KILL_SCRIPT[idx % KILL_SCRIPT.length];
+		out.push({
+			seq: idx + 1,
+			tick: 14400 + idx * 72, // ~2.4s apart at 30 Hz
+			at: '2026-06-20T02:08:30Z',
+			event_type: 'death',
+			victim: seedRef(step.victim),
+			victim_pos: { x: 0, y: 0, z: 0 },
+			killer: step.killer == null ? null : seedRef(step.killer),
+			killer_pos: step.killer == null ? null : { x: 0, y: 0, z: 0 },
+			cause: step.cause,
+			weapon: step.weapon,
+			team_kill: step.cause === 'betrayal',
+			respawn_in_ticks: 90
+		});
+	}
+	return out;
 }
 
 export function mockObjects(): ObjectsPayload {
