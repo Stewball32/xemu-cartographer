@@ -10,6 +10,7 @@ This directory is the source of truth for everything *about* the project that is
 docs/
 ├── README.md          ← you are here (the convention itself)
 ├── STATUS.md          ← current state: Goals / Now / Next / Maybe
+├── XEMU-TEST-SETUP.md ← runbook: spin up a live xemu instance for scraper/visualizer testing
 ├── milestones/
 │   ├── README.md      ← summary table of all milestones
 │   └── _template.md   ← copy this when starting a new milestone
