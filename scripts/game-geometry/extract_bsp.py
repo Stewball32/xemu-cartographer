@@ -51,7 +51,9 @@ import re
 import struct
 import sys
 
-SCHEMA_VERSION = 2  # bumped: adds per-vertex colors + top-down PNG
+SCHEMA_VERSION = 3  # v2 added per-vertex colors + top-down PNG; v3 adds per-
+# material shader name + semantic class (materials / material_semantic /
+# triangle_material) — the BSP-editor's auto-tagger consumes these as priors.
 GENERATOR = "xemu-cartographer/game-geometry"
 
 # --- verified Halo 1 (Xbox) structure_bsp offsets ---------------------------
@@ -80,6 +82,45 @@ _SBSP_BYTES = (b"sbsp", b"psbs")
 
 def slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
+
+
+# --- material-name → spectator semantic --------------------------------------
+# Coarse semantic class derived from keywords in a material's shader tag path.
+# The high-value signals are floor (walkable) + ceiling/light/sky (overhead →
+# culled from the spectator mesh). UNMATCHED names return "other" → no prior, so
+# the BSP-editor's geometry/enclosure heuristic decides (zero regression). The
+# vocabulary is a superset of the MCC reference scheme (adds ramp/sky/ladder);
+# the editor maps each class to a surface tag in $lib/utils/bsp-edit.ts
+# (SEMANTIC_TO_TAG) — keep the two in sync.
+SEMANTIC_KEYWORDS = (
+    ("floor", ("floor", "ground", "grnd")),     # checked before glass/grate: "glass floor" is a floor
+    ("ramp", ("ramp", "stair", "slope")),
+    ("glass", ("glass", "window")),
+    ("grate", ("grate", "grating", "grill", "grid")),
+    ("sky", ("sky",)),                            # skybox → overhead → culled
+    ("ceiling", ("light", "lamp", "lumin", "overhead", "glow", "ceil", "roof")),  # fixtures + roofs
+    ("ladder", ("ladder",)),                      # climbable, not a deck → geometry decides
+    ("wall", ("wall", "panel", "metal", "strip", "flat", "pillar", "column",
+              "trim", "circuit", "rail", "beam", "girder", "plate")),
+)
+
+
+def classify_shader(path: str) -> str:
+    """Map a shader tag path to a coarse spectator semantic from keywords in its
+    basename. Returns one of the SEMANTIC_KEYWORDS classes, else "other"."""
+    name = (path or "").lower().replace("/", "\\").rsplit("\\", 1)[-1]
+    for semantic, subs in SEMANTIC_KEYWORDS:
+        if any(s in name for s in subs):
+            return semantic
+    return "other"
+
+
+def shader_path_of(m, mat_off, tag_by_id) -> str:
+    """The material's shader tag path (e.g. 'levels\\test\\chillout\\shaders\\
+    chillout plate floor'), or '' when the shader can't be resolved."""
+    shader_tid = _u32(m.image, mat_off + MAT_SHADER_TAG_ID)
+    sh = tag_by_id.get(shader_tid)
+    return getattr(sh, "path", "") or "" if sh is not None else ""
 
 
 def _f32(buf, off):
@@ -368,6 +409,16 @@ def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
     skipped = 0
     dropped_tris = 0
 
+    # Per-material shader name + semantic, plus a per-(kept-)triangle index into
+    # them — emitted so the editor can use material names as classification priors.
+    # De-duped by shader path so identical shaders share one entry (mirrors the
+    # MCC reference's `materials` list); `triangle_material` stays aligned 1:1 with
+    # the triangle order in `indices`.
+    mat_names: list[str] = []
+    mat_semantics: list[str] = []
+    mat_index: dict[str, int] = {}
+    tri_material: list[int] = []
+
     for li in range(lm_count):
         lm_off = lm_base + li * LIGHTMAP_SIZE
         mat_count = _u32(img, lm_off + LM_MATERIALS_REFLEXIVE)
@@ -389,6 +440,13 @@ def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
                 skipped += 1
                 continue
             col = material_color(m, B, mat_off, tag_by_id, color_cache, log)
+            sp = shader_path_of(m, mat_off, tag_by_id)
+            mat_idx = mat_index.get(sp)
+            if mat_idx is None:
+                mat_idx = len(mat_names)
+                mat_index[sp] = mat_idx
+                mat_names.append(sp)
+                mat_semantics.append(classify_shader(sp))
             base = len(positions)
             for k in range(vc):
                 p = block + k * VERTEX_STRIDE
@@ -397,6 +455,7 @@ def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
             for a, b, c in surfaces[s0 : s0 + sc]:
                 if a < vc and b < vc and c < vc:
                     indices.append((base + a, base + b, base + c))
+                    tri_material.append(mat_idx)
                 else:
                     dropped_tris += 1
             cursor = block + vc * VERTEX_STRIDE
@@ -409,8 +468,13 @@ def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
     ys = [p[1] for p in positions]
     zs = [p[2] for p in positions]
     sampled = sum(1 for v in color_cache.values() if v != NEUTRAL_COLOR)
+    sem_tri: dict[str, int] = {}
+    for ti in tri_material:
+        sem_tri[mat_semantics[ti]] = sem_tri.get(mat_semantics[ti], 0) + 1
     log(f"  materials={materials} skipped={skipped} dropped_tris={dropped_tris} "
-        f"shaders={len(color_cache)} texture-sampled={sampled}")
+        f"shaders={len(color_cache)} texture-sampled={sampled} "
+        f"named-materials={len(mat_names)}")
+    log(f"  semantic triangles: {dict(sorted(sem_tri.items(), key=lambda kv: -kv[1]))}")
     log(f"  mesh: {len(positions)} verts, {len(indices)} tris, "
         f"bounds x[{min(xs):.1f},{max(xs):.1f}] y[{min(ys):.1f},{max(ys):.1f}] z[{min(zs):.1f},{max(zs):.1f}]")
 
@@ -431,6 +495,9 @@ def extract_mesh(m, B, ba, meta_off, tag_by_id, log):
                    "maxY": max(ys), "minZ": min(zs), "maxZ": max(zs)},
         "vertex_count": len(positions),
         "triangle_count": len(indices),
+        "materials": mat_names,
+        "material_semantic": mat_semantics,
+        "triangle_material": tri_material,
     }
 
 
@@ -497,6 +564,10 @@ def extract(game, mapper_dir, maps_dir, map_file, out_root, verbose):
         "positions": mesh["positions"],
         "colors": mesh["colors"],
         "indices": mesh["indices"],
+        # Material-name priors for the BSP-editor auto-tagger (v3).
+        "materials": mesh["materials"],
+        "material_semantic": mesh["material_semantic"],
+        "triangle_material": mesh["triangle_material"],
     }
     with open(os.path.join(out_dir, mesh_file), "w") as fh:
         json.dump(payload, fh, separators=(",", ":"))
@@ -549,10 +620,16 @@ def main():
 
     key, payload, top_file, out_dir = extract(
         args.game, args.mapper_dir, args.maps_dir, args.map, args.out, args.verbose)
+    sem_tri: dict[str, int] = {}
+    for ti in payload["triangle_material"]:
+        s = payload["material_semantic"][ti]
+        sem_tri[s] = sem_tri.get(s, 0) + 1
     print(json.dumps({
         "game": args.game, "scenario": payload["scenario"], "source_map": payload["source_map"],
         "key": key, "vertex_count": payload["vertex_count"], "triangle_count": payload["triangle_count"],
         "top_image": top_file, "bounds": payload["bounds"],
+        "named_materials": len(payload["materials"]),
+        "semantic_triangles": dict(sorted(sem_tri.items(), key=lambda kv: -kv[1])),
     }, indent=2))
     print(f"  -> {os.path.join(out_dir, key)}.json  (+ {top_file})")
 

@@ -105,21 +105,78 @@ export interface TriMeta {
 	r: number;
 	g: number;
 	b: number;
+	/** Triangle area in world units². Near-zero ⇒ degenerate (collinear) — a BSP
+	 *  artifact that renders as a stray line ({@link degenerateTriangleIndices}). */
+	area: number;
+	/** Surface-tag PRIOR derived from this triangle's material name (see
+	 *  {@link semanticToTag}). null when the mesh carries no material semantics or
+	 *  the name gives no clear signal — auto-classify then uses geometry alone. */
+	prior: SurfaceTag | null;
 }
 
 const NEUTRAL_RGB: [number, number, number] = [0.5, 0.5, 0.52];
+
+// --- Material-name semantic priors ------------------------------------------
+
+/** The coarse per-material semantic classes the extractor emits (schema 3,
+ *  `material_semantic`), derived from keywords in each shader's tag name. */
+export type MaterialSemantic =
+	| 'floor'
+	| 'ramp'
+	| 'wall'
+	| 'ceiling'
+	| 'glass'
+	| 'grate'
+	| 'sky'
+	| 'ladder'
+	| 'other';
+
+/** Map a material semantic to the surface-tag PRIOR it implies, or null when the
+ *  name gives no usable signal (the geometry/enclosure heuristic then decides).
+ *  glass → wall (a see-through boundary we keep); grate → floor (walkable grating,
+ *  orientation-guarded in autoClassify); light/sky/ceiling → ceiling (overhead,
+ *  culled from the spectator mesh); ladder/other → null. Mirrors the extractor's
+ *  SEMANTIC_KEYWORDS — keep the two in sync. */
+const SEMANTIC_TO_TAG: Record<string, SurfaceTag | null> = {
+	floor: 'floor',
+	ramp: 'ramp',
+	grate: 'floor',
+	glass: 'wall',
+	wall: 'wall',
+	ceiling: 'ceiling',
+	sky: 'ceiling',
+	ladder: null,
+	other: null
+};
+
+export function semanticToTag(semantic: string | null | undefined): SurfaceTag | null {
+	if (!semantic) return null;
+	return SEMANTIC_TO_TAG[semantic] ?? null;
+}
 
 /** Number of triangles in the mesh. */
 export function triCount(mesh: Pick<BspMesh, 'indices'>): number {
 	return Math.floor(mesh.indices.length / 3);
 }
 
-/** Build per-triangle centroid / Z-extent / normal / material colour. */
-export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colors'>): TriMeta[] {
+/** Build per-triangle centroid / Z-extent / normal / material colour, plus the
+ *  material-name tag PRIOR when the mesh carries semantics (schema 3). */
+export function buildTriMeta(
+	mesh: Pick<
+		BspMesh,
+		'positions' | 'indices' | 'colors' | 'materials' | 'materialSemantic' | 'triangleMaterial'
+	>
+): TriMeta[] {
 	const pos = mesh.positions;
 	const idx = mesh.indices;
 	const col = mesh.colors && mesh.colors.length === pos.length ? mesh.colors : undefined;
 	const T = triCount(mesh);
+	// Per-triangle prior, precomputed once from the material name → semantic →
+	// tag chain. A material's prior is cached so we map each shader name once.
+	const triMat = mesh.triangleMaterial;
+	const sem = mesh.materialSemantic;
+	const priorByMat: (SurfaceTag | null)[] | undefined =
+		triMat && sem && triMat.length === T ? sem.map((s) => semanticToTag(s)) : undefined;
 	const out: TriMeta[] = new Array(T);
 	for (let t = 0; t < T; t++) {
 		const a = idx[t * 3] * 3;
@@ -135,11 +192,13 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 			cy = pos[c + 1],
 			cz = pos[c + 2];
 
-		// Face normal = (b-a) × (c-a), normalized.
+		// Face normal = (b-a) × (c-a), normalized. |cross| = 2 × triangle area, so
+		// the area falls out for free (used to cull degenerate stray-line tris).
 		let nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
 		let ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
 		let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 		const len = Math.hypot(nx, ny, nz);
+		const area = len / 2;
 		if (len > 1e-9) {
 			nx /= len;
 			ny /= len;
@@ -178,7 +237,9 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 			maxY: Math.max(ay, by, cy),
 			r,
 			g,
-			b: bb
+			b: bb,
+			area,
+			prior: priorByMat ? (priorByMat[triMat![t]] ?? null) : null
 		};
 	}
 	return out;
@@ -202,6 +263,16 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
  * play volume has something above it; only the top surface is roof/ceiling. So a
  * mid-level floor with downward-pointing normals stays a floor. inaccessible /
  * clutter are never auto-assigned — they're manual bins.
+ *
+ * MATERIAL-NAME PRIOR: when a triangle carries a prior (its shader name clearly
+ * indicates a role — see {@link buildTriMeta}/{@link semanticToTag}), it OVERRIDES
+ * the geometry guess, except where orientation flatly contradicts it: a floor/ramp
+ * material on a clearly vertical surface (decorative trim) stays geometry's wall,
+ * and a wall material on a clearly horizontal surface defers to geometry's
+ * floor/ceiling call. ceiling-class priors (roofs, lights, sky) are honoured
+ * regardless of facing since they're cull bins. This is the cheap win that fixes
+ * floor↔ceiling and floor↔wall mistags the pure-geometry heuristic can't see.
+ * The manual-override sidecar stays authoritative over this (applied afterwards).
  */
 export function autoClassify(meta: TriMeta[]): Uint8Array {
 	const T = meta.length;
@@ -250,10 +321,31 @@ export function autoClassify(meta: TriMeta[]): Uint8Array {
 
 	for (let t = 0; t < T; t++) {
 		const up = Math.abs(meta[t].nz);
-		let tag: SurfaceTag;
-		if (up < RAMP_COS) tag = 'wall';
-		else if (up < FLOOR_COS) tag = 'ramp';
-		else tag = hasSurfaceAbove(meta[t]) ? 'floor' : 'ceiling';
+		// Geometry-only guess (the winding-independent enclosure heuristic).
+		let geom: SurfaceTag;
+		if (up < RAMP_COS) geom = 'wall';
+		else if (up < FLOOR_COS) geom = 'ramp';
+		else geom = hasSurfaceAbove(meta[t]) ? 'floor' : 'ceiling';
+
+		// Material-name prior. Geometry already owns the wall/ramp call (orientation
+		// is reliable there), so the prior's value is the two things geometry CAN'T
+		// see: which horizontal surfaces are floors vs overhead, and which are decks
+		// vs trim. We override only for those, leaving geometry's wall/ramp intact.
+		const p = meta[t].prior;
+		let tag = geom;
+		if (p === 'floor' || p === 'ramp') {
+			// Walkable material → walkable surface, split floor/ramp by facing. A
+			// clearly VERTICAL surface textured with a floor material is trim → keep
+			// geometry's wall (don't invent a vertical floor).
+			if (up >= RAMP_COS) tag = up < FLOOR_COS ? 'ramp' : 'floor';
+		} else if (p === 'ceiling') {
+			// Overhead (roof / light fixture / sky) → cull bin, honoured regardless of
+			// facing. This is what removes the lights/overhead clutter geometry's
+			// enclosure test can wrongly bucket as floor.
+			tag = 'ceiling';
+		}
+		// 'wall' / 'glass'(→wall) priors only CONFIRM geometry's orientation call;
+		// they never override it, so genuine ramps + floors are never eaten.
 		tags[t] = TAG_INDEX[tag];
 	}
 	return tags;
@@ -269,6 +361,27 @@ export function tagCounts(tags: ArrayLike<number>): Record<SurfaceTag, number> {
 	for (const t of TAG_LEGEND) counts[t] = 0;
 	for (let i = 0; i < tags.length; i++) counts[TAG_LEGEND[tags[i]] ?? 'wall']++;
 	return counts;
+}
+
+// --- Degenerate-triangle cull -----------------------------------------------
+
+/**
+ * Min triangle area (world units²) below which a triangle is DEGENERATE: a
+ * zero-area / collinear-vertex artifact the BSP carries (T-junction fixups, etc.)
+ * that has no surface but renders as a stray line in the ramp/tunnel areas. Set
+ * far below any real surface — measured area histograms put real Halo tris above
+ * ~1e-2 wu² with a clean empty gap down to the ≈0 degenerates — so the cull only
+ * ever removes garbage, never architecture.
+ */
+export const DEGENERATE_AREA = 1e-5;
+
+/** Ordinals of degenerate (near-zero-area) triangles — stray-line artifacts the
+ *  editor + bake seed into `removed` so they never reach the spectator mesh. Pure
+ *  geometry, independent of tags/orientation. */
+export function degenerateTriangleIndices(meta: TriMeta[], minArea = DEGENERATE_AREA): number[] {
+	const out: number[] = [];
+	for (let t = 0; t < meta.length; t++) if (meta[t].area < minArea) out.push(t);
+	return out;
 }
 
 // --- Stable tag persistence (survives re-extraction) ------------------------

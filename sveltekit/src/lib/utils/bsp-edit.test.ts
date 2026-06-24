@@ -14,6 +14,8 @@ import {
 	boxSelect,
 	pointInRect,
 	autoClassify,
+	semanticToTag,
+	degenerateTriangleIndices,
 	tagOf,
 	tagCounts,
 	tagSignature,
@@ -141,6 +143,98 @@ describe('autoClassify (enclosure, winding-independent)', () => {
 		const c = tagCounts(autoClassify(buildTriMeta(scene())));
 		expect(c.inaccessible).toBe(0);
 		expect(c.clutter).toBe(0);
+	});
+});
+
+describe('material-name priors', () => {
+	/** scene() with per-material semantics attached:
+	 *  - mat 0 "floor", mat 1 "ceiling" (a light), mat 2 "wall".
+	 *  tris 0,1 (enclosed floor) → light; 2,3 (topmost) → floor; 4 (wall) → floor;
+	 *  5 (ramp) → wall. Exercises every override + every defer-to-geometry case. */
+	function taggedScene(): BspMesh {
+		return {
+			...scene(),
+			materials: [
+				'lvl\\shaders\\plate floor',
+				'lvl\\shaders\\overhead light',
+				'lvl\\shaders\\metal'
+			],
+			materialSemantic: ['floor', 'ceiling', 'wall'],
+			triangleMaterial: [1, 1, 0, 0, 0, 2]
+		};
+	}
+
+	it('semanticToTag maps classes to tag priors (or null)', () => {
+		expect(semanticToTag('floor')).toBe('floor');
+		expect(semanticToTag('ramp')).toBe('ramp');
+		expect(semanticToTag('grate')).toBe('floor'); // walkable grating
+		expect(semanticToTag('glass')).toBe('wall'); // see-through boundary
+		expect(semanticToTag('sky')).toBe('ceiling'); // overhead → culled
+		expect(semanticToTag('ceiling')).toBe('ceiling');
+		expect(semanticToTag('ladder')).toBeNull(); // geometry decides
+		expect(semanticToTag('other')).toBeNull();
+		expect(semanticToTag('')).toBeNull();
+		expect(semanticToTag(undefined)).toBeNull();
+	});
+
+	it('buildTriMeta attaches a prior from the material name, null without one', () => {
+		expect(buildTriMeta(scene())[0].prior).toBeNull(); // no material data
+		const meta = buildTriMeta(taggedScene());
+		expect(meta[0].prior).toBe('ceiling'); // mat 1 (light)
+		expect(meta[2].prior).toBe('floor'); // mat 0
+		expect(meta[5].prior).toBe('wall'); // mat 2
+	});
+
+	it('a floor material flips a geometry-CEILING (topmost) surface to floor', () => {
+		const tags = autoClassify(buildTriMeta(taggedScene()));
+		// tris 2,3 are the topmost horizontal surface → geometry calls them ceiling,
+		// but the floor material overrides → floor (the headline fix).
+		expect(tagOf(tags, 2)).toBe('floor');
+		expect(tagOf(tags, 3)).toBe('floor');
+	});
+
+	it('an overhead-light material culls a geometry-FLOOR surface to ceiling', () => {
+		const tags = autoClassify(buildTriMeta(taggedScene()));
+		// tris 0,1 are an enclosed floor → geometry floor, but the light material
+		// reclassifies them to ceiling (dropped from the bake) regardless of facing.
+		expect(tagOf(tags, 0)).toBe('ceiling');
+		expect(tagOf(tags, 1)).toBe('ceiling');
+	});
+
+	it('a floor material on a vertical surface stays wall (geometry wins)', () => {
+		const tags = autoClassify(buildTriMeta(taggedScene()));
+		expect(tagOf(tags, 4)).toBe('wall'); // vertical trim, not a floor
+	});
+
+	it('a wall material never overrides a genuine ramp', () => {
+		const tags = autoClassify(buildTriMeta(taggedScene()));
+		expect(tagOf(tags, 5)).toBe('ramp'); // sloped deck preserved
+	});
+
+	it('flags degenerate (collinear, zero-area) triangles as stray-line artifacts', () => {
+		// scene()'s 6 real tris carry finite area; append a collinear triangle.
+		const base = scene();
+		const mesh: BspMesh = {
+			...base,
+			positions: [...base.positions, 0, 0, 6, 1, 0, 6, 2, 0, 6], // 3 collinear verts
+			indices: [...base.indices, 14, 15, 16]
+		};
+		const meta = buildTriMeta(mesh);
+		expect(meta[6].area).toBeCloseTo(0); // the collinear triangle
+		expect(meta[0].area).toBeGreaterThan(0.1); // a real floor quad-half
+		expect(degenerateTriangleIndices(meta)).toEqual([6]);
+		// real geometry is never flagged on its own.
+		expect(degenerateTriangleIndices(buildTriMeta(base))).toEqual([]);
+	});
+
+	it('priors leave a clean mesh unchanged vs geometry where they agree', () => {
+		// scene() with no material data classifies identically to the prior path
+		// (no priors → geometry alone): the no-regression guarantee.
+		const geom = autoClassify(buildTriMeta(scene()));
+		expect(tagOf(geom, 0)).toBe('floor');
+		expect(tagOf(geom, 2)).toBe('ceiling');
+		expect(tagOf(geom, 4)).toBe('wall');
+		expect(tagOf(geom, 5)).toBe('ramp');
 	});
 });
 

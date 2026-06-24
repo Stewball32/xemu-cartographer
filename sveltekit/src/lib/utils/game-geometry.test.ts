@@ -73,6 +73,43 @@ describe('normalizeMesh', () => {
 			normalizeMesh('haloce', 'x', { positions: [0, 0, 0, 1, 1], indices: [0, 1, 2] })
 		).toBeNull();
 	});
+
+	it('carries material priors (schema 3) only when well-formed, else drops them', () => {
+		const base = { positions: [0, 0, 0, 10, 0, 0, 0, 10, 0], indices: [0, 1, 2] };
+		const ok = normalizeMesh('haloce', 'bg', {
+			...base,
+			materials: ['a\\floor', 'b\\wall'],
+			material_semantic: ['floor', 'wall'],
+			triangle_material: [0]
+		});
+		expect(ok!.materials).toEqual(['a\\floor', 'b\\wall']);
+		expect(ok!.materialSemantic).toEqual(['floor', 'wall']);
+		expect(ok!.triangleMaterial).toEqual([0]);
+
+		// triangle_material count must match triangle count → else all dropped.
+		const wrongLen = normalizeMesh('haloce', 'bg', {
+			...base,
+			materials: ['a'],
+			material_semantic: ['floor'],
+			triangle_material: [0, 0]
+		});
+		expect(wrongLen!.triangleMaterial).toBeUndefined();
+		expect(wrongLen!.materials).toBeUndefined();
+
+		// an out-of-range index voids the whole prior layer (fail safe).
+		const oob = normalizeMesh('haloce', 'bg', {
+			...base,
+			materials: ['a'],
+			material_semantic: ['floor'],
+			triangle_material: [5]
+		});
+		expect(oob!.triangleMaterial).toBeUndefined();
+
+		// a legacy cache (no material fields) just has them undefined.
+		const legacy = normalizeMesh('haloce', 'bg', base);
+		expect(legacy!.triangleMaterial).toBeUndefined();
+		expect(legacy!.materials).toBeUndefined();
+	});
 });
 
 describe('loadBspMesh', () => {

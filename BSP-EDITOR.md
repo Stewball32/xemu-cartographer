@@ -132,6 +132,38 @@ play volume has another surface above it (you stand under a ceiling); only the
 **topmost** surface over a footprint is roof/ceiling. So a mid-level floor with
 downward normals stays a floor. (This fixed Chill Out's missing middle floor.)
 
+### Material-name priors
+
+The extractor emits each surface's **shader name + a coarse semantic class**
+(`materials` / `material_semantic` / `triangle_material`, schema 3) — derived from
+keywords in the shader tag path (`…\shaders\chillout plate floor` → `floor`,
+`…\overhead light` → `ceiling`, `blood ground` → `floor`, glass / grate / sky / …).
+Auto-classify uses these as **priors** over the geometry guess:
+
+- **floor / ramp / grate** materials → the surface is walkable (split floor vs ramp
+  by facing); a floor material on a clearly _vertical_ surface is trim and defers to
+  geometry, so no vertical "floors" are invented.
+- **ceiling / light / sky** materials → dropped as overhead, regardless of facing —
+  this is what removes the overhead-light clutter the enclosure test would otherwise
+  bin as floor.
+- **wall / glass** materials only _confirm_ geometry's orientation call (geometry
+  already owns wall-vs-ramp reliably), so genuine ramps + floors are never eaten.
+
+Geometry alone can't tell a floor from the ceiling above it, or terrain from sky;
+the material name can. On Blood Gulch this reclassified **~1,400** outdoor-terrain
+triangles from `ceiling` (mis-culled) back to `floor`. Unknown / signal-less names
+fall straight through to the geometry/enclosure heuristic, so there's **no
+regression** where a map carries no usable material names. The manual-override
+sidecar (`*.tags.json`) stays authoritative over both.
+
+### Degenerate stray-line cull
+
+The BSP carries a handful of **zero-area / collinear-vertex triangles** (T-junction
+fixups etc.) that have no surface but render as **stray lines** in the ramp/tunnel
+areas. On load the editor seeds these into the removed set (area `< 1e-5` wu² — far
+below any real surface, with a clean empty gap in the measured area histograms) so
+they never reach the bake. Chill Out drops 81, Prisoner 11, Blood Gulch 0.
+
 Tags drive the **elevation banding** too — only floor/ramp surfaces are banded.
 
 Today the per-tag render decision is applied **at bake** (off-render tags are
@@ -241,3 +273,5 @@ only the surfaces you changed from the auto-classification are stored.
 | `sveltekit/src/routes/bsp-editor/+page.svelte`               | Editor page (tag UI, tools, controls, export)                                                    |
 | `sveltekit/vite-bsp-save.ts`                                 | Dev-only `POST /__bsp-save` (writes mesh + tag sidecar)                                          |
 | `sveltekit/src/lib/utils/game-geometry.ts`                   | `loadBspMesh` spectator-preference + `loadGeometryManifest`                                      |
+| `scripts/game-geometry/extract_bsp.py`                       | BSP → mesh extractor; emits per-material shader name + semantic class (priors)                   |
+| `scripts/game-geometry/bake_spectator.ts`                    | **Offline** pre-baker — reuses the editor's pure core to bake without a browser                  |

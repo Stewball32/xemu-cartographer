@@ -55,6 +55,17 @@ export interface BspMesh {
 	colors?: number[];
 	/** Triangle vertex indices into `positions`, length = 3 × triangle count. */
 	indices: number[];
+	/** Distinct material (shader) names, e.g. "levels\\test\\chillout\\shaders\\
+	 *  chillout plate floor". Index space for `triangleMaterial`. Absent on legacy
+	 *  caches (schema < 3). */
+	materials?: string[];
+	/** Coarse spectator semantic per material (parallel to `materials`): one of
+	 *  floor/ramp/wall/ceiling/glass/grate/sky/ladder/other — the editor maps these
+	 *  to surface-tag priors. */
+	materialSemantic?: string[];
+	/** Per-triangle index into `materials`, length = triangle count. Lets the
+	 *  auto-tagger read each surface's material name as a classification prior. */
+	triangleMaterial?: number[];
 }
 
 /** The 2D top-down projection of a level's BSP, for the minimap background. The
@@ -92,6 +103,9 @@ interface RawMeshFile {
 	positions?: number[];
 	colors?: number[];
 	indices?: number[];
+	materials?: string[];
+	material_semantic?: string[];
+	triangle_material?: number[];
 }
 
 function cacheRoot(game: string): string {
@@ -170,6 +184,24 @@ export function normalizeMesh(
 		Array.isArray(raw.colors) && raw.colors.length === raw.positions.length
 			? raw.colors
 			: undefined;
+	// Material-name priors (schema 3) — only carried when the per-triangle index
+	// is well-formed (one entry per triangle, every index in range), so a stale or
+	// half-written cache degrades to no-priors rather than corrupting the tagger.
+	const triCountRaw = raw.indices.length / 3;
+	const materials = Array.isArray(raw.materials) ? raw.materials : undefined;
+	const materialSemantic =
+		Array.isArray(raw.material_semantic) &&
+		materials &&
+		raw.material_semantic.length === materials.length
+			? raw.material_semantic
+			: undefined;
+	const triangleMaterial =
+		Array.isArray(raw.triangle_material) &&
+		materials &&
+		raw.triangle_material.length === triCountRaw &&
+		raw.triangle_material.every((i) => Number.isInteger(i) && i >= 0 && i < materials.length)
+			? raw.triangle_material
+			: undefined;
 	return {
 		game,
 		scenario: raw.scenario ?? key,
@@ -177,7 +209,10 @@ export function normalizeMesh(
 		bounds,
 		positions: raw.positions,
 		colors,
-		indices: raw.indices
+		indices: raw.indices,
+		materials: triangleMaterial ? materials : undefined,
+		materialSemantic: triangleMaterial ? materialSemantic : undefined,
+		triangleMaterial
 	};
 }
 

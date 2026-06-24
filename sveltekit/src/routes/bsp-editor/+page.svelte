@@ -32,6 +32,7 @@
 		selectByMaterial,
 		selectByTag,
 		autoClassify,
+		degenerateTriangleIndices,
 		applyTagOverrides,
 		taggedFloorMarkers,
 		taggedFloorZs,
@@ -194,7 +195,11 @@
 		t0 = applyTagOverrides(meta, t0, opts.overrides);
 		tags = t0;
 		tagRender = opts.tagRender ? { ...defaultTagRender(), ...opts.tagRender } : defaultTagRender();
+		// Seed removals with degenerate (zero-area) triangles — BSP stray-line
+		// artifacts that should never reach the bake (matches the offline baker).
 		removed = new Uint8Array(meta.length);
+		const degenerate = degenerateTriangleIndices(meta);
+		for (const t of degenerate) removed[t] = 1;
 		history = new EditHistory({ removed, tags });
 		selected = new Set();
 		isolatedTag = null;
@@ -203,7 +208,7 @@
 		cullOffset = defaultCullZ(m, meta, tags);
 		syncHistory();
 		const nOver = opts.overrides?.length ?? 0;
-		status = `${key}: ${note} — ${meta.length} triangles${nOver ? `, ${nOver} saved tag overrides re-applied` : ''}.`;
+		status = `${key}: ${note} — ${meta.length} triangles${nOver ? `, ${nOver} saved tag overrides re-applied` : ''}${degenerate.length ? `, ${degenerate.length} degenerate stray-line tris culled` : ''}.`;
 	}
 
 	// --- Selection --------------------------------------------------------------
