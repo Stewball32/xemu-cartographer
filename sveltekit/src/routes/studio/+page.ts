@@ -1,0 +1,16 @@
+import { redirect } from '@sveltejs/kit';
+import pb from '$lib/pocketbase';
+import { buildLoginUrl } from '$lib/utils/redirect';
+import type { PageLoad } from './$types';
+
+// RequireAuth (not admin) — the stream-assets hub. Anyone signed in can browse
+// the gallery + preview assets; minting tokens / copying live OBS links is gated
+// in-page by canManageOverlays (admin/superuser or the overlay_manager role),
+// with the backend as the real gate.
+export const load: PageLoad = async ({ url, parent }) => {
+	await parent();
+	if (!pb.authStore.isValid) {
+		throw redirect(303, buildLoginUrl(url.pathname + url.search));
+	}
+	return { requiresAuth: true };
+};

@@ -6,6 +6,7 @@ import {
 	SettingsIcon,
 	ShieldIcon,
 	TrophyIcon,
+	TvIcon,
 	UserIcon,
 	UsersIcon
 } from '@lucide/svelte';
@@ -48,8 +49,11 @@ export const mainGroups: NavGroup[] = [
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
 			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon },
-			// Routes to /overlays/manage/ (RequireAuth + manage-overlays gate, not
-			// the admin layout) so overlay_managers can use the same page directly.
+			// Both route outside the admin layout (RequireAuth + manage-overlays
+			// gate) so overlay_managers can use them directly. Studio is the
+			// stream-asset hub (gallery + previews + per-asset OBS links); Overlays
+			// is the focused token mint/list/revoke page.
+			{ label: 'Studio', href: '/studio/', icon: TvIcon },
 			{ label: 'Overlays', href: '/overlays/manage/', icon: MonitorIcon }
 		]
 	}

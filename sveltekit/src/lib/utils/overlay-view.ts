@@ -10,7 +10,14 @@
 //     surface these but flag them via `hasScores` so the UI can degrade
 //     gracefully (mute or hide) instead of asserting numbers we can't trust.
 
-import type { GamePayload, ScenarioPayload, TickPayloadV2 } from '$lib/types/scraper-v2';
+import type {
+	AnyEvent,
+	DeathCause,
+	DeathEvent,
+	GamePayload,
+	ScenarioPayload,
+	TickPayloadV2
+} from '$lib/types/scraper-v2';
 
 /** Halo: CE biped health / shield ceilings — both 75 engine units
  * (RUNTIME-VERIFIED 2026-06-21 via OffDynMaxHealth 0x88 / OffDynMaxShields 0x8C).
@@ -289,4 +296,119 @@ export function statusStrip(
 		topScore: Math.max(playerTop, teamTop),
 		hasScores
 	};
+}
+
+// =============================================================================
+// Match clock (game-timer overlay)
+// =============================================================================
+
+/** Halo: CE engine tick rate — the simulation steps at 30 Hz, so engine_tick /
+ * 30 is the match time in seconds. (Established engine constant; corroborated by
+ * the respawn_in_ticks → seconds math the scoreboard already does, ÷30.) */
+export const TICKS_PER_SECOND = 30;
+
+/** Format a non-negative second count as `M:SS` (e.g. 482 → "8:02"). Minutes are
+ * unpadded (scoreboard-clock convention); seconds always two digits. */
+export function mmss(totalSeconds: number): string {
+	const s = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
+	const m = Math.floor(s / 60);
+	const sec = s % 60;
+	return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+export interface ClockVM {
+	phase: string;
+	/** True once the match is Live — drives the pulsing "LIVE" treatment. */
+	live: boolean;
+	/** 'up' counts elapsed time; 'down' counts toward a configured time limit. */
+	direction: 'up' | 'down';
+	/** M:SS display — elapsed when counting up, remaining when counting down. */
+	label: string;
+	elapsedSeconds: number;
+	/** null when the gametype has no time limit (count-up). */
+	remainingSeconds: number | null;
+	gametype: string;
+	scoreLimit: number;
+	hasGame: boolean;
+}
+
+/** matchClock projects the match timing off the game payload: elapsed time from
+ * `engine_tick` (÷ 30 Hz), counting down toward a time limit when the gametype
+ * sets one, else up. Pure + degrades to an idle 0:00 with no game. */
+export function matchClock(game: GamePayload | null | undefined): ClockVM {
+	const cfg = game?.config ?? null;
+	const phase = game?.phase ?? 'idle';
+	const elapsedTicks = Math.max(0, game?.engine_tick ?? 0);
+	const elapsedSeconds = elapsedTicks / TICKS_PER_SECOND;
+	const limitTicks = cfg?.time_limit_ticks ?? 0;
+	const hasLimit = limitTicks > 0;
+	const remainingSeconds = hasLimit
+		? Math.max(0, (limitTicks - elapsedTicks) / TICKS_PER_SECOND)
+		: null;
+	const direction: 'up' | 'down' = hasLimit ? 'down' : 'up';
+	return {
+		phase,
+		live: phase === 'live',
+		direction,
+		label: mmss(direction === 'down' ? (remainingSeconds ?? 0) : elapsedSeconds),
+		elapsedSeconds,
+		remainingSeconds,
+		gametype: prettify(cfg?.variant_name || cfg?.gametype),
+		scoreLimit: cfg?.score_limit ?? 0,
+		hasGame: !!game
+	};
+}
+
+// =============================================================================
+// Kill feed
+// =============================================================================
+
+export interface KillRow {
+	/** Stable de-dupe / keyed-each identity (seq + tick). */
+	key: string;
+	tick: number;
+	/** null when there is no killer (suicide / fall / environment). */
+	killerName: string | null;
+	killerColor: string;
+	victimName: string;
+	victimColor: string;
+	/** Prettified weapon name; '' for environmental / fall deaths. */
+	weapon: string;
+	cause: DeathCause;
+	teamKill: boolean;
+	/** Suicide / fall / environment / no killer — render as a self-death. */
+	selfInflicted: boolean;
+}
+
+export interface KillFeedVM {
+	rows: KillRow[];
+	count: number;
+}
+
+function isDeathEvent(e: AnyEvent): e is DeathEvent {
+	return e.event_type === 'death';
+}
+
+/** buildKillFeed projects the rolling event log (newest-first, as the WS store
+ * keeps it) into the most recent N death rows for the kill-feed overlay. Identity
+ * is read straight off the denormalised event PlayerRefs, so it needs no roster
+ * join. Non-death events are ignored; degrades to an empty feed. */
+export function buildKillFeed(events: AnyEvent[] | null | undefined, max = 5): KillFeedVM {
+	const deaths = (events ?? []).filter(isDeathEvent);
+	const rows: KillRow[] = deaths.slice(0, Math.max(0, max)).map((d) => {
+		const selfInflicted = d.killer == null || d.cause === 'suicide' || d.cause === 'fall';
+		return {
+			key: `${d.seq}-${d.tick}`,
+			tick: d.tick,
+			killerName: d.killer ? d.killer.name : null,
+			killerColor: d.killer ? teamMeta(d.killer.team).color : '#9aa4b2',
+			victimName: d.victim.name,
+			victimColor: teamMeta(d.victim.team).color,
+			weapon: prettify(d.weapon),
+			cause: d.cause,
+			teamKill: d.team_kill === true,
+			selfInflicted
+		};
+	});
+	return { rows, count: rows.length };
 }
