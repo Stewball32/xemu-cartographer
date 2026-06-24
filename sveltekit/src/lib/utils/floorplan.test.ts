@@ -38,6 +38,29 @@ describe('buildFloorplan', () => {
 		expect(typeof fp.walls[0].z).toBe('number');
 	});
 
+	it('culls roof tops above the highest spawn + margin (spawn heuristic)', () => {
+		// low walkable floor (z=0) + an exposed "roof" floor (z=10, up-facing). With
+		// the highest spawn at z=0 (+2.5 margin), the z=10 roof must be culled.
+		const ROOF = [0, 0, 10, 1, 0, 10, 0, 1, 10];
+		const fp = buildFloorplan(
+			{ positions: [...FLOOR, ...ROOF], indices: [0, 1, 2, 3, 4, 5] },
+			{ spawnMaxZ: 0 }
+		);
+		expect(fp.floorZs).toEqual([0]); // only the low floor survives
+	});
+
+	it('guard: keeps an INTERIOR upper platform with no spawn (has a ceiling above)', () => {
+		// low floor z=0 (spawn) + upper floor z=5 + a ceiling z=8 over the upper one.
+		const UP = [0, 0, 5, 1, 0, 5, 0, 1, 5];
+		const CEIL = [0, 0, 8, 0, 1, 8, 1, 0, 8]; // down-facing
+		const fp = buildFloorplan(
+			{ positions: [...FLOOR, ...UP, ...CEIL], indices: [0, 1, 2, 3, 4, 5, 6, 7, 8] },
+			{ spawnMaxZ: 0 }
+		);
+		// Both floors kept: the upper one is interior play space, not a roof top.
+		expect(fp.floorZs).toEqual([0, 5]);
+	});
+
 	it('is resilient to out-of-range indices', () => {
 		const fp = buildFloorplan({ positions: [0, 0, 0], indices: [0, 1, 2] });
 		expect(fp.floors).toHaveLength(0);

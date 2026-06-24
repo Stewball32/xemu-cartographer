@@ -374,19 +374,9 @@ export function mockStagedModel(mesh: BspMesh, scenario: string, count = 8): Viz
 		);
 	}
 
-	const spawns: VizSpawn[] = [
-		{
-			pos: { x: mesh.bounds.minX, y: mesh.bounds.minY, z: mesh.bounds.minZ },
-			team: 0,
-			color: teamMeta(0).color
-		},
-		{
-			pos: { x: mesh.bounds.maxX, y: mesh.bounds.maxY, z: mesh.bounds.maxZ },
-			team: 1,
-			color: teamMeta(1).color
-		},
-		...players.map((p) => ({ pos: p.pos, team: p.team, color: p.color }))
-	];
+	// Spawns sit on the players' real floor positions (NOT the bounds corners — a
+	// corner at bounds.maxZ would peg the roof-cull cap to the roof and defeat it).
+	const spawns: VizSpawn[] = players.map((p) => ({ pos: p.pos, team: p.team, color: p.color }));
 
 	const bounds: WorldBounds = { ...mesh.bounds, valid: true, source: 'static' };
 	return {

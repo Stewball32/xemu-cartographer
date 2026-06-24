@@ -84,7 +84,10 @@ function triColorAt(
  * Build the architectural floorplan: filled walkable floors (in material colour)
  * + the walls bounding them, with ceilings + inaccessible geometry culled.
  */
-export function buildFloorplan(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colors'>): Floorplan {
+export function buildFloorplan(
+	mesh: Pick<BspMesh, 'positions' | 'indices' | 'colors'>,
+	opts?: { spawnMaxZ?: number; margin?: number }
+): Floorplan {
 	const pos = mesh.positions;
 	const idx = mesh.indices;
 	const colors = mesh.colors;
@@ -221,8 +224,39 @@ export function buildFloorplan(mesh: Pick<BspMesh, 'positions' | 'indices' | 'co
 		return { floors: [], walls: [], floorZs: [] };
 	}
 
+	// --- Roof/ceiling cull by SPAWN HEIGHT (Stewart's heuristic). The up-facing
+	//     TOP of a roof survives the clearance test (nothing is above it), so it
+	//     renders as a bogus high "floor". Spawns only ever sit on real play space,
+	//     so anything above the highest spawn + a headroom margin (jump/standing
+	//     clearance) is roof and gets culled. GUARD: never clip an INTERIOR walkable
+	//     floor (one with a ceiling/upper-floor above it = enclosed play space) —
+	//     raise the cap to keep it, so a no-spawn upper platform isn't lost. ---
+	const MARGIN = opts?.margin ?? 2.5;
+	const hasSurfaceAbove = (f: Tri): boolean => {
+		const { gx0, gx1, gy0, gy1 } = cellsForBbox(f);
+		for (let gx = gx0; gx <= gx1; gx++)
+			for (let gy = gy0; gy <= gy1; gy++) {
+				const arr = blockers.get(`${gx},${gy}`);
+				if (!arr) continue;
+				for (const z of arr) if (z > f.z + 1.0) return true;
+			}
+		return false;
+	};
+	const haveSpawnCap = opts?.spawnMaxZ != null && Number.isFinite(opts.spawnMaxZ);
+	let highestInteriorZ = -Infinity;
+	if (haveSpawnCap)
+		for (const f of walkable)
+			if (hasSurfaceAbove(f) && f.z > highestInteriorZ) highestInteriorZ = f.z;
+	// Only cull when spawns give a real threshold. Without spawns we don't guess a
+	// ceiling (the interior guard alone would over-cull a legit exposed top floor).
+	const ceilingCap = haveSpawnCap
+		? Math.max((opts!.spawnMaxZ as number) + MARGIN, highestInteriorZ)
+		: Infinity;
+	const capped = walkable.filter((f) => f.z <= ceilingCap);
+	const useFloors = capped.length > 0 ? capped : walkable; // never blank the whole map
+
 	let walkMaxZ = -Infinity;
-	for (const f of walkable) if (f.z > walkMaxZ) walkMaxZ = f.z;
+	for (const f of useFloors) if (f.z > walkMaxZ) walkMaxZ = f.z;
 
 	// --- Clean room outlines via RASTERIZE-THEN-TRACE. Per-triangle edges are
 	//     hopeless on real BSP (Chill Out has ~1700 wall tris). Instead we rasterise
@@ -260,13 +294,14 @@ export function buildFloorplan(mesh: Pick<BspMesh, 'positions' | 'indices' | 'co
 
 	// Walkable cells take the TOP-most floor z that covers them (so an upper floor
 	// reads over a lower one in plan view).
-	for (const f of walkable)
+	for (const f of useFloors)
 		rasterize(f, (idxc) => {
 			if (Number.isNaN(cellZ[idxc]) || f.z > cellZ[idxc]) cellZ[idxc] = f.z;
 		});
-	// Carve vertical-wall footprints (bounding the playable band) out of the mask.
+	// Carve vertical-wall footprints out of the mask — but only walls whose base is
+	// within the (spawn-capped) playable band, so roof parapets don't draw.
 	for (const w of wallCand) {
-		if (w.zMin > walkMaxZ + HEAD_H) continue;
+		if (w.zMin > ceilingCap) continue;
 		rasterize(w, (idxc) => {
 			cellWall[idxc] = 1;
 		});
@@ -306,7 +341,7 @@ export function buildFloorplan(mesh: Pick<BspMesh, 'positions' | 'indices' | 'co
 			}
 		}
 
-	const floors: FloorTri[] = walkable
+	const floors: FloorTri[] = useFloors
 		.map((f) => ({ pts: f.pts, z: f.z, color: f.color }))
 		.sort((p, q) => p.z - q.z);
 	walls.sort((p, q) => p.z - q.z);

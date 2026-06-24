@@ -40,9 +40,17 @@
 			: buildVizModel(feed.game, feed.tick, feed.scenario, feed.objects)
 	);
 
+	// Highest spawn Z on the loaded map → the roof-cull threshold (Stewart's
+	// heuristic). Static spawns are stable, so this only changes the (memoised)
+	// floorplan when its VALUE changes — not every tick.
+	const spawnMaxZ = $derived(
+		model.spawns.length > 0 ? Math.max(...model.spawns.map((s) => s.pos.z)) : undefined
+	);
+
 	// Floorplan + elevation bands derived from the mesh (pure; recomputed only when
-	// the mesh changes).
-	const floorplan = $derived(mesh ? buildFloorplan(mesh) : null);
+	// the mesh or the spawn-height cap changes). Geometry above the highest spawn +
+	// margin (roof/ceiling) is culled inside buildFloorplan.
+	const floorplan = $derived(mesh ? buildFloorplan(mesh, { spawnMaxZ }) : null);
 	const bands = $derived(floorplan ? computeFloorBands(floorplan.floorZs, 5) : null);
 
 	// Layer toggles (debug controls).
