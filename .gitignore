@@ -71,4 +71,12 @@ Thumbs.db
 # screenshots saved by the @playwright/mcp server during browser smoke
 # passes. Ephemeral; useful while a stage is in flight, no value committed.
 .playwright-mcp/
-/m*-*.png
+
+# Loose dev/verification screenshots dropped in the repo root during browser
+# smoke passes (bsp-editor-*.png, viz2d-*.png, studio-*.png, etc.). Root-anchored
+# so only top-level PNGs are ignored — committed art under sveltekit/static, docs,
+# etc. is unaffected. Ephemeral; regenerate locally, never committed.
+/*.png
+
+# Stray dev-server logs
+dev-server.log
