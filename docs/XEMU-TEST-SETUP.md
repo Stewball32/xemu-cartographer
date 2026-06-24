@@ -249,3 +249,18 @@ rm -f /tmp/xemu-qmp-1.sock
   already filters for the visible `xemu | v…` window by QMP-socket PID.
 - **Pads do nothing** → `padfleet.py` not running, or the TOML GUIDs don't match
   `pads.json`, or `auto_bind` isn't `false` (so xemu grabbed a different pad).
+- **Duplicate pad GUIDs** → a stale `padfleet.py` from a previous session is still
+  running. `sdl_enum.py` should show each fleet GUID exactly ONCE; if a GUID
+  repeats, xemu may bind the wrong (FIFO-less) duplicate and your inputs do
+  nothing. Kill the extra `padfleet.py`, then relaunch xemu so it re-binds.
+- **Map changed in-game but the visualizer still shows the old map** → the scraper
+  resolves the scenario/map identity at **start** time, not per-tick. After an
+  in-game map change (e.g. quit to lobby → pick a new map), **restart the runner**
+  (`POST /scraper/stop/<name>` then `/scraper/start`) so it re-detects the new
+  scenario; the roster/positions update live, but the map tag does not.
+- **No sudo for `ptrace_scope`?** Relaunch xemu with the `PR_SET_PTRACER_ANY`
+  LD_PRELOAD shim (a ~10-line C constructor calling
+  `prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)`, built with `gcc -shared -fPIC`):
+  `LD_PRELOAD=/tmp/ptrace_shim.so xemu …`. xemu then lets any same-uid process
+  (the cartographer server) read its `/proc/<pid>/mem` without changing the
+  system-wide `ptrace_scope`.
