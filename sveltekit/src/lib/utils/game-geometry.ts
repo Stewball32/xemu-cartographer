@@ -65,13 +65,21 @@ export interface TopProjection {
 	bounds: BspMesh['bounds'];
 }
 
-interface GeometryManifestEntry {
+export interface GeometryManifestEntry {
 	file: string;
+	/** Baked spectator-mesh override (see /bsp-editor). When present, loadBspMesh
+	 *  serves THIS culled mesh instead of `file` — so both visualizer views pick
+	 *  up the cleaned geometry with no page changes. Absent on raw caches. */
+	spectator_file?: string | null;
 	top_image?: string | null;
 	bounds?: BspMesh['bounds'];
+	scenario?: string;
+	source_map?: string;
+	vertex_count?: number;
+	triangle_count?: number;
 }
 
-interface GeometryManifest {
+export interface GeometryManifest {
 	game: string;
 	meshes: Record<string, GeometryManifestEntry>;
 }
@@ -95,11 +103,18 @@ function cacheRoot(game: string): string {
  * Resilient by design: a never-regenerated cache (404), a scenario the manifest
  * doesn't list, malformed JSON, or a mesh with no triangles all resolve to null
  * so the scene falls back to the world-bounds box rather than throwing.
+ *
+ * Baked spectator mesh: when the manifest entry carries a `spectator_file` (the
+ * culled asset the /bsp-editor produced), it is served INSTEAD of the raw `file`
+ * — so both visualizer views render the cleaned geometry with no page changes,
+ * and fall back to the raw mesh wherever no baked asset exists. Pass
+ * `{ raw: true }` to force the original mesh (the editor edits the raw one).
  */
 export async function loadBspMesh(
 	game: string,
 	scenario: string | null | undefined,
-	fetchFn: typeof fetch = fetch
+	fetchFn: typeof fetch = fetch,
+	opts: { raw?: boolean } = {}
 ): Promise<BspMesh | null> {
 	const key = meshKeyForScenario(scenario);
 	if (!key) return null;
@@ -110,10 +125,30 @@ export async function loadBspMesh(
 		const entry = man?.meshes?.[key];
 		if (!entry?.file) return null;
 
-		const meshRes = await fetchFn(`${cacheRoot(game)}/${entry.file}`);
+		const file = !opts.raw && entry.spectator_file ? entry.spectator_file : entry.file;
+		const meshRes = await fetchFn(`${cacheRoot(game)}/${file}`);
 		if (!meshRes.ok) return null;
 		const raw = (await meshRes.json()) as RawMeshFile;
 		return normalizeMesh(game, key, raw);
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Load the whole geometry manifest for a game (the editor's map picker reads it
+ * to list extracted maps + whether each already has a baked spectator mesh).
+ * Null when the cache was never generated.
+ */
+export async function loadGeometryManifest(
+	game: string,
+	fetchFn: typeof fetch = fetch
+): Promise<GeometryManifest | null> {
+	try {
+		const res = await fetchFn(`${cacheRoot(game)}/manifest.json`);
+		if (!res.ok) return null;
+		const man = (await res.json()) as GeometryManifest;
+		return man?.meshes ? man : null;
 	} catch {
 		return null;
 	}
