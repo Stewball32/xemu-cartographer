@@ -4,6 +4,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/admin"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/adminusers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/lansaves"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/pod"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/rosters"
@@ -20,6 +21,7 @@ func registerAllGroups(se *core.ServeEvent) {
 	admin.RegisterAll(se)
 	adminusers.RegisterAll(se)
 	containers.RegisterAll(se)
+	lansaves.RegisterAll(se)
 	overlays.RegisterAll(se)
 	pod.RegisterAll(se)
 	rosters.RegisterAll(se)

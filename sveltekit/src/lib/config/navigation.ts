@@ -1,6 +1,7 @@
 import {
 	BookmarkXIcon,
 	BoxIcon,
+	GamepadIcon,
 	MonitorIcon,
 	PlayIcon,
 	SettingsIcon,
@@ -45,6 +46,7 @@ export const mainGroups: NavGroup[] = [
 		adminOnly: true,
 		links: [
 			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
+			{ label: 'LAN saves', href: '/admin/lan/', icon: GamepadIcon },
 			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
