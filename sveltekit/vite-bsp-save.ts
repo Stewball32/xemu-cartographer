@@ -30,6 +30,8 @@ interface SavePayload {
 		source_map?: string;
 		[k: string]: unknown;
 	};
+	/** Optional stable-keyed tag sidecar (legend/render/overrides) — survives a re-extract. */
+	tags?: unknown;
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -88,6 +90,14 @@ export function bspSavePlugin(): Plugin {
 
 					await fs.writeFile(filePath, JSON.stringify(mesh));
 
+					// Hand-editable tag sidecar (legend/render/overrides) — keeps manual
+					// tags re-applicable across a geometry re-extract.
+					let tagsFileName: string | undefined;
+					if (payload.tags && typeof payload.tags === 'object') {
+						tagsFileName = `${key}.tags.json`;
+						await fs.writeFile(path.join(dir, tagsFileName), JSON.stringify(payload.tags, null, 2));
+					}
+
 					// Patch the manifest so loadBspMesh prefers the baked mesh.
 					const manPath = path.join(dir, 'manifest.json');
 					let manifest: {
@@ -102,6 +112,7 @@ export function bspSavePlugin(): Plugin {
 					manifest.meshes ??= {};
 					const entry = (manifest.meshes[key] ??= { file: `${key}.json` });
 					entry.spectator_file = fileName;
+					if (tagsFileName) entry.tags_file = tagsFileName;
 					if (typeof mesh.vertex_count === 'number')
 						entry.spectator_vertex_count = mesh.vertex_count;
 					if (typeof mesh.triangle_count === 'number')
@@ -111,7 +122,11 @@ export function bspSavePlugin(): Plugin {
 					server.config.logger.info(
 						`[bsp-editor] baked spectator mesh → static/game-geometry/${game}/${fileName}`
 					);
-					return json(res, 200, { ok: true, file: `game-geometry/${game}/${fileName}` });
+					return json(res, 200, {
+						ok: true,
+						file: `game-geometry/${game}/${fileName}`,
+						tags_file: tagsFileName
+					});
 				} catch (err) {
 					return json(res, 500, { error: String(err) });
 				}

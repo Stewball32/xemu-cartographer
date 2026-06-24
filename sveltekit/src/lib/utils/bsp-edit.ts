@@ -2,24 +2,82 @@
 //
 // The editor loads the SAME structure-BSP mesh the visualizers consume
 // ($lib/utils/game-geometry's BspMesh: flat positions/indices/colors in Halo
-// world coords) and lets the operator CULL it down to a clean "spectator mesh":
-// drop the roof/ceilings + out-of-bounds clutter, keep the walkable interior.
-// The output is a culled BspMesh in the exact same JSON schema, so BOTH the 2D
-// floorplan (buildFloorplan) and the 3D scene (Scene3D) render it with no view
-// changes — the baked asset just replaces the raw one through the loader.
+// world coords) and lets the operator cull it down to a clean "spectator mesh".
+//
+// SURFACE TAGGING is the primary mechanism. Every triangle carries a semantic
+// tag (floor / ramp / wall / ceiling / inaccessible / clutter); an auto-classify
+// pass seeds tags from the face normal, the operator fixes mistags by
+// selection, and a per-tag render rule decides what survives the bake. The
+// cull-height plane + manual delete stay as scalpels for stragglers. Tags drive
+// the elevation banding too (floors/ramps are what get banded).
+//
+// Tags can't live in the BSP/.map, so they persist in OUR derived asset: the
+// baked spectator mesh embeds per-kept-triangle tags + the legend + the render
+// map, AND a sidecar of MANUAL overrides keyed by a STABLE spatial signature
+// (quantised centroid + dominant normal axis) so a later re-extract/re-bake
+// re-applies the operator's hand-edits instead of wiping them.
 //
 // Everything here is PURE / IO-free / DOM-free so the parts that must be correct
-// — connectivity, selection, vertex re-indexing on export, undo/redo — unit-test
-// without a browser or a GPU. EditorScene.svelte does only the Three.js wiring on
-// top of these (picking, the draggable plane, box-drag rectangles).
+// — classification, connectivity, selection, stable keying, vertex re-indexing on
+// export, undo/redo — unit-test without a browser or a GPU. EditorScene.svelte
+// does only the Three.js wiring on top of these.
 //
-// A triangle is the unit of editing. We index triangles by their ORDINAL
-// t = 0..triCount-1; triangle t spans mesh.indices[3t..3t+2]. "Removed" triangles
-// are excluded from the export but fully restorable (undo, or the ghost view)
-// until the operator bakes the asset — nothing is destructive in the editor.
+// A triangle is the unit of editing, indexed by ordinal t = 0..triCount-1;
+// triangle t spans mesh.indices[3t..3t+2].
 
 import type { BspMesh } from '$lib/utils/game-geometry';
-import { buildFloorplan } from '$lib/utils/floorplan';
+
+// --- Surface taxonomy -------------------------------------------------------
+
+export type SurfaceTag = 'floor' | 'ramp' | 'wall' | 'ceiling' | 'inaccessible' | 'clutter';
+
+/** Stable, ordered legend — the index stored per triangle is an index INTO this. */
+export const TAG_LEGEND: SurfaceTag[] = [
+	'floor',
+	'ramp',
+	'wall',
+	'ceiling',
+	'inaccessible',
+	'clutter'
+];
+
+export interface TagDef {
+	tag: SurfaceTag;
+	label: string;
+	/** Editor highlight colour (0..1 RGB). */
+	color: [number, number, number];
+	/** Whether this tag's geometry survives the bake by default. floors/ramps/
+	 *  walls render; ceiling/inaccessible/clutter are dropped unless toggled on. */
+	defaultRender: boolean;
+}
+
+export const TAG_DEFS: TagDef[] = [
+	{ tag: 'floor', label: 'Floor', color: [0.3, 0.74, 0.55], defaultRender: true },
+	{ tag: 'ramp', label: 'Ramp / stairs', color: [0.67, 0.8, 0.32], defaultRender: true },
+	{ tag: 'wall', label: 'Wall', color: [0.46, 0.56, 0.82], defaultRender: true },
+	{ tag: 'ceiling', label: 'Ceiling / roof', color: [0.88, 0.45, 0.32], defaultRender: false },
+	{ tag: 'inaccessible', label: 'Inaccessible', color: [0.55, 0.3, 0.34], defaultRender: false },
+	{ tag: 'clutter', label: 'Clutter', color: [0.64, 0.46, 0.8], defaultRender: false }
+];
+
+export const TAG_INDEX: Record<SurfaceTag, number> = Object.fromEntries(
+	TAG_LEGEND.map((t, i) => [t, i])
+) as Record<SurfaceTag, number>;
+
+export type TagRenderMap = Record<SurfaceTag, boolean>;
+
+export function defaultTagRender(): TagRenderMap {
+	const m = {} as TagRenderMap;
+	for (const d of TAG_DEFS) m[d.tag] = d.defaultRender;
+	return m;
+}
+
+/** Auto-classify thresholds on the normalized up-component (nz). */
+const FLOOR_COS = 0.866; // ≤30° from horizontal → floor
+const RAMP_COS = 0.5; // 30°–60° up-facing → ramp/stairs
+const CEIL_COS = -0.5; // down-facing → ceiling
+
+// --- Per-triangle metadata --------------------------------------------------
 
 /** Per-triangle precomputed geometry + material, derived once from the mesh. */
 export interface TriMeta {
@@ -27,9 +85,13 @@ export interface TriMeta {
 	cx: number;
 	cy: number;
 	cz: number;
-	/** Corner Z extent (the plane cull + band tagging read these). */
+	/** Corner Z extent (plane cull + band tagging read these). */
 	zMin: number;
 	zMax: number;
+	/** Unit face normal in Halo world coords (Z up). */
+	nx: number;
+	ny: number;
+	nz: number;
 	/** Averaged vertex material colour (0..1); neutral grey when the mesh has none. */
 	r: number;
 	g: number;
@@ -43,7 +105,7 @@ export function triCount(mesh: Pick<BspMesh, 'indices'>): number {
 	return Math.floor(mesh.indices.length / 3);
 }
 
-/** Build per-triangle centroid / Z-extent / material colour for every triangle. */
+/** Build per-triangle centroid / Z-extent / normal / material colour. */
 export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colors'>): TriMeta[] {
 	const pos = mesh.positions;
 	const idx = mesh.indices;
@@ -54,9 +116,31 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 		const a = idx[t * 3] * 3;
 		const b = idx[t * 3 + 1] * 3;
 		const c = idx[t * 3 + 2] * 3;
-		const az = pos[a + 2],
-			bz = pos[b + 2],
+		const ax = pos[a],
+			ay = pos[a + 1],
+			az = pos[a + 2];
+		const bx = pos[b],
+			by = pos[b + 1],
+			bz = pos[b + 2];
+		const cx = pos[c],
+			cy = pos[c + 1],
 			cz = pos[c + 2];
+
+		// Face normal = (b-a) × (c-a), normalized.
+		let nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+		let ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+		let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+		const len = Math.hypot(nx, ny, nz);
+		if (len > 1e-9) {
+			nx /= len;
+			ny /= len;
+			nz /= len;
+		} else {
+			nx = 0;
+			ny = 0;
+			nz = 1;
+		}
+
 		let r = NEUTRAL_RGB[0],
 			g = NEUTRAL_RGB[1],
 			bb = NEUTRAL_RGB[2];
@@ -71,11 +155,14 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 			}
 		}
 		out[t] = {
-			cx: (pos[a] + pos[b] + pos[c]) / 3,
-			cy: (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3,
+			cx: (ax + bx + cx) / 3,
+			cy: (ay + by + cy) / 3,
 			cz: (az + bz + cz) / 3,
 			zMin: Math.min(az, bz, cz),
 			zMax: Math.max(az, bz, cz),
+			nx,
+			ny,
+			nz,
 			r,
 			g,
 			b: bb
@@ -84,7 +171,104 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 	return out;
 }
 
-// --- Connectivity ----------------------------------------------------------
+// --- Auto-classification ----------------------------------------------------
+
+/**
+ * First-pass tag per triangle from its face normal:
+ *   up-facing & near-flat → floor; up-facing & sloped → ramp; near-vertical →
+ *   wall; down-facing → ceiling. inaccessible/clutter are never auto-assigned —
+ *   they're manual bins. The normal's sign is ambiguous on a double-sided BSP
+ *   surface, so we read the ABSOLUTE up-component for the floor/ramp/wall split
+ *   and only call a clearly down-facing surface a ceiling.
+ */
+export function autoClassify(meta: TriMeta[]): Uint8Array {
+	const tags = new Uint8Array(meta.length);
+	for (let t = 0; t < meta.length; t++) {
+		const nz = meta[t].nz;
+		const up = Math.abs(nz);
+		let tag: SurfaceTag;
+		if (nz <= CEIL_COS) tag = 'ceiling';
+		else if (up >= FLOOR_COS) tag = 'floor';
+		else if (up >= RAMP_COS) tag = nz > 0 ? 'ramp' : 'ceiling';
+		else tag = 'wall';
+		tags[t] = TAG_INDEX[tag];
+	}
+	return tags;
+}
+
+export function tagOf(tags: ArrayLike<number>, t: number): SurfaceTag {
+	return TAG_LEGEND[tags[t]] ?? 'wall';
+}
+
+/** Count of triangles per tag (for the editor chips). */
+export function tagCounts(tags: ArrayLike<number>): Record<SurfaceTag, number> {
+	const counts = {} as Record<SurfaceTag, number>;
+	for (const t of TAG_LEGEND) counts[t] = 0;
+	for (let i = 0; i < tags.length; i++) counts[TAG_LEGEND[tags[i]] ?? 'wall']++;
+	return counts;
+}
+
+// --- Stable tag persistence (survives re-extraction) ------------------------
+
+/**
+ * Stable spatial signature for a triangle: quantised centroid + dominant normal
+ * axis. Survives minor retessellation/reordering across a geometry re-extract, so
+ * the operator's MANUAL tag fixes can be re-applied to freshly-extracted geometry
+ * instead of being wiped. Coarse by design (collisions are acceptable for a
+ * best-effort re-apply).
+ */
+export function tagSignature(m: TriMeta, quantum = 0.5): string {
+	const q = quantum > 0 ? quantum : 0.5;
+	const ax = Math.abs(m.nx);
+	const ay = Math.abs(m.ny);
+	const az = Math.abs(m.nz);
+	let axis: string;
+	if (az >= ax && az >= ay) axis = m.nz >= 0 ? 'pz' : 'nz';
+	else if (ax >= ay) axis = m.nx >= 0 ? 'px' : 'nx';
+	else axis = m.ny >= 0 ? 'py' : 'ny';
+	return `${Math.round(m.cx / q)},${Math.round(m.cy / q)},${Math.round(m.cz / q)},${axis}`;
+}
+
+export interface TagOverride {
+	/** Stable signature (tagSignature). */
+	k: string;
+	/** Tag name (legend-independent: stored by name so legend reorders are safe). */
+	tag: SurfaceTag;
+}
+
+/** Manual overrides = the triangles whose tag differs from a fresh auto-classify
+ *  — the precious hand-edits, keyed stably. De-duped by signature (last wins). */
+export function buildTagOverrides(
+	meta: TriMeta[],
+	tags: ArrayLike<number>,
+	autoTags: ArrayLike<number>
+): TagOverride[] {
+	const map = new Map<string, SurfaceTag>();
+	for (let t = 0; t < meta.length; t++) {
+		if (tags[t] !== autoTags[t]) map.set(tagSignature(meta[t]), TAG_LEGEND[tags[t]] ?? 'wall');
+	}
+	return [...map].map(([k, tag]) => ({ k, tag }));
+}
+
+/** Re-apply stable-keyed overrides onto a tag array (returns a new array). Any
+ *  triangle whose signature matches an override takes that override's tag. */
+export function applyTagOverrides(
+	meta: TriMeta[],
+	tags: ArrayLike<number>,
+	overrides: TagOverride[] | null | undefined
+): Uint8Array {
+	const out = Uint8Array.from(tags as Uint8Array);
+	if (!overrides || overrides.length === 0) return out;
+	const byKey = new Map<string, SurfaceTag>();
+	for (const o of overrides) byKey.set(o.k, o.tag);
+	for (let t = 0; t < meta.length; t++) {
+		const ov = byKey.get(tagSignature(meta[t]));
+		if (ov) out[t] = TAG_INDEX[ov] ?? out[t];
+	}
+	return out;
+}
+
+// --- Selection -------------------------------------------------------------
 
 class UnionFind {
 	private parent: Int32Array;
@@ -95,7 +279,6 @@ class UnionFind {
 	find(x: number): number {
 		let root = x;
 		while (this.parent[root] !== root) root = this.parent[root];
-		// Path compression.
 		while (this.parent[x] !== root) {
 			const next = this.parent[x];
 			this.parent[x] = root;
@@ -114,9 +297,6 @@ class UnionFind {
  * Connected-component id per triangle, via SPATIAL vertex welding so a mesh that
  * duplicates coincident vertices per-face (flat shading) still groups into whole
  * architectural pieces — click one ceiling triangle, select the whole ceiling.
- * Two triangles join when they share a welded vertex (positions quantised to
- * `quantum` world units). Returns a normalised id array (0..k-1, in first-seen
- * order) so the result is stable for tests + colouring.
  */
 export function connectedComponents(
 	mesh: Pick<BspMesh, 'positions' | 'indices'>,
@@ -126,8 +306,6 @@ export function connectedComponents(
 	const idx = mesh.indices;
 	const T = triCount(mesh);
 	const uf = new UnionFind(T);
-
-	// Welded-vertex key → first triangle that touched it; union subsequent ones.
 	const firstTriAtVertex = new Map<string, number>();
 	const q = quantum > 0 ? quantum : 1e-3;
 	const key = (vi: number): string => {
@@ -145,8 +323,6 @@ export function connectedComponents(
 			else uf.union(prev, t);
 		}
 	}
-
-	// Normalise root ids → dense 0..k-1 in first-appearance order.
 	const remap = new Map<number, number>();
 	const comp = new Int32Array(T);
 	let next = 0;
@@ -162,18 +338,12 @@ export function connectedComponents(
 	return comp;
 }
 
-// --- Selection -------------------------------------------------------------
-
 export type PlaneCullMode = 'centroid' | 'whole' | 'any';
 
 /**
- * Triangles ABOVE the cull-height plane (world Z = cullZ). The three modes trade
- * how aggressively a triangle that straddles the plane is treated:
- *   - 'centroid' (default): centroid above — cuts the roof AND upper walls that
- *     lean mostly above the line; the cleanest one-drag roof removal.
- *   - 'whole': only triangles ENTIRELY above (zMin ≥ cullZ) — conservative, never
- *     touches anything dipping below the line.
- *   - 'any': any corner above — most aggressive.
+ * Triangles ABOVE the cull-height plane (world Z = cullZ). 'centroid' (default)
+ * cuts the roof and upper walls that lean mostly above the line; 'whole' is
+ * conservative (entirely above); 'any' is the most aggressive (any corner above).
  */
 export function selectAbovePlane(
 	meta: TriMeta[],
@@ -199,12 +369,7 @@ export function selectComponent(comp: Int32Array, tri: number): number[] {
 	return out;
 }
 
-/**
- * All triangles whose averaged material colour is within `tol` (Euclidean in the
- * 0..1 RGB cube) of `tri`'s — "select the whole ceiling by its texture". Material
- * is global (not limited to a connected piece) so a repeated wall/ceiling texture
- * is caught everywhere it appears.
- */
+/** All triangles whose averaged material colour is within `tol` of `tri`'s. */
 export function selectByMaterial(meta: TriMeta[], tri: number, tol = 0.12): number[] {
 	if (tri < 0 || tri >= meta.length) return [];
 	const base = meta[tri];
@@ -217,6 +382,14 @@ export function selectByMaterial(meta: TriMeta[], tri: number, tol = 0.12): numb
 		const db = m.b - base.b;
 		if (dr * dr + dg * dg + db * db <= t2) out.push(t);
 	}
+	return out;
+}
+
+/** All triangles currently carrying tag `tag`. */
+export function selectByTag(tags: ArrayLike<number>, tag: SurfaceTag): number[] {
+	const idx = TAG_INDEX[tag];
+	const out: number[] = [];
+	for (let t = 0; t < tags.length; t++) if (tags[t] === idx) out.push(t);
 	return out;
 }
 
@@ -238,12 +411,8 @@ export function pointInRect(x: number, y: number, rect: ScreenRect): boolean {
 	return x >= rect.minX && x <= rect.maxX && y >= rect.minY && y <= rect.maxY;
 }
 
-/**
- * Box select: every triangle whose centroid projects (via the caller's camera
- * projector) to a screen point inside `rect`. `project` returns null for points
- * behind the camera / off-NDC so they're skipped. Kept pure by injecting the
- * projector — the component passes a Three camera projection, tests pass a fake.
- */
+/** Box select: every triangle whose centroid projects (via the caller's camera
+ *  projector) to a screen point inside `rect`. Pure by injecting the projector. */
 export function boxSelect(
 	meta: TriMeta[],
 	project: (cx: number, cy: number, cz: number) => [number, number] | null,
@@ -258,35 +427,7 @@ export function boxSelect(
 	return out;
 }
 
-// --- Default cull height ----------------------------------------------------
-
-/**
- * A sensible default cull-height for a freshly-loaded map: the highest WALKABLE
- * floor (the surfaces players actually stand on, from the shared floorplan
- * extractor) plus a headroom margin — i.e. just under the ceiling, so the first
- * drag previews the roof as removable. This is the offline analogue of the live
- * "highest spawn Z + headroom" heuristic (no live feed in the editor, so floors
- * stand in for spawns). Clamped within the mesh's Z range.
- */
-export function defaultCullZ(mesh: BspMesh, margin = 2.5): number {
-	const { minZ, maxZ } = mesh.bounds;
-	let cand: number;
-	try {
-		const fp = buildFloorplan(mesh);
-		const zs = fp.floorZs.filter((z) => Number.isFinite(z));
-		cand = zs.length > 0 ? Math.max(...zs) + margin : minZ + (maxZ - minZ) * 0.6;
-	} catch {
-		cand = minZ + (maxZ - minZ) * 0.6;
-	}
-	// Keep it inside the slider range and strictly below the very top so the roof
-	// at/near maxZ always previews as removable.
-	const lo = minZ + 0.1;
-	const hi = maxZ - 0.05;
-	if (!Number.isFinite(cand)) return Math.max(lo, Math.min(hi, (minZ + maxZ) / 2));
-	return Math.max(lo, Math.min(hi, cand));
-}
-
-// --- Floor reference markers (player-accessible height cue) ------------------
+// --- Tag-driven floor reference + banding -----------------------------------
 
 export interface FloorMarker {
 	x: number;
@@ -294,23 +435,61 @@ export interface FloorMarker {
 	z: number;
 }
 
-/** Walkable-floor centroids — the editor shows these as the "where players can
- *  stand" reference while the operator drags the cull plane. Reuses the shared
- *  floorplan extractor so they match the 2D view's walkable surfaces exactly. */
-export function floorMarkers(mesh: BspMesh): FloorMarker[] {
-	try {
-		const fp = buildFloorplan(mesh);
-		return fp.floors.map((f) => ({
-			x: (f.pts[0].x + f.pts[1].x + f.pts[2].x) / 3,
-			y: (f.pts[0].y + f.pts[1].y + f.pts[2].y) / 3,
-			z: f.z
-		}));
-	} catch {
-		return [];
+/** Centroids of FLOOR + RAMP triangles — the player-accessible surfaces that the
+ *  editor shows as a height reference and the elevation banding is computed from
+ *  (tags drive the banding). */
+export function taggedFloorMarkers(meta: TriMeta[], tags: ArrayLike<number>): FloorMarker[] {
+	const floor = TAG_INDEX.floor;
+	const ramp = TAG_INDEX.ramp;
+	const out: FloorMarker[] = [];
+	for (let t = 0; t < meta.length; t++) {
+		if (tags[t] === floor || tags[t] === ramp)
+			out.push({ x: meta[t].cx, y: meta[t].cy, z: meta[t].cz });
 	}
+	return out;
 }
 
-// --- Export -----------------------------------------------------------------
+export function taggedFloorZs(meta: TriMeta[], tags: ArrayLike<number>): number[] {
+	return taggedFloorMarkers(meta, tags).map((m) => m.z);
+}
+
+/**
+ * Default cull-height for a freshly-loaded map: the highest tagged floor/ramp
+ * surface plus a headroom margin — i.e. just under the ceiling, so the first plane
+ * drag previews the roof as removable. Clamped inside the mesh Z range.
+ */
+export function defaultCullZ(
+	mesh: BspMesh,
+	meta: TriMeta[],
+	tags: ArrayLike<number>,
+	margin = 2.5
+): number {
+	const { minZ, maxZ } = mesh.bounds;
+	let topFloor = -Infinity;
+	const floor = TAG_INDEX.floor;
+	const ramp = TAG_INDEX.ramp;
+	for (let t = 0; t < meta.length; t++)
+		if (tags[t] === floor || tags[t] === ramp) topFloor = Math.max(topFloor, meta[t].zMax);
+	const cand = Number.isFinite(topFloor) ? topFloor + margin : minZ + (maxZ - minZ) * 0.6;
+	const lo = minZ + 0.1;
+	const hi = maxZ - 0.05;
+	if (!Number.isFinite(cand)) return Math.max(lo, Math.min(hi, (minZ + maxZ) / 2));
+	return Math.max(lo, Math.min(hi, cand));
+}
+
+// --- Bake / export ----------------------------------------------------------
+
+/** A triangle survives the bake when it isn't manually removed AND its tag's
+ *  render rule is on. This is the single predicate the editor + export share. */
+export function isBaked(
+	t: number,
+	removed: ArrayLike<number>,
+	tags: ArrayLike<number>,
+	tagRender: TagRenderMap
+): boolean {
+	if (removed[t]) return false;
+	return !!tagRender[TAG_LEGEND[tags[t]] ?? 'wall'];
+}
 
 export interface SpectatorBand {
 	index: number;
@@ -319,20 +498,18 @@ export interface SpectatorBand {
 	midZ: number;
 }
 
-/** The baked spectator-mesh file. A strict SUPERSET of the raw mesh schema
- *  (game-geometry's RawMeshFile), so normalizeMesh / loadBspMesh read it with no
- *  changes, and the editor can re-import it to keep iterating. */
+/** The baked spectator-mesh file. A SUPERSET of the raw mesh schema
+ *  (game-geometry's RawMeshFile), so normalizeMesh / loadBspMesh read it
+ *  unchanged, plus the tag layer that survives a re-edit. */
 export interface SpectatorMesh {
-	schema_version: 1;
+	schema_version: 2;
 	kind: 'spectator-mesh';
 	generated_by: 'bsp-editor';
 	generated_at?: string;
 	game: string;
 	scenario: string;
 	source_map: string;
-	/** The raw mesh file this was baked from (provenance). */
 	source_mesh?: string;
-	/** Cull-height the operator settled on (provenance / re-open hint). */
 	cull_z?: number;
 	bounds: BspMesh['bounds'];
 	positions: number[];
@@ -340,11 +517,51 @@ export interface SpectatorMesh {
 	indices: number[];
 	vertex_count: number;
 	triangle_count: number;
-	/** Optional baked elevation bands for the shading (else the viewer recomputes). */
+	/** Tag legend + per-kept-triangle tag index (drives tag-aware view styling). */
+	tag_legend: SurfaceTag[];
+	tags: number[];
+	/** Per-tag render rules used for this bake (the viewer's default visibility). */
+	tag_render: TagRenderMap;
+	/** Manual tag overrides keyed stably (re-applied on a future re-extract). */
+	tag_overrides: TagOverride[];
+	/** Optional baked elevation bands (from tagged floors). */
 	bands?: SpectatorBand[];
 }
 
+/** The re-applicable, geometry-independent slice of the tag data — written as a
+ *  hand-editable sidecar (`<key>.tags.json`) so manual tags survive a re-extract. */
+export interface TagSidecar {
+	schema_version: 2;
+	kind: 'spectator-tags';
+	legend: SurfaceTag[];
+	render: TagRenderMap;
+	overrides: TagOverride[];
+}
+
+export function buildTagSidecar(
+	meta: TriMeta[],
+	tags: ArrayLike<number>,
+	autoTags: ArrayLike<number>,
+	tagRender: TagRenderMap
+): TagSidecar {
+	return {
+		schema_version: 2,
+		kind: 'spectator-tags',
+		legend: TAG_LEGEND.slice(),
+		render: { ...tagRender },
+		overrides: buildTagOverrides(meta, tags, autoTags)
+	};
+}
+
+export interface EditState {
+	removed: Uint8Array;
+	tags: Uint8Array;
+}
+
 export interface ExportOptions {
+	meta: TriMeta[];
+	autoTags: ArrayLike<number>;
+	tagRender: TagRenderMap;
 	cullZ?: number;
 	sourceMesh?: string;
 	bands?: SpectatorBand[];
@@ -352,26 +569,29 @@ export interface ExportOptions {
 }
 
 /**
- * Bake the kept (non-removed) triangles into a fresh SpectatorMesh: only the
- * referenced vertices are carried over, re-indexed densely (no vertex explosion,
- * shared verts stay shared), colours preserved when present, bounds recomputed.
- * `removed[t]` truthy ⇒ triangle t is dropped.
+ * Bake the kept triangles (per {@link isBaked}) into a fresh SpectatorMesh: only
+ * referenced vertices are carried over, re-indexed densely, colours preserved,
+ * bounds recomputed, each kept triangle's tag embedded, and the manual-override
+ * sidecar data folded in for re-edit survival.
  */
 export function exportSpectatorMesh(
 	mesh: BspMesh,
-	removed: ArrayLike<number>,
-	opts: ExportOptions = {}
+	state: EditState,
+	opts: ExportOptions
 ): SpectatorMesh {
+	const { removed, tags } = state;
+	const { tagRender } = opts;
 	const pos = mesh.positions;
 	const idx = mesh.indices;
 	const hasColor = !!mesh.colors && mesh.colors.length === pos.length;
 	const col = hasColor ? (mesh.colors as number[]) : undefined;
 	const T = triCount(mesh);
 
-	const remap = new Map<number, number>(); // old vertex index → new vertex index
+	const remap = new Map<number, number>();
 	const positions: number[] = [];
 	const colors: number[] | undefined = col ? [] : undefined;
 	const indices: number[] = [];
+	const outTags: number[] = [];
 
 	let minX = Infinity,
 		maxX = -Infinity,
@@ -401,11 +621,9 @@ export function exportSpectatorMesh(
 	};
 
 	for (let t = 0; t < T; t++) {
-		if (removed[t]) continue;
-		const a = idx[t * 3];
-		const b = idx[t * 3 + 1];
-		const c = idx[t * 3 + 2];
-		indices.push(pushVertex(a), pushVertex(b), pushVertex(c));
+		if (!isBaked(t, removed, tags, tagRender)) continue;
+		indices.push(pushVertex(idx[t * 3]), pushVertex(idx[t * 3 + 1]), pushVertex(idx[t * 3 + 2]));
+		outTags.push(tags[t]);
 	}
 
 	const bounds =
@@ -414,7 +632,7 @@ export function exportSpectatorMesh(
 			: { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
 
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		kind: 'spectator-mesh',
 		generated_by: 'bsp-editor',
 		generated_at: opts.generatedAt,
@@ -429,6 +647,10 @@ export function exportSpectatorMesh(
 		indices,
 		vertex_count: positions.length / 3,
 		triangle_count: indices.length / 3,
+		tag_legend: TAG_LEGEND.slice(),
+		tags: outTags,
+		tag_render: { ...tagRender },
+		tag_overrides: buildTagOverrides(opts.meta, tags, opts.autoTags),
 		bands: opts.bands
 	};
 }
@@ -440,49 +662,56 @@ export interface EditStats {
 	keptVerts: number;
 }
 
-/** Quick kept/removed tallies for the editor HUD. */
-export function editStats(mesh: BspMesh, removed: ArrayLike<number>): EditStats {
+/** Kept (baked) / dropped tallies for the editor HUD. */
+export function editStats(
+	mesh: BspMesh,
+	removed: ArrayLike<number>,
+	tags: ArrayLike<number>,
+	tagRender: TagRenderMap
+): EditStats {
 	const T = triCount(mesh);
 	const used = new Set<number>();
-	let removedTris = 0;
+	let kept = 0;
 	for (let t = 0; t < T; t++) {
-		if (removed[t]) {
-			removedTris++;
-			continue;
-		}
+		if (!isBaked(t, removed, tags, tagRender)) continue;
+		kept++;
 		used.add(mesh.indices[t * 3]);
 		used.add(mesh.indices[t * 3 + 1]);
 		used.add(mesh.indices[t * 3 + 2]);
 	}
-	return { totalTris: T, keptTris: T - removedTris, removedTris, keptVerts: used.size };
+	return { totalTris: T, keptTris: kept, removedTris: T - kept, keptVerts: used.size };
 }
 
 // --- Undo / redo ------------------------------------------------------------
 
 /**
- * Snapshot-based undo/redo over the per-triangle removed-state. Each committed
- * edit pushes a copy of the Uint8Array; cheap (a few KB even for big maps) and
- * bulletproof vs. command-inversion bugs. Bounded so history can't grow without
- * limit. The CURRENT state is the top of the past stack.
+ * Snapshot-based undo/redo over the per-triangle edit state ({removed, tags}).
+ * Each committed edit pushes a deep copy; cheap (a few KB per snapshot even on
+ * big maps) and bulletproof vs. command-inversion bugs. Bounded so history can't
+ * grow without limit. The CURRENT state is the top of the past stack.
  */
-export class RemovedHistory {
-	private past: Uint8Array[] = [];
-	private future: Uint8Array[] = [];
+export class EditHistory {
+	private past: EditState[] = [];
+	private future: EditState[] = [];
 	private readonly cap: number;
 
-	constructor(initial: Uint8Array, cap = 100) {
-		this.past.push(Uint8Array.from(initial));
+	constructor(initial: EditState, cap = 100) {
+		this.past.push(EditHistory.copy(initial));
 		this.cap = Math.max(2, cap);
 	}
 
-	/** Current removed-state (a copy — safe to mutate by the caller before commit). */
-	current(): Uint8Array {
-		return Uint8Array.from(this.past[this.past.length - 1]);
+	private static copy(s: EditState): EditState {
+		return { removed: Uint8Array.from(s.removed), tags: Uint8Array.from(s.tags) };
+	}
+
+	/** Current state (a deep copy — safe for the caller to mutate before commit). */
+	current(): EditState {
+		return EditHistory.copy(this.past[this.past.length - 1]);
 	}
 
 	/** Commit a new state as the next history step (clears the redo stack). */
-	commit(state: Uint8Array): void {
-		this.past.push(Uint8Array.from(state));
+	commit(state: EditState): void {
+		this.past.push(EditHistory.copy(state));
 		this.future = [];
 		if (this.past.length > this.cap) this.past.shift();
 	}
@@ -494,18 +723,16 @@ export class RemovedHistory {
 		return this.future.length > 0;
 	}
 
-	/** Step back one edit; returns the restored state, or null if nothing to undo. */
-	undo(): Uint8Array | null {
+	undo(): EditState | null {
 		if (!this.canUndo()) return null;
-		this.future.push(this.past.pop() as Uint8Array);
-		return Uint8Array.from(this.past[this.past.length - 1]);
+		this.future.push(this.past.pop() as EditState);
+		return EditHistory.copy(this.past[this.past.length - 1]);
 	}
 
-	/** Step forward one edit; returns the restored state, or null if none. */
-	redo(): Uint8Array | null {
+	redo(): EditState | null {
 		if (!this.canRedo()) return null;
-		const state = this.future.pop() as Uint8Array;
+		const state = this.future.pop() as EditState;
 		this.past.push(state);
-		return Uint8Array.from(state);
+		return EditHistory.copy(state);
 	}
 }

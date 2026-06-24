@@ -1,27 +1,29 @@
 <script lang="ts">
 	// Three.js editor canvas for the BSP spectator-mesh editor. Renders the raw
-	// structure-BSP mesh and lets the operator SEE + SELECT triangles to cull:
+	// structure-BSP mesh and lets the operator SEE + SELECT triangles to tag/cull:
 	//
-	//   - KEPT mesh        — the surviving geometry in its real material colours.
-	//   - REMOVED ghost    — culled triangles, faint red, toggleable (so you can
-	//                        re-select + restore them; nothing is destructive).
+	//   - INCLUDED mesh    — the geometry that will survive the bake (kept = not
+	//                        manually removed AND its tag renders), in either real
+	//                        MATERIAL colour or TAG colour (colorMode).
+	//   - EXCLUDED ghost   — dropped geometry (removed OR tag-not-rendered), faint
+	//                        red, toggleable (re-select + restore; non-destructive).
 	//   - SELECTION        — current selection, cyan, drawn on top.
 	//   - PLANE PREVIEW     — what the cull-height plane would remove, orange.
 	//   - CULL PLANE        — a draggable horizontal plane at world Z = cullZ.
-	//   - FLOOR MARKERS     — walkable-floor reference dots (player-accessible
+	//   - FLOOR MARKERS     — tagged floor/ramp reference dots (player-accessible
 	//                        height) so you can see where players stand while cutting.
 	//
-	// All the data shaping + selection math lives in the pure $lib/utils/bsp-edit;
-	// this component does only the GPU wiring, picking raycasts, the box-drag
-	// rectangle, and the plane drag. Two cameras: an orthographic TOP-DOWN (the true
-	// 2D-equivalent footprint) and a perspective ORBIT, toggled by `viewMode`.
+	// Tag ISOLATE shows one tag at a time for fast fix-up sweeps. All the data
+	// shaping + selection + tag math lives in the pure $lib/utils/bsp-edit; this
+	// component does only the GPU wiring, picking, the box-drag rectangle, and the
+	// plane drag. Two cameras: orthographic TOP-DOWN + perspective ORBIT (viewMode).
 	/* eslint-disable svelte/no-dom-manipulating */
 	import { onMount, onDestroy } from 'svelte';
 	import * as THREE from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 	import type { BspMesh } from '$lib/utils/game-geometry';
-	import type { TriMeta, PickMods } from '$lib/utils/bsp-edit';
-	import { boxSelect, type ScreenRect } from '$lib/utils/bsp-edit';
+	import type { TriMeta, PickMods, SurfaceTag, TagRenderMap } from '$lib/utils/bsp-edit';
+	import { boxSelect, TAG_LEGEND, TAG_DEFS, type ScreenRect } from '$lib/utils/bsp-edit';
 	import { haloToThree, framingFromBounds, defaultCameraPosition } from '$lib/utils/viz3d';
 
 	interface ColoredMarker {
@@ -35,16 +37,19 @@
 		mesh,
 		meta,
 		removed,
+		tags,
+		tagRender,
 		selected,
 		previewTris = null,
 		floorMarkers = [],
 		viewMode = 'orbit',
 		boxMode = false,
+		colorMode = 'material',
+		isolatedTag = null,
 		cullZ,
 		showPlane = true,
-		showRemoved = false,
+		showExcluded = false,
 		showFloors = true,
-		showColors = true,
 		onPick,
 		onBoxSelect,
 		onCullZChange
@@ -53,19 +58,24 @@
 		meta: TriMeta[];
 		/** Per-triangle removed flags; identity changes on every edit (reactive). */
 		removed: Uint8Array;
+		/** Per-triangle tag index (into TAG_LEGEND); identity changes on retag. */
+		tags: Uint8Array;
+		/** Per-tag render rule — a tag that doesn't render is excluded from the bake. */
+		tagRender: TagRenderMap;
 		/** Currently-selected triangle ordinals; identity changes on selection edits. */
 		selected: Set<number>;
 		/** Triangles the cull-height plane would remove (orange preview), or null. */
 		previewTris?: number[] | null;
 		floorMarkers?: ColoredMarker[];
 		viewMode?: 'top' | 'orbit';
-		/** Box-select tool active → left-drag draws a rectangle instead of orbiting. */
 		boxMode?: boolean;
+		colorMode?: 'material' | 'tag';
+		/** Isolate one tag (show only it) for a focused fix-up sweep; null = all. */
+		isolatedTag?: SurfaceTag | null;
 		cullZ: number;
 		showPlane?: boolean;
-		showRemoved?: boolean;
+		showExcluded?: boolean;
 		showFloors?: boolean;
-		showColors?: boolean;
 		onPick: (tri: number | null, mods: PickMods) => void;
 		onBoxSelect: (tris: number[], mods: PickMods) => void;
 		onCullZChange: (z: number) => void;
@@ -74,8 +84,6 @@
 	let host: HTMLDivElement;
 	let webglFailed = $state(false);
 	let ready = $state(false);
-
-	// Box-drag rectangle overlay (screen px relative to the host).
 	let boxRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 
 	let renderer: THREE.WebGLRenderer | undefined;
@@ -86,16 +94,17 @@
 	let raf = 0;
 	let resizeObs: ResizeObserver | undefined;
 	const raycaster = new THREE.Raycaster();
-	raycaster.params.Points = { threshold: 0.4 };
 
-	// Shared vertex buffers (positions/normals/colours) — built once per mesh; the
-	// four overlay meshes differ ONLY by their index buffer.
+	// Shared vertex buffers (positions/normals); colour is dynamic (material↔tag).
 	let posAttr: THREE.BufferAttribute | undefined;
 	let normAttr: THREE.BufferAttribute | undefined;
-	let colAttr: THREE.BufferAttribute | null = null;
+	let colAttr: THREE.BufferAttribute | undefined;
+	let materialColors9: Float32Array | undefined;
+	let hasMaterialColor = false;
 
 	let keptMesh: THREE.Mesh | undefined;
-	let removedMesh: THREE.Mesh | undefined;
+	let keptMaterial: THREE.MeshStandardMaterial | undefined;
+	let excludedMesh: THREE.Mesh | undefined;
 	let selMesh: THREE.Mesh | undefined;
 	let previewMesh: THREE.Mesh | undefined;
 	let planeMesh: THREE.Mesh | undefined;
@@ -103,12 +112,11 @@
 	let levelGroup: THREE.Group | undefined;
 
 	// faceIndex (into a drawn mesh) → original triangle ordinal.
-	let keptList: number[] = [];
-	let removedList: number[] = [];
+	let includedList: number[] = [];
+	let excludedList: number[] = [];
 
 	const materials = {
-		kept: undefined as THREE.MeshStandardMaterial | undefined,
-		removed: new THREE.MeshBasicMaterial({
+		excluded: new THREE.MeshBasicMaterial({
 			color: 0xe3413f,
 			transparent: true,
 			opacity: 0.16,
@@ -120,8 +128,7 @@
 			transparent: true,
 			opacity: 0.55,
 			side: THREE.DoubleSide,
-			depthWrite: false,
-			depthTest: true
+			depthWrite: false
 		}),
 		preview: new THREE.MeshBasicMaterial({
 			color: 0xffa033,
@@ -148,12 +155,12 @@
 		const pos = mesh.positions;
 		const idx = mesh.indices;
 		const T = Math.floor(idx.length / 3);
-		const hasColor = showColors && !!mesh.colors && mesh.colors.length === pos.length;
-		const col = hasColor ? (mesh.colors as number[]) : undefined;
+		hasMaterialColor = !!mesh.colors && mesh.colors.length === pos.length;
+		const col = hasMaterialColor ? (mesh.colors as number[]) : undefined;
 
 		const positions9 = new Float32Array(T * 9);
 		const normals9 = new Float32Array(T * 9);
-		const colors9 = col ? new Float32Array(T * 9) : null;
+		materialColors9 = new Float32Array(T * 9);
 
 		const ax = new THREE.Vector3();
 		const bx = new THREE.Vector3();
@@ -190,27 +197,33 @@
 				normals9[o + v * 3 + 1] = nrm.y;
 				normals9[o + v * 3 + 2] = nrm.z;
 			}
-			if (colors9 && col) {
-				colors9[o] = col[ia];
-				colors9[o + 1] = col[ia + 1];
-				colors9[o + 2] = col[ia + 2];
-				colors9[o + 3] = col[ib];
-				colors9[o + 4] = col[ib + 1];
-				colors9[o + 5] = col[ib + 2];
-				colors9[o + 6] = col[ic];
-				colors9[o + 7] = col[ic + 1];
-				colors9[o + 8] = col[ic + 2];
+			if (col) {
+				materialColors9[o] = col[ia];
+				materialColors9[o + 1] = col[ia + 1];
+				materialColors9[o + 2] = col[ia + 2];
+				materialColors9[o + 3] = col[ib];
+				materialColors9[o + 4] = col[ib + 1];
+				materialColors9[o + 5] = col[ib + 2];
+				materialColors9[o + 6] = col[ic];
+				materialColors9[o + 7] = col[ic + 1];
+				materialColors9[o + 8] = col[ic + 2];
+			} else {
+				for (let k = 0; k < 9; k += 3) {
+					materialColors9[o + k] = 0.5;
+					materialColors9[o + k + 1] = 0.5;
+					materialColors9[o + k + 2] = 0.52;
+				}
 			}
 		}
 
 		posAttr = new THREE.BufferAttribute(positions9, 3);
 		normAttr = new THREE.BufferAttribute(normals9, 3);
-		colAttr = colors9 ? new THREE.BufferAttribute(colors9, 3) : null;
+		colAttr = new THREE.BufferAttribute(new Float32Array(T * 9), 3);
 
-		materials.kept?.dispose();
-		materials.kept = new THREE.MeshStandardMaterial({
-			color: colAttr ? 0xffffff : 0x5a6472,
-			vertexColors: !!colAttr,
+		keptMaterial?.dispose();
+		keptMaterial = new THREE.MeshStandardMaterial({
+			color: 0xffffff,
+			vertexColors: true,
 			roughness: 0.92,
 			metalness: 0,
 			flatShading: true,
@@ -226,6 +239,29 @@
 		return g;
 	}
 
+	/** Fill the colour attribute from the material colours or the per-tag palette. */
+	function refreshColors() {
+		if (!colAttr || !materialColors9 || !keptMaterial) return;
+		const arr = colAttr.array as Float32Array;
+		if (colorMode === 'tag') {
+			for (let t = 0; t < tags.length; t++) {
+				const c = TAG_DEFS[tags[t]]?.color ?? [0.5, 0.5, 0.52];
+				const o = t * 9;
+				for (let v = 0; v < 3; v++) {
+					arr[o + v * 3] = c[0];
+					arr[o + v * 3 + 1] = c[1];
+					arr[o + v * 3 + 2] = c[2];
+				}
+			}
+			keptMaterial.vertexColors = true;
+		} else {
+			arr.set(materialColors9);
+			keptMaterial.vertexColors = hasMaterialColor;
+		}
+		colAttr.needsUpdate = true;
+		keptMaterial.needsUpdate = true;
+	}
+
 	function buildLevel() {
 		if (!scene) return;
 		if (levelGroup) {
@@ -238,15 +274,14 @@
 		buildSharedBuffers();
 		levelGroup = new THREE.Group();
 
-		keptMesh = new THREE.Mesh(makeGeo(), materials.kept);
-		removedMesh = new THREE.Mesh(makeGeo(), materials.removed);
-		removedMesh.renderOrder = 1;
+		keptMesh = new THREE.Mesh(makeGeo(), keptMaterial);
+		excludedMesh = new THREE.Mesh(makeGeo(), materials.excluded);
+		excludedMesh.renderOrder = 1;
 		selMesh = new THREE.Mesh(makeGeo(), materials.sel);
 		selMesh.renderOrder = 3;
 		previewMesh = new THREE.Mesh(makeGeo(), materials.preview);
 		previewMesh.renderOrder = 2;
 
-		// Draggable cull-height plane, sized to the map footprint + slack.
 		const spanX = mesh.bounds.maxX - mesh.bounds.minX;
 		const spanY = mesh.bounds.maxY - mesh.bounds.minY;
 		const planeGeo = new THREE.PlaneGeometry(spanX * 1.5 + 2, spanY * 1.5 + 2);
@@ -257,7 +292,6 @@
 		const cTop = haloToThree({ x: cxw, y: cyw, z: 0 });
 		planeMesh.position.set(cTop[0], cullZ, cTop[2]);
 
-		// Floor reference dots (player-accessible height cue).
 		const fp = new Float32Array(floorMarkers.length * 3);
 		const fc = new Float32Array(floorMarkers.length * 3);
 		const tmpC = new THREE.Color();
@@ -280,14 +314,17 @@
 			new THREE.PointsMaterial({ size: 0.28, vertexColors: true, sizeAttenuation: true })
 		);
 
-		levelGroup.add(keptMesh, removedMesh, selMesh, previewMesh, planeMesh, floorPoints);
+		levelGroup.add(keptMesh, excludedMesh, selMesh, previewMesh, planeMesh, floorPoints);
 		scene.add(levelGroup);
 
-		refreshIndices();
+		refreshColors();
+		refreshIncludedExcluded();
+		refreshSelection();
+		refreshPreview();
 		applyToggles();
 	}
 
-	// --- Index buffers (cheap; rebuilt on removed/selection/preview change) -----
+	// --- Index buffers (cheap; rebuilt on edit / tag / isolate change) ----------
 	function setIndex(m: THREE.Mesh | undefined, tris: number[]) {
 		if (!m) return;
 		const arr = new Uint32Array(tris.length * 3);
@@ -300,16 +337,20 @@
 		m.geometry.setDrawRange(0, arr.length);
 	}
 
-	function refreshKeptRemoved() {
+	/** Split every triangle into the kept (baked) mesh or the excluded ghost, with
+	 *  isolate hiding all other tags entirely. Mirrors bsp-edit.isBaked. */
+	function refreshIncludedExcluded() {
 		const T = meta.length;
-		keptList = [];
-		removedList = [];
+		includedList = [];
+		excludedList = [];
 		for (let t = 0; t < T; t++) {
-			if (removed[t]) removedList.push(t);
-			else keptList.push(t);
+			const tag = TAG_LEGEND[tags[t]] ?? 'wall';
+			if (isolatedTag && tag !== isolatedTag) continue;
+			if (!removed[t] && tagRender[tag]) includedList.push(t);
+			else excludedList.push(t);
 		}
-		setIndex(keptMesh, keptList);
-		setIndex(removedMesh, removedList);
+		setIndex(keptMesh, includedList);
+		setIndex(excludedMesh, excludedList);
 	}
 
 	function refreshSelection() {
@@ -317,19 +358,12 @@
 	}
 
 	function refreshPreview() {
-		// Only preview triangles that aren't already removed (no double-paint).
 		const tris = (previewTris ?? []).filter((t) => !removed[t]);
 		setIndex(previewMesh, tris);
 	}
 
-	function refreshIndices() {
-		refreshKeptRemoved();
-		refreshSelection();
-		refreshPreview();
-	}
-
 	function applyToggles() {
-		if (removedMesh) removedMesh.visible = showRemoved;
+		if (excludedMesh) excludedMesh.visible = showExcluded;
 		if (planeMesh) planeMesh.visible = showPlane;
 		if (floorPoints) floorPoints.visible = showFloors;
 		if (previewMesh) previewMesh.visible = showPlane && (previewTris?.length ?? 0) > 0;
@@ -411,9 +445,9 @@
 		downY = e.clientY - rect.top;
 		downTime = e.timeStamp;
 
-		// Plane drag: grab the cull plane ONLY where it's clicked in the open (no
-		// geometry behind the cursor) — so clicking the building always SELECTS it,
-		// and the plane's open skirt is its drag handle. Slider is the precise control.
+		// Grab the cull plane ONLY where it's clicked in the open (no geometry behind
+		// the cursor) — so clicking the building always SELECTS it; the plane's open
+		// skirt is its drag handle. The slider is the precise control.
 		if (showPlane && !boxMode && planeMesh && viewMode === 'orbit') {
 			const cam = activeCamera()!;
 			raycaster.setFromCamera(ndc, cam);
@@ -432,9 +466,7 @@
 			}
 		}
 
-		if (boxMode) {
-			boxRect = { x: downX, y: downY, w: 0, h: 0 };
-		}
+		if (boxMode) boxRect = { x: downX, y: downY, w: 0, h: 0 };
 	}
 
 	function onPointerMove(e: PointerEvent) {
@@ -477,7 +509,6 @@
 			const rect = boxRect;
 			boxRect = null;
 			if (rect.w < 3 && rect.h < 3) {
-				// Treated as a click in box mode → single pick.
 				doPick(e, mods);
 				return;
 			}
@@ -487,18 +518,14 @@
 				maxX: rect.x + rect.w,
 				maxY: rect.y + rect.h
 			};
-			const tris = boxSelect(meta, projectCentroid, screen);
-			onBoxSelect(tris, mods);
+			onBoxSelect(boxSelect(meta, projectCentroid, screen), mods);
 			return;
 		}
 
-		// Select mode: a click (negligible movement) picks; a drag was an orbit.
 		const rect = renderer.domElement.getBoundingClientRect();
 		const dx = e.clientX - rect.left - downX;
 		const dy = e.clientY - rect.top - downY;
-		if (dx * dx + dy * dy <= 25 && e.timeStamp - downTime < 500) {
-			doPick(e, mods);
-		}
+		if (dx * dx + dy * dy <= 25 && e.timeStamp - downTime < 500) doPick(e, mods);
 	}
 
 	function doPick(e: PointerEvent, mods: PickMods) {
@@ -508,7 +535,7 @@
 		raycaster.setFromCamera(ndc, cam);
 		const targets: THREE.Object3D[] = [];
 		if (keptMesh) targets.push(keptMesh);
-		if (showRemoved && removedMesh) targets.push(removedMesh);
+		if (showExcluded && excludedMesh) targets.push(excludedMesh);
 		const hits = raycaster.intersectObjects(targets, false);
 		if (hits.length === 0) {
 			onPick(null, mods);
@@ -516,21 +543,18 @@
 		}
 		const hit = hits[0];
 		const face = hit.faceIndex ?? -1;
-		const list = hit.object === removedMesh ? removedList : keptList;
+		const list = hit.object === excludedMesh ? excludedList : includedList;
 		const tri = face >= 0 && face < list.length ? list[face] : -1;
 		onPick(tri >= 0 ? tri : null, mods);
 	}
 
-	/** World (Halo coords) centroid → host-relative screen px, or null if behind. */
 	function projectCentroid(cx: number, cy: number, cz: number): [number, number] | null {
 		const cam = activeCamera();
 		if (!cam || !host) return null;
 		const t = haloToThree({ x: cx, y: cy, z: cz });
 		const v = new THREE.Vector3(t[0], t[1], t[2]).project(cam);
 		if (v.z < -1 || v.z > 1) return null;
-		const x = (v.x * 0.5 + 0.5) * host.clientWidth;
-		const y = (-v.y * 0.5 + 0.5) * host.clientHeight;
-		return [x, y];
+		return [(v.x * 0.5 + 0.5) * host.clientWidth, (-v.y * 0.5 + 0.5) * host.clientHeight];
 	}
 
 	// --- Lifecycle --------------------------------------------------------------
@@ -592,6 +616,7 @@
 			el.removeEventListener('pointermove', onPointerMove);
 			window.removeEventListener('pointerup', onPointerUp);
 		}
+		keptMaterial?.dispose();
 		for (const m of Object.values(materials)) m?.dispose();
 		levelGroup?.traverse((o) => {
 			const m = o as Partial<THREE.Mesh & THREE.Points>;
@@ -615,11 +640,11 @@
 		updateOrthoFrustum(f.radius);
 	}
 
-	// --- Reactivity: rebuild on mesh change, re-index on edit, retoggle ---------
+	// --- Reactivity -------------------------------------------------------------
 	let builtKey = '';
 	$effect(() => {
 		if (!ready) return;
-		const key = `${mesh.scenario}:${mesh.positions.length}:${showColors ? 1 : 0}:${floorMarkers.length}`;
+		const key = `${mesh.scenario}:${mesh.positions.length}:${floorMarkers.length}`;
 		if (key !== builtKey) {
 			builtKey = key;
 			buildLevel();
@@ -627,10 +652,19 @@
 		}
 	});
 
-	// Re-index when the edit state (removed / selection / preview) identity changes.
+	// Re-split kept/excluded when removed / tags / render / isolate change.
 	$effect(() => {
 		void removed;
-		if (ready && keptMesh) refreshKeptRemoved();
+		void tags;
+		void tagRender;
+		void isolatedTag;
+		if (ready && keptMesh) refreshIncludedExcluded();
+	});
+	// Recolour when the colour mode or tags change.
+	$effect(() => {
+		void colorMode;
+		void tags;
+		if (ready && keptMaterial) refreshColors();
 	});
 	$effect(() => {
 		void selected;
@@ -643,21 +677,15 @@
 			applyToggles();
 		}
 	});
-
-	// Move the cull plane when cullZ changes (no rebuild).
 	$effect(() => {
 		if (planeMesh) planeMesh.position.y = cullZ;
 	});
-
-	// Toggle visibility without rebuilding.
 	$effect(() => {
-		void showRemoved;
+		void showExcluded;
 		void showPlane;
 		void showFloors;
 		if (ready) applyToggles();
 	});
-
-	// Swap camera / box-mode → rebind controls.
 	$effect(() => {
 		void viewMode;
 		void boxMode;
