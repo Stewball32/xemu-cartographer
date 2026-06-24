@@ -25,7 +25,9 @@
 	import {
 		buildTriMeta,
 		connectedComponents,
-		selectAbovePlane,
+		buildAdjacency,
+		selectCoplanar,
+		selectBeyondPlane,
 		selectComponent,
 		selectByMaterial,
 		selectByTag,
@@ -50,7 +52,8 @@
 		type TagRenderMap,
 		type TagOverride,
 		type SpectatorBand,
-		type EditState
+		type EditState,
+		type CullAxis
 	} from '$lib/utils/bsp-edit';
 	import EditorScene from '$lib/components/bsp-editor/EditorScene.svelte';
 
@@ -78,6 +81,7 @@
 	// --- Edit state -------------------------------------------------------------
 	let meta = $state<TriMeta[]>([]);
 	let comp = $state<Int32Array>(new Int32Array(0));
+	let adj: number[][] = []; // triangle adjacency (for coplanar flood-fill)
 	let autoTags: Uint8Array = new Uint8Array(0); // pristine first-pass (for override diffing)
 	let removed = $state<Uint8Array>(new Uint8Array(0));
 	let tags = $state<Uint8Array>(new Uint8Array(0));
@@ -86,7 +90,6 @@
 	let history: EditHistory | null = null;
 	let canUndo = $state(false);
 	let canRedo = $state(false);
-	let cullZ = $state(0);
 
 	function syncHistory() {
 		canUndo = !!history?.canUndo();
@@ -94,13 +97,19 @@
 	}
 
 	// --- Tools + view -----------------------------------------------------------
-	type Tool = 'single' | 'connected' | 'material' | 'box';
-	let tool = $state<Tool>('connected');
+	type Tool = 'coplanar' | 'single' | 'connected' | 'material' | 'box';
+	let tool = $state<Tool>('coplanar'); // coplanar = the primary select tool
+	let coplanarTolDeg = $state(8);
 	let viewMode = $state<'top' | 'orbit'>('orbit');
-	let planeMode = $state<PlaneCullMode>('centroid');
 	let matTol = $state(0.12);
 	let colorMode = $state<'material' | 'tag'>('tag');
 	let isolatedTag = $state<SurfaceTag | null>(null);
+
+	// --- Clip plane (any axis, either direction) --------------------------------
+	let cullAxis = $state<CullAxis>('z');
+	let cullOffset = $state(0);
+	let cullSign = $state<1 | -1>(1);
+	let planeMode = $state<PlaneCullMode>('centroid');
 
 	let showPlane = $state(true);
 	let showExcluded = $state(false);
@@ -118,12 +127,19 @@
 			color: bandColor(bands.bandForZ(m.z), bands.count)
 		}));
 	});
-	const previewTris = $derived(mesh && showPlane ? selectAbovePlane(meta, cullZ, planeMode) : null);
+	const previewTris = $derived(
+		mesh && showPlane ? selectBeyondPlane(meta, cullAxis, cullOffset, cullSign, planeMode) : null
+	);
 	const stats = $derived(mesh ? editStats(mesh, removed, tags, tagRender) : null);
 	const boxMode = $derived(tool === 'box');
-	const cullRange = $derived(
-		mesh ? { min: mesh.bounds.minZ, max: mesh.bounds.maxZ } : { min: 0, max: 1 }
-	);
+	const cullRange = $derived.by(() => {
+		if (!mesh) return { min: 0, max: 1 };
+		const b = mesh.bounds;
+		if (cullAxis === 'x') return { min: b.minX, max: b.maxX };
+		if (cullAxis === 'y') return { min: b.minY, max: b.maxY };
+		return { min: b.minZ, max: b.maxZ };
+	});
+	const axisLabel = $derived(cullAxis.toUpperCase());
 
 	// --- Load a map -------------------------------------------------------------
 	async function fetchSidecar(key: string): Promise<{
@@ -168,6 +184,7 @@
 		activeKey = key;
 		meta = buildTriMeta(m);
 		comp = connectedComponents(m);
+		adj = buildAdjacency(m);
 		autoTags = autoClassify(meta);
 		// Seed tags: explicit (re-imported asset) → else auto, then re-apply overrides.
 		let t0: Uint8Array =
@@ -181,7 +198,9 @@
 		history = new EditHistory({ removed, tags });
 		selected = new Set();
 		isolatedTag = null;
-		cullZ = defaultCullZ(m, meta, tags);
+		cullAxis = 'z';
+		cullSign = 1;
+		cullOffset = defaultCullZ(m, meta, tags);
 		syncHistory();
 		const nOver = opts.overrides?.length ?? 0;
 		status = `${key}: ${note} — ${meta.length} triangles${nOver ? `, ${nOver} saved tag overrides re-applied` : ''}.`;
@@ -202,7 +221,8 @@
 			return;
 		}
 		let tris: number[];
-		if (tool === 'connected') tris = selectComponent(comp, tri);
+		if (tool === 'coplanar') tris = selectCoplanar(adj, meta, tri, coplanarTolDeg);
+		else if (tool === 'connected') tris = selectComponent(comp, tri);
 		else if (tool === 'material') tris = selectByMaterial(meta, tri, matTol);
 		else tris = [tri];
 		applySelection(tris, mods);
@@ -266,9 +286,28 @@
 		selected = new Set();
 	}
 
+	function beyondTris(): number[] {
+		return selectBeyondPlane(meta, cullAxis, cullOffset, cullSign, planeMode);
+	}
+	const sideLabel = () => `${cullSign > 0 ? '+' : '−'}${axisLabel} ${cullOffset.toFixed(2)}`;
+
+	function setCullAxis(a: CullAxis) {
+		cullAxis = a;
+		const b = mesh?.bounds;
+		if (b) {
+			// Recentre the offset on the new axis so the plane stays in view.
+			cullOffset =
+				a === 'x'
+					? (b.minX + b.maxX) / 2
+					: a === 'y'
+						? (b.minY + b.maxY) / 2
+						: (b.minZ + b.maxZ) / 2;
+		}
+	}
+
 	function applyPlaneCull() {
 		if (!history || !mesh) return;
-		const tris = selectAbovePlane(meta, cullZ, planeMode);
+		const tris = beyondTris();
 		const next = Uint8Array.from(removed);
 		let n = 0;
 		for (const t of tris)
@@ -277,13 +316,23 @@
 				n++;
 			}
 		commit({ removed: next, tags });
-		status = `Cull plane removed ${n} triangles above Z=${cullZ.toFixed(2)}.`;
+		status = `Clip plane removed ${n} triangles beyond ${sideLabel()}.`;
+	}
+
+	function tagBeyondInaccessible() {
+		if (!history || !mesh) return;
+		const tris = beyondTris();
+		const nextTags = Uint8Array.from(tags);
+		const idx = TAG_INDEX.inaccessible;
+		for (const t of tris) nextTags[t] = idx;
+		commit({ removed, tags: nextTags });
+		status = `Tagged ${tris.length} surface(s) beyond ${sideLabel()} as inaccessible (out-of-map).`;
 	}
 
 	function selectPlanePreview() {
 		if (!mesh) return;
-		selected = new Set(selectAbovePlane(meta, cullZ, planeMode).filter((t) => !removed[t]));
-		status = `Selected ${selected.size} triangles above the plane.`;
+		selected = new Set(beyondTris().filter((t) => !removed[t]));
+		status = `Selected ${selected.size} triangles beyond ${sideLabel()}.`;
 	}
 
 	function undo() {
@@ -325,7 +374,7 @@
 				meta,
 				autoTags,
 				tagRender,
-				cullZ,
+				cullZ: cullAxis === 'z' ? cullOffset : undefined,
 				sourceMesh: manifest?.meshes[activeKey]?.file,
 				bands: bandsForExport(),
 				generatedAt: new Date().toISOString()
@@ -617,45 +666,63 @@
 			<section>
 				<h3>Select tool</h3>
 				<div class="seg col">
+					<button class:active={tool === 'coplanar'} onclick={() => (tool = 'coplanar')}
+						>Coplanar surface ★</button
+					>
+					<button class:active={tool === 'single'} onclick={() => (tool = 'single')}
+						>Single triangle</button
+					>
 					<button class:active={tool === 'connected'} onclick={() => (tool = 'connected')}
 						>Connected piece</button
 					>
 					<button class:active={tool === 'material'} onclick={() => (tool = 'material')}
 						>Same material</button
 					>
-					<button class:active={tool === 'single'} onclick={() => (tool = 'single')}
-						>Single triangle</button
-					>
 					<button class:active={tool === 'box'} onclick={() => (tool = 'box')}>Box select</button>
 				</div>
-				{#if tool === 'material'}
+				{#if tool === 'coplanar'}
+					<div class="slider">
+						<input type="range" min="1" max="30" step="1" bind:value={coplanarTolDeg} />
+						<span class="zval">±{coplanarTolDeg}°</span>
+					</div>
+				{:else if tool === 'material'}
 					<div class="slider">
 						<input type="range" min="0.02" max="0.4" step="0.01" bind:value={matTol} />
 						<span class="zval">tol {matTol.toFixed(2)}</span>
 					</div>
 				{/if}
 				<p class="note">
-					Click to select · Shift+click adds · Alt+click removes. {tool === 'box'
+					{tool === 'coplanar'
+						? 'Click a face → selects the whole flat surface (one side of a cube).'
+						: 'Click to select.'} Shift+click adds · Alt+click removes. {tool === 'box'
 						? 'Drag a box to select.'
 						: 'Drag empties to orbit.'}
 				</p>
 			</section>
 
 			<section>
-				<h3>Cull-height plane <span class="muted">scalpel</span></h3>
+				<h3>Clip plane <span class="muted">any axis · scalpel</span></h3>
 				<label class="chk"
 					><input type="checkbox" bind:checked={showPlane} /> Show plane + preview</label
 				>
+				<div class="seg small">
+					<button class:active={cullAxis === 'x'} onclick={() => setCullAxis('x')}>X</button>
+					<button class:active={cullAxis === 'y'} onclick={() => setCullAxis('y')}>Y</button>
+					<button class:active={cullAxis === 'z'} onclick={() => setCullAxis('z')}>Z</button>
+					<button class="flip" onclick={() => (cullSign = cullSign === 1 ? -1 : 1)}
+						>{cullSign > 0 ? `beyond +${axisLabel}` : `beyond −${axisLabel}`}</button
+					>
+				</div>
 				<div class="slider">
 					<input
 						type="range"
 						min={cullRange.min}
 						max={cullRange.max}
 						step="0.05"
-						bind:value={cullZ}
+						bind:value={cullOffset}
 						disabled={!mesh}
 					/>
-					<span class="zval">Z {cullZ.toFixed(2)}</span>
+					<span class="zval">{axisLabel} {cullOffset.toFixed(2)}</span>
 				</div>
 				<div class="seg small">
 					<button class:active={planeMode === 'centroid'} onclick={() => (planeMode = 'centroid')}
@@ -668,11 +735,16 @@
 					>
 				</div>
 				<button class="wide" onclick={selectPlanePreview} disabled={!mesh}
-					>Select above plane</button
+					>Select beyond plane</button
 				>
-				<button class="wide danger" onclick={applyPlaneCull} disabled={!mesh}
-					>Remove above plane</button
-				>
+				<div class="row">
+					<button class="danger" onclick={applyPlaneCull} disabled={!mesh}>Remove beyond</button>
+					<button onclick={tagBeyondInaccessible} disabled={!mesh}>Tag OOB</button>
+				</div>
+				<p class="note">
+					Orient on X/Y/Z + flip the side to clip out-of-bounds geometry from any direction; apply
+					in sequence to carve a box. "Tag OOB" marks it inaccessible (dropped).
+				</p>
 			</section>
 
 			<section>
@@ -744,13 +816,14 @@
 					{boxMode}
 					{colorMode}
 					{isolatedTag}
-					{cullZ}
+					{cullAxis}
+					{cullOffset}
 					{showPlane}
 					{showExcluded}
 					{showFloors}
 					onPick={handlePick}
 					onBoxSelect={handleBoxSelect}
-					onCullZChange={(z) => (cullZ = z)}
+					onCullOffsetChange={(o) => (cullOffset = o)}
 				/>
 			{:else}
 				<div class="empty">
@@ -914,6 +987,13 @@
 	.seg button.active {
 		background: rgba(92, 200, 255, 0.22);
 		color: #cdecff;
+	}
+	.seg .flip {
+		flex: 2.2;
+		border-left: 1px solid rgba(255, 255, 255, 0.14);
+		color: #cde6ff;
+		background: rgba(92, 200, 255, 0.12);
+		font-variant-numeric: tabular-nums;
 	}
 	button {
 		font: inherit;

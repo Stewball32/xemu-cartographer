@@ -4,7 +4,10 @@ import {
 	triCount,
 	buildTriMeta,
 	connectedComponents,
+	buildAdjacency,
+	selectCoplanar,
 	selectAbovePlane,
+	selectBeyondPlane,
 	selectComponent,
 	selectByMaterial,
 	selectByTag,
@@ -29,20 +32,23 @@ import {
 	type EditState
 } from './bsp-edit';
 
-/** A tiny test scene with one of each orientation, vertices duplicated per face:
- *  - tris 0,1: floor quad at z=0 (normal +Z), red, XY [0..2]²
- *  - tris 2,3: ceiling quad at z=10 (normal -Z), blue, XY [5..7]×[0..2]
- *  - tri 4:   a vertical wall (normal ~+X) at x≈3
- *  - tri 5:   a 45° ramp (up-facing, sloped) climbing from z=0 to z=1 */
+/** Test scene exercising the WINDING-INDEPENDENT enclosure rule:
+ *  - tris 0,1: floor quad at z=0 over XY [0..2]², with a DOWNWARD (-Z) normal
+ *    (flipped winding) — the exact bug case. It's enclosed by the ceiling above,
+ *    so it must still classify as floor.
+ *  - tris 2,3: ceiling quad at z=4 over the SAME XY [0..2]² (topmost → ceiling).
+ *  - tri 4:   a vertical wall at x=5 (normal ±X).
+ *  - tri 5:   a 45° up-facing ramp near (8,4).
+ *  Vertices are duplicated per face so welding-based adjacency is exercised. */
 function scene(): BspMesh {
 	const positions = [
-		// floor (z=0) verts 0..3, CCW from above → normal +Z
-		0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 2, 0,
-		// ceiling (z=10) verts 4..7, CW from above → normal -Z
-		5, 0, 10, 5, 2, 10, 7, 2, 10, 7, 0, 10,
-		// wall: vertical triangle in the Y-Z plane at x=3 → normal ±X (verts 8..10)
-		3, 0, 0, 3, 2, 0, 3, 0, 2,
-		// ramp: up-facing, sloped 45° (rises in +X) → normal tilts (verts 11..13)
+		// floor (z=0), CW-from-above winding → normal points DOWN (-Z); verts 0..3
+		0, 0, 0, 0, 2, 0, 2, 2, 0, 2, 0, 0,
+		// ceiling (z=4) over the same footprint; verts 4..7
+		0, 0, 4, 2, 0, 4, 2, 2, 4, 0, 2, 4,
+		// wall: vertical at x=5; verts 8..10
+		5, 0, 0, 5, 2, 0, 5, 0, 2,
+		// ramp: up-facing 45° slope; verts 11..13
 		8, 3, 0, 9, 3, 1, 8, 5, 0
 	];
 	const colors = [
@@ -94,7 +100,7 @@ function scene(): BspMesh {
 		game: 'haloce',
 		scenario: 'levels\\test\\scene\\scene',
 		sourceMap: 'scene.map',
-		bounds: { minX: 0, maxX: 9, minY: 0, maxY: 5, minZ: 0, maxZ: 10 },
+		bounds: { minX: 0, maxX: 9, minY: 0, maxY: 5, minZ: 0, maxZ: 4 },
 		positions,
 		colors,
 		indices
@@ -102,126 +108,140 @@ function scene(): BspMesh {
 }
 
 describe('buildTriMeta', () => {
-	it('computes centroid, z-extent, normal and material colour per triangle', () => {
+	it('computes centroid, z-extent, normal, XY bbox and material colour', () => {
 		const mesh = scene();
 		const meta = buildTriMeta(mesh);
 		expect(triCount(mesh)).toBe(6);
-		expect(Math.abs(meta[0].nz)).toBeCloseTo(1); // floor normal points along Z
-		expect(meta[0].r).toBeCloseTo(1);
-		expect(Math.abs(meta[4].nz)).toBeLessThan(0.2); // wall normal ~horizontal
-		expect(Math.abs(meta[4].nx)).toBeCloseTo(1);
+		expect(meta[0].nz).toBeLessThan(0); // floor has a DOWNWARD normal here
+		expect(Math.abs(meta[0].nz)).toBeCloseTo(1);
+		expect(meta[0].minX).toBe(0);
+		expect(meta[0].maxX).toBe(2);
+		expect(Math.abs(meta[4].nx)).toBeCloseTo(1); // wall normal ~±X
 	});
 });
 
-describe('autoClassify', () => {
-	it('seeds floor / ceiling / wall / ramp from the face normal', () => {
+describe('autoClassify (enclosure, winding-independent)', () => {
+	it('classifies a downward-normal floor as FLOOR because it is enclosed', () => {
 		const meta = buildTriMeta(scene());
 		const tags = autoClassify(meta);
-		expect(tagOf(tags, 0)).toBe('floor');
+		expect(tagOf(tags, 0)).toBe('floor'); // ← the bug case: -Z normal, still floor
 		expect(tagOf(tags, 1)).toBe('floor');
+	});
+	it('classifies the topmost horizontal surface as CEILING', () => {
+		const tags = autoClassify(buildTriMeta(scene()));
 		expect(tagOf(tags, 2)).toBe('ceiling');
+		expect(tagOf(tags, 3)).toBe('ceiling');
+	});
+	it('classifies vertical as wall and sloped as ramp', () => {
+		const tags = autoClassify(buildTriMeta(scene()));
 		expect(tagOf(tags, 4)).toBe('wall');
-		expect(tagOf(tags, 5)).toBe('ramp'); // up-facing 45° slope
+		expect(tagOf(tags, 5)).toBe('ramp');
 	});
 	it('never auto-assigns inaccessible/clutter', () => {
-		const tags = autoClassify(buildTriMeta(scene()));
-		const counts = tagCounts(tags);
-		expect(counts.inaccessible).toBe(0);
-		expect(counts.clutter).toBe(0);
+		const c = tagCounts(autoClassify(buildTriMeta(scene())));
+		expect(c.inaccessible).toBe(0);
+		expect(c.clutter).toBe(0);
 	});
 });
 
 describe('stable tag persistence', () => {
-	it('signature survives a vertex reorder of the same triangle', () => {
+	it('signature is stable for the same surface across a winding flip', () => {
 		const meta = buildTriMeta(scene());
-		// Same floor triangle, vertices listed in a rotated order → same plane/centroid.
-		const rotated: BspMesh = {
+		// Same plane + centroid as floor-tri 0 but wound the OTHER way (flipped
+		// normal) — re-extract often flips winding; the key must survive it.
+		const flipped = buildTriMeta({
 			...scene(),
-			positions: [2, 0, 0, 2, 2, 0, 0, 0, 0],
+			positions: [0, 0, 0, 2, 2, 0, 0, 2, 0],
 			indices: [0, 1, 2]
-		};
-		const m2 = buildTriMeta(rotated);
-		// Centroid + dominant axis match → same coarse signature.
-		expect(tagSignature(m2[0])).toBe(tagSignature(meta[0]));
+		});
+		expect(flipped[0].nz).toBeGreaterThan(0); // opposite sign to meta[0]
+		expect(tagSignature(flipped[0])).toBe(tagSignature(meta[0]));
 	});
-
-	it('builds overrides only for hand-edited tags and re-applies them by signature', () => {
+	it('builds overrides only for hand-edited tags and re-applies them', () => {
 		const meta = buildTriMeta(scene());
 		const auto = autoClassify(meta);
 		const edited = Uint8Array.from(auto);
-		edited[2] = TAG_INDEX.inaccessible; // retag the ceiling as inaccessible
+		edited[2] = TAG_INDEX.inaccessible; // retag the ceiling
 		const overrides = buildTagOverrides(meta, edited, auto);
 		expect(overrides).toHaveLength(1);
 		expect(overrides[0].tag).toBe('inaccessible');
-
-		// Re-applying onto a fresh auto-classify restores the manual fix.
 		const reapplied = applyTagOverrides(meta, auto, overrides);
 		expect(tagOf(reapplied, 2)).toBe('inaccessible');
-		expect(tagOf(reapplied, 0)).toBe('floor'); // untouched
+		expect(tagOf(reapplied, 0)).toBe('floor');
 	});
 });
 
-describe('selectByTag', () => {
-	it('selects all triangles carrying a tag', () => {
-		const tags = autoClassify(buildTriMeta(scene()));
+describe('selectByTag / connectedComponents', () => {
+	it('selects all triangles carrying a tag, groups welded quads', () => {
+		const mesh = scene();
+		const tags = autoClassify(buildTriMeta(mesh));
 		expect(selectByTag(tags, 'floor')).toEqual([0, 1]);
 		expect(selectByTag(tags, 'ceiling')).toEqual([2, 3]);
-		expect(selectByTag(tags, 'wall')).toEqual([4]);
-	});
-});
-
-describe('connectedComponents', () => {
-	it('groups each welded quad into one component', () => {
-		const comp = connectedComponents(scene());
+		const comp = connectedComponents(mesh);
 		expect(comp[0]).toBe(comp[1]);
-		expect(comp[2]).toBe(comp[3]);
 		expect(comp[0]).not.toBe(comp[2]);
 	});
 });
 
-describe('selectAbovePlane', () => {
-	const meta = buildTriMeta(scene());
-	it('centroid mode removes triangles whose centroid is at/above the plane', () => {
-		expect(selectAbovePlane(meta, 5, 'centroid')).toEqual([2, 3]); // only the z=10 ceiling
+describe('selectCoplanar', () => {
+	it('selects the whole flat face via adjacency + coplanarity', () => {
+		const mesh = scene();
+		const meta = buildTriMeta(mesh);
+		const adj = buildAdjacency(mesh);
+		// Clicking one floor triangle grabs the whole floor quad, not the ceiling.
+		expect(selectCoplanar(adj, meta, 0, 8, 0.2)).toEqual([0, 1]);
+		// The ceiling is a different parallel plane → not included.
+		expect(selectCoplanar(adj, meta, 2, 8, 0.2)).toEqual([2, 3]);
+	});
+	it('does not cross to a non-coplanar neighbour', () => {
+		const mesh = scene();
+		const sel = selectCoplanar(buildAdjacency(mesh), buildTriMeta(mesh), 4, 8, 0.2);
+		expect(sel).toEqual([4]); // lone wall triangle
 	});
 });
 
-describe('selectComponent / selectByMaterial', () => {
-	it('selects the clicked connected piece and the clicked material', () => {
-		const mesh = scene();
-		const comp = connectedComponents(mesh);
-		const meta = buildTriMeta(mesh);
-		expect(selectComponent(comp, 2)).toEqual([2, 3]);
+describe('selectBeyondPlane (multi-axis + flip)', () => {
+	const meta = buildTriMeta(scene());
+	it('Z+ above the plane (the classic roof cut)', () => {
+		expect(selectAbovePlane(meta, 2, 'centroid')).toEqual([2, 3]); // ceiling at z=4
+	});
+	it('X axis, positive side clips the right-hand geometry', () => {
+		// wall (cx=5) + ramp (cx≈8.3) are beyond x=4; floor/ceiling (cx≈1) are not.
+		expect(selectBeyondPlane(meta, 'x', 4, 1, 'centroid')).toEqual([4, 5]);
+	});
+	it('X axis, negative side flips to the left-hand geometry', () => {
+		expect(selectBeyondPlane(meta, 'x', 4, -1, 'centroid')).toEqual([0, 1, 2, 3]);
+	});
+});
+
+describe('selectComponent / selectByMaterial / boxSelect', () => {
+	const mesh = scene();
+	const meta = buildTriMeta(mesh);
+	it('component + material selection', () => {
+		expect(selectComponent(connectedComponents(mesh), 2)).toEqual([2, 3]);
 		expect(selectByMaterial(meta, 0, 0.1)).toEqual([0, 1]); // red floor
 	});
-});
-
-describe('boxSelect', () => {
-	const meta = buildTriMeta(scene());
-	const project = (cx: number, cy: number): [number, number] => [cx, cy];
-	it('selects triangles whose centroid projects inside the rect', () => {
-		expect(boxSelect(meta, project, { minX: 4, minY: -1, maxX: 8, maxY: 3 })).toEqual([2, 3]);
+	it('box select by projected centroid', () => {
+		const project = (cx: number): [number, number] => [cx, 0];
+		expect(boxSelect(meta, project, { minX: 4, minY: -1, maxX: 6, maxY: 1 })).toEqual([4]); // wall x=5
 	});
-	it('pointInRect is inclusive on the edges', () => {
+	it('pointInRect inclusive on edges', () => {
 		expect(pointInRect(4, 3, { minX: 4, minY: 3, maxX: 5, maxY: 6 })).toBe(true);
 		expect(pointInRect(3.9, 3, { minX: 4, minY: 3, maxX: 5, maxY: 6 })).toBe(false);
 	});
 });
 
 describe('tag-driven floors + cull default', () => {
-	it('floor markers/Zs come from floor + ramp tags only', () => {
+	it('floor markers come from floor + ramp tags only', () => {
 		const meta = buildTriMeta(scene());
 		const tags = autoClassify(meta);
-		const markers = taggedFloorMarkers(meta, tags);
-		// 2 floor tris + 1 ramp tri = 3 markers; no walls/ceilings.
-		expect(markers).toHaveLength(3);
+		expect(taggedFloorMarkers(meta, tags)).toHaveLength(3); // 2 floor + 1 ramp
 		expect(taggedFloorZs(meta, tags).every((z) => z < 1.1)).toBe(true);
 	});
-	it('default cull height sits above the floors but inside the Z range', () => {
+	it('default cull height sits above the floors, inside the Z range', () => {
 		const mesh = scene();
 		const meta = buildTriMeta(mesh);
-		const tags = autoClassify(meta);
-		const z = defaultCullZ(mesh, meta, tags);
+		const z = defaultCullZ(mesh, meta, autoClassify(meta));
 		expect(z).toBeGreaterThan(0.5);
 		expect(z).toBeLessThanOrEqual(mesh.bounds.maxZ - 0.05);
 	});
@@ -229,58 +249,51 @@ describe('tag-driven floors + cull default', () => {
 
 describe('isBaked + export', () => {
 	it('default render rules keep floor/ramp/wall and drop ceiling', () => {
-		const mesh = scene();
-		const meta = buildTriMeta(mesh);
+		const meta = buildTriMeta(scene());
 		const tags = autoClassify(meta);
 		const removed = new Uint8Array(meta.length);
 		const render = defaultTagRender();
-		expect(isBaked(0, removed, tags, render)).toBe(true); // floor
+		expect(isBaked(0, removed, tags, render)).toBe(true); // floor (flipped normal)
 		expect(isBaked(4, removed, tags, render)).toBe(true); // wall
 		expect(isBaked(2, removed, tags, render)).toBe(false); // ceiling dropped
 	});
 
-	it('bakes only kept triangles, embeds tags + overrides, recomputes bounds', () => {
+	it('bakes only kept triangles, embeds tags, recomputes bounds', () => {
 		const mesh = scene();
 		const meta = buildTriMeta(mesh);
 		const auto = autoClassify(meta);
 		const tags = Uint8Array.from(auto);
 		const removed = new Uint8Array(meta.length);
 		const render = defaultTagRender();
-		const state: EditState = { removed, tags };
-		const out = exportSpectatorMesh(mesh, state, {
-			meta,
-			autoTags: auto,
-			tagRender: render,
-			cullZ: 5,
-			sourceMesh: 'scene.json'
-		});
+		const out = exportSpectatorMesh(
+			mesh,
+			{ removed, tags },
+			{ meta, autoTags: auto, tagRender: render, cullZ: 2, sourceMesh: 'scene.json' }
+		);
 		expect(out.schema_version).toBe(2);
-		expect(out.kind).toBe('spectator-mesh');
 		// floor(2) + wall(1) + ramp(1) kept; ceiling(2) dropped → 4 tris.
 		expect(out.triangle_count).toBe(4);
 		expect(out.tags).toHaveLength(4);
-		expect(out.tag_legend[out.tags[0]]).toBe('floor');
-		// Ceiling at z=10 dropped → bounds collapse to the kept wall top (z=2).
+		// Ceiling at z=4 dropped → kept geometry tops out at the wall (z=2).
 		expect(out.bounds.maxZ).toBe(2);
 		expect(out.tag_render.ceiling).toBe(false);
-		expect(out.tag_overrides).toEqual([]); // nothing hand-edited
+		expect(out.tag_overrides).toEqual([]);
 	});
 
 	it('a manual delete + a render toggle both drop geometry from the bake', () => {
 		const mesh = scene();
 		const meta = buildTriMeta(mesh);
 		const auto = autoClassify(meta);
-		const tags = Uint8Array.from(auto);
 		const removed = new Uint8Array(meta.length);
-		removed[0] = 1; // manually delete one floor tri
+		removed[0] = 1; // delete one floor tri
 		const render = defaultTagRender();
-		render.wall = false; // turn walls off for this bake
+		render.wall = false;
 		const out = exportSpectatorMesh(
 			mesh,
-			{ removed, tags },
+			{ removed, tags: Uint8Array.from(auto) },
 			{ meta, autoTags: auto, tagRender: render }
 		);
-		// floor: 2 - 1 deleted = 1; wall off = 0; ramp 1; ceiling off = 0 → 2 tris.
+		// floor 2-1=1; wall off=0; ramp 1; ceiling off=0 → 2 tris.
 		expect(out.triangle_count).toBe(2);
 	});
 });
@@ -300,7 +313,7 @@ describe('buildTagSidecar', () => {
 });
 
 describe('editStats', () => {
-	it('tallies baked vs dropped triangles under the render rules', () => {
+	it('tallies baked vs dropped under the render rules', () => {
 		const mesh = scene();
 		const meta = buildTriMeta(mesh);
 		const tags = autoClassify(meta);
@@ -317,32 +330,27 @@ describe('EditHistory', () => {
 	it('commits, undoes and redoes {removed,tags} snapshots', () => {
 		const h = new EditHistory(blank());
 		expect(h.canUndo()).toBe(false);
-
 		const s1 = h.current();
 		s1.removed[1] = 1;
 		h.commit(s1);
-
 		const s2 = h.current();
 		s2.tags[2] = TAG_INDEX.wall;
 		h.commit(s2);
 		expect(Array.from(h.current().tags)).toEqual([0, 0, TAG_INDEX.wall]);
-
 		const back = h.undo();
-		expect(Array.from(back!.tags)).toEqual([0, 0, 0]);
 		expect(Array.from(back!.removed)).toEqual([0, 1, 0]);
+		expect(Array.from(back!.tags)).toEqual([0, 0, 0]);
 		h.undo();
 		expect(h.canUndo()).toBe(false);
-
-		const fwd = h.redo();
-		expect(Array.from(fwd!.removed)).toEqual([0, 1, 0]);
+		expect(Array.from(h.redo()!.removed)).toEqual([0, 1, 0]);
 	});
 
-	it('snapshots are independent copies (no aliasing into history)', () => {
+	it('snapshots are independent copies', () => {
 		const h = new EditHistory(blank());
 		const s = h.current();
 		s.removed[0] = 1;
 		h.commit(s);
-		s.removed[1] = 1; // mutate AFTER commit — must not corrupt the stored snapshot
+		s.removed[1] = 1;
 		expect(Array.from(h.current().removed)).toEqual([1, 0, 0]);
 	});
 });

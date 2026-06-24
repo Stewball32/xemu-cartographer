@@ -9,7 +9,7 @@
 	//                        red, toggleable (re-select + restore; non-destructive).
 	//   - SELECTION        — current selection, cyan, drawn on top.
 	//   - PLANE PREVIEW     — what the cull-height plane would remove, orange.
-	//   - CULL PLANE        — a draggable horizontal plane at world Z = cullZ.
+	//   - CULL PLANE        — a draggable clip plane on any axis (x/y/z), at cullOffset.
 	//   - FLOOR MARKERS     — tagged floor/ramp reference dots (player-accessible
 	//                        height) so you can see where players stand while cutting.
 	//
@@ -22,7 +22,7 @@
 	import * as THREE from 'three';
 	import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 	import type { BspMesh } from '$lib/utils/game-geometry';
-	import type { TriMeta, PickMods, SurfaceTag, TagRenderMap } from '$lib/utils/bsp-edit';
+	import type { TriMeta, PickMods, SurfaceTag, TagRenderMap, CullAxis } from '$lib/utils/bsp-edit';
 	import { boxSelect, TAG_LEGEND, TAG_DEFS, type ScreenRect } from '$lib/utils/bsp-edit';
 	import { haloToThree, framingFromBounds, defaultCameraPosition } from '$lib/utils/viz3d';
 
@@ -46,13 +46,14 @@
 		boxMode = false,
 		colorMode = 'material',
 		isolatedTag = null,
-		cullZ,
+		cullAxis = 'z',
+		cullOffset,
 		showPlane = true,
 		showExcluded = false,
 		showFloors = true,
 		onPick,
 		onBoxSelect,
-		onCullZChange
+		onCullOffsetChange
 	}: {
 		mesh: BspMesh;
 		meta: TriMeta[];
@@ -72,13 +73,16 @@
 		colorMode?: 'material' | 'tag';
 		/** Isolate one tag (show only it) for a focused fix-up sweep; null = all. */
 		isolatedTag?: SurfaceTag | null;
-		cullZ: number;
+		/** Clip-plane axis (Halo x/y/z) + offset along it. The page owns which side
+		 *  is "beyond" (it computes the preview/cull); the plane sits at the offset. */
+		cullAxis?: CullAxis;
+		cullOffset: number;
 		showPlane?: boolean;
 		showExcluded?: boolean;
 		showFloors?: boolean;
 		onPick: (tri: number | null, mods: PickMods) => void;
 		onBoxSelect: (tris: number[], mods: PickMods) => void;
-		onCullZChange: (z: number) => void;
+		onCullOffsetChange: (offset: number) => void;
 	} = $props();
 
 	let host: HTMLDivElement;
@@ -116,12 +120,14 @@
 	let excludedList: number[] = [];
 
 	const materials = {
+		// Bright + on-top so "Ghost dropped" reliably reveals anything excluded.
 		excluded: new THREE.MeshBasicMaterial({
-			color: 0xe3413f,
+			color: 0xff5a4d,
 			transparent: true,
-			opacity: 0.16,
+			opacity: 0.4,
 			side: THREE.DoubleSide,
-			depthWrite: false
+			depthWrite: false,
+			depthTest: false
 		}),
 		sel: new THREE.MeshBasicMaterial({
 			color: 0x35d2ff,
@@ -282,15 +288,11 @@
 		previewMesh = new THREE.Mesh(makeGeo(), materials.preview);
 		previewMesh.renderOrder = 2;
 
-		const spanX = mesh.bounds.maxX - mesh.bounds.minX;
-		const spanY = mesh.bounds.maxY - mesh.bounds.minY;
-		const planeGeo = new THREE.PlaneGeometry(spanX * 1.5 + 2, spanY * 1.5 + 2);
+		const b = mesh.bounds;
+		const planeS = Math.max(b.maxX - b.minX, b.maxY - b.minY, b.maxZ - b.minZ) * 1.6 + 2;
+		const planeGeo = new THREE.PlaneGeometry(planeS, planeS);
 		planeMesh = new THREE.Mesh(planeGeo, materials.plane);
-		planeMesh.rotation.x = -Math.PI / 2; // lie flat (XZ), height set via cullZ
-		const cxw = (mesh.bounds.minX + mesh.bounds.maxX) / 2;
-		const cyw = (mesh.bounds.minY + mesh.bounds.maxY) / 2;
-		const cTop = haloToThree({ x: cxw, y: cyw, z: 0 });
-		planeMesh.position.set(cTop[0], cullZ, cTop[2]);
+		orientPlane();
 
 		const fp = new Float32Array(floorMarkers.length * 3);
 		const fc = new Float32Array(floorMarkers.length * 3);
@@ -367,6 +369,47 @@
 		if (planeMesh) planeMesh.visible = showPlane;
 		if (floorPoints) floorPoints.visible = showFloors;
 		if (previewMesh) previewMesh.visible = showPlane && (previewTris?.length ?? 0) > 0;
+	}
+
+	// --- Oriented clip plane ----------------------------------------------------
+	/** Unit vector of the Halo cull axis in THREE space (Halo z→Y, x→X, y→−Z). */
+	function axisDirThree(): THREE.Vector3 {
+		if (cullAxis === 'x') return new THREE.Vector3(1, 0, 0);
+		if (cullAxis === 'y') return new THREE.Vector3(0, 0, -1);
+		return new THREE.Vector3(0, 1, 0);
+	}
+	/** Read the Halo cull-axis coordinate out of a THREE-space point. */
+	function offsetFromThree(p: THREE.Vector3): number {
+		if (cullAxis === 'x') return p.x;
+		if (cullAxis === 'y') return -p.z;
+		return p.y;
+	}
+	/** Position + orient the plane mesh for the current axis + offset. */
+	function orientPlane() {
+		if (!planeMesh) return;
+		const b = mesh.bounds;
+		const cx = (b.minX + b.maxX) / 2,
+			cy = (b.minY + b.maxY) / 2,
+			cz = (b.minZ + b.maxZ) / 2;
+		if (cullAxis === 'x') {
+			planeMesh.rotation.set(0, Math.PI / 2, 0);
+			const p = haloToThree({ x: cullOffset, y: cy, z: cz });
+			planeMesh.position.set(p[0], p[1], p[2]);
+		} else if (cullAxis === 'y') {
+			planeMesh.rotation.set(0, 0, 0);
+			const p = haloToThree({ x: cx, y: cullOffset, z: cz });
+			planeMesh.position.set(p[0], p[1], p[2]);
+		} else {
+			planeMesh.rotation.set(-Math.PI / 2, 0, 0);
+			const p = haloToThree({ x: cx, y: cy, z: cullOffset });
+			planeMesh.position.set(p[0], p[1], p[2]);
+		}
+	}
+	function clampOffset(v: number): number {
+		const b = mesh.bounds;
+		const lo = cullAxis === 'x' ? b.minX : cullAxis === 'y' ? b.minY : b.minZ;
+		const hi = cullAxis === 'x' ? b.maxX : cullAxis === 'y' ? b.maxY : b.maxZ;
+		return Math.max(lo, Math.min(hi, v));
 	}
 
 	// --- Cameras + framing ------------------------------------------------------
@@ -456,10 +499,13 @@
 			if (planeHit && !geoHit) {
 				planeDragging = true;
 				if (controls) controls.enabled = false;
+				// Drag plane = contains the cull axis + faces the camera, so the mouse
+				// slides the clip plane ALONG its axis (any of x/y/z).
+				const axis = axisDirThree();
 				const dir = new THREE.Vector3();
 				cam.getWorldDirection(dir);
-				dir.y = 0;
-				if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+				dir.addScaledVector(axis, -dir.dot(axis)); // remove the axis component
+				if (dir.lengthSq() < 1e-6) dir.set(axis.x === 0 ? 1 : 0, 0, axis.z === 0 ? 1 : 0);
 				dir.normalize();
 				dragPlane.setFromNormalAndCoplanarPoint(dir, planeHit.point);
 				return;
@@ -477,8 +523,7 @@
 			const cam = activeCamera()!;
 			raycaster.setFromCamera(ndc, cam);
 			if (raycaster.ray.intersectPlane(dragPlane, hitPt)) {
-				const z = Math.max(mesh.bounds.minZ, Math.min(mesh.bounds.maxZ, hitPt.y));
-				onCullZChange(z);
+				onCullOffsetChange(clampOffset(offsetFromThree(hitPt)));
 			}
 			return;
 		}
@@ -678,7 +723,9 @@
 		}
 	});
 	$effect(() => {
-		if (planeMesh) planeMesh.position.y = cullZ;
+		void cullAxis;
+		void cullOffset;
+		if (planeMesh) orientPlane();
 	});
 	$effect(() => {
 		void showExcluded;

@@ -67,11 +67,15 @@ default (git-ignored, machine-local).
    Auto-classify has already run: the **Surfaces (tags)** panel shows the per-tag
    counts, and the default render rules **drop the ceiling/roof automatically** —
    you're already looking into a clean interior, no manual culling yet. (On Chill
-   Out: ~547 floor / 122 ramp / 1843 wall kept, ~596 ceiling dropped.)
+   Out: ~833 floor / 210 ramp / 1820 wall kept, ~245 ceiling dropped.)
 2. **Fix any mistags.** Pick a select tool —
-   - **Connected piece** — click a triangle → the whole welded piece selects.
-   - **Same material** — click → every triangle sharing that texture selects.
-   - **Single triangle** / **Box select** (drag a rectangle).
+   - **Coplanar surface ★** (default/primary) — click a face → selects the whole
+     flat surface (connected + same plane), "an entire side of a cube". An
+     **angle-tolerance** slider widens what counts as the same plane.
+   - **Single triangle** — one at a time.
+   - **Connected piece** — the whole welded piece (can be large on a sealed shell).
+   - **Same material** — every triangle sharing that texture.
+   - **Box select** — drag a rectangle.
 
    then assign a tag: click **⤺** on a tag row, or press **1–6** (floor … clutter).
    Click a tag's **name** to select everything carrying it, and **◉** to isolate
@@ -81,11 +85,15 @@ default (git-ignored, machine-local).
 3. **Decide what renders.** Each tag row has a **render checkbox** — off = that
    tag is dropped from the bake. Defaults: floor/ramp/wall **on**, ceiling +
    inaccessible + clutter **off**. Tag a junk surface **inaccessible** to drop it.
-4. **Scalpels for stragglers.** Drag the **cull-height plane** (slider, or grab
-   the plane in Orbit view) → orange preview → **Remove above plane**; or
-   select + **Delete**. Nothing is destructive: **Undo/Redo** (`Ctrl+Z` /
-   `Ctrl+Shift+Z`), **Ghost dropped** to see what's excluded, **Restore** to bring
-   it back. `Delete` key deletes the selection; `Esc` clears.
+4. **Scalpels for stragglers.** The **clip plane** orients on any axis — pick
+   **X / Y / Z**, **flip** the side ("beyond +Z" ↔ "beyond −Z"), drag the offset
+   (slider, or grab the plane in Orbit view) → orange preview → **Remove beyond**
+   to cut it, or **Tag OOB** to mark it inaccessible (out-of-map). Apply several in
+   sequence to carve a clip box and clear out-of-bounds geometry from every side.
+   Or just select + **Delete**. Nothing is destructive: **Undo/Redo** (`Ctrl+Z` /
+   `Ctrl+Shift+Z`), **Ghost dropped** (bright red overlay) to see exactly what's
+   excluded, **Restore** to bring it back. `Delete` deletes the selection; `Esc`
+   clears.
 5. **Bake it:** click **Save to cartographer (dev)**. It writes
    `static/game-geometry/<game>/<key>.spectator.json` (mesh + embedded tags) and a
    `<key>.tags.json` sidecar, and patches `manifest.json` with `spectator_file` +
@@ -107,14 +115,22 @@ the `*.tags.json` sidecar's manual overrides are re-applied on load.
 
 ## Surface tags
 
-| Tag                | Auto-classify (by face normal) | Renders by default | Role in the views                         |
-| ------------------ | ------------------------------ | ------------------ | ----------------------------------------- |
-| **floor**          | up-facing, ≤30° from flat      | ✅                 | filled + material colour + elevation band |
-| **ramp / stairs**  | up-facing, 30–60° slope        | ✅                 | filled, banded with floors                |
-| **wall**           | near-vertical                  | ✅                 | outline (2D) / solid (3D)                 |
-| **ceiling / roof** | down-facing                    | ❌ (dropped)       | hidden                                    |
-| **inaccessible**   | manual bin (never auto)        | ❌ (dropped)       | dropped                                   |
-| **clutter**        | manual bin (small props)       | ❌ (dropped)       | dropped                                   |
+| Tag                | Auto-classify (winding-independent) | Renders by default | Role in the views                         |
+| ------------------ | ----------------------------------- | ------------------ | ----------------------------------------- |
+| **floor**          | near-horizontal **and enclosed**    | ✅                 | filled + material colour + elevation band |
+| **ramp / stairs**  | walkable slope (~32–63°)            | ✅                 | filled, banded with floors                |
+| **wall**           | near-vertical                       | ✅                 | outline (2D) / solid (3D)                 |
+| **ceiling / roof** | near-horizontal **and topmost**     | ❌ (dropped)       | hidden                                    |
+| **inaccessible**   | manual bin (never auto)             | ❌ (dropped)       | dropped                                   |
+| **clutter**        | manual bin (small props)            | ❌ (dropped)       | dropped                                   |
+
+Orientation uses the **absolute** up-component `|nz|`, so flipped winding /
+double-sided / single-sided-but-inconsistent BSP surfaces all classify the same —
+a horizontal surface is **never** called a ceiling just because its normal happens
+to point down. Floor-vs-ceiling is decided by **enclosure**: a floor inside the
+play volume has another surface above it (you stand under a ceiling); only the
+**topmost** surface over a footprint is roof/ceiling. So a mid-level floor with
+downward normals stays a floor. (This fixed Chill Out's missing middle floor.)
 
 Tags drive the **elevation banding** too — only floor/ramp surfaces are banded.
 

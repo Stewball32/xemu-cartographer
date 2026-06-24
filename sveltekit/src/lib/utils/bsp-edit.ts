@@ -72,10 +72,14 @@ export function defaultTagRender(): TagRenderMap {
 	return m;
 }
 
-/** Auto-classify thresholds on the normalized up-component (nz). */
-const FLOOR_COS = 0.866; // ≤30° from horizontal → floor
-const RAMP_COS = 0.5; // 30°–60° up-facing → ramp/stairs
-const CEIL_COS = -0.5; // down-facing → ceiling
+/** Auto-classify thresholds on the ABSOLUTE up-component (|nz|) — sign-independent
+ *  so flipped winding / double-sided BSP surfaces classify the same. */
+const FLOOR_COS = 0.85; // within ~32° of horizontal → floor/ceiling candidate
+const RAMP_COS = 0.45; // ~32°–63° → ramp/stairs (walkable slope)
+/** A surface this far ABOVE a near-horizontal one (over its footprint) makes the
+ *  lower one ENCLOSED → it's a floor you're standing under a ceiling on, not a
+ *  roof. Must exceed standing clearance so a real floor is never called a ceiling. */
+const ENCLOSE_HEAD = 0.8;
 
 // --- Per-triangle metadata --------------------------------------------------
 
@@ -92,6 +96,11 @@ export interface TriMeta {
 	nx: number;
 	ny: number;
 	nz: number;
+	/** XY footprint bbox (the enclosure test + non-Z plane culls read these). */
+	minX: number;
+	maxX: number;
+	minY: number;
+	maxY: number;
 	/** Averaged vertex material colour (0..1); neutral grey when the mesh has none. */
 	r: number;
 	g: number;
@@ -163,6 +172,10 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 			nx,
 			ny,
 			nz,
+			minX: Math.min(ax, bx, cx),
+			maxX: Math.max(ax, bx, cx),
+			minY: Math.min(ay, by, cy),
+			maxY: Math.max(ay, by, cy),
 			r,
 			g,
 			b: bb
@@ -174,23 +187,73 @@ export function buildTriMeta(mesh: Pick<BspMesh, 'positions' | 'indices' | 'colo
 // --- Auto-classification ----------------------------------------------------
 
 /**
- * First-pass tag per triangle from its face normal:
- *   up-facing & near-flat → floor; up-facing & sloped → ramp; near-vertical →
- *   wall; down-facing → ceiling. inaccessible/clutter are never auto-assigned —
- *   they're manual bins. The normal's sign is ambiguous on a double-sided BSP
- *   surface, so we read the ABSOLUTE up-component for the floor/ramp/wall split
- *   and only call a clearly down-facing surface a ceiling.
+ * First-pass tag per triangle. Orientation comes from the ABSOLUTE up-component
+ * (|nz|), so flipped winding / double-sided / single-sided-but-inconsistent BSP
+ * surfaces all classify identically — a horizontal surface is NEVER called a
+ * ceiling just because its normal happens to point down.
+ *
+ *   - near-vertical → wall
+ *   - sloped (walkable angle) → ramp  (always kept — a slope is walkable)
+ *   - near-horizontal → floor if ENCLOSED (another horizontal surface sits
+ *     >ENCLOSE_HEAD above it over its footprint — i.e. you stand under a ceiling),
+ *     else ceiling (it's the TOPMOST surface there → roof/ceiling).
+ *
+ * This is the winding-independent floor/ceiling discriminator: a floor inside the
+ * play volume has something above it; only the top surface is roof/ceiling. So a
+ * mid-level floor with downward-pointing normals stays a floor. inaccessible /
+ * clutter are never auto-assigned — they're manual bins.
  */
 export function autoClassify(meta: TriMeta[]): Uint8Array {
-	const tags = new Uint8Array(meta.length);
-	for (let t = 0; t < meta.length; t++) {
-		const nz = meta[t].nz;
-		const up = Math.abs(nz);
+	const T = meta.length;
+	const tags = new Uint8Array(T);
+	if (T === 0) return tags;
+
+	// Enclosure grid: bucket every near-horizontal surface's height into the XY
+	// cells its footprint covers, so a surface can ask "is anything overhead?".
+	let minX = Infinity,
+		maxX = -Infinity,
+		minY = Infinity,
+		maxY = -Infinity;
+	for (const m of meta) {
+		if (m.minX < minX) minX = m.minX;
+		if (m.maxX > maxX) maxX = m.maxX;
+		if (m.minY < minY) minY = m.minY;
+		if (m.maxY > maxY) maxY = m.maxY;
+	}
+	const span = Math.max(maxX - minX, maxY - minY, 1e-3);
+	const G = Math.min(1.5, Math.max(0.3, span / 64));
+	const cols = Math.max(1, Math.ceil((maxX - minX) / G) + 1);
+	const rows = Math.max(1, Math.ceil((maxY - minY) / G) + 1);
+	const cells: number[][] = Array.from({ length: cols * rows }, () => []);
+	const cellRange = (m: TriMeta) => {
+		const i0 = Math.max(0, Math.floor((m.minX - minX) / G));
+		const i1 = Math.min(cols - 1, Math.floor((m.maxX - minX) / G));
+		const j0 = Math.max(0, Math.floor((m.minY - minY) / G));
+		const j1 = Math.min(rows - 1, Math.floor((m.maxY - minY) / G));
+		return { i0, i1, j0, j1 };
+	};
+	for (let t = 0; t < T; t++) {
+		if (Math.abs(meta[t].nz) < FLOOR_COS) continue; // only near-horizontal decks
+		const { i0, i1, j0, j1 } = cellRange(meta[t]);
+		for (let i = i0; i <= i1; i++)
+			for (let j = j0; j <= j1; j++) cells[j * cols + i].push(meta[t].cz);
+	}
+	const hasSurfaceAbove = (m: TriMeta): boolean => {
+		const { i0, i1, j0, j1 } = cellRange(m);
+		for (let i = i0; i <= i1; i++)
+			for (let j = j0; j <= j1; j++) {
+				const arr = cells[j * cols + i];
+				for (const z of arr) if (z - m.cz > ENCLOSE_HEAD) return true;
+			}
+		return false;
+	};
+
+	for (let t = 0; t < T; t++) {
+		const up = Math.abs(meta[t].nz);
 		let tag: SurfaceTag;
-		if (nz <= CEIL_COS) tag = 'ceiling';
-		else if (up >= FLOOR_COS) tag = 'floor';
-		else if (up >= RAMP_COS) tag = nz > 0 ? 'ramp' : 'ceiling';
-		else tag = 'wall';
+		if (up < RAMP_COS) tag = 'wall';
+		else if (up < FLOOR_COS) tag = 'ramp';
+		else tag = hasSurfaceAbove(meta[t]) ? 'floor' : 'ceiling';
 		tags[t] = TAG_INDEX[tag];
 	}
 	return tags;
@@ -222,10 +285,9 @@ export function tagSignature(m: TriMeta, quantum = 0.5): string {
 	const ax = Math.abs(m.nx);
 	const ay = Math.abs(m.ny);
 	const az = Math.abs(m.nz);
-	let axis: string;
-	if (az >= ax && az >= ay) axis = m.nz >= 0 ? 'pz' : 'nz';
-	else if (ax >= ay) axis = m.nx >= 0 ? 'px' : 'nx';
-	else axis = m.ny >= 0 ? 'py' : 'ny';
+	// Dominant axis WITHOUT sign — so a winding flip on re-extract (which negates
+	// the normal) keeps the same key, and the surface's manual tag still re-applies.
+	const axis = az >= ax && az >= ay ? 'z' : ax >= ay ? 'x' : 'y';
 	return `${Math.round(m.cx / q)},${Math.round(m.cy / q)},${Math.round(m.cz / q)},${axis}`;
 }
 
@@ -338,26 +400,120 @@ export function connectedComponents(
 	return comp;
 }
 
-export type PlaneCullMode = 'centroid' | 'whole' | 'any';
+/**
+ * Triangle adjacency via spatial vertex welding: `adj[t]` is the list of triangles
+ * sharing at least one welded vertex with t. Precomputed once per mesh (like
+ * connectedComponents) so the coplanar flood-fill is a cheap graph walk per click.
+ */
+export function buildAdjacency(
+	mesh: Pick<BspMesh, 'positions' | 'indices'>,
+	quantum = 1e-3
+): number[][] {
+	const pos = mesh.positions;
+	const idx = mesh.indices;
+	const T = triCount(mesh);
+	const q = quantum > 0 ? quantum : 1e-3;
+	const trisAtVertex = new Map<string, number[]>();
+	const key = (vi: number): string =>
+		`${Math.round(pos[vi] / q)},${Math.round(pos[vi + 1] / q)},${Math.round(pos[vi + 2] / q)}`;
+	for (let t = 0; t < T; t++) {
+		for (let v = 0; v < 3; v++) {
+			const k = key(idx[t * 3 + v] * 3);
+			const arr = trisAtVertex.get(k);
+			if (arr) arr.push(t);
+			else trisAtVertex.set(k, [t]);
+		}
+	}
+	const adj: Set<number>[] = Array.from({ length: T }, () => new Set<number>());
+	for (const arr of trisAtVertex.values()) {
+		for (let i = 0; i < arr.length; i++)
+			for (let j = i + 1; j < arr.length; j++) {
+				adj[arr[i]].add(arr[j]);
+				adj[arr[j]].add(arr[i]);
+			}
+	}
+	return adj.map((s) => [...s]);
+}
 
 /**
- * Triangles ABOVE the cull-height plane (world Z = cullZ). 'centroid' (default)
- * cuts the roof and upper walls that lean mostly above the line; 'whole' is
- * conservative (entirely above); 'any' is the most aggressive (any corner above).
+ * Select the whole flat face the clicked triangle belongs to — connected
+ * triangles that share its plane (normal within `angleTolDeg`, centroid within
+ * `planeTol` of the seed plane) reached only through adjacency. "Selecting an
+ * entire side of a cube." Orientation uses |dot| so a coplanar face with mixed
+ * winding stays together, while the plane-distance test keeps the opposite face
+ * of a thin slab out.
  */
-export function selectAbovePlane(
+export function selectCoplanar(
+	adj: number[][],
 	meta: TriMeta[],
-	cullZ: number,
+	seed: number,
+	angleTolDeg = 8,
+	planeTol = 0.2
+): number[] {
+	if (seed < 0 || seed >= meta.length || !adj[seed]) return [];
+	const s = meta[seed];
+	const cosTol = Math.cos((Math.max(0, angleTolDeg) * Math.PI) / 180);
+	const visited = new Uint8Array(meta.length);
+	const out: number[] = [];
+	const stack = [seed];
+	visited[seed] = 1;
+	while (stack.length > 0) {
+		const t = stack.pop() as number;
+		out.push(t);
+		for (const nb of adj[t]) {
+			if (visited[nb]) continue;
+			const m = meta[nb];
+			const dot = Math.abs(m.nx * s.nx + m.ny * s.ny + m.nz * s.nz);
+			if (dot < cosTol) continue;
+			const dist = Math.abs((m.cx - s.cx) * s.nx + (m.cy - s.cy) * s.ny + (m.cz - s.cz) * s.nz);
+			if (dist > planeTol) continue;
+			visited[nb] = 1;
+			stack.push(nb);
+		}
+	}
+	return out.sort((a, b) => a - b);
+}
+
+export type PlaneCullMode = 'centroid' | 'whole' | 'any';
+export type CullAxis = 'x' | 'y' | 'z';
+
+/**
+ * Triangles BEYOND a clip plane perpendicular to `axis` at `offset`, on the side
+ * given by `sign` (+1 = the positive/greater side, −1 = the negative/lesser side).
+ * Orient on X/Y/Z and flip the sign to clip out-of-bounds geometry from any of the
+ * six sides; apply several in sequence to carve a clip box. 'centroid' (default)
+ * is the natural cut; 'whole' is conservative (entirely beyond); 'any' is the most
+ * aggressive (any corner beyond).
+ */
+export function selectBeyondPlane(
+	meta: TriMeta[],
+	axis: CullAxis,
+	offset: number,
+	sign: 1 | -1 = 1,
 	mode: PlaneCullMode = 'centroid'
 ): number[] {
 	const out: number[] = [];
 	for (let t = 0; t < meta.length; t++) {
 		const m = meta[t];
-		const above =
-			mode === 'whole' ? m.zMin >= cullZ : mode === 'any' ? m.zMax > cullZ : m.cz >= cullZ;
-		if (above) out.push(t);
+		const c = axis === 'x' ? m.cx : axis === 'y' ? m.cy : m.cz;
+		const lo = axis === 'x' ? m.minX : axis === 'y' ? m.minY : m.zMin;
+		const hi = axis === 'x' ? m.maxX : axis === 'y' ? m.maxY : m.zMax;
+		let beyond: boolean;
+		if (sign >= 0)
+			beyond = mode === 'whole' ? lo >= offset : mode === 'any' ? hi > offset : c >= offset;
+		else beyond = mode === 'whole' ? hi <= offset : mode === 'any' ? lo < offset : c <= offset;
+		if (beyond) out.push(t);
 	}
 	return out;
+}
+
+/** Back-compat shorthand: triangles above the horizontal cull-height plane (Z). */
+export function selectAbovePlane(
+	meta: TriMeta[],
+	cullZ: number,
+	mode: PlaneCullMode = 'centroid'
+): number[] {
+	return selectBeyondPlane(meta, 'z', cullZ, 1, mode);
 }
 
 /** All triangles in the same connected component as `tri`. */
