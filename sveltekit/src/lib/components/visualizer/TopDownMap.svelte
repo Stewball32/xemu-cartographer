@@ -165,21 +165,30 @@
 			ctx.stroke();
 		}
 
-		// WALL OUTLINES — clean architectural lines (walkable-region boundary + wall
-		// footprints, already deduped), crisp light strokes over the floors.
+		// WALL OUTLINES — clean room/level silhouettes, ELEVATION-SHADED so the upper
+		// level reads as the primary plane (bright, thicker) and lower levels recede
+		// (dimmer, thinner). Bucketed by band so each is one stroke pass. This is our
+		// equivalent of the fan map deleting the under-level: we keep it, just let it
+		// fall back. Drawn high→low so upper outlines land on top.
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
-		ctx.strokeStyle = 'rgba(214, 222, 234, 0.9)';
-		ctx.lineWidth = 2;
-		ctx.beginPath();
-		for (const w of fp.walls) {
-			if (!bandActive(bd.bandForZ(w.z))) continue;
-			const a = p({ x: w.a.x, y: w.a.y, z: w.z });
-			const b = p({ x: w.b.x, y: w.b.y, z: w.z });
-			ctx.moveTo(a.x, a.y);
-			ctx.lineTo(b.x, b.y);
+		for (let bi = bd.count - 1; bi >= 0; bi--) {
+			if (!bandActive(bi)) continue;
+			const t = bd.count > 1 ? bi / (bd.count - 1) : 1; // 0 lowest → 1 highest
+			const lum = 0.52 + 0.48 * t; // grey (low) → white (high)
+			const lvl = Math.round(225 * lum);
+			ctx.strokeStyle = `rgba(${lvl}, ${lvl + 6}, ${lvl + 14}, ${0.32 + 0.6 * t})`;
+			ctx.lineWidth = 1.2 + 1.1 * t;
+			ctx.beginPath();
+			for (const w of fp.walls) {
+				if (bd.bandForZ(w.z) !== bi) continue;
+				const a = p({ x: w.a.x, y: w.a.y, z: w.z });
+				const b = p({ x: w.b.x, y: w.b.y, z: w.z });
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+			}
+			ctx.stroke();
 		}
-		ctx.stroke();
 	});
 
 	// Place the (PNG) geometry image by projecting its world-bounds corners through
