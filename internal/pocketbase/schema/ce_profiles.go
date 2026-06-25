@@ -40,15 +40,8 @@ func registerCeProfilesCollection(app *pocketbase.PocketBase) error {
 			MaxSelect:     1,
 			CascadeDelete: true, // a user's profile dies with the user
 		},
-		// The in-game player name. Pre-filled from the user's default gamertag
-		// in the editor; editable because CE caps names at 11 chars.
-		&core.TextField{
-			Name:        "gamertag",
-			Required:    true,
-			Min:         1,
-			Max:         32,
-			Presentable: true,
-		},
+		// The in-game name comes from users.gamertag (single source of truth),
+		// resolved via the `user` relation — not stored here.
 		// Pluggable CE customization field set — empty until the CE
 		// player-profile research lands. JSON keeps the schema stable while the
 		// field set is still being determined.

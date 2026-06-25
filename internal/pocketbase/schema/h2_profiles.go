@@ -41,14 +41,10 @@ func registerH2ProfilesCollection(app *pocketbase.PocketBase) error {
 			MaxSelect:     1,
 			CascadeDelete: true,
 		},
-		&core.TextField{
-			Name:        "gamertag",
-			Required:    true,
-			Min:         1,
-			Max:         32,
-			Presentable: true,
-		},
-		// Appearance/controller bytes keyed by halosave field key, each 0..255.
+		// The in-game name comes from users.gamertag (single source of truth),
+		// resolved via the `user` relation by the generate hook — NOT stored
+		// here. Appearance/controller bytes keyed by halosave field key, each
+		// 0..255.
 		// Empty {} = keep the template's values (a byte-identical clone of a
 		// real profile, just renamed).
 		&core.JSONField{Name: "appearance", MaxSize: 1 << 16},

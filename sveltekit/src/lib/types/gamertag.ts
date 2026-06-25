@@ -50,9 +50,10 @@ interface RecordBase {
 	updated: string;
 }
 
+// Profiles do NOT store the gamertag — it lives on the user record
+// (users.gamertag) and is resolved server-side at generation time.
 export interface CeProfileRecord extends RecordBase {
 	user: string;
-	gamertag: string;
 	settings: Record<string, unknown>;
 	save_bundle: string;
 	save_info: SaveInfo | DeferredInfo | null;
@@ -60,7 +61,6 @@ export interface CeProfileRecord extends RecordBase {
 
 export interface H2ProfileRecord extends RecordBase {
 	user: string;
-	gamertag: string;
 	appearance: Record<string, number>;
 	save_bundle: string;
 	save_info: SaveInfo | null;

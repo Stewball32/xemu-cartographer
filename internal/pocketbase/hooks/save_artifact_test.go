@@ -22,12 +22,18 @@ func ensureProfileCollections(t *testing.T, app core.App) {
 	if err != nil {
 		t.Fatalf("users collection: %v", err)
 	}
+	// gamertag is the single source of truth on the user record.
+	if usersCol.Fields.GetByName("gamertag") == nil {
+		usersCol.Fields.Add(&core.TextField{Name: "gamertag", Max: 113})
+		if err := app.Save(usersCol); err != nil {
+			t.Fatalf("add users.gamertag: %v", err)
+		}
+	}
 
 	if _, err := app.FindCollectionByNameOrId("h2_profiles"); err != nil {
 		c := core.NewBaseCollection("h2_profiles")
 		c.Fields.Add(
 			&core.RelationField{Name: "user", Required: true, CollectionId: usersCol.Id, MaxSelect: 1},
-			&core.TextField{Name: "gamertag", Required: true, Max: 32},
 			&core.JSONField{Name: "appearance", MaxSize: 1 << 16},
 			&core.FileField{Name: "save_bundle", MaxSelect: 1, MaxSize: 1 << 20},
 			&core.JSONField{Name: "save_info", MaxSize: 1 << 16},
@@ -56,7 +62,7 @@ func ensureProfileCollections(t *testing.T, app core.App) {
 	}
 }
 
-func makeUser(t *testing.T, app core.App) *core.Record {
+func makeUser(t *testing.T, app core.App, gamertag string) *core.Record {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("users")
 	if err != nil {
@@ -65,6 +71,7 @@ func makeUser(t *testing.T, app core.App) *core.Record {
 	u := core.NewRecord(col)
 	u.Set("email", "player@dev.local")
 	u.Set("password", "password1234")
+	u.Set("gamertag", gamertag)
 	if err := app.Save(u); err != nil {
 		t.Fatalf("save user: %v", err)
 	}
@@ -121,12 +128,13 @@ func TestH2ProfileGenerateOnSave(t *testing.T) {
 	ensureProfileCollections(t, app)
 	app.OnRecordCreate("h2_profiles").BindFunc(generateH2Profile)
 	app.OnRecordUpdate("h2_profiles").BindFunc(generateH2Profile)
+	// Changing users.gamertag must cascade-regenerate the profiles.
+	app.OnRecordUpdate("users").BindFunc(regenerateProfilesOnGamertagChange)
 
-	user := makeUser(t, app)
+	user := makeUser(t, app, "CARTOG")
 	col, _ := app.FindCollectionByNameOrId("h2_profiles")
 	rec := core.NewRecord(col)
-	rec.Set("user", user.Id)
-	rec.Set("gamertag", "CARTOG")
+	rec.Set("user", user.Id) // gamertag comes from the user, not the profile
 	rec.Set("appearance", map[string]int{"armor_primary": 13})
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save h2_profiles: %v", err)
@@ -151,14 +159,19 @@ func TestH2ProfileGenerateOnSave(t *testing.T) {
 		t.Errorf("save_info missing H2 title id; got %q", info)
 	}
 
-	// Editing the gamertag must regenerate (the in-game name lives in the file).
-	rec.Set("gamertag", "RENAMED")
-	if err := app.Save(rec); err != nil {
-		t.Fatalf("update h2_profiles: %v", err)
+	// Renaming the user's gamertag must cascade-regenerate the profile (the
+	// in-game name lives in the file), without touching the profile directly.
+	user.Set("gamertag", "RENAMED")
+	if err := app.Save(user); err != nil {
+		t.Fatalf("update user gamertag: %v", err)
 	}
-	bundle2 := readBundle(t, app, rec)
+	fresh, err := app.FindRecordById("h2_profiles", rec.Id)
+	if err != nil {
+		t.Fatalf("refetch profile: %v", err)
+	}
+	bundle2 := readBundle(t, app, fresh)
 	if bytes.Equal(bundle, bundle2) {
-		t.Error("expected the regenerated bundle to differ after a rename")
+		t.Error("expected the regenerated bundle to differ after a gamertag rename")
 	}
 }
 
@@ -171,11 +184,10 @@ func TestH2ProfileRejectsBadAppearance(t *testing.T) {
 	ensureProfileCollections(t, app)
 	app.OnRecordCreate("h2_profiles").BindFunc(generateH2Profile)
 
-	user := makeUser(t, app)
+	user := makeUser(t, app, "X")
 	col, _ := app.FindCollectionByNameOrId("h2_profiles")
 	rec := core.NewRecord(col)
 	rec.Set("user", user.Id)
-	rec.Set("gamertag", "X")
 	rec.Set("appearance", map[string]int{"armor_primary": 999}) // out of byte range
 	if err := app.Save(rec); err == nil {
 		t.Fatal("expected save to fail when generation rejects the appearance byte")

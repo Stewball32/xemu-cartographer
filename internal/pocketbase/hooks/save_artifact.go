@@ -36,6 +36,26 @@ func attachBundle(rec *core.Record, req halosave.BuildRequest, filename string) 
 	return nil
 }
 
+// userGamertag resolves the in-game name for a profile from its `user`
+// relation — users.gamertag is the single source of truth (separate from the
+// account username). Returns a clear error when the user is missing or has no
+// gamertag set yet, so the profile save is rejected rather than generating a
+// nameless file.
+func userGamertag(app core.App, userID string) (string, error) {
+	if userID == "" {
+		return "", fmt.Errorf("profile has no user")
+	}
+	u, err := app.FindRecordById("users", userID)
+	if err != nil {
+		return "", fmt.Errorf("resolve user %s: %w", userID, err)
+	}
+	tag := strings.TrimSpace(u.GetString("gamertag"))
+	if tag == "" {
+		return "", fmt.Errorf("set your gamertag before generating a profile")
+	}
+	return tag, nil
+}
+
 // slugFilename reduces an arbitrary name to a safe, lowercase filename
 // component: alphanumerics kept, every other run collapsed to a single '-'.
 // Empty input yields "unnamed".

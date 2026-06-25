@@ -7,11 +7,30 @@
 > generator's one open item.
 
 A unified **gamertag = your in-game name** identity layer on top of the LAN-hub
-[`halosave`](../lan-hub/README.md) generator. One gamertag drives **two Halo
+[`halosave`](../lan-hub/README.md) generator. The gamertag is a field on the
+**user** record (separate from the account `username`) and drives **two Halo
 player profiles** (CE + H2), edited side by side but stored separately. Whenever
-a profile or a gametype changes, the hub **regenerates the actual, signed Xbox
-save file** and stores it on the record, ready for the nxdk LAN client to pull
-to the box.
+the gamertag, a profile, or a gametype changes, the hub **regenerates the
+actual, signed Xbox save file** and stores it on the record, ready for the nxdk
+LAN client to pull to the box.
+
+## Gamertag = a field on the user (not the username)
+
+The gamertag is **separate from the account `username`** (which is a normal
+login identifier with no Halo constraints). It lives on the `users` record
+(`users.gamertag`) as the single source of truth, and is the in-game name
+written into BOTH player profiles — the profile records do **not** store it; the
+generate hooks resolve it via the `user` relation, and `users_gamertag_regen`
+re-generates the profiles whenever it changes.
+
+It is length-capped to **`schema.GamertagMaxLen` (113 chars)** = the shorter of
+the two games' name fields (a gamertag must fit both). H2's `profile` name field
+is a 0xE4-byte (228) UTF-16LE NUL-terminated buffer (`halosave/h2profile.go
+h2pNameBuf`, cross-checked against 4 real profiles) → 228/2 − 1 NUL = 113 chars.
+CE's is ~11 chars (FORMATS.md §2) but the exact CE name source is still being
+researched, so **until CE lands the cap defaults to the H2 limit** and is the one
+knob to tighten to CE's smaller value. The frontend mirrors the number
+(`GAMERTAG_MAX_LEN`).
 
 ```
  Browser (user)                 Browser (organizer)            nxdk client (Xbox, LAN)
@@ -46,8 +65,9 @@ Four new collections, registered from `schema/identity.go` **phase 5** (after
 
 | Collection | Key fields | Generated? | Access (PB rules) |
 | --- | --- | --- | --- |
-| `ce_profiles` | `user` (unique), `gamertag`, `settings` (json), `save_bundle` (file), `save_info` (json) | **deferred** (no CE profile file format yet) | owner read/write; admin anything |
-| `h2_profiles` | `user` (unique), `gamertag`, `appearance` (json byte-map), `save_bundle`, `save_info` | yes — 500-byte `profile` + `SaveMeta.xbx`, tar'd | owner read/write; admin anything |
+| `users` (built-in) | + `gamertag` (text, ≤113) — the in-game name, separate from `username` | — | self read/write; admin |
+| `ce_profiles` | `user` (unique), `settings` (json), `save_bundle` (file), `save_info` (json) — gamertag read from the user | **deferred** (no CE profile file format yet) | owner read/write; admin anything |
+| `h2_profiles` | `user` (unique), `appearance` (json byte-map), `save_bundle`, `save_info` — gamertag read from the user | yes — 500-byte `profile` + `SaveMeta.xbx`, tar'd | owner read/write; admin anything |
 | `gametypes` | `title` (ce/h2), `engine`, `name`, `settings` (json), `save_bundle`, `save_info`, `created_by` | yes — CE `blam.lst` / H2 mode payload + `SaveMeta.xbx` | read: any authed; write: organizer/admin |
 | `game_titles` | `name`, `description`, `file` (≤2 GiB), `created_by` | n/a — plain upload | read: any authed; write: organizer/admin |
 
@@ -72,12 +92,18 @@ save regardless of who writes the record (SDK, route, seeder):
   record.
 - `ce_profiles` runs the same hook shape but **stamps `save_info.deferred = true`
   and writes no file** — CE has no standalone MP profile save format (see below).
+- The profile hooks resolve the in-game name from **`users.gamertag` via the
+  `user` relation** (`userGamertag`), not a per-profile field — so a user with no
+  gamertag set yet can't create a profile (the save is rejected). When the
+  gamertag changes, `hooks/users_gamertag_regen.go` re-saves the user's profiles
+  so their files rebuild against the new name.
 
 `internal/saveartifact` is the pure seam: it maps the typed settings → a
 `halosave.BuildRequest`, calls `halosave.Build`, and tars the result at
 `UDATA/<titleID>/<dir>/<file>` (unpack relative to the Xbox `E:\` root). It is
 unit-tested directly; the hook→file-field→read-back path has a PocketBase
-integration test (`hooks/save_artifact_test.go`).
+integration test (`hooks/save_artifact_test.go`, which also covers the
+gamertag-rename cascade).
 
 ## The CE profile is a scaffold (deferred — pending research)
 

@@ -29,7 +29,10 @@ func registerH2ProfileGenerateHook(app *pocketbase.PocketBase) {
 // generateH2Profile is the create/update handler, exposed as a named function
 // so the integration test can bind it to a test app directly.
 func generateH2Profile(e *core.RecordEvent) error {
-	gamertag := e.Record.GetString("gamertag")
+	gamertag, err := userGamertag(e.App, e.Record.GetString("user"))
+	if err != nil {
+		return err
+	}
 
 	var appearance map[string]int
 	if err := e.Record.UnmarshalJSONField("appearance", &appearance); err != nil {

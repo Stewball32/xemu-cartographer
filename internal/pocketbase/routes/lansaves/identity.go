@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -121,17 +122,14 @@ func handleIdentity(e *core.RequestEvent) error {
 	return e.JSON(http.StatusOK, man)
 }
 
-// handleIdentityList returns the distinct gamertags that have at least one
-// profile, so a client (or operator) can discover who is set up.
+// handleIdentityList returns the distinct user gamertags (the in-game names),
+// so a client (or operator) can discover who is set up.
 func handleIdentityList(e *core.RequestEvent) error {
 	seen := map[string]string{} // lower -> display
-	for _, col := range []string{"h2_profiles", "ce_profiles"} {
-		recs, err := e.App.FindAllRecords(col)
-		if err != nil {
-			continue
-		}
-		for _, r := range recs {
-			gt := strings.TrimSpace(r.GetString("gamertag"))
+	users, err := e.App.FindAllRecords("users")
+	if err == nil {
+		for _, u := range users {
+			gt := strings.TrimSpace(u.GetString("gamertag"))
 			if gt == "" {
 				continue
 			}
@@ -155,19 +153,38 @@ func profileRef(r *core.Record, kind string) *fileRef {
 	return ref
 }
 
-// findProfileByGamertag does a case-insensitive match against a profile
-// collection's gamertag field. Profile counts are one-per-user (small), so a
-// full scan + EqualFold is both correct (no SQLite collation surprises) and
-// cheap on a LAN hub.
+// findProfileByGamertag resolves the user who owns the gamertag (users.gamertag
+// is the single source of truth), then returns that user's profile in the given
+// collection (one-per-user via the unique `user` index). Returns nil if no user
+// has that gamertag or they have no such profile yet.
 func findProfileByGamertag(app core.App, collection, gamertag string) *core.Record {
-	recs, err := app.FindAllRecords(collection)
+	user := findUserByGamertag(app, gamertag)
+	if user == nil {
+		return nil
+	}
+	rec, err := app.FindFirstRecordByFilter(collection, "user = {:u}", dbx.Params{"u": user.Id})
 	if err != nil {
 		return nil
 	}
+	return rec
+}
+
+// findUserByGamertag does a case-insensitive match against users.gamertag. User
+// counts are modest on a LAN hub, so a full scan + EqualFold is both correct (no
+// SQLite collation surprises) and cheap. First match wins if two users somehow
+// share a gamertag (uniqueness isn't enforced).
+func findUserByGamertag(app core.App, gamertag string) *core.Record {
 	want := strings.TrimSpace(gamertag)
-	for _, r := range recs {
-		if strings.EqualFold(strings.TrimSpace(r.GetString("gamertag")), want) {
-			return r
+	if want == "" {
+		return nil
+	}
+	users, err := app.FindAllRecords("users")
+	if err != nil {
+		return nil
+	}
+	for _, u := range users {
+		if strings.EqualFold(strings.TrimSpace(u.GetString("gamertag")), want) {
+			return u
 		}
 	}
 	return nil

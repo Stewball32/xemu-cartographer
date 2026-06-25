@@ -11,7 +11,7 @@
 	import CESettingsEditor from '$lib/components/gamertag/CESettingsEditor.svelte';
 	import SaveResultCard from '$lib/components/gamertag/SaveResultCard.svelte';
 	import { lanMeta } from '$lib/utils/lansaves';
-	import { fetchDefaultGamertag } from '$lib/utils/gamertag';
+	import { fetchDefaultGamertag, GAMERTAG_MAX_LEN } from '$lib/utils/gamertag';
 	import type { H2AppearanceField } from '$lib/types/lansaves';
 	import type { CeProfileRecord, H2ProfileRecord } from '$lib/types/gamertag';
 
@@ -48,11 +48,23 @@
 			const meta = await lanMeta();
 			appearanceFields = meta.h2_appearance;
 
+			// users.gamertag is the single source of truth — fetch a fresh user
+			// record. (Cast: the generated PB types lag the new field until typegen
+			// re-runs against a live server.)
+			let userGamertag = '';
+			try {
+				const u = await pb.collection('users').getOne(uid);
+				userGamertag = (((u as Record<string, unknown>).gamertag as string) ?? '').trim();
+			} catch {
+				/* fall back below */
+			}
+
 			h2Record = await firstOrNull<H2ProfileRecord>('h2_profiles', `user = "${uid}"`);
 			ceRecord = await firstOrNull<CeProfileRecord>('ce_profiles', `user = "${uid}"`);
 
+			// First visit (no gamertag yet): suggest the M07 default gamertag or username.
 			const fallback = (await fetchDefaultGamertag()) ?? auth.user?.username ?? '';
-			gamertag = h2Record?.gamertag || ceRecord?.gamertag || fallback;
+			gamertag = userGamertag || fallback;
 			appearance = { ...(h2Record?.appearance ?? {}) };
 			ceSettings = { ...(ceRecord?.settings ?? {}) };
 		} catch (err) {
@@ -83,26 +95,31 @@
 		saving = true;
 		try {
 			const ap = cleanAppearance();
-			// Upsert the H2 profile — the server hook regenerates the signed save.
+			// 1. The gamertag lives on the user record (single source of truth).
+			//    Updating it cascades a server-side regen to any existing profiles.
+			await pb.collection('users').update(uid, { gamertag: tag });
+
+			// 2. Upsert the H2 profile (appearance only — the hook reads the
+			//    gamertag from the user and regenerates the signed save).
 			if (h2Record) {
 				h2Record = await pb
 					.collection('h2_profiles')
-					.update<H2ProfileRecord>(h2Record.id, { gamertag: tag, appearance: ap });
+					.update<H2ProfileRecord>(h2Record.id, { appearance: ap });
 			} else {
 				h2Record = await pb
 					.collection('h2_profiles')
-					.create<H2ProfileRecord>({ user: uid, gamertag: tag, appearance: ap });
+					.create<H2ProfileRecord>({ user: uid, appearance: ap });
 			}
 
-			// Upsert the CE profile (generation deferred — stores gamertag + settings).
+			// 3. Upsert the CE profile (settings only — generation deferred).
 			if (ceRecord) {
 				ceRecord = await pb
 					.collection('ce_profiles')
-					.update<CeProfileRecord>(ceRecord.id, { gamertag: tag, settings: ceSettings });
+					.update<CeProfileRecord>(ceRecord.id, { settings: ceSettings });
 			} else {
 				ceRecord = await pb
 					.collection('ce_profiles')
-					.create<CeProfileRecord>({ user: uid, gamertag: tag, settings: ceSettings });
+					.create<CeProfileRecord>({ user: uid, settings: ceSettings });
 			}
 
 			toaster.success({ title: 'Saved', description: `Gamertag "${tag}" — files regenerated.` });
@@ -138,12 +155,14 @@
 					type="text"
 					class="input max-w-sm"
 					bind:value={gamertag}
-					maxlength="32"
+					maxlength={GAMERTAG_MAX_LEN}
 					placeholder="e.g. CARTOG"
 				/>
 			</label>
 			<p class="text-xs text-surface-600-400">
-				Shared across both profiles. Halo: CE caps names at 11 characters; Halo 2 allows more.
+				Your in-game name (separate from your account username), used by both Halo profiles. Capped
+				at
+				{GAMERTAG_MAX_LEN} characters to fit both games' name fields.
 			</p>
 			<div>
 				<button class="btn preset-filled" onclick={save} disabled={saving}>

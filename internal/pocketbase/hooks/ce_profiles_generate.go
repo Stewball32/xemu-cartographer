@@ -26,15 +26,23 @@ const ceProfileDeferredNote = "Halo: CE has no standalone multiplayer player-pro
 // The single seam: when CE profile generation is implemented, replace the
 // deferred stamp with the same attachBundle(...) call the H2 hook uses.
 func registerCeProfileGenerateHook(app *pocketbase.PocketBase) {
-	gen := func(e *core.RecordEvent) error {
-		e.Record.Set("save_info", map[string]any{
-			"deferred": true,
-			"gamertag": e.Record.GetString("gamertag"),
-			"note":     ceProfileDeferredNote,
-		})
-		return e.Next()
-	}
+	app.OnRecordCreate("ce_profiles").BindFunc(generateCeProfile)
+	app.OnRecordUpdate("ce_profiles").BindFunc(generateCeProfile)
+}
 
-	app.OnRecordCreate("ce_profiles").BindFunc(gen)
-	app.OnRecordUpdate("ce_profiles").BindFunc(gen)
+// generateCeProfile is the deferred-generation handler, exposed as a named
+// function for the integration test. Reads the gamertag from the user relation
+// best-effort (purely for display in save_info — CE has no file to generate
+// yet, so an unset gamertag is not fatal here).
+func generateCeProfile(e *core.RecordEvent) error {
+	gamertag := ""
+	if u, err := e.App.FindRecordById("users", e.Record.GetString("user")); err == nil {
+		gamertag = u.GetString("gamertag")
+	}
+	e.Record.Set("save_info", map[string]any{
+		"deferred": true,
+		"gamertag": gamertag,
+		"note":     ceProfileDeferredNote,
+	})
+	return e.Next()
 }
