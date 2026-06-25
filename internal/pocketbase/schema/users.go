@@ -16,21 +16,18 @@ func init() {
 }
 
 // GamertagMaxLen caps users.gamertag — the in-game name, SEPARATE from the
-// account `username`. The gamertag is written into BOTH the Halo: CE and Halo 2
-// player profiles, so it must fit the SHORTER of the two games' name fields
-// (cap = min(CE, H2)):
+// account `username`. The gamertag is written into BOTH Halo player profiles, so
+// it must fit the SHORTER of the two games' name fields (cap = min(CE, H2)):
 //
+//   - CE: the in-memory MP name buffer is 24 bytes ≈ 11 UTF-16 chars. Halo: CE
+//     has no MP player profile on Xbox — the MP name is the Xbox console name
+//     (E:\UDATA\NICKNAME.XBN); 11 is the tighter, controlling limit.
 //   - H2: the `profile` name field is a 0xE4-byte (228) UTF-16LE NUL-terminated
-//     buffer (halosave/h2profile.go `h2pNameBuf`, cross-checked against 4 real
-//     profiles — the name ends at 0xEC, before the per-profile sub-block).
-//     228 bytes / 2 (UTF-16) − 1 (NUL) = 113 usable characters.
-//   - CE: ~11 chars (24-byte UTF-16 buffer, FORMATS.md §2), but the exact CE
-//     name source is still being researched.
+//     buffer (halosave/h2profile.go `h2pNameBuf`) ≈ 113 chars — looser.
 //
-// Until the CE research lands we default to the H2 limit (the only confirmed
-// one). This is the ONE knob to TIGHTEN to CE's smaller value when it lands
-// (likely ~11). The frontend mirrors this number — keep them in sync.
-const GamertagMaxLen = 113
+// So the cap is CE's 11. Printable-ASCII only (system-link / console-name
+// friendly). The frontend mirrors this number — keep them in sync.
+const GamertagMaxLen = 11
 
 // registerUsersCollection customizes the built-in "users" auth collection
 // that PocketBase creates automatically on first boot.
@@ -60,17 +57,18 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 	}
 
 	// gamertag is the in-game name (SEPARATE from the login `username`, which
-	// carries no Halo constraints). It is written into the user's CE + H2 player
-	// profiles, so it's length-capped to GamertagMaxLen (min of the two games'
-	// name fields). Distinct from default_gamertag (the M07 roster-matching
-	// relation) — this is a plain capped text field. Optional: a user sets it
-	// before generating profiles; the profile generate hooks read it via the
-	// `user` relation, and users_gamertag_regen re-generates the profiles when it
-	// changes.
+	// carries no Halo constraints). It is written into the user's CE (console
+	// name) + H2 player profiles, so it's capped to GamertagMaxLen (CE's tighter
+	// 11-char limit) and restricted to printable ASCII (console-name / system-link
+	// friendly). Distinct from default_gamertag (the M07 roster-matching
+	// relation). Optional: a user sets it before generating profiles; the profile
+	// generate hooks read it via the `user` relation, and users_gamertag_regen
+	// re-generates the profiles when it changes.
 	if users.Fields.GetByName("gamertag") == nil {
 		users.Fields.Add(&core.TextField{
-			Name: "gamertag",
-			Max:  GamertagMaxLen,
+			Name:    "gamertag",
+			Max:     GamertagMaxLen,
+			Pattern: `^[ -~]*$`, // printable ASCII (space..tilde); empty allowed
 		})
 	}
 

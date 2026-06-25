@@ -73,6 +73,31 @@ func TestBuildCEGametype(t *testing.T) {
 	}
 }
 
+// TestBundlesAreSigned guards the dependency on the halosave digest fix: every
+// generated bundle must carry a RECOMPUTED (correct) signature, not the
+// template's stale one — otherwise Halo 2 rejects edited profiles as "damaged".
+func TestBundlesAreSigned(t *testing.T) {
+	cases := []struct {
+		name string
+		req  halosave.BuildRequest
+	}{
+		{"h2-profile", H2ProfileRequest("CARTOG", map[string]int{"armor_primary": 13})},
+		{"ce-gametype", GametypeRequest("ce", "slayer", "TS 50", GametypeSettings{})},
+	}
+	for _, c := range cases {
+		b, err := Build(c.req)
+		if err != nil {
+			t.Fatalf("%s: Build: %v", c.name, err)
+		}
+		if !b.Set.Digest.Resolved {
+			t.Errorf("%s: digest not resolved — generated file is not correctly signed", c.name)
+		}
+		if string(b.Set.Digest.Mode) != "recomputed" {
+			t.Errorf("%s: digest mode = %q, want \"recomputed\"", c.name, b.Set.Digest.Mode)
+		}
+	}
+}
+
 func TestBuildRejectsBadAppearance(t *testing.T) {
 	_, err := Build(H2ProfileRequest("X", map[string]int{"armor_primary": 999}))
 	if err == nil {

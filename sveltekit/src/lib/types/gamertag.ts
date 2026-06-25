@@ -52,11 +52,13 @@ interface RecordBase {
 
 // Profiles do NOT store the gamertag — it lives on the user record
 // (users.gamertag) and is resolved server-side at generation time.
+//
+// CE is name-only: the generated save_bundle is the Xbox console name
+// (UDATA/NICKNAME.XBN) built from the gamertag; there are no editable fields.
 export interface CeProfileRecord extends RecordBase {
 	user: string;
-	settings: Record<string, unknown>;
 	save_bundle: string;
-	save_info: SaveInfo | DeferredInfo | null;
+	save_info: SaveInfo | null;
 }
 
 export interface H2ProfileRecord extends RecordBase {

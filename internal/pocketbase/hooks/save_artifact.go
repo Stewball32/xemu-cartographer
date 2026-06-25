@@ -25,6 +25,13 @@ func attachBundle(rec *core.Record, req halosave.BuildRequest, filename string) 
 	if err != nil {
 		return err
 	}
+	return attachResult(rec, b, filename)
+}
+
+// attachResult writes a pre-built bundle onto the record — used by the CE
+// profile hook, which builds its bundle directly (the console name, not via
+// halosave.Build).
+func attachResult(rec *core.Record, b *saveartifact.Bundle, filename string) error {
 	f, err := filesystem.NewFileFromBytes(b.Tar, filename)
 	if err != nil {
 		return fmt.Errorf("save bundle file: %w", err)

@@ -22,9 +22,10 @@ func ensureProfileCollections(t *testing.T, app core.App) {
 	if err != nil {
 		t.Fatalf("users collection: %v", err)
 	}
-	// gamertag is the single source of truth on the user record.
+	// gamertag is the single source of truth on the user record (cap 11 = CE's
+	// MP name limit; all test gamertags are short).
 	if usersCol.Fields.GetByName("gamertag") == nil {
-		usersCol.Fields.Add(&core.TextField{Name: "gamertag", Max: 113})
+		usersCol.Fields.Add(&core.TextField{Name: "gamertag", Max: 11})
 		if err := app.Save(usersCol); err != nil {
 			t.Fatalf("add users.gamertag: %v", err)
 		}
@@ -42,6 +43,20 @@ func ensureProfileCollections(t *testing.T, app core.App) {
 		)
 		if err := app.Save(c); err != nil {
 			t.Fatalf("save h2_profiles: %v", err)
+		}
+	}
+
+	if _, err := app.FindCollectionByNameOrId("ce_profiles"); err != nil {
+		c := core.NewBaseCollection("ce_profiles")
+		c.Fields.Add(
+			&core.RelationField{Name: "user", Required: true, CollectionId: usersCol.Id, MaxSelect: 1},
+			&core.FileField{Name: "save_bundle", MaxSelect: 1, MaxSize: 1 << 20},
+			&core.JSONField{Name: "save_info", MaxSize: 1 << 16},
+			&core.AutodateField{Name: "created", OnCreate: true},
+			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+		)
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save ce_profiles: %v", err)
 		}
 	}
 
@@ -223,5 +238,35 @@ func TestGametypeGenerateOnSave(t *testing.T) {
 	}
 	if !hasBlam {
 		t.Fatalf("CE gametype bundle missing blam.lst; entries = %v", names)
+	}
+}
+
+func TestCeProfileGeneratesConsoleName(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("NewTestApp: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+	ensureProfileCollections(t, app)
+	app.OnRecordCreate("ce_profiles").BindFunc(generateCeProfile)
+
+	user := makeUser(t, app, "CARTOG")
+	col, _ := app.FindCollectionByNameOrId("ce_profiles")
+	rec := core.NewRecord(col)
+	rec.Set("user", user.Id) // name-only — gamertag comes from the user
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save ce_profiles: %v", err)
+	}
+
+	bundle := readBundle(t, app, rec)
+	names := tarNames(t, bundle)
+	var hasXBN bool
+	for _, n := range names {
+		if n == "UDATA/NICKNAME.XBN" {
+			hasXBN = true
+		}
+	}
+	if !hasXBN {
+		t.Fatalf("CE profile bundle missing UDATA/NICKNAME.XBN; entries = %v", names)
 	}
 }

@@ -3,46 +3,44 @@ package hooks
 import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/saveartifact"
 )
 
 func init() {
 	register(registerCeProfileGenerateHook)
 }
 
-// ceProfileDeferredNote is stamped into a CE profile's save_info so the editor
-// can plainly show that no save file is generated yet, and WHY.
-const ceProfileDeferredNote = "Halo: CE has no standalone multiplayer player-profile save file " +
-	"(the editable CE surface is the gametype). This profile stores the gamertag + settings " +
-	"now; the generated save file is deferred pending the CE player-name/profile research. " +
-	"When that lands, implement CE profile generation in internal/saveartifact and switch this " +
-	"hook to attachBundle — every other layer is already wired."
-
-// registerCeProfileGenerateHook handles the CE side of generate-on-save. CE
-// generation is a SCAFFOLD: there is no CE profile file format yet, so instead
-// of building a save it stamps a deferred marker into save_info (and leaves
-// save_bundle empty). This keeps the record + editor + download manifest fully
-// wired so that filling in CE generation later is a one-function change.
-//
-// The single seam: when CE profile generation is implemented, replace the
-// deferred stamp with the same attachBundle(...) call the H2 hook uses.
+// registerCeProfileGenerateHook is the CE side of generate-on-save. On the
+// original Xbox, Halo: CE has NO multiplayer player profile / appearance /
+// controls — the MP name IS the Xbox console name (E:\UDATA\NICKNAME.XBN). So
+// the "CE profile" generates that console-name file from the user's gamertag,
+// via the shared internal/consolename builder (the same one the podman
+// provisioner writes into a container overlay). One gamertag → both the H2
+// profile and this NICKNAME.XBN.
 func registerCeProfileGenerateHook(app *pocketbase.PocketBase) {
 	app.OnRecordCreate("ce_profiles").BindFunc(generateCeProfile)
 	app.OnRecordUpdate("ce_profiles").BindFunc(generateCeProfile)
 }
 
-// generateCeProfile is the deferred-generation handler, exposed as a named
-// function for the integration test. Reads the gamertag from the user relation
-// best-effort (purely for display in save_info — CE has no file to generate
-// yet, so an unset gamertag is not fatal here).
+// generateCeProfile builds the NICKNAME.XBN bundle from the user's gamertag and
+// attaches it to the record. Exposed as a named function for the integration
+// test. A gamertag-less user can't generate one (the save is rejected).
 func generateCeProfile(e *core.RecordEvent) error {
-	gamertag := ""
-	if u, err := e.App.FindRecordById("users", e.Record.GetString("user")); err == nil {
-		gamertag = u.GetString("gamertag")
+	gamertag, err := userGamertag(e.App, e.Record.GetString("user"))
+	if err != nil {
+		return err
 	}
-	e.Record.Set("save_info", map[string]any{
-		"deferred": true,
-		"gamertag": gamertag,
-		"note":     ceProfileDeferredNote,
-	})
+	b, err := saveartifact.CEProfileBundle(gamertag)
+	if err != nil {
+		return err
+	}
+	if err := attachResult(e.Record, b, ceProfileFilename(gamertag)); err != nil {
+		return err
+	}
 	return e.Next()
+}
+
+func ceProfileFilename(gamertag string) string {
+	return "ce-console-name-" + slugFilename(gamertag) + ".tar"
 }

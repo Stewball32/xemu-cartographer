@@ -9,12 +9,11 @@ import type { H2AppearanceField } from '$lib/types/lansaves';
 export type FileRecord = Pick<RecordModel, 'id' | 'collectionId' | 'collectionName'>;
 
 // GAMERTAG_MAX_LEN mirrors the backend schema.GamertagMaxLen. The gamertag is
-// the in-game name (separate from the account username) written into BOTH the
-// CE and H2 player profiles, so it's capped to the shorter of the two games'
-// name fields. Currently the H2 limit (113 chars = the 0xE4-byte UTF-16LE
-// name field) as a default until the CE name-source research lands and tightens
-// it to CE's smaller value (~11). Keep in sync with the Go constant.
-export const GAMERTAG_MAX_LEN = 113;
+// the in-game name (separate from the account username), printable-ASCII,
+// written into BOTH player profiles: the CE console name (E:\UDATA\NICKNAME.XBN)
+// and the H2 profile. Capped to the shorter of the two — CE's 11-char MP name
+// limit (H2 allows more). Keep in sync with the Go constant.
+export const GAMERTAG_MAX_LEN = 11;
 
 /** Resolve the caller's default gamertag (server-side identity) for pre-filling
  *  the profile editors. Returns null if none is set. */

@@ -22,7 +22,6 @@
 	let appearanceFields = $state<H2AppearanceField[]>([]);
 	let gamertag = $state('');
 	let appearance = $state<Record<string, number | undefined>>({});
-	let ceSettings = $state<Record<string, unknown>>({});
 
 	let h2Record = $state<H2ProfileRecord | null>(null);
 	let ceRecord = $state<CeProfileRecord | null>(null);
@@ -66,7 +65,6 @@
 			const fallback = (await fetchDefaultGamertag()) ?? auth.user?.username ?? '';
 			gamertag = userGamertag || fallback;
 			appearance = { ...(h2Record?.appearance ?? {}) };
-			ceSettings = { ...(ceRecord?.settings ?? {}) };
 		} catch (err) {
 			loadError = describeAsyncError(err);
 			toaster.error({ title: 'Load failed', description: loadError });
@@ -111,15 +109,14 @@
 					.create<H2ProfileRecord>({ user: uid, appearance: ap });
 			}
 
-			// 3. Upsert the CE profile (settings only — generation deferred).
+			// 3. The CE profile is name-only (generates NICKNAME.XBN from the
+			//    gamertag). The user-gamertag update above already cascaded a regen
+			//    to an existing CE profile — so just refresh it, or create one on
+			//    first save.
 			if (ceRecord) {
-				ceRecord = await pb
-					.collection('ce_profiles')
-					.update<CeProfileRecord>(ceRecord.id, { settings: ceSettings });
+				ceRecord = await pb.collection('ce_profiles').getOne<CeProfileRecord>(ceRecord.id);
 			} else {
-				ceRecord = await pb
-					.collection('ce_profiles')
-					.create<CeProfileRecord>({ user: uid, settings: ceSettings });
+				ceRecord = await pb.collection('ce_profiles').create<CeProfileRecord>({ user: uid });
 			}
 
 			toaster.success({ title: 'Saved', description: `Gamertag "${tag}" — files regenerated.` });
@@ -161,8 +158,8 @@
 			</label>
 			<p class="text-xs text-surface-600-400">
 				Your in-game name (separate from your account username), used by both Halo profiles. Capped
-				at
-				{GAMERTAG_MAX_LEN} characters to fit both games' name fields.
+				at {GAMERTAG_MAX_LEN} printable characters — Halo: CE's multiplayer name limit (Halo 2 allows
+				more).
 			</p>
 			<div>
 				<button class="btn preset-filled" onclick={save} disabled={saving}>
@@ -199,15 +196,15 @@
 					<header>
 						<h3 class="h4">Halo: CE profile</h3>
 						<p class="text-sm text-surface-600-400">
-							Player name now; appearance &amp; controls soon.
+							Name only — generates your console name <code class="font-mono">NICKNAME.XBN</code>.
 						</p>
 					</header>
-					<CESettingsEditor bind:settings={ceSettings} />
+					<CESettingsEditor />
 				</Card>
 				<SaveResultCard
 					record={ceRecord}
 					info={ceRecord?.save_info ?? null}
-					downloadName="{gamertag || 'gamertag'}-ce-profile.tar"
+					downloadName="{gamertag || 'gamertag'}-ce-console-name.tar"
 				/>
 			</div>
 		</div>
