@@ -15,6 +15,38 @@ func H2ProfileRequest(gamertag string, appearance map[string]int) halosave.Build
 	}
 }
 
+// CEProfileSettings is the editable CE player-profile field set persisted in a
+// ce_profiles record's `settings` JSON: armor color enum + the two control
+// presets. (The advanced 0x1C-0x2F bytes are a pluggable follow-up.) Pointer
+// fields are "use the fresh-profile default" when nil.
+type CEProfileSettings struct {
+	Color      *int `json:"color,omitempty"`      // armor color enum (white=0, red=2, blue=3, …)
+	Thumbstick *int `json:"thumbstick,omitempty"` // 0=Default, 1=Southpaw
+	Button     *int `json:"button,omitempty"`     // 0=Default, 1=Southpaw
+}
+
+// CEProfileRequest builds the halosave request for a Halo: CE player profile
+// (blam.sav) from a gamertag (the in-game name) + the editable settings. The
+// generator signs it via the per-title HMAC (digest at 0x30).
+func CEProfileRequest(gamertag string, s CEProfileSettings) halosave.BuildRequest {
+	ap := map[string]int{}
+	if s.Color != nil {
+		ap["color"] = *s.Color
+	}
+	if s.Thumbstick != nil {
+		ap["thumbstick"] = *s.Thumbstick
+	}
+	if s.Button != nil {
+		ap["button"] = *s.Button
+	}
+	return halosave.BuildRequest{
+		Title:      halosave.TitleCE,
+		Kind:       halosave.KindProfile,
+		Name:       gamertag,
+		Appearance: ap,
+	}
+}
+
 // GametypeSettings is the flat gametype parameter set persisted in a gametypes
 // record's `settings` JSON. CE and H2 share it; only the fields relevant to the
 // title are consumed by the generator (H2 gametype currently maps name + score

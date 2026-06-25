@@ -8,14 +8,13 @@ import (
 // registerCeProfilesCollection creates the `ce_profiles` collection — one Halo:
 // Combat Evolved player profile per user, a FULL profile parallel to h2_profiles.
 //
-// SCAFFOLD (see docs/gamertag-system/README.md). Halo: CE DOES have player
-// profiles on Xbox; the exact profile location + format is being re-investigated.
-// Until that lands, this record holds the gamertag (from the user) + a pluggable
-// `settings` JSON for the CE field set, and the generate-on-save hook stamps
-// `save_info.deferred = true` (no file yet). When the format + field set arrive,
-// fill `settings` with the real fields and implement generation in
-// internal/saveartifact — every other layer (record, editor, manifest, serve) is
-// already wired.
+// CE has a real player profile (`blam.sav`, format cracked — see
+// docs/gamertag-system/CE-PROFILE-FORMAT.md): name (from the user's gamertag) +
+// armor color + control presets, SIGNED. The generate-on-save hook builds the
+// signed bundle (`UDATA/4d530004/<id>/{blam.sav, SaveMeta.xbx}`) via
+// internal/saveartifact → internal/halosave. `settings` holds the editable
+// fields (`color` / `thumbstick` / `button`; the advanced 0x1C-0x2F bytes are a
+// pluggable follow-up).
 //
 // NOTE: the Xbox console name (E:\UDATA\NICKNAME.XBN) is a SEPARATE artifact
 // (dashboard / system-link identity), NOT the CE player profile — see the
@@ -44,18 +43,16 @@ func registerCeProfilesCollection(app *pocketbase.PocketBase) error {
 			CascadeDelete: true, // a user's profile dies with the user
 		},
 		// The in-game name comes from users.gamertag (single source of truth),
-		// resolved via the `user` relation. Pluggable CE customization field set
-		// — empty until the CE profile-format research lands; JSON keeps the
-		// schema stable while the field set is being determined.
+		// resolved via the `user` relation. `settings` holds the editable CE
+		// fields: color / thumbstick / button (+ future advanced bytes).
 		&core.JSONField{Name: "settings", MaxSize: 1 << 16},
-		// Generated, ready-to-write tar of the FATX save dir. Empty while CE
-		// generation is deferred.
+		// Generated, ready-to-write tar of the FATX save dir (blam.sav + SaveMeta).
 		&core.FileField{
 			Name:      "save_bundle",
 			MaxSelect: 1,
 			MaxSize:   1 << 20,
 		},
-		// Generator metadata (sha1 / sizes / fatx dir / deferred flag).
+		// Generator metadata (sha1 / sizes / fatx dir / digest status).
 		&core.JSONField{Name: "save_info", MaxSize: 1 << 16},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},

@@ -3,45 +3,50 @@ package hooks
 import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/saveartifact"
 )
 
 func init() {
 	register(registerCeProfileGenerateHook)
 }
 
-// ceProfileDeferredNote is stamped into a CE profile's save_info so the editor
-// can plainly show that no save file is generated yet, and WHY.
-const ceProfileDeferredNote = "Halo: CE has player profiles, but the exact profile location + format " +
-	"is being re-investigated. This record holds the gamertag + settings now; the generated save file " +
-	"is deferred until the format lands. When it does, fill the field set and implement CE generation in " +
-	"internal/saveartifact — every other layer is already wired. (The Xbox console name NICKNAME.XBN is a " +
-	"separate artifact, not the CE profile.)"
-
-// registerCeProfileGenerateHook handles the CE side of generate-on-save. CE
-// profiles are a full profile parallel to H2, but generation is a SCAFFOLD: the
-// CE profile-format re-investigation is in progress, so instead of building a
-// save it stamps a deferred marker into save_info (and leaves save_bundle empty).
-// This keeps the record + editor + manifest fully wired so filling in CE
-// generation later is a one-function change (swap the deferred stamp for an
-// attachBundle call, like the H2 hook).
+// registerCeProfileGenerateHook is the CE side of generate-on-save. Halo: CE has
+// a real player profile (`blam.sav`, parallel to H2) — name + armor color +
+// control presets, SIGNED with the per-title HMAC. The hook reads the user's
+// gamertag (the in-game name) + the record's `settings` (color / thumbstick /
+// button) and generates the signed save bundle via internal/saveartifact →
+// internal/halosave.
+//
+// (The Xbox console name NICKNAME.XBN is a SEPARATE artifact — see the
+// /api/lan/saves/console-name endpoint — not this CE profile.)
 func registerCeProfileGenerateHook(app *pocketbase.PocketBase) {
 	app.OnRecordCreate("ce_profiles").BindFunc(generateCeProfile)
 	app.OnRecordUpdate("ce_profiles").BindFunc(generateCeProfile)
 }
 
-// generateCeProfile is the deferred-generation handler, exposed as a named
-// function for the integration test. Reads the gamertag from the user relation
-// best-effort (for display in save_info — CE has no file to generate yet, so an
-// unset gamertag is not fatal here).
+// generateCeProfile builds the signed blam.sav from the user's gamertag + the
+// record's settings and attaches it. Exposed as a named function for the
+// integration test. A gamertag-less user can't generate one (the save is
+// rejected).
 func generateCeProfile(e *core.RecordEvent) error {
-	gamertag := ""
-	if u, err := e.App.FindRecordById("users", e.Record.GetString("user")); err == nil {
-		gamertag = u.GetString("gamertag")
+	gamertag, err := userGamertag(e.App, e.Record.GetString("user"))
+	if err != nil {
+		return err
 	}
-	e.Record.Set("save_info", map[string]any{
-		"deferred": true,
-		"gamertag": gamertag,
-		"note":     ceProfileDeferredNote,
-	})
+
+	var settings saveartifact.CEProfileSettings
+	if err := e.Record.UnmarshalJSONField("settings", &settings); err != nil {
+		settings = saveartifact.CEProfileSettings{}
+	}
+
+	req := saveartifact.CEProfileRequest(gamertag, settings)
+	if err := attachBundle(e.Record, req, ceProfileFilename(gamertag)); err != nil {
+		return err
+	}
 	return e.Next()
+}
+
+func ceProfileFilename(gamertag string) string {
+	return "ce-profile-" + slugFilename(gamertag) + ".tar"
 }

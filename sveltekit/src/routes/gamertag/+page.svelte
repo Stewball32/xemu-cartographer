@@ -13,7 +13,7 @@
 	import { lanMeta } from '$lib/utils/lansaves';
 	import { fetchDefaultGamertag, GAMERTAG_MAX_LEN } from '$lib/utils/gamertag';
 	import type { H2AppearanceField } from '$lib/types/lansaves';
-	import type { CeProfileRecord, H2ProfileRecord } from '$lib/types/gamertag';
+	import type { CeProfileRecord, CeProfileSettings, H2ProfileRecord } from '$lib/types/gamertag';
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -22,7 +22,7 @@
 	let appearanceFields = $state<H2AppearanceField[]>([]);
 	let gamertag = $state('');
 	let appearance = $state<Record<string, number | undefined>>({});
-	let ceSettings = $state<Record<string, unknown>>({});
+	let ceSettings = $state<CeProfileSettings>({});
 
 	let h2Record = $state<H2ProfileRecord | null>(null);
 	let ceRecord = $state<CeProfileRecord | null>(null);
@@ -198,7 +198,10 @@
 				<Card class="space-y-4">
 					<header>
 						<h3 class="h4">Halo: CE profile</h3>
-						<p class="text-sm text-surface-600-400">Full profile — field set being finalized.</p>
+						<p class="text-sm text-surface-600-400">
+							Name + armor color + control presets — generates a signed
+							<code class="font-mono">blam.sav</code>.
+						</p>
 					</header>
 					<CESettingsEditor bind:settings={ceSettings} />
 				</Card>

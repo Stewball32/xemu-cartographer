@@ -50,18 +50,24 @@ interface RecordBase {
 	updated: string;
 }
 
+// CE player profile (blam.sav) editable fields. Color is the armor enum
+// (white=0, red=2, blue=3, …); the presets are 0=Default / 1=Southpaw.
+// (Advanced 0x1C-0x2F bytes are a pluggable follow-up.)
+export interface CeProfileSettings {
+	color?: number;
+	thumbstick?: number;
+	button?: number;
+}
+
 // Profiles do NOT store the gamertag — it lives on the user record
-// (users.gamertag) and is resolved server-side at generation time.
-//
-// CE is a full profile (parallel to H2). Its field set + generation are a
-// scaffold — `settings` is the pluggable bag for the CE field set, empty until
-// the CE profile-format research lands; save_info carries a deferred marker
-// until then.
+// (users.gamertag) and is resolved server-side at generation time. CE is a full
+// profile (parallel to H2): `settings` holds color + control presets; the
+// generated blam.sav is signed.
 export interface CeProfileRecord extends RecordBase {
 	user: string;
-	settings: Record<string, unknown>;
+	settings: CeProfileSettings;
 	save_bundle: string;
-	save_info: SaveInfo | DeferredInfo | null;
+	save_info: SaveInfo | null;
 }
 
 export interface H2ProfileRecord extends RecordBase {

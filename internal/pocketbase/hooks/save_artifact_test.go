@@ -242,7 +242,7 @@ func TestGametypeGenerateOnSave(t *testing.T) {
 	}
 }
 
-func TestCeProfileDeferred(t *testing.T) {
+func TestCeProfileGeneratesBlamSav(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
 		t.Fatalf("NewTestApp: %v", err)
@@ -255,15 +255,23 @@ func TestCeProfileDeferred(t *testing.T) {
 	col, _ := app.FindCollectionByNameOrId("ce_profiles")
 	rec := core.NewRecord(col)
 	rec.Set("user", user.Id)
+	rec.Set("settings", map[string]any{"color": 2, "thumbstick": 1, "button": 0})
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save ce_profiles: %v", err)
 	}
 
-	// CE generation is a scaffold (format pending) — no file, deferred marker.
-	if fn := rec.GetString("save_bundle"); fn != "" {
-		t.Errorf("expected no CE save file yet, got %q", fn)
+	bundle := readBundle(t, app, rec)
+	names := tarNames(t, bundle)
+	var hasBlam bool
+	for _, n := range names {
+		if strings.HasSuffix(n, "/blam.sav") {
+			hasBlam = true
+		}
 	}
-	if info := rec.GetString("save_info"); !strings.Contains(info, "deferred") {
-		t.Errorf("save_info should mark deferred; got %q", info)
+	if !hasBlam {
+		t.Fatalf("CE profile bundle missing blam.sav; entries = %v", names)
+	}
+	if info := rec.GetString("save_info"); !strings.Contains(info, "4d530004") {
+		t.Errorf("save_info missing CE title id; got %q", info)
 	}
 }
