@@ -9,23 +9,25 @@
 // 1 H2 gametype). See FORMATS.md in the de-risk deliverable for the full spec
 // and docs/lan-hub/README.md in this repo for the porting notes.
 //
-// # Design philosophy: TEMPLATE-PATCH
+// # Design philosophy: TEMPLATE-PATCH + RE-SIGN
 //
-// Every payload save carries a 20-byte content-dependent integrity DIGEST whose
-// algorithm has not yet been cracked (see digest.go and the M24-adjacent
-// de-risk verdict). So the generator never synthesises a file from nothing: it
-// takes a real, same-engine save as a TEMPLATE, overwrites only the fields we
-// understand, and preserves every other byte verbatim — including the digest
-// and the trailing padding. Consequences:
+// Every payload save carries a 20-byte content-dependent integrity DIGEST — the
+// Original-Xbox roamable save signature (cracked 2026-06-25; see digest.go). The
+// generator takes a real, same-engine save as a TEMPLATE, overwrites only the
+// fields we understand, preserves every other byte verbatim, and then RE-SIGNS:
+// it recomputes the digest over the new content so the file is valid. Without
+// this, an edited file's digest no longer matches its content and Halo rejects
+// it on load as "damaged" (confirmed in xemu, 2026-06-25). Consequences:
 //
-//   - Build with no field changes  -> byte-identical to the template.
-//   - Build with edited settings    -> identical except the patched field bytes
-//     (the digest is NOT recomputed).
+//   - Build with no field changes -> byte-identical to the template (the
+//     recomputed signature equals the template's, verified on real samples).
+//   - Build with edited settings   -> identical except the patched field bytes
+//     AND a freshly recomputed, valid signature.
 //
-// RecomputeDigest is a pluggable hook (see digest.go). It currently returns
-// ErrDigestUnresolved; flip it on once the runtime probe in the de-risk verdict
-// confirms whether the digest is even enforced on load, and the signing key /
-// algorithm is recovered. Until then, callers use template-patch (preserve).
+// The signature is per-title (roamable): the signing key derives from a global
+// Xbox constant and the title's XBE certificate key, with no console-specific
+// input, so the hub signs centrally. RecomputeDigest implements it for CE and
+// H2 (DigestResolved() == true).
 //
 // # File types covered
 //

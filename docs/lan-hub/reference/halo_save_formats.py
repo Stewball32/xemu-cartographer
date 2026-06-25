@@ -209,7 +209,11 @@ def h2gt_build(template: bytes, *, name=None, score_limit=None, recompute=False)
 #   Appearance/control byte labels are PROVISIONAL (2 samples). The block is
 #   exposed raw so it can be copied from a template or patched byte-wise.
 # ===========================================================================
-H2P_OFF = dict(name=0x08, name_buf=0x110,
+# name field is 0x08..0xEB (0xE4 bytes); it does NOT run to 0x118. Bytes
+# 0xEC..0x117 are a per-profile sub-block (fixed 16-byte 0xFF field at
+# 0xEC..0xFB, identical in every real sample, plus data at 0xFC/0x101/0x102).
+# name_buf must stop at 0xEC or the zero-fill clobbers that sub-block.
+H2P_OFF = dict(name=0x08, name_buf=0xE4,
                appctl=0x118, appctl_len=0x18,   # 0x118..0x12F observed-variant block
                digest=0x1E0, digest_len=20, size=0x1F4)
 # provisional single-byte labels within the appearance/control block:

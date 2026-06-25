@@ -5,8 +5,23 @@
 > `HMAC-SHA1(AuthKey, data)`, `AuthKey = HMAC-SHA1(XboxKey, cert.sig_key)[:16]`. Verified
 > byte-exact on all real samples (CE 23/23, H2 3/3); `recompute_digest()` is implemented
 > and the generator now emits correctly-signed edited files **fully offline** — no xemu
-> probe and no pad-automation fallback needed. The "is it enforced?" question below is now
-> moot (our signatures are correct either way). Full details: **`SIGNATURE-CRACK.md`**.
+> probe and no pad-automation fallback needed.
+>
+> **UPDATE 2026-06-25 (xemu runtime — the deferred acceptance test is now DONE):**
+> - The digest **IS enforced** on load. A Halo 2 profile with an edited name but a stale
+>   (preserved) digest reproduces the exact in-game "…this profile because it's damaged…"
+>   dialog. So preserve-mode files are NOT acceptable — re-signing is mandatory.
+> - A **re-signed** edited profile and a **byte-identical clone** of a real profile both
+>   load cleanly into the H2 main menu → the signature is genuinely **per-title roamable**
+>   (no per-console/HDKey/EEPROM input), so the hub signs centrally.
+> - The crack landed in this Python reference but the **Go port (`internal/halosave/digest.go`)
+>   had remained a stub** until 2026-06-25; it now implements the signature. A second bug was
+>   found and fixed in the same pass: the H2 name field is 0x08..**0xEC** (not 0x118), so the
+>   name write must not zero-fill past 0xEC (`name_buf 0xE4`). See the CHANGELOG entry.
+> - **`SIGNATURE-CRACK.md` was never written**; the authoritative implementation + provenance
+>   is `internal/halosave/digest.go` (Go) and `recompute_digest()` here (Python). Treat those
+>   as the spec; ignore the dangling filename references below.
+>
 > The sections below are retained as the original verdict for the record.
 
 **Date:** 2026-06-24   **Method:** offline file analysis only (no xemu launched;
