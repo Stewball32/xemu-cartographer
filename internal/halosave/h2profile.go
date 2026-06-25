@@ -5,9 +5,19 @@ import "fmt"
 // Halo 2 player profile — `profile`, fixed 500 bytes (see FORMATS.md §5).
 //
 //	0x00..0x07            header (zero)
-//	0x08                  UTF-16LE player name, NUL-terminated, large buffer
+//	0x08..0xEB            UTF-16LE player name, NUL-terminated (0xE4-byte field)
+//	0xEC..0x117          per-profile sub-block: a fixed 16-byte 0xFF field
+//	                      (0xEC..0xFB, identical in every real sample) plus
+//	                      bytes at 0xFC/0x101/0x102 that vary per profile. NOT
+//	                      part of the name — preserved verbatim from the template.
 //	0x118..0x12F          appearance + controller block (per-profile bytes)
-//	0x1E0..0x1F3          20-byte trailing digest
+//	0x1E0..0x1F3          20-byte trailing digest (HMAC signature; see digest.go)
+//
+// The name field ends at 0xEC, NOT 0x118. An earlier map treated the whole
+// 0x08..0x118 region as the name buffer; writing a name then zero-filled
+// 0xEC..0x117 and clobbered the fixed 0xFF field + the per-profile bytes there.
+// Cross-checked against 4 real profiles: bytes 0xEC..0xFB are 0xFF in all of
+// them and 0xFC/0x101/0x102 carry real data — so h2pNameBuf stops at 0xEC.
 //
 // The appearance/control byte labels are PROVISIONAL — derived from only 2
 // sample profiles. The block is exposed raw so it can be copied from a template
@@ -16,7 +26,7 @@ import "fmt"
 const (
 	h2pSize      = 0x1F4 // 500
 	h2pOffName   = 0x08
-	h2pNameBuf   = 0x110
+	h2pNameBuf   = 0xE4 // name field 0x08..0xEB; stops before the 0xEC sub-block
 	h2pOffAppctl = 0x118
 	h2pAppctlLen = 0x18
 	h2pOffDigest = 0x1E0

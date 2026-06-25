@@ -285,14 +285,120 @@ func TestCENameTooLong(t *testing.T) {
 	}
 }
 
-func TestDigestHookUnresolved(t *testing.T) {
-	if DigestResolved() {
-		t.Fatal("DigestResolved() should be false until the algorithm is implemented")
+func TestDigestResolved(t *testing.T) {
+	if !DigestResolved() {
+		t.Fatal("DigestResolved() should be true: the signature is implemented for CE and H2")
 	}
-	tmpl, _ := CETemplate("slayer")
-	n := "x"
-	if _, err := CEBuild(tmpl, CEPatch{Name: &n}, true); err != ErrDigestUnresolved {
-		t.Fatalf("recompute=true should return ErrDigestUnresolved, got %v", err)
+	if _, err := RecomputeDigest(make([]byte, 64), 0, 20, "nope"); err == nil {
+		t.Fatal("RecomputeDigest should error for an unknown title")
+	}
+}
+
+// TestRecomputeReproducesRealDigests is the offline proof that the signature is
+// correct and per-title (roamable): the recomputed digest equals the digest
+// stored in every real, untouched sample, using only the global key + the
+// title's cert key (no console input). CE 23/23, H2 3/3 (2 testdata + template).
+func TestRecomputeReproducesRealDigests(t *testing.T) {
+	for _, d := range globOrFail(t, "testdata/ce/G-*") {
+		b := readFile(t, filepath.Join(d, "blam.lst"))
+		if len(b) != ceSize {
+			continue
+		}
+		got, err := RecomputeDigest(b, ceOffDigest, ceDigestLen, "ce")
+		if err != nil {
+			t.Fatalf("%s: %v", d, err)
+		}
+		if !bytes.Equal(got, b[ceOffDigest:ceOffDigest+ceDigestLen]) {
+			t.Errorf("%s: recomputed digest != stored", filepath.Base(d))
+		}
+	}
+	h2 := []string{"testdata/h2/profile_587C76321326.bin", "testdata/h2/profile_E4CADA6B1E65.bin"}
+	for _, p := range h2 {
+		b := readFile(t, p)
+		got, err := RecomputeDigest(b, h2pOffDigest, h2pDigestLen, "h2")
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		if !bytes.Equal(got, b[h2pOffDigest:h2pOffDigest+h2pDigestLen]) {
+			t.Errorf("%s: recomputed digest != stored", filepath.Base(p))
+		}
+	}
+	// The embedded H2 template must also self-verify.
+	tb, _ := H2ProfileTemplate()
+	got, _ := RecomputeDigest(tb, h2pOffDigest, h2pDigestLen, "h2")
+	if !bytes.Equal(got, tb[h2pOffDigest:h2pOffDigest+h2pDigestLen]) {
+		t.Error("embedded H2 template digest does not self-verify")
+	}
+}
+
+// TestBuildH2ProfileIsCorrectlySigned is the regression test for the "damaged"
+// bug: an edited generated profile must carry a digest that is VALID for its own
+// (edited) content — not the template's stale digest.
+func TestBuildH2ProfileIsCorrectlySigned(t *testing.T) {
+	tmpl, _ := H2ProfileTemplate()
+	set, err := Build(BuildRequest{
+		Title: TitleH2, Kind: KindProfile, Name: "CARTOG",
+		Appearance: map[string]int{"armor_primary": 7},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := set.Files[0].Data
+	stored := payload[h2pOffDigest : h2pOffDigest+h2pDigestLen]
+	want, _ := RecomputeDigest(payload, h2pOffDigest, h2pDigestLen, "h2")
+	if !bytes.Equal(stored, want) {
+		t.Fatalf("generated profile digest is INVALID for its content (the 'damaged' bug)")
+	}
+	// And it must NOT be the template's stale digest (content changed).
+	if bytes.Equal(stored, tmpl[h2pOffDigest:h2pOffDigest+h2pDigestLen]) {
+		t.Fatalf("generated profile still carries the template's stale digest")
+	}
+	if set.Digest.Mode != DigestRecomputed || !set.Digest.Resolved {
+		t.Errorf("DigestStatus = %+v, want recomputed/resolved", set.Digest)
+	}
+}
+
+// TestH2ProfileNameWritePreservesSubBlock guards the second bug: writing a name
+// must NOT clobber the per-profile sub-block at 0xEC..0x117 (the fixed 16-byte
+// 0xFF field + the bytes at 0xFC/0x101/0x102).
+func TestH2ProfileNameWritePreservesSubBlock(t *testing.T) {
+	tmpl, _ := H2ProfileTemplate()
+	newName := "X" // shorter than the template name to exercise zero-fill
+	edited, err := H2ProfileBuild(tmpl, H2ProfilePatch{Name: &newName}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0xEC; i < 0x118; i++ {
+		if edited[i] != tmpl[i] {
+			t.Errorf("sub-block byte %#x clobbered: tmpl=%#x edited=%#x", i, tmpl[i], edited[i])
+		}
+	}
+	// Name area after the new name (up to 0xEC) must be zeroed.
+	for i := 0x08 + 2*len([]rune(newName)) + 2; i < 0xEC; i++ {
+		if edited[i] != 0 {
+			t.Errorf("name padding byte %#x not zero: %#x", i, edited[i])
+		}
+	}
+	// Re-signed file must be self-valid.
+	want, _ := RecomputeDigest(edited, h2pOffDigest, h2pDigestLen, "h2")
+	if !bytes.Equal(edited[h2pOffDigest:h2pOffDigest+h2pDigestLen], want) {
+		t.Error("edited profile not correctly re-signed")
+	}
+}
+
+// TestBuildUnchangedH2CloneByteIdentical: re-signing an unchanged profile
+// reproduces the template byte-for-byte (the signature is deterministic and the
+// template's own stored digest is valid).
+func TestBuildUnchangedH2CloneByteIdentical(t *testing.T) {
+	tmpl, _ := H2ProfileTemplate()
+	base, _ := H2ProfileParse(tmpl)
+	set, err := Build(BuildRequest{Title: TitleH2, Kind: KindProfile, Name: base.Name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(set.Files[0].Data, tmpl) {
+		t.Errorf("unchanged H2 profile build should clone the template byte-for-byte (first diff @%d)",
+			firstDiff(set.Files[0].Data, tmpl))
 	}
 }
 
@@ -337,6 +443,15 @@ func readFile(t *testing.T, p string) []byte {
 		t.Fatalf("read %s: %v", p, err)
 	}
 	return b
+}
+
+func globOrFail(t *testing.T, pat string) []string {
+	t.Helper()
+	m, err := filepath.Glob(pat)
+	if err != nil || len(m) == 0 {
+		t.Fatalf("no matches for %q: %v", pat, err)
+	}
+	return m
 }
 
 func firstDiff(a, b []byte) int {

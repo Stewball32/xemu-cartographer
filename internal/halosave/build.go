@@ -87,8 +87,10 @@ type BuildRequest struct {
 	// H2 profile — appearance/controller bytes keyed by H2ProfileFields.Key.
 	Appearance map[string]int `json:"appearance,omitempty"`
 
-	// Recompute the digest via the (currently unimplemented) hook. Leave false
-	// for template-patch. True returns ErrDigestUnresolved until the hook lands.
+	// Recompute is retained for API compatibility. The digest algorithm is now
+	// resolved (see digest.go), so CE/H2 files are ALWAYS correctly re-signed
+	// regardless of this flag — a generated file must carry a valid signature or
+	// Halo rejects it as "damaged". The field no longer gates signing.
 	Recompute bool `json:"recompute,omitempty"`
 }
 
@@ -179,7 +181,7 @@ func buildCEGametype(req BuildRequest) (*SaveSet, error) {
 		p.Options = u32ptr(opts)
 	}
 
-	payload, err := CEBuild(tmpl, p, req.Recompute)
+	payload, err := CEBuild(tmpl, p, true) // always re-sign: a valid digest is mandatory
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +203,7 @@ func buildCEGametype(req BuildRequest) (*SaveSet, error) {
 			newSaveFile("blam.lst", payload),
 			newSaveFile("SaveMeta.xbx", SaveMetaBuild(req.Name)),
 		},
-		Digest:   preservedDigest(!bytes.Equal(payload, tmpl)),
+		Digest:   recomputedDigest(!bytes.Equal(payload, tmpl)),
 		Parsed:   parsed,
 		Warnings: ceWarnings(!bytes.Equal(payload, tmpl)),
 	}
@@ -226,7 +228,7 @@ func buildH2Profile(req BuildRequest) (*SaveSet, error) {
 		}
 		p.AppctlPatch[off] = byte(val)
 	}
-	payload, err := H2ProfileBuild(tmpl, p, req.Recompute)
+	payload, err := H2ProfileBuild(tmpl, p, true) // always re-sign: a valid digest is mandatory
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +249,7 @@ func buildH2Profile(req BuildRequest) (*SaveSet, error) {
 			newSaveFile("profile", payload),
 			newSaveFile("SaveMeta.xbx", SaveMetaBuild("Profile: "+req.Name)),
 		},
-		Digest: preservedDigest(!bytes.Equal(payload, tmpl)),
+		Digest: recomputedDigest(!bytes.Equal(payload, tmpl)),
 		Parsed: parsed,
 		Warnings: []string{
 			"Halo 2 appearance/controller byte labels are PROVISIONAL (derived from 2 sample profiles); confirm before trusting individual labels.",
@@ -267,7 +269,7 @@ func buildH2Gametype(req BuildRequest) (*SaveSet, error) {
 	if req.ScoreLimit != nil {
 		p.ScoreLimit = req.ScoreLimit
 	}
-	payload, err := H2GametypeBuild(tmpl, p, req.Recompute)
+	payload, err := H2GametypeBuild(tmpl, p, true) // always re-sign: a valid digest is mandatory
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +292,7 @@ func buildH2Gametype(req BuildRequest) (*SaveSet, error) {
 			newSaveFile(mode, payload),
 			newSaveFile("SaveMeta.xbx", SaveMetaBuild(display)),
 		},
-		Digest: preservedDigest(!bytes.Equal(payload, tmpl)),
+		Digest: recomputedDigest(!bytes.Equal(payload, tmpl)),
 		Parsed: parsed,
 		Warnings: []string{
 			"Halo 2 gametype field map is PARTIAL (only name + score limit are mapped from a single sample); other settings are preserved from the template.",
