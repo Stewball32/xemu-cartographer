@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -162,11 +161,18 @@ func findProfileByGamertag(app core.App, collection, gamertag string) *core.Reco
 	if user == nil {
 		return nil
 	}
-	rec, err := app.FindFirstRecordByFilter(collection, "user = {:u}", dbx.Params{"u": user.Id})
+	// Scan for the user's profile (one-per-user). Uses FindAllRecords like
+	// findUserByGamertag, so the package needs no dbx dependency.
+	recs, err := app.FindAllRecords(collection)
 	if err != nil {
 		return nil
 	}
-	return rec
+	for _, r := range recs {
+		if r.GetString("user") == user.Id {
+			return r
+		}
+	}
+	return nil
 }
 
 // findUserByGamertag does a case-insensitive match against users.gamertag. User
