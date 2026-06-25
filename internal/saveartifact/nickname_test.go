@@ -6,10 +6,10 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/consolename"
 )
 
-func TestCEProfileBundle(t *testing.T) {
-	b, err := CEProfileBundle("CARTOG")
+func TestConsoleNameBundle(t *testing.T) {
+	b, err := ConsoleNameBundle("CARTOG")
 	if err != nil {
-		t.Fatalf("CEProfileBundle: %v", err)
+		t.Fatalf("ConsoleNameBundle: %v", err)
 	}
 	entries := tarEntries(t, b.Tar)
 	data, ok := entries["UDATA/NICKNAME.XBN"]
@@ -31,8 +31,8 @@ func TestCEProfileBundle(t *testing.T) {
 	}
 }
 
-func TestCEProfileBundleRejectsEmpty(t *testing.T) {
-	if _, err := CEProfileBundle("😀"); err == nil {
+func TestConsoleNameBundleRejectsEmpty(t *testing.T) {
+	if _, err := ConsoleNameBundle("😀"); err == nil {
 		t.Fatal("expected error for a gamertag with no printable-ASCII characters")
 	}
 }

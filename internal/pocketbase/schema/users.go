@@ -17,15 +17,16 @@ func init() {
 
 // GamertagMaxLen caps users.gamertag — the in-game name, SEPARATE from the
 // account `username`. The gamertag is written into BOTH Halo player profiles, so
-// it must fit the SHORTER of the two games' name fields (cap = min(CE, H2)):
+// it must fit the shorter of the two games' name fields. A conservative small
+// interim of 11:
 //
-//   - CE: the in-memory MP name buffer is 24 bytes ≈ 11 UTF-16 chars. Halo: CE
-//     has no MP player profile on Xbox — the MP name is the Xbox console name
-//     (E:\UDATA\NICKNAME.XBN); 11 is the tighter, controlling limit.
-//   - H2: the `profile` name field is a 0xE4-byte (228) UTF-16LE NUL-terminated
-//     buffer (halosave/h2profile.go `h2pNameBuf`) ≈ 113 chars — looser.
+//   - CE: has its own player profile (format being re-investigated); its name
+//     field length is not yet confirmed. CE fields seen so far cap small — the
+//     gametype name is ≤11 (FORMATS.md §2) and the Xbox console name ≤15.
+//   - H2: the `profile` name field is ~113 chars (looser).
 //
-// So the cap is CE's 11. Printable-ASCII only (system-link / console-name
+// 11 is the safe small minimum until the CE profile format confirms its name
+// length; tighten/loosen then. Printable-ASCII only (console-name / system-link
 // friendly). The frontend mirrors this number — keep them in sync.
 const GamertagMaxLen = 11
 

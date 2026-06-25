@@ -10,9 +10,9 @@ export type FileRecord = Pick<RecordModel, 'id' | 'collectionId' | 'collectionNa
 
 // GAMERTAG_MAX_LEN mirrors the backend schema.GamertagMaxLen. The gamertag is
 // the in-game name (separate from the account username), printable-ASCII,
-// written into BOTH player profiles: the CE console name (E:\UDATA\NICKNAME.XBN)
-// and the H2 profile. Capped to the shorter of the two — CE's 11-char MP name
-// limit (H2 allows more). Keep in sync with the Go constant.
+// written into both the CE and H2 player profiles. A conservative small interim
+// (11) until the CE profile format confirms its name length (H2 allows more).
+// Keep in sync with the Go constant.
 export const GAMERTAG_MAX_LEN = 11;
 
 /** Resolve the caller's default gamertag (server-side identity) for pre-filling

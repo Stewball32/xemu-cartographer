@@ -6,16 +6,20 @@ import (
 )
 
 // registerCeProfilesCollection creates the `ce_profiles` collection — one Halo:
-// Combat Evolved "profile" per user.
+// Combat Evolved player profile per user, a FULL profile parallel to h2_profiles.
 //
-// NAME-ONLY (see docs/gamertag-system/README.md). On the original Xbox, Halo: CE
-// has **no multiplayer player profile / appearance / controls** — the MP name
-// comes solely from the Xbox console name E:\UDATA\NICKNAME.XBN (the "name +
-// armor + controls" profile is Halo PC, not Xbox CE). So this record has no
-// editable fields: the generate-on-save hook builds NICKNAME.XBN from the user's
-// gamertag (via internal/consolename) and stores it on save_bundle. The record
-// exists so each user has a CE profile alongside their H2 one, regeneration
-// cascades on gamertag change, and the LAN manifest can serve it.
+// SCAFFOLD (see docs/gamertag-system/README.md). Halo: CE DOES have player
+// profiles on Xbox; the exact profile location + format is being re-investigated.
+// Until that lands, this record holds the gamertag (from the user) + a pluggable
+// `settings` JSON for the CE field set, and the generate-on-save hook stamps
+// `save_info.deferred = true` (no file yet). When the format + field set arrive,
+// fill `settings` with the real fields and implement generation in
+// internal/saveartifact — every other layer (record, editor, manifest, serve) is
+// already wired.
+//
+// NOTE: the Xbox console name (E:\UDATA\NICKNAME.XBN) is a SEPARATE artifact
+// (dashboard / system-link identity), NOT the CE player profile — see the
+// stateless /api/lan/saves/console-name/{gamertag} endpoint.
 //
 // Registered from identity.go (phase 5) because its rules embed the
 // hasAdminRole subquery, which requires user_roles to exist at rule-validation
@@ -40,14 +44,18 @@ func registerCeProfilesCollection(app *pocketbase.PocketBase) error {
 			CascadeDelete: true, // a user's profile dies with the user
 		},
 		// The in-game name comes from users.gamertag (single source of truth),
-		// resolved via the `user` relation. No other editable fields — CE is
-		// name-only. The generated, ready-to-write tar (UDATA/NICKNAME.XBN):
+		// resolved via the `user` relation. Pluggable CE customization field set
+		// — empty until the CE profile-format research lands; JSON keeps the
+		// schema stable while the field set is being determined.
+		&core.JSONField{Name: "settings", MaxSize: 1 << 16},
+		// Generated, ready-to-write tar of the FATX save dir. Empty while CE
+		// generation is deferred.
 		&core.FileField{
 			Name:      "save_bundle",
 			MaxSelect: 1,
 			MaxSize:   1 << 20,
 		},
-		// Generator metadata (sha1 / sizes / fatx dir) for display + the manifest.
+		// Generator metadata (sha1 / sizes / fatx dir / deferred flag).
 		&core.JSONField{Name: "save_info", MaxSize: 1 << 16},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},

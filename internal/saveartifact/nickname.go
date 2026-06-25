@@ -9,25 +9,23 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/halosave"
 )
 
-// CEProfileBundle builds the deployable Halo: CE "profile". On the original
-// Xbox, Halo: CE has NO multiplayer player profile / appearance / controls —
-// the MP name comes solely from the Xbox console name E:\UDATA\NICKNAME.XBN
-// (plaintext, no checksum; "name + armor + controls" is Halo PC, not Xbox CE).
-// So the CE profile is just that console-name file, built from the gamertag via
-// the shared internal/consolename builder (the same one the podman provisioner
-// writes into a container overlay).
+// ConsoleNameBundle builds the deployable Xbox console name E:\UDATA\NICKNAME.XBN
+// (plaintext, no checksum) from a gamertag, via the shared internal/consolename
+// builder (the same one the podman provisioner writes into a container overlay).
 //
-// The bundle tars the file at UDATA/NICKNAME.XBN so the LAN client unpacks it
+// This is the box's dashboard / system-link identity — NOT the Halo: CE player
+// profile (CE has its own profiles; their format is being re-investigated). The
+// bundle tars the file at UDATA/NICKNAME.XBN so the LAN client unpacks it
 // relative to the Xbox E:\ root. No signing — NICKNAME.XBN carries no checksum.
-func CEProfileBundle(gamertag string) (*Bundle, error) {
+func ConsoleNameBundle(gamertag string) (*Bundle, error) {
 	name := consolename.Sanitize(gamertag)
 	if name == "" {
 		return nil, fmt.Errorf("saveartifact: gamertag %q has no printable-ASCII characters for the console name", gamertag)
 	}
 	payload := consolename.BuildXBN(name)
 	set := &halosave.SaveSet{
-		Title:   halosave.TitleCE,
-		Kind:    halosave.KindProfile,
+		Title:   "xbox",
+		Kind:    "console-name",
 		FatxDir: "UDATA",
 		Files:   []halosave.SaveFile{saveFile("NICKNAME.XBN", payload)},
 		Digest: halosave.DigestStatus{
@@ -36,8 +34,8 @@ func CEProfileBundle(gamertag string) (*Bundle, error) {
 			Note:     "NICKNAME.XBN is plaintext with no checksum or signature.",
 		},
 		Warnings: []string{
-			"Halo: CE has no MP player profile on Xbox — this is the console name " +
-				"(E:\\UDATA\\NICKNAME.XBN), which is also the in-game multiplayer name.",
+			"The Xbox console name (E:\\UDATA\\NICKNAME.XBN) — the box's dashboard / " +
+				"system-link identity. It is NOT the Halo: CE player profile.",
 		},
 	}
 	tarBytes, err := tarSet(set)

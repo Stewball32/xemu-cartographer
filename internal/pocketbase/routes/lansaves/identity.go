@@ -3,6 +3,7 @@ package lansaves
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -52,12 +53,20 @@ type gameRef struct {
 	DownloadURL string `json:"download_url"`
 }
 
+// consoleNameRef is the box's dashboard / system-link identity (NICKNAME.XBN),
+// derived statelessly from the gamertag — separate from the CE player profile.
+type consoleNameRef struct {
+	Gamertag    string `json:"gamertag"`
+	DownloadURL string `json:"download_url"`
+}
+
 type identityManifest struct {
-	Gamertag  string        `json:"gamertag"`
-	CEProfile *fileRef      `json:"ce_profile"`
-	H2Profile *fileRef      `json:"h2_profile"`
-	Gametypes []gametypeRef `json:"gametypes"`
-	Games     []gameRef     `json:"games"`
+	Gamertag    string          `json:"gamertag"`
+	ConsoleName *consoleNameRef `json:"console_name"`
+	CEProfile   *fileRef        `json:"ce_profile"`
+	H2Profile   *fileRef        `json:"h2_profile"`
+	Gametypes   []gametypeRef   `json:"gametypes"`
+	Games       []gameRef       `json:"games"`
 }
 
 func handleIdentity(e *core.RequestEvent) error {
@@ -70,6 +79,12 @@ func handleIdentity(e *core.RequestEvent) error {
 		Gamertag:  gamertag,
 		Gametypes: []gametypeRef{},
 		Games:     []gameRef{},
+		// The console name is derived purely from the gamertag, so it's always
+		// available (no record needed). NOT the CE profile.
+		ConsoleName: &consoleNameRef{
+			Gamertag:    gamertag,
+			DownloadURL: "/api/lan/saves/console-name/" + url.PathEscape(gamertag),
+		},
 	}
 
 	if h2 := findProfileByGamertag(e.App, "h2_profiles", gamertag); h2 != nil {

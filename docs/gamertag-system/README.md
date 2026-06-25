@@ -1,11 +1,12 @@
 # Gamertag identity system
 
 > **Status:** Built + live-verified (2026-06-25, branch `feat/gamertag-system`).
-> One gamertag drives both profiles: the **CE profile** generates the Xbox
-> console name `E:\UDATA\NICKNAME.XBN` (name-only — CE has no MP profile on
-> Xbox), and the **H2 profile** generates the full appearance/controls `profile`,
+> The **H2 profile** generates the full appearance/controls `profile`,
 > **correctly signed** (the halosave 20-byte digest is implemented + verified
-> in-game — Halo 2 accepts the generated profiles).
+> in-game). The **CE profile** is a full profile too (CE has its own player
+> profiles) — scaffolded + generation deferred while the exact CE profile format
+> is re-investigated. The Xbox **console name** (`NICKNAME.XBN`) is generated as
+> a separate dashboard/system-link artifact, NOT the CE profile.
 
 A unified **gamertag = your in-game name** identity layer on top of the LAN-hub
 [`halosave`](../lan-hub/README.md) generator. The gamertag is a field on the
@@ -25,10 +26,9 @@ generate hooks resolve it via the `user` relation, and `users_gamertag_regen`
 re-generates the profiles whenever it changes.
 
 It is length-capped to **`schema.GamertagMaxLen` (11 chars)**, printable-ASCII
-only — the shorter of the two games' name fields (a gamertag must fit both).
-CE's in-memory MP name buffer is 24 bytes ≈ 11 UTF-16 chars (the controlling,
-tighter limit); H2's `profile` name field holds ~113. The frontend mirrors the
-number (`GAMERTAG_MAX_LEN`).
+only — a conservative small interim until the CE profile format confirms its
+name length (CE fields seen so far cap small — gametype names ≤11, the console
+name ≤15; H2 holds ~113). The frontend mirrors the number (`GAMERTAG_MAX_LEN`).
 
 ```
  Browser (user)                 Browser (organizer)            nxdk client (Xbox, LAN)
@@ -53,6 +53,7 @@ number (`GAMERTAG_MAX_LEN`).
 | Per-gamertag download manifest | `GET /api/lan/saves/identity/{gamertag}` | LAN-token / admin |
 | List gamertags with a profile | `GET /api/lan/saves/identity` | LAN-token / admin |
 | Stream a stored save/upload | `GET /api/lan/saves/file/{kind}/{id}` | LAN-token / admin |
+| Console name (NICKNAME.XBN) for a gamertag | `GET /api/lan/saves/console-name/{gamertag}` | LAN-token / admin |
 
 `{kind}` ∈ `h2-profile` · `ce-profile` · `gametype` · `game`.
 
@@ -64,7 +65,7 @@ Four new collections, registered from `schema/identity.go` **phase 5** (after
 | Collection | Key fields | Generated? | Access (PB rules) |
 | --- | --- | --- | --- |
 | `users` (built-in) | + `gamertag` (text, ≤11, printable-ASCII) — the in-game name, separate from `username` | — | self read/write; admin |
-| `ce_profiles` | `user` (unique), `save_bundle` (file), `save_info` (json) — name-only, gamertag read from the user | yes — `UDATA/NICKNAME.XBN` (console name), tar'd | owner read/write; admin anything |
+| `ce_profiles` | `user` (unique), `settings` (json, pluggable), `save_bundle` (file), `save_info` (json) — gamertag read from the user | **deferred** (full profile; CE format being re-investigated) | owner read/write; admin anything |
 | `h2_profiles` | `user` (unique), `appearance` (json byte-map), `save_bundle`, `save_info` — gamertag read from the user | yes — 500-byte `profile` + `SaveMeta.xbx`, tar'd | owner read/write; admin anything |
 | `gametypes` | `title` (ce/h2), `engine`, `name`, `settings` (json), `save_bundle`, `save_info`, `created_by` | yes — CE `blam.lst` / H2 mode payload + `SaveMeta.xbx` | read: any authed; write: organizer/admin |
 | `game_titles` | `name`, `description`, `file` (≤2 GiB), `created_by` | n/a — plain upload | read: any authed; write: organizer/admin |
@@ -88,10 +89,9 @@ save regardless of who writes the record (SDK, route, seeder):
   `attachBundle`). An invalid input (e.g. an out-of-range appearance byte) makes
   the generator error, which rejects the save — never store an unbuildable
   record.
-- `ce_profiles` builds the **console name** `UDATA/NICKNAME.XBN` from the
-  gamertag (`saveartifact.CEProfileBundle` → `internal/consolename`, the same
-  builder the podman provisioner uses) — CE has no MP profile on Xbox, so the
-  console name IS the CE profile (see below).
+- `ce_profiles` is a full profile parallel to H2, but generation is **deferred**
+  (the hook stamps `save_info.deferred`) while the CE profile format is
+  re-investigated. The console name is generated separately (see below).
 - The profile hooks resolve the in-game name from **`users.gamertag` via the
   `user` relation** (`userGamertag`), not a per-profile field — so a user with no
   gamertag set yet can't create a profile (the save is rejected). When the
@@ -105,27 +105,30 @@ unit-tested directly; the hook→file-field→read-back path has a PocketBase
 integration test (`hooks/save_artifact_test.go`, which also covers the
 gamertag-rename cascade).
 
-## The CE profile is name-only (the console name)
+## The CE profile (full, scaffold) + the console name (separate)
 
-On the original Xbox, **Halo: CE has no MP player profile / appearance /
-controls** (CE research, confirmed). The multiplayer name comes solely from the
-Xbox console name `E:\UDATA\NICKNAME.XBN` (3400 bytes, plaintext, no checksum);
-CE's MP color is an engine-assigned team slot (not saved), and look/sensitivity
-are local per-controller (not per-identity, not networked). The "name + armor +
-controls" profile people remember is **Halo PC, not Xbox CE**.
+**Halo: CE has its own player profiles** on Xbox — a full profile parallel to
+H2. The exact profile location + format is being **re-investigated**, so until
+it lands the CE profile is a scaffold:
 
-So the CE profile is name-only:
+- `ce_profiles` holds the gamertag (from the user) + a pluggable `settings` JSON
+  for the CE field set, and the generate hook stamps `save_info.deferred = true`
+  (no file yet).
+- **The single seam:** when the format + field set arrive, implement CE
+  generation in `internal/saveartifact` and swap the deferred stamp for an
+  `attachBundle(...)` call (like the H2 hook). The record, editor, manifest, and
+  serve endpoint are already wired.
+- The CE editor (`/gamertag/`, Halo: CE column) is a scaffold card where the
+  field set will drop in.
 
-- `ce_profiles` has no editable fields — the generate hook builds `NICKNAME.XBN`
-  from the user's gamertag via `saveartifact.CEProfileBundle` →
-  [`internal/consolename`](../../internal/consolename) (the shared leaf package
-  that `internal/podman` also uses to stamp a container's console name).
-- The same gamertag therefore writes **both** `NICKNAME.XBN` (CE / dashboard /
-  system-link name) and the H2 `profile`.
-- NICKNAME.XBN is unsigned (plaintext), so there's no digest to recompute.
-
-The CE editor (`/gamertag/`, Halo: CE column) is an info card: the gamertag is
-the whole CE profile, and saving generates the console name.
+**The Xbox console name is a separate artifact** (not the CE profile): it's the
+box's dashboard / system-link identity, `E:\UDATA\NICKNAME.XBN` (3400 bytes,
+plaintext, no checksum). It's generated statelessly from the gamertag via
+`saveartifact.ConsoleNameBundle` → [`internal/consolename`](../../internal/consolename)
+(the shared leaf package `internal/podman` also uses to name a container), and
+served at **`GET /api/lan/saves/console-name/{gamertag}`** + surfaced in the
+identity manifest as `console_name` (always present — derived purely from the
+gamertag).
 
 ## H2 customization field set
 
@@ -171,34 +174,34 @@ optional `LAN_SAVES_TOKEN` (open on a trusted LAN by default).
 
 | Path | Role |
 | --- | --- |
-| `internal/consolename` | Pure leaf: the `NICKNAME.XBN` console-name format (`Sanitize`/`BuildXBN`). Shared by `internal/podman` (container naming) and the CE profile. Unit-tested. |
-| `internal/saveartifact` | Pure: typed settings → `halosave.BuildRequest` → SaveSet + tar bundle + lean `Info`; plus `CEProfileBundle` (the NICKNAME.XBN tar). Unit-tested. |
+| `internal/consolename` | Pure leaf: the `NICKNAME.XBN` console-name format (`Sanitize`/`BuildXBN`). Shared by `internal/podman` (container naming) and the console-name endpoint. Unit-tested. |
+| `internal/saveartifact` | Pure: typed settings → `halosave.BuildRequest` → SaveSet + tar bundle + lean `Info`; plus `ConsoleNameBundle` (the NICKNAME.XBN tar). Unit-tested. |
 | `internal/pocketbase/schema/{ce_profiles,h2_profiles,gametypes,game_titles}.go` | The four collections + access rules. |
 | `internal/pocketbase/schema/{roles,rules,identity,users}.go` | `organizer` role, `organizerOrAdmin` rule, `users.gamertag` field + cap, phase-5 registration. |
-| `internal/pocketbase/hooks/{save_artifact,h2_profiles_generate,ce_profiles_generate,gametypes_generate,users_gamertag_regen}.go` | Generate-on-save (CE NICKNAME.XBN, H2 signed profile, gametypes) + gamertag-change cascade. Integration-tested. |
-| `internal/pocketbase/routes/lansaves/{identity,serve}.go` | Per-gamertag manifest + file streaming. |
+| `internal/pocketbase/hooks/{save_artifact,h2_profiles_generate,ce_profiles_generate,gametypes_generate,users_gamertag_regen}.go` | Generate-on-save (H2 signed profile, gametypes; CE deferred scaffold) + gamertag-change cascade. Integration-tested. |
+| `internal/pocketbase/routes/lansaves/{identity,serve,console_name}.go` | Per-gamertag manifest + file streaming + stateless console name. |
 | `sveltekit/src/routes/gamertag/` | The side-by-side CE + H2 profile editor (RequireAuth). |
 | `sveltekit/src/routes/organizer/{gametypes,games}/` | Organizer-gated library + uploads. |
-| `sveltekit/src/lib/components/gamertag/` | `H2AppearanceEditor`, `CESettingsEditor` (CE name-only info), `GametypeForm`, `SaveResultCard`. |
+| `sveltekit/src/lib/components/gamertag/` | `H2AppearanceEditor`, `CESettingsEditor` (CE scaffold card), `GametypeForm`, `SaveResultCard`. |
 | `sveltekit/src/lib/{utils,types}/gamertag.ts` | FE helpers + record types. |
 
 ## Verification
 
 - ✅ Go: `go build`, `go vet`, `go test` (consolename + saveartifact unit + hooks
-  integration: CE profile generates `UDATA/NICKNAME.XBN`, H2 generates a signed
-  profile, gametypes generate, the gamertag-rename cascade regenerates, bad input
-  rejects the save).
+  integration: H2 generates a signed profile, gametypes generate, the CE profile
+  defers (no file), the gamertag-rename cascade regenerates, bad input rejects).
 - ✅ Frontend: `pnpm check` (0 errors), `pnpm lint`, `pnpm test` (240), `pnpm build`.
 - ✅ Live server (isolated port): collections register; the 11-char + printable-
-  ASCII gamertag cap is enforced; setting `users.gamertag` then creating profiles
-  generates the CE `NICKNAME.XBN` (3400 B, correct header) **and** the signed H2
-  profile; the manifest resolves a gamertag to both; `/file/...` streams a valid
-  tar; the UI editors render and save with zero console errors.
+  ASCII gamertag cap is enforced; setting `users.gamertag` then creating the H2
+  profile generates a signed bundle while the CE profile defers; the manifest
+  resolves a gamertag (H2 + the always-present `console_name`); the stateless
+  `/console-name/{gamertag}` endpoint streams a valid `NICKNAME.XBN` (3400 B,
+  correct header); the UI editors render and save with zero console errors.
 
 ## Open / deferred
 
-1. **H2 field maps** — provisional appearance labels; more samples would finish them.
-2. **nxdk client** — wire the two per-gamertag endpoints + on-box unpack.
+1. **CE profile generation** — pending the CE profile-format re-investigation. Seam ready.
+2. **H2 field maps** — provisional appearance labels; more samples would finish them.
+3. **nxdk client** — wire the per-gamertag endpoints + on-box unpack.
 
-(The digest/signing and CE-profile open items are **closed** — see "The 20-byte
-digest" and "The CE profile is name-only" above.)
+(The digest/signing open item is **closed** — see "The 20-byte digest" above.)

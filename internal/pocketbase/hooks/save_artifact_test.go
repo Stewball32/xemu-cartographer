@@ -50,6 +50,7 @@ func ensureProfileCollections(t *testing.T, app core.App) {
 		c := core.NewBaseCollection("ce_profiles")
 		c.Fields.Add(
 			&core.RelationField{Name: "user", Required: true, CollectionId: usersCol.Id, MaxSelect: 1},
+			&core.JSONField{Name: "settings", MaxSize: 1 << 16},
 			&core.FileField{Name: "save_bundle", MaxSelect: 1, MaxSize: 1 << 20},
 			&core.JSONField{Name: "save_info", MaxSize: 1 << 16},
 			&core.AutodateField{Name: "created", OnCreate: true},
@@ -241,7 +242,7 @@ func TestGametypeGenerateOnSave(t *testing.T) {
 	}
 }
 
-func TestCeProfileGeneratesConsoleName(t *testing.T) {
+func TestCeProfileDeferred(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
 		t.Fatalf("NewTestApp: %v", err)
@@ -253,20 +254,16 @@ func TestCeProfileGeneratesConsoleName(t *testing.T) {
 	user := makeUser(t, app, "CARTOG")
 	col, _ := app.FindCollectionByNameOrId("ce_profiles")
 	rec := core.NewRecord(col)
-	rec.Set("user", user.Id) // name-only — gamertag comes from the user
+	rec.Set("user", user.Id)
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save ce_profiles: %v", err)
 	}
 
-	bundle := readBundle(t, app, rec)
-	names := tarNames(t, bundle)
-	var hasXBN bool
-	for _, n := range names {
-		if n == "UDATA/NICKNAME.XBN" {
-			hasXBN = true
-		}
+	// CE generation is a scaffold (format pending) — no file, deferred marker.
+	if fn := rec.GetString("save_bundle"); fn != "" {
+		t.Errorf("expected no CE save file yet, got %q", fn)
 	}
-	if !hasXBN {
-		t.Fatalf("CE profile bundle missing UDATA/NICKNAME.XBN; entries = %v", names)
+	if info := rec.GetString("save_info"); !strings.Contains(info, "deferred") {
+		t.Errorf("save_info should mark deferred; got %q", info)
 	}
 }
