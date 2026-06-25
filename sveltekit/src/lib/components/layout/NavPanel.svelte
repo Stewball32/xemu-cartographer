@@ -3,7 +3,7 @@
 	import { Navigation } from '@skeletonlabs/skeleton-svelte';
 	import NavToggleButton from './NavToggle.svelte';
 	import { mainGroups, footerLinks, type NavLink } from '$lib/config/navigation';
-	import { isAdmin } from '$lib/utils/guards';
+	import { isAdmin, canManageLibrary } from '$lib/utils/guards';
 
 	let {
 		open = $bindable(false),
@@ -29,9 +29,21 @@
 		return layout === 'sidebar' ? (link.showInDrawer ?? true) : (link.showInRail ?? true);
 	}
 
+	function groupAllowed(g: { adminOnly?: boolean; organizerOnly?: boolean }): boolean {
+		if (g.adminOnly && !isAdmin()) return false;
+		if (g.organizerOnly && !canManageLibrary()) return false;
+		return true;
+	}
+
+	function linkAllowed(l: NavLink): boolean {
+		if (l.adminOnly && !isAdmin()) return false;
+		if (l.organizerOnly && !canManageLibrary()) return false;
+		return true;
+	}
+
 	let visibleGroups = $derived(
 		mainGroups
-			.filter((g) => !g.adminOnly || isAdmin())
+			.filter(groupAllowed)
 			.map((g) => {
 				const collapseToRailIcon = navLayout === 'rail' && !!g.icon && !!g.href;
 				return {
@@ -39,9 +51,7 @@
 					collapseToRailIcon,
 					links: collapseToRailIcon
 						? []
-						: g.links
-								.filter((l) => !l.adminOnly || isAdmin())
-								.filter((l) => isVisible(l, navLayout))
+						: g.links.filter(linkAllowed).filter((l) => isVisible(l, navLayout))
 				};
 			})
 			.filter((g) => g.collapseToRailIcon || g.links.length > 0)

@@ -66,4 +66,16 @@ func init() {
 	register(registerGamesCollection)
 	register(registerGamePlayersCollection)
 	register(registerGameEventsCollection)
+
+	// 5. Gamertag identity system — per-user CE + H2 player profiles, the shared
+	//    organizer-curated gametype library, and the game (XBE) upload library.
+	//    The profiles relate only to the built-in users collection; gametypes +
+	//    game_titles also relate to users (created_by). All four embed the
+	//    hasAdminRole / organizer user_roles subqueries in their rules, so they
+	//    must register after phase 1. No FKs among themselves, so order here is
+	//    free.
+	register(registerCeProfilesCollection)
+	register(registerH2ProfilesCollection)
+	register(registerGametypesCollection)
+	register(registerGameTitlesCollection)
 }

@@ -34,3 +34,23 @@ export function requireRole(url: URL, slug: string): void {
 export function isAdmin(): boolean {
 	return auth.isAdmin;
 }
+
+// canManageLibrary reports whether the caller may curate the shared gametype
+// library + game (XBE) uploads: an admin/superuser, or a holder of the
+// `organizer` role. Mirrors the backend `organizerOrAdmin` PB rule.
+export function canManageLibrary(): boolean {
+	return auth.isAdmin || auth.hasRole('organizer');
+}
+
+// requireOrganizer gates the /organizer route group: organizers OR admins pass,
+// everyone else is redirected (unauthenticated → login first). The backend PB
+// rules are the real gate; this is just so the UI doesn't render a page the
+// user can't use.
+export function requireOrganizer(url: URL): void {
+	if (!pb.authStore.isValid) {
+		throw redirect(303, buildLoginUrl(url.pathname + url.search));
+	}
+	if (!canManageLibrary()) {
+		throw redirect(303, '/');
+	}
+}
