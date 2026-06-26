@@ -5,8 +5,9 @@
 > **correctly signed** (the halosave 20-byte digest is implemented + verified
 > in-game). The **CE profile** is a full profile too (CE has its own player
 > profiles, format cracked) — generates a signed `blam.sav` (name + armor color +
-> control presets). The Xbox **console name** (`NICKNAME.XBN`) is generated as a
-> separate dashboard/system-link artifact, NOT the CE profile.
+> control presets). A gamertag generates ONLY these two player profiles — it does
+> **not** set the Xbox console name (that's a per-console setting, unrelated to a
+> user's identity).
 
 A unified **gamertag = your in-game name** identity layer on top of the LAN-hub
 [`halosave`](../lan-hub/README.md) generator. The gamertag is a field on the
@@ -53,7 +54,6 @@ frontend mirrors the number (`GAMERTAG_MAX_LEN`).
 | Per-gamertag download manifest | `GET /api/lan/saves/identity/{gamertag}` | LAN-token / admin |
 | List gamertags with a profile | `GET /api/lan/saves/identity` | LAN-token / admin |
 | Stream a stored save/upload | `GET /api/lan/saves/file/{kind}/{id}` | LAN-token / admin |
-| Console name (NICKNAME.XBN) for a gamertag | `GET /api/lan/saves/console-name/{gamertag}` | LAN-token / admin |
 
 `{kind}` ∈ `h2-profile` · `ce-profile` · `gametype` · `game`.
 
@@ -91,8 +91,7 @@ save regardless of who writes the record (SDK, route, seeder):
   record.
 - `ce_profiles` generates a **signed `blam.sav`** (name + armor color + control
   presets) via `internal/halosave` `CEProfileBuild`, signed with the same
-  per-title HMAC as the CE gametype (digest at 0x30). The console name is a
-  separate artifact (see below).
+  per-title HMAC as the CE gametype (digest at 0x30).
 - The profile hooks resolve the in-game name from **`users.gamertag` via the
   `user` relation** (`userGamertag`), not a per-profile field — so a user with no
   gamertag set yet can't create a profile (the save is rejected). When the
@@ -106,7 +105,7 @@ unit-tested directly; the hook→file-field→read-back path has a PocketBase
 integration test (`hooks/save_artifact_test.go`, which also covers the
 gamertag-rename cascade).
 
-## The CE profile (signed `blam.sav`) + the console name (separate)
+## The CE profile (signed `blam.sav`)
 
 **Halo: CE has its own player profile** on Xbox — `blam.sav` (512 B), parallel
 to H2, format cracked (see [CE-PROFILE-FORMAT.md](CE-PROFILE-FORMAT.md)). Stored
@@ -131,14 +130,10 @@ at `E:\UDATA\4d530004\<12-hex>\{blam.sav, SaveMeta.xbx}` (+ a CE-auto-created
 - Open: whether a stub `savegame.bin` must ship for CE to list the profile (CE
   auto-creates it; the hub currently ships `blam.sav` + `SaveMeta.xbx`).
 
-**The Xbox console name is a separate artifact** (not the CE profile): it's the
-box's dashboard / system-link identity, `E:\UDATA\NICKNAME.XBN` (3400 bytes,
-plaintext, no checksum). It's generated statelessly from the gamertag via
-`saveartifact.ConsoleNameBundle` → [`internal/consolename`](../../internal/consolename)
-(the shared leaf package `internal/podman` also uses to name a container), and
-served at **`GET /api/lan/saves/console-name/{gamertag}`** + surfaced in the
-identity manifest as `console_name` (always present — derived purely from the
-gamertag).
+> A gamertag generates **only** the CE + H2 player profiles. It does **not** set
+> the Xbox console name (`NICKNAME.XBN`) — that is a per-console setting, not part
+> of a user's identity. (The fleet's M26 auto-naming of xemu *instances* via
+> `internal/podman` `console_name.go` is unrelated and unchanged.)
 
 ## H2 customization field set
 
@@ -184,13 +179,12 @@ optional `LAN_SAVES_TOKEN` (open on a trusted LAN by default).
 
 | Path | Role |
 | --- | --- |
-| `internal/consolename` | Pure leaf: the `NICKNAME.XBN` console-name format (`Sanitize`/`BuildXBN`). Shared by `internal/podman` (container naming) and the console-name endpoint. Unit-tested. |
 | `internal/halosave` | `CEProfileBuild`/`CEProfileParse` (signed `blam.sav`) + H2/gametype builders + the per-title HMAC digest. Unit-tested (CE signing verified byte-exact vs a real sample). |
-| `internal/saveartifact` | Pure: typed settings → `halosave.BuildRequest` → SaveSet + tar bundle + lean `Info`; `CEProfileRequest` + `ConsoleNameBundle` (NICKNAME.XBN). Unit-tested. |
+| `internal/saveartifact` | Pure: typed settings → `halosave.BuildRequest` → SaveSet + tar bundle + lean `Info`; `CEProfileRequest`. Unit-tested. |
 | `internal/pocketbase/schema/{ce_profiles,h2_profiles,gametypes,game_titles}.go` | The four collections + access rules. |
 | `internal/pocketbase/schema/{roles,rules,identity,users}.go` | `organizer` role, `organizerOrAdmin` rule, `users.gamertag` field + cap, phase-5 registration. |
 | `internal/pocketbase/hooks/{save_artifact,h2_profiles_generate,ce_profiles_generate,gametypes_generate,users_gamertag_regen}.go` | Generate-on-save (CE signed `blam.sav`, H2 signed profile, gametypes) + gamertag-change cascade. Integration-tested. |
-| `internal/pocketbase/routes/lansaves/{identity,serve,console_name}.go` | Per-gamertag manifest + file streaming + stateless console name. |
+| `internal/pocketbase/routes/lansaves/{identity,serve}.go` | Per-gamertag manifest + file streaming. |
 | `sveltekit/src/routes/gamertag/` | The side-by-side CE + H2 profile editor (RequireAuth). |
 | `sveltekit/src/routes/organizer/{gametypes,games}/` | Organizer-gated library + uploads. |
 | `sveltekit/src/lib/components/gamertag/` | `H2AppearanceEditor`, `CESettingsEditor` (CE color + control presets), `GametypeForm`, `SaveResultCard`. |
@@ -199,17 +193,16 @@ optional `LAN_SAVES_TOKEN` (open on a trusted LAN by default).
 ## Verification
 
 - ✅ Go: `go build`, `go vet`, `go test` (halosave: CE `blam.sav` signing is
-  byte-exact vs a real captured profile; consolename + saveartifact unit; hooks
-  integration: CE + H2 generate signed bundles, gametypes generate, the
-  gamertag-rename cascade regenerates, bad input rejects).
+  byte-exact vs a real captured profile; saveartifact unit; hooks integration:
+  CE + H2 generate signed bundles, gametypes generate, the gamertag-rename
+  cascade regenerates, bad input rejects).
 - ✅ Frontend: `pnpm check` (0 errors), `pnpm lint`, `pnpm test` (240), `pnpm build`.
 - ✅ Live server (isolated port): the 11-char + printable-ASCII cap is enforced;
   setting `users.gamertag` then creating the CE profile generates a **signed
   `blam.sav`** (correct name/color/presets; HMAC over `[0:0x30]` matches the
   stored digest) and the H2 profile a signed bundle; the manifest resolves a
-  gamertag to both + the always-present `console_name`; the stateless
-  `/console-name/{gamertag}` endpoint streams a valid `NICKNAME.XBN`; the UI
-  editors render and save with zero console errors.
+  gamertag to both profiles; the UI editors render and save with zero console
+  errors.
 
 ## Open / deferred
 

@@ -92,8 +92,6 @@
 
 	<p class="text-xs text-surface-500">
 		Advanced Setup (look sensitivity / invert / vibration) is a follow-up — one more capture maps
-		those bytes. Separately, your gamertag is also your Xbox console name (<code class="font-mono"
-			>NICKNAME.XBN</code
-		>), which is not the CE profile.
+		those bytes.
 	</p>
 </div>
