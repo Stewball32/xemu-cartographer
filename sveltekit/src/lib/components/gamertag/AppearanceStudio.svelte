@@ -87,11 +87,11 @@
 	<div class="stage">
 		<div class="stage-row">
 			<div class="stage-item">
-				<EmblemPreview {appearance} size={168} ring title="Emblem preview" />
+				<EmblemPreview {appearance} size={144} ring title="Emblem preview" />
 				<span class="stage-cap">Emblem</span>
 			</div>
 			<div class="stage-item">
-				<CharacterPreview game="h2" {appearance} {gamertag} size={208} />
+				<CharacterPreview game="h2" {appearance} {gamertag} size={184} />
 			</div>
 		</div>
 		<p class="summary">
@@ -136,8 +136,10 @@
 			<h4 class="group-title">Emblem</h4>
 
 			<div class="ctl">
-				<div class="ctl-head"><span>Foreground symbol</span></div>
-				<div class="grid-pick">
+				<div class="ctl-head">
+					<span>Foreground symbol</span><span class="ctl-val">{FOREGROUNDS.length} symbols</span>
+				</div>
+				<div class="grid-pick symbol-grid">
 					{#each FOREGROUNDS as f (f.index)}
 						<button
 							type="button"
@@ -221,6 +223,9 @@
 </div>
 
 <style>
+	/* Mobile-first: single column; controls + grids fluid with touch-sized
+	   targets. The two-column (preview | controls) layout is a wide-screen
+	   enhancement. */
 	.studio {
 		display: grid;
 		gap: 1.25rem;
@@ -228,6 +233,7 @@
 	@media (min-width: 900px) {
 		.studio {
 			grid-template-columns: minmax(240px, 320px) 1fr;
+			align-items: start;
 		}
 	}
 	.stage {
@@ -241,7 +247,7 @@
 	}
 	.stage-row {
 		display: flex;
-		gap: 1.25rem;
+		gap: 0.9rem;
 		align-items: flex-end;
 		justify-content: center;
 		flex-wrap: wrap;
@@ -267,12 +273,12 @@
 	.controls {
 		display: flex;
 		flex-direction: column;
-		gap: 1.1rem;
+		gap: 1.25rem;
 	}
 	.group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
+		gap: 0.7rem;
 	}
 	.group-title {
 		font-size: 0.75rem;
@@ -285,99 +291,130 @@
 	.ctl {
 		display: flex;
 		flex-direction: column;
-		gap: 0.35rem;
+		gap: 0.4rem;
 	}
 	.ctl-head {
 		display: flex;
 		justify-content: space-between;
-		font-size: 0.78rem;
-		opacity: 0.85;
+		font-size: 0.82rem;
+		opacity: 0.9;
 	}
 	.ctl-val {
 		font-weight: 600;
 		opacity: 0.7;
 	}
+
+	/* Color swatches: fluid, never smaller than a ~36px touch target. */
 	.swatches {
 		display: grid;
-		grid-template-columns: repeat(18, 1fr);
-		gap: 3px;
-	}
-	@media (max-width: 560px) {
-		.swatches {
-			grid-template-columns: repeat(9, 1fr);
-		}
+		grid-template-columns: repeat(auto-fill, minmax(2.25rem, 1fr));
+		gap: 0.35rem;
 	}
 	.swatch {
 		aspect-ratio: 1;
-		border-radius: 4px;
+		min-height: 2.25rem;
+		border-radius: 6px;
 		border: 1px solid rgba(0, 0, 0, 0.25);
 		cursor: pointer;
+		touch-action: manipulation;
 		transition: transform 0.08s;
 	}
-	.swatch:hover {
-		transform: scale(1.12);
-	}
 	.swatch.sel {
-		outline: 2px solid var(--color-primary-500, #69f);
+		outline: 3px solid var(--color-primary-500, #69f);
 		outline-offset: 1px;
 		box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
 	}
+
+	/* Symbol / background pickers: ~44px touch targets, fluid columns. */
 	.grid-pick {
 		display: grid;
-		grid-template-columns: repeat(8, 1fr);
-		gap: 5px;
-	}
-	@media (max-width: 560px) {
-		.grid-pick {
-			grid-template-columns: repeat(6, 1fr);
-		}
+		grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
+		gap: 0.4rem;
 	}
 	.cell {
 		aspect-ratio: 1;
+		min-height: 2.75rem;
 		padding: 0;
-		border-radius: 8px;
+		border-radius: 10px;
 		overflow: hidden;
 		border: 1px solid rgba(255, 255, 255, 0.08);
 		background: #11161c;
 		cursor: pointer;
+		touch-action: manipulation;
 		transition: transform 0.08s;
 	}
-	.cell:hover {
-		transform: scale(1.08);
-	}
 	.cell.sel {
-		outline: 2px solid var(--color-primary-500, #69f);
+		outline: 3px solid var(--color-primary-500, #69f);
 		outline-offset: 1px;
 		border-color: transparent;
 	}
+
+	/* The 64-symbol grid is contained + scrollable so it never dominates a
+	   narrow screen; overscroll-contain keeps it from scroll-chaining the page. */
+	.symbol-grid {
+		max-height: clamp(13rem, 42vh, 22rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		padding: 3px;
+		border-radius: 10px;
+		background: color-mix(in oklab, var(--color-surface-500) 6%, transparent);
+	}
+
+	/* Character chips: 2-up on phones, 4-up on wider screens; ~44px tall. */
 	.char-pick {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.5rem;
+	}
+	@media (min-width: 560px) {
+		.char-pick {
+			grid-template-columns: repeat(4, 1fr);
+		}
 	}
 	.chip {
-		padding: 0.3rem 0.7rem;
+		min-height: 2.75rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.5rem 0.8rem;
 		border-radius: 999px;
-		font-size: 0.8rem;
+		font-size: 0.85rem;
 		border: 1px solid rgba(255, 255, 255, 0.15);
 		background: color-mix(in oklab, var(--color-surface-500) 12%, transparent);
 		cursor: pointer;
+		touch-action: manipulation;
 	}
 	.chip.sel {
 		background: var(--color-primary-500, #4663ff);
 		color: #fff;
 		border-color: transparent;
 	}
+
+	/* Hover affordances only where a real pointer exists — no sticky-hover on
+	   touch, which would leave a cell scaled up after a tap. */
+	@media (hover: hover) and (pointer: fine) {
+		.swatch:hover {
+			transform: scale(1.12);
+		}
+		.cell:hover {
+			transform: scale(1.08);
+		}
+	}
+
 	.advanced {
 		font-size: 0.85rem;
 	}
 	.advanced summary {
 		cursor: pointer;
 		opacity: 0.7;
+		min-height: 2.5rem;
+		display: flex;
+		align-items: center;
 	}
 	.adv-grid {
 		display: grid;
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
 		gap: 0.6rem;
 		margin-top: 0.6rem;
 	}

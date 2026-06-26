@@ -62,7 +62,7 @@
 		</div>
 	</label>
 
-	<div class="grid grid-cols-2 gap-3">
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 		<label class="label">
 			<span class="text-xs">Thumbstick preset</span>
 			<select
