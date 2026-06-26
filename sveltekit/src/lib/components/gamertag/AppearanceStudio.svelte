@@ -7,6 +7,8 @@
 	// Self-contained drop-in for H2AppearanceEditor — binds the same `appearance`
 	// map, so the existing load()/save() path is unchanged.
 	import { onMount } from 'svelte';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
+	import { ChevronDownIcon } from '@lucide/svelte';
 	import EmblemPreview from './EmblemPreview.svelte';
 	import CharacterPreview from './CharacterPreview.svelte';
 	import RawSvg from './RawSvg.svelte';
@@ -80,21 +82,27 @@
 
 	// Advanced/raw bytes the pickers don't manage (flags, controller presets…).
 	const advanced = $derived(fields.filter((f) => !MANAGED.has(f.key)));
+
+	// Skeleton Accordion open-state for the advanced section (collapsed default).
+	let advOpen = $state<string[]>([]);
 </script>
 
-<div class="studio">
+<!-- Mobile-first + Skeleton: single column on phones; preview | controls split is
+	a wide-screen (lg) enhancement. Chrome uses Skeleton theme tokens; the emblem /
+	character ART surfaces stay deliberately dark to match the in-game aesthetic. -->
+<div class="grid gap-5 lg:grid-cols-[minmax(240px,320px)_1fr] lg:items-start">
 	<!-- live previews -->
-	<div class="stage">
-		<div class="stage-row">
-			<div class="stage-item">
+	<div class="flex flex-col items-center gap-2 rounded-xl bg-surface-200-800/40 p-3">
+		<div class="flex flex-wrap items-end justify-center gap-4">
+			<div class="flex flex-col items-center gap-1.5">
 				<EmblemPreview {appearance} size={144} ring title="Emblem preview" />
-				<span class="stage-cap">Emblem</span>
+				<span class="text-surface-500-400 text-xs tracking-wide uppercase">Emblem</span>
 			</div>
-			<div class="stage-item">
+			<div class="flex flex-col items-center gap-1.5">
 				<CharacterPreview game="h2" {appearance} {gamertag} size={184} />
 			</div>
 		</div>
-		<p class="summary">
+		<p class="text-center text-xs leading-relaxed text-surface-600-400">
 			<strong>{FOREGROUNDS[emblem.foreground]?.label}</strong> on
 			<strong>{H2_BACKGROUNDS[emblem.background]?.label}</strong> ·
 			{colorName(H2_COLORS, emblem.armorPrimary)}/{colorName(H2_COLORS, emblem.armorSecondary)} armor
@@ -104,21 +112,26 @@
 	</div>
 
 	<!-- controls -->
-	<div class="controls">
+	<div class="flex flex-col gap-5">
 		{#snippet colorRow(title: string, field: keyof EmblemState, selected: number)}
-			<div class="ctl">
-				<div class="ctl-head">
-					<span>{title}</span><span class="ctl-val">{colorName(H2_COLORS, selected)}</span>
+			<div class="flex flex-col gap-1.5">
+				<div class="flex justify-between text-sm text-surface-700-300">
+					<span>{title}</span><span class="text-surface-500-400 font-semibold"
+						>{colorName(H2_COLORS, selected)}</span
+					>
 				</div>
-				<div class="swatches">
+				<div class="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1.5">
 					{#each H2_COLORS as c, i (i)}
 						<button
 							type="button"
-							class="swatch"
-							class:sel={i === selected}
+							class="aspect-square min-h-9 touch-manipulation rounded-md border border-surface-950/40 {i ===
+							selected
+								? 'outline-2 outline-offset-2 outline-primary-500'
+								: ''}"
 							style="background:{c.hex}"
 							title={c.name}
 							aria-label={c.name}
+							aria-pressed={i === selected}
 							onclick={() => select(field, i)}
 						></button>
 					{/each}
@@ -126,49 +139,55 @@
 			</div>
 		{/snippet}
 
-		<div class="group">
-			<h4 class="group-title">Armor colors</h4>
+		{#snippet artCell(selected: boolean, label: string, inner: string, onpick: () => void)}
+			<button
+				type="button"
+				class="aspect-square min-h-11 touch-manipulation overflow-hidden rounded-lg border bg-surface-900 {selected
+					? 'border-transparent outline-2 outline-offset-1 outline-primary-500'
+					: 'border-surface-700/40'}"
+				title={label}
+				aria-label={label}
+				aria-pressed={selected}
+				onclick={onpick}
+			>
+				<RawSvg {inner} />
+			</button>
+		{/snippet}
+
+		<div class="flex flex-col gap-2.5">
+			<h4 class="text-xs font-bold tracking-wide text-surface-600-400 uppercase">Armor colors</h4>
 			{@render colorRow('Primary', 'armorPrimary', emblem.armorPrimary)}
 			{@render colorRow('Secondary', 'armorSecondary', emblem.armorSecondary)}
 		</div>
 
-		<div class="group">
-			<h4 class="group-title">Emblem</h4>
+		<div class="flex flex-col gap-2.5">
+			<h4 class="text-xs font-bold tracking-wide text-surface-600-400 uppercase">Emblem</h4>
 
-			<div class="ctl">
-				<div class="ctl-head">
-					<span>Foreground symbol</span><span class="ctl-val">{FOREGROUNDS.length} symbols</span>
+			<div class="flex flex-col gap-1.5">
+				<div class="flex justify-between text-sm text-surface-700-300">
+					<span>Foreground symbol</span><span class="text-surface-500-400 font-semibold"
+						>{FOREGROUNDS.length} symbols</span
+					>
 				</div>
-				<div class="grid-pick symbol-grid">
+				<!-- 64 symbols, contained + scrollable so it never dominates a phone -->
+				<div
+					class="grid max-h-[clamp(13rem,42vh,22rem)] grid-cols-[repeat(auto-fill,minmax(2.75rem,1fr))] gap-2 overflow-y-auto overscroll-contain rounded-lg bg-surface-200-800/40 p-1"
+				>
 					{#each FOREGROUNDS as f (f.index)}
-						<button
-							type="button"
-							class="cell"
-							class:sel={emblem.foreground === f.index}
-							title={f.label}
-							aria-label={f.label}
-							onclick={() => select('foreground', f.index)}
-						>
-							<RawSvg inner={fgThumb(f.index)} />
-						</button>
+						{@render artCell(emblem.foreground === f.index, f.label, fgThumb(f.index), () =>
+							select('foreground', f.index)
+						)}
 					{/each}
 				</div>
 			</div>
 
-			<div class="ctl">
-				<div class="ctl-head"><span>Background</span></div>
-				<div class="grid-pick">
+			<div class="flex flex-col gap-1.5">
+				<div class="text-sm text-surface-700-300">Background</div>
+				<div class="grid grid-cols-[repeat(auto-fill,minmax(2.75rem,1fr))] gap-2">
 					{#each H2_BACKGROUNDS as bg (bg.index)}
-						<button
-							type="button"
-							class="cell"
-							class:sel={emblem.background === bg.index}
-							title={bg.label}
-							aria-label={bg.label}
-							onclick={() => select('background', bg.index)}
-						>
-							<RawSvg inner={bgThumb(bg.index)} />
-						</button>
+						{@render artCell(emblem.background === bg.index, bg.label, bgThumb(bg.index), () =>
+							select('background', bg.index)
+						)}
 					{/each}
 				</div>
 			</div>
@@ -177,14 +196,16 @@
 			{@render colorRow('Emblem secondary', 'emblemSecondary', emblem.emblemSecondary)}
 		</div>
 
-		<div class="group">
-			<h4 class="group-title">Character</h4>
-			<div class="char-pick">
+		<div class="flex flex-col gap-2.5">
+			<h4 class="text-xs font-bold tracking-wide text-surface-600-400 uppercase">Character</h4>
+			<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 				{#each H2_CHARACTERS as ch (ch.index)}
 					<button
 						type="button"
-						class="chip"
-						class:sel={emblem.character === ch.index}
+						class="chip min-h-11 w-full justify-center {emblem.character === ch.index
+							? 'preset-filled-primary-500'
+							: 'preset-tonal'}"
+						aria-pressed={emblem.character === ch.index}
 						onclick={() => select('character', ch.index)}>{ch.label}</button
 					>
 				{/each}
@@ -192,235 +213,42 @@
 		</div>
 
 		{#if advanced.length}
-			<details class="advanced">
-				<summary>Advanced raw bytes ({advanced.length})</summary>
-				<div class="adv-grid">
-					{#each advanced as f (f.key)}
-						<label class="label">
-							<span class="text-xs"
-								>{f.label}
-								<span class="font-mono text-surface-500">@0x{f.offset.toString(16)}</span></span
-							>
-							<input
-								type="number"
-								class="input"
-								min="0"
-								max="255"
-								bind:value={appearance[f.key]}
-								placeholder="—"
-							/>
-						</label>
-					{/each}
-				</div>
-			</details>
+			<Accordion value={advOpen} onValueChange={(e) => (advOpen = e.value)} collapsible>
+				<Accordion.Item value="advanced">
+					<Accordion.ItemTrigger class="text-sm text-surface-700-300">
+						<span>Advanced raw bytes ({advanced.length})</span>
+						<Accordion.ItemIndicator>
+							<ChevronDownIcon class="size-4" />
+						</Accordion.ItemIndicator>
+					</Accordion.ItemTrigger>
+					<Accordion.ItemContent>
+						<div class="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-2.5 pt-1">
+							{#each advanced as f (f.key)}
+								<label class="label">
+									<span class="text-xs"
+										>{f.label}
+										<span class="text-surface-500-400 font-mono">@0x{f.offset.toString(16)}</span
+										></span
+									>
+									<input
+										type="number"
+										class="input"
+										min="0"
+										max="255"
+										bind:value={appearance[f.key]}
+										placeholder="—"
+									/>
+								</label>
+							{/each}
+						</div>
+					</Accordion.ItemContent>
+				</Accordion.Item>
+			</Accordion>
 		{/if}
 
-		<p class="note">
+		<p class="text-surface-500-400 text-xs leading-relaxed">
 			Emblem art is original, hand-drawn recreation (IP-safe). Field labels are confirmed against
 			two real H2 profiles + the in-game enum order.
 		</p>
 	</div>
 </div>
-
-<style>
-	/* Mobile-first: single column; controls + grids fluid with touch-sized
-	   targets. The two-column (preview | controls) layout is a wide-screen
-	   enhancement. */
-	.studio {
-		display: grid;
-		gap: 1.25rem;
-	}
-	@media (min-width: 900px) {
-		.studio {
-			grid-template-columns: minmax(240px, 320px) 1fr;
-			align-items: start;
-		}
-	}
-	.stage {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-		align-items: center;
-		padding: 0.75rem;
-		border-radius: 0.75rem;
-		background: color-mix(in oklab, var(--color-surface-500) 8%, transparent);
-	}
-	.stage-row {
-		display: flex;
-		gap: 0.9rem;
-		align-items: flex-end;
-		justify-content: center;
-		flex-wrap: wrap;
-	}
-	.stage-item {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.35rem;
-	}
-	.stage-cap {
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		opacity: 0.6;
-	}
-	.summary {
-		font-size: 0.78rem;
-		text-align: center;
-		opacity: 0.85;
-		line-height: 1.4;
-	}
-	.controls {
-		display: flex;
-		flex-direction: column;
-		gap: 1.25rem;
-	}
-	.group {
-		display: flex;
-		flex-direction: column;
-		gap: 0.7rem;
-	}
-	.group-title {
-		font-size: 0.75rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		opacity: 0.7;
-		margin: 0;
-	}
-	.ctl {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-	.ctl-head {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.82rem;
-		opacity: 0.9;
-	}
-	.ctl-val {
-		font-weight: 600;
-		opacity: 0.7;
-	}
-
-	/* Color swatches: fluid, never smaller than a ~36px touch target. */
-	.swatches {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(2.25rem, 1fr));
-		gap: 0.35rem;
-	}
-	.swatch {
-		aspect-ratio: 1;
-		min-height: 2.25rem;
-		border-radius: 6px;
-		border: 1px solid rgba(0, 0, 0, 0.25);
-		cursor: pointer;
-		touch-action: manipulation;
-		transition: transform 0.08s;
-	}
-	.swatch.sel {
-		outline: 3px solid var(--color-primary-500, #69f);
-		outline-offset: 1px;
-		box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
-	}
-
-	/* Symbol / background pickers: ~44px touch targets, fluid columns. */
-	.grid-pick {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
-		gap: 0.4rem;
-	}
-	.cell {
-		aspect-ratio: 1;
-		min-height: 2.75rem;
-		padding: 0;
-		border-radius: 10px;
-		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		background: #11161c;
-		cursor: pointer;
-		touch-action: manipulation;
-		transition: transform 0.08s;
-	}
-	.cell.sel {
-		outline: 3px solid var(--color-primary-500, #69f);
-		outline-offset: 1px;
-		border-color: transparent;
-	}
-
-	/* The 64-symbol grid is contained + scrollable so it never dominates a
-	   narrow screen; overscroll-contain keeps it from scroll-chaining the page. */
-	.symbol-grid {
-		max-height: clamp(13rem, 42vh, 22rem);
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		-webkit-overflow-scrolling: touch;
-		padding: 3px;
-		border-radius: 10px;
-		background: color-mix(in oklab, var(--color-surface-500) 6%, transparent);
-	}
-
-	/* Character chips: 2-up on phones, 4-up on wider screens; ~44px tall. */
-	.char-pick {
-		display: grid;
-		grid-template-columns: repeat(2, 1fr);
-		gap: 0.5rem;
-	}
-	@media (min-width: 560px) {
-		.char-pick {
-			grid-template-columns: repeat(4, 1fr);
-		}
-	}
-	.chip {
-		min-height: 2.75rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0.5rem 0.8rem;
-		border-radius: 999px;
-		font-size: 0.85rem;
-		border: 1px solid rgba(255, 255, 255, 0.15);
-		background: color-mix(in oklab, var(--color-surface-500) 12%, transparent);
-		cursor: pointer;
-		touch-action: manipulation;
-	}
-	.chip.sel {
-		background: var(--color-primary-500, #4663ff);
-		color: #fff;
-		border-color: transparent;
-	}
-
-	/* Hover affordances only where a real pointer exists — no sticky-hover on
-	   touch, which would leave a cell scaled up after a tap. */
-	@media (hover: hover) and (pointer: fine) {
-		.swatch:hover {
-			transform: scale(1.12);
-		}
-		.cell:hover {
-			transform: scale(1.08);
-		}
-	}
-
-	.advanced {
-		font-size: 0.85rem;
-	}
-	.advanced summary {
-		cursor: pointer;
-		opacity: 0.7;
-		min-height: 2.5rem;
-		display: flex;
-		align-items: center;
-	}
-	.adv-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-		gap: 0.6rem;
-		margin-top: 0.6rem;
-	}
-	.note {
-		font-size: 0.7rem;
-		opacity: 0.55;
-		line-height: 1.4;
-	}
-</style>

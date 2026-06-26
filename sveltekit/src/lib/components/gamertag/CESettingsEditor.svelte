@@ -4,7 +4,7 @@
 	// Halo: CE player profile (blam.sav) — name (= the gamertag above) + armor
 	// color + control presets, signed. The advanced Setup bytes (sensitivity /
 	// invert / vibration) aren't individually mapped yet; this exposes the mapped
-	// surface.
+	// surface. Built on Skeleton components/tokens.
 	let {
 		settings = $bindable()
 	}: {
@@ -17,16 +17,30 @@
 		{ value: 2, label: 'Red (2)' },
 		{ value: 3, label: 'Blue (3)' }
 	];
-	const PRESETS = [
-		{ value: 0, label: 'Default' },
-		{ value: 1, label: 'Southpaw' }
-	];
 
 	// Normalize undefined → defaults for the bound controls.
 	const color = $derived(settings.color ?? 0);
 	const thumbstick = $derived(settings.thumbstick ?? 0);
 	const button = $derived(settings.button ?? 0);
 </script>
+
+{#snippet presetControl(label: string, value: number, set: (v: number) => void)}
+	<div class="flex flex-col gap-1.5">
+		<span class="text-xs text-surface-700-300">{label}</span>
+		<div class="grid grid-cols-2 gap-2">
+			{#each [{ v: 0, l: 'Default' }, { v: 1, l: 'Southpaw' }] as opt (opt.v)}
+				<button
+					type="button"
+					class="chip min-h-11 w-full justify-center {value === opt.v
+						? 'preset-filled-primary-500'
+						: 'preset-tonal'}"
+					aria-pressed={value === opt.v}
+					onclick={() => set(opt.v)}>{opt.l}</button
+				>
+			{/each}
+		</div>
+	</div>
+{/snippet}
 
 <div class="space-y-4">
 	<p class="text-xs text-surface-600-400">
@@ -63,34 +77,11 @@
 	</label>
 
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-		<label class="label">
-			<span class="text-xs">Thumbstick preset</span>
-			<select
-				class="select"
-				value={String(thumbstick)}
-				onchange={(e) =>
-					(settings.thumbstick = Number((e.currentTarget as HTMLSelectElement).value))}
-			>
-				{#each PRESETS as p (p.value)}
-					<option value={String(p.value)}>{p.label}</option>
-				{/each}
-			</select>
-		</label>
-		<label class="label">
-			<span class="text-xs">Button preset</span>
-			<select
-				class="select"
-				value={String(button)}
-				onchange={(e) => (settings.button = Number((e.currentTarget as HTMLSelectElement).value))}
-			>
-				{#each PRESETS as p (p.value)}
-					<option value={String(p.value)}>{p.label}</option>
-				{/each}
-			</select>
-		</label>
+		{@render presetControl('Thumbstick preset', thumbstick, (v) => (settings.thumbstick = v))}
+		{@render presetControl('Button preset', button, (v) => (settings.button = v))}
 	</div>
 
-	<p class="text-xs text-surface-500">
+	<p class="text-surface-500-400 text-xs">
 		Advanced Setup (look sensitivity / invert / vibration) is a follow-up — one more capture maps
 		those bytes.
 	</p>
