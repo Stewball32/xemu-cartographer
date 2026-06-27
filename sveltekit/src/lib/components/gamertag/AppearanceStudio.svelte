@@ -73,11 +73,11 @@
 	function fgThumb(i: number): string {
 		return (
 			`<rect x="0" y="0" width="100" height="100" rx="14" fill="#11161c"/>` +
-			`<g transform="translate(13,13) scale(0.74)">${foregroundSvg(i, '#e9eef3', '#9fb4c6')}</g>`
+			`<g transform="translate(13,13) scale(0.74)">${foregroundSvg(i, '#e9eef3', '#9fb4c6', `tf${i}`)}</g>`
 		);
 	}
 	function bgThumb(i: number): string {
-		return backgroundSvg(i, armorA, armorB);
+		return backgroundSvg(i, armorA, armorB, `tb${i}`);
 	}
 
 	// Advanced/raw bytes the pickers don't manage (flags, controller presets…).
@@ -247,8 +247,9 @@
 		{/if}
 
 		<p class="text-surface-500-400 text-xs leading-relaxed">
-			Emblem art is original, hand-drawn recreation (IP-safe). Field labels are confirmed against
-			two real H2 profiles + the in-game enum order.
+			Emblem art is the real Halo&nbsp;2 multiplayer set, extracted from your own copy of the game
+			(personal / LAN use). Field labels are confirmed against two real H2 profiles + the in-game
+			enum order.
 		</p>
 	</div>
 </div>

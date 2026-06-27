@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Composes a Halo 2 emblem the way the game does: the background plate is
 	// drawn in the two ARMOR colors (primary/secondary); the foreground symbol is
-	// drawn inset on top in the two EMBLEM colors (tertiary/quaternary).
+	// drawn inset on top in the two EMBLEM colors (tertiary/quaternary). The art
+	// is the real extracted H2 emblem set (static/emblems), tinted via masks.
 	import {
 		H2_COLORS,
 		colorHex,
@@ -30,6 +31,9 @@
 		title?: string;
 	} = $props();
 
+	// unique, hydration-stable prefix for this instance's mask ids
+	const uid = $props.id();
+
 	const state = $derived(emblem ?? readEmblem(appearance ?? {}, DEFAULT_EMBLEM));
 
 	const armorA = $derived(colorHex(H2_COLORS, state.armorPrimary));
@@ -38,8 +42,8 @@
 	const emblemB = $derived(colorHex(H2_COLORS, state.emblemSecondary));
 
 	const inner = $derived(
-		backgroundSvg(state.background, armorA, armorB) +
-			`<g transform="translate(11,11) scale(0.78)">${foregroundSvg(state.foreground, emblemA, emblemB)}</g>`
+		backgroundSvg(state.background, armorA, armorB, `${uid}b`) +
+			`<g transform="translate(11,11) scale(0.78)">${foregroundSvg(state.foreground, emblemA, emblemB, `${uid}f`)}</g>`
 	);
 </script>
 
