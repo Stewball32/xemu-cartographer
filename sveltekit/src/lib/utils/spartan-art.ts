@@ -20,8 +20,38 @@
 
 export const SPARTAN_ASSET_BASE = '/spartan';
 
-export const SPARTAN_POSES = ['idle', 't_pose', 'salute', 'crouch'] as const;
+// MCC's post-game Spartan customization stance set — the exact 11 poses MCC
+// offers (decoded from the MCC UE4 shell's AnimSequence assets and retargeted
+// onto the H2 Mark VI rig). 'default' is MCC's unlocked-by-default armory idle.
+export const SPARTAN_POSES = [
+	'default',
+	'at_ease',
+	'salute',
+	'crossed_arms',
+	'hands_on_hips',
+	'double_flex',
+	'kneel',
+	'look_back',
+	'peace_sign',
+	'meditation',
+	'yoga'
+] as const;
 export type SpartanPose = (typeof SPARTAN_POSES)[number];
+
+/** Human-readable labels for the pose selector (matches MCC's naming). */
+export const SPARTAN_POSE_LABELS: Record<SpartanPose, string> = {
+	default: 'Default',
+	at_ease: 'At Ease',
+	salute: 'Salute',
+	crossed_arms: 'Crossed Arms',
+	hands_on_hips: 'Hands on Hips',
+	double_flex: 'Double Flex',
+	kneel: 'Kneel',
+	look_back: 'Look Back',
+	peace_sign: 'Peace Sign',
+	meditation: 'Meditation',
+	yoga: 'Yoga'
+};
 
 function maskTag(id: string, href: string): string {
 	return (
