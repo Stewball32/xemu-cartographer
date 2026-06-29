@@ -70,6 +70,8 @@
 	const armorA = $derived(colorHex(H2_COLORS, emblem.armorPrimary));
 	const armorB = $derived(colorHex(H2_COLORS, emblem.armorSecondary));
 
+	// Picker chip: the symbol is centred by the compositor (sprite-rect registration);
+	// this slightly tighter inset is just breathing room on the selectable chip.
 	function fgThumb(i: number): string {
 		return (
 			`<rect x="0" y="0" width="100" height="100" rx="14" fill="#11161c"/>` +

@@ -95,13 +95,43 @@ export const FOREGROUNDS: ForegroundMeta[] = [
 
 // Where the extracted masks live (SvelteKit static root). Override here if the
 // app is mounted under a base path.
-import { EMBLEM_ASSET_BASE, two } from './emblem-art';
+import { EMBLEM_ASSET_BASE, two, type SrcRect } from './emblem-art';
+
+/**
+ * Registration of the symbol within its 64x64 source texture.
+ *
+ * The shipped masks are the raw in-game bitmaps: a4r4g4b4 64x64 textures whose
+ * art is anchored at the texture origin and occupies only the top-left sprite
+ * rect — the rest is power-of-two padding. Measured from the shipped art, the
+ * union of all 64 symbols' coverage is exactly (0,0)..(38,38). The compositor
+ * maps THIS rect onto the emblem cell (instead of stretching the full padded
+ * texture), which is what re-centres the symbol: stretching the whole 64x64
+ * dropped the art into the top-left ~60% of the cell.
+ *
+ * H2 `bitm` tags carry the exact sprite rect + RegPoint in their sequence block;
+ * 38 is the value measured from the shipped masks and is what an in-game (xemu) /
+ * raw-maps capture would confirm to the pixel.
+ */
+export const FG_SPRITE_RECT: SrcRect = { x: 0, y: 0, w: 38, h: 38, texW: 64, texH: 64 };
+
+/**
+ * Fraction of the emblem cell the (now correctly-registered) foreground spans,
+ * centred. The in-game emblem widget draws the symbol inset over the background
+ * plate; this is that inset. 0.78 preserves the studio's original intended size;
+ * it is the one value here still worth confirming against an in-game / halo2pc
+ * reference (registration/centring above is exact from the bitmaps).
+ */
+export const EMBLEM_FG_INSET = 0.78;
 
 /**
  * INNER svg for foreground `index`, tinted with the two emblem colours.
  * `fg` = primary (emblem primary / tertiary), `fg2` = secondary (quaternary).
  * `uid` makes the internal mask ids unique when many emblems render at once;
  * callers that render more than one on a page MUST pass distinct uids.
+ *
+ * The symbol is registered to fill the 0..100 cell (its sprite rect is mapped on,
+ * the padding clipped), so callers get a centred symbol and only need to apply
+ * the emblem inset (see EMBLEM_FG_INSET) when compositing over a plate.
  */
 export function foregroundSvg(index: number, fg: string, fg2?: string, uid?: string): string {
 	const secondary = fg2 ?? '#cfd8e3';
@@ -114,7 +144,8 @@ export function foregroundSvg(index: number, fg: string, fg2?: string, uid?: str
 		`${EMBLEM_ASSET_BASE}/fg/${i}_p.png`,
 		`${EMBLEM_ASSET_BASE}/fg/${i}_s.png`,
 		fg,
-		secondary
+		secondary,
+		FG_SPRITE_RECT
 		// no opaque base: foregrounds are transparent outside the symbol
 	);
 }

@@ -12,7 +12,7 @@
 		type EmblemState
 	} from '$lib/utils/emblem';
 	import { backgroundSvg } from '$lib/utils/emblem-backgrounds';
-	import { foregroundSvg } from '$lib/utils/emblem-foregrounds';
+	import { foregroundSvg, EMBLEM_FG_INSET } from '$lib/utils/emblem-foregrounds';
 	import RawSvg from './RawSvg.svelte';
 
 	let {
@@ -41,9 +41,14 @@
 	const emblemA = $derived(colorHex(H2_COLORS, state.emblemPrimary));
 	const emblemB = $derived(colorHex(H2_COLORS, state.emblemSecondary));
 
+	// The foreground is registered + centred by the compositor (its sprite rect is
+	// mapped onto the cell). This inset is the in-game emblem-widget scale — the
+	// symbol drawn inset over the plate — applied symmetrically so it stays centred.
+	const fgInset = EMBLEM_FG_INSET;
+	const fgOffset = (100 - 100 * fgInset) / 2;
 	const inner = $derived(
 		backgroundSvg(state.background, armorA, armorB, `${uid}b`) +
-			`<g transform="translate(11,11) scale(0.78)">${foregroundSvg(state.foreground, emblemA, emblemB, `${uid}f`)}</g>`
+			`<g transform="translate(${fgOffset},${fgOffset}) scale(${fgInset})">${foregroundSvg(state.foreground, emblemA, emblemB, `${uid}f`)}</g>`
 	);
 </script>
 
