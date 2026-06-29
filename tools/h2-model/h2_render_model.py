@@ -368,11 +368,20 @@ def decode_render_model(cache: Cache, tag_index: int, lod: int = 0, debug=False)
                     nodes_i = [idx, 0, 0, 0]
                     wts = [1.0, 0, 0, 0]
                 else:                        # Skinned
+                    # Xbox skinned-vertex blend block (Halo2Common.cs,
+                    # ReadXboxRenderModelMeshData): optional int16 pad for
+                    # npv 2/4, then `npv` node bytes IMMEDIATELY followed by
+                    # `npv` weight bytes — i.e. the reader only consumes npv
+                    # bytes per field, so weights start at p + npv, NOT a
+                    # fixed p + 4. The old hard-coded +4 was only correct for
+                    # npv == 4; for npv 2/3 it read the *next* vertex's bytes
+                    # as weights (garbage secondary weights → forearm/limb
+                    # skinning spikes once a bone rotates away from bind).
                     p = so
                     if npv in (2, 4):
                         p += 2  # skip int16
                     nodes_i = [data[p + k] if npv > k else 0 for k in range(4)]
-                    wts = [data[p + 4 + k] / 255.0 if npv > k else 0.0 for k in range(4)]
+                    wts = [data[p + npv + k] / 255.0 if npv > k else 0.0 for k in range(4)]
                     if npv == 1 and sum(wts) == 0:
                         wts[0] = 1.0
                 if node_map:

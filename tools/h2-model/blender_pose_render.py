@@ -27,6 +27,7 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 def arg(n, d=None): return argv[argv.index(n) + 1] if n in argv else d
 NPZ = arg("--npz"); TEX = arg("--tex"); OUT = arg("--out"); POSES = arg("--poses")
 RES = int(arg("--res", "768")); ONLY = arg("--only")
+NOGUARD = "--noguard" in argv   # disable the rigid-skin guardrail (verify decode fix alone)
 SKIP = [s for s in (arg("--skip", "") or "").split(",") if s]   # bones -> rigid-follow parent
 os.makedirs(OUT, exist_ok=True)
 
@@ -157,10 +158,18 @@ def skin(Pq, Pp):
             sel = m & (bi == b)
             out[sel] += (w[sel, None]) * (P[sel] @ Rs[b].T + ts[b])
             outN[sel] += (w[sel, None]) * (N[sel] @ Rs[b].T)
-    # guardrail: blend verts that flew far from their rigid position snap to rigid
+    # guardrail: blend verts that flew far from their rigid position snap to
+    # rigid. With the corrected node-skin weight decode this should catch ~0
+    # verts (it was masking the buggy-weight spike); kept as a cheap safety
+    # net and disablable via --noguard to prove the decode fix stands alone.
     div = np.linalg.norm(out - rig, axis=1)
     bad = div > 0.04
-    out[bad] = rig[bad]
+    if NOGUARD:
+        print(f"    [skin] guardrail OFF — would have caught {int(bad.sum())} vert(s)")
+    else:
+        if bad.sum():
+            print(f"    [skin] guardrail caught {int(bad.sum())} vert(s)")
+        out[bad] = rig[bad]
     nn = np.linalg.norm(outN, axis=1, keepdims=True); nn[nn == 0] = 1
     return out, outN/nn
 
