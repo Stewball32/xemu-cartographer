@@ -23,8 +23,12 @@ func (r *Reader) readLocals(localCount uint16) []scraper.TickLocal {
 	out := make([]scraper.TickLocal, 0, localCount)
 	for i := uint16(0); i < localCount; i++ {
 		idx := int(i)
+		// idx is always in 0..localCount-1 with localCount clamped to
+		// 1..MaxLocalPlayers above, so LocalViewport always resolves.
+		viewport, _ := scraper.LocalViewport(int(localCount), idx)
 		l := scraper.TickLocal{
 			LocalIndex:    idx,
+			Viewport:      viewport,
 			FPWeapon:      r.readFPWeapon(idx),
 			ObserverCam:   r.readObserverCam(idx),
 			IAS:           r.readInputAbstract(idx),

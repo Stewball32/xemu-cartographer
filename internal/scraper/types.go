@@ -108,15 +108,20 @@ type GameData struct {
 	// game_end detection compares snapshots) and for the manager's previous-
 	// game capture, but is excluded from JSON since the wire protocol no
 	// longer surfaces it.
-	GameState       GameState        `json:"-"`
-	Map             string           `json:"map"`
-	Gametype        string           `json:"gametype"`
-	VariantName     string           `json:"variant_name,omitempty"`
-	IsTeamGame      bool             `json:"is_team_game"`
-	ScoreLimit      int32            `json:"score_limit"`
-	TimeLimitTicks  int32            `json:"time_limit_ticks"`
-	TeamScores      []TeamScore      `json:"team_scores"`
-	Players         []GamePlayer     `json:"players"`
+	GameState      GameState    `json:"-"`
+	Map            string       `json:"map"`
+	Gametype       string       `json:"gametype"`
+	VariantName    string       `json:"variant_name,omitempty"`
+	IsTeamGame     bool         `json:"is_team_game"`
+	ScoreLimit     int32        `json:"score_limit"`
+	TimeLimitTicks int32        `json:"time_limit_ticks"`
+	TeamScores     []TeamScore  `json:"team_scores"`
+	Players        []GamePlayer `json:"players"`
+	// LocalCount is the number of local splitscreen players on this xemu
+	// instance (engine players_globals.local_player_count, 0..MaxLocalPlayers).
+	// Pairs with each local GamePlayer's LocalIndex + Viewport; the same value
+	// is streamed per-tick as TickPayload.LocalCount. 0 outside a local game.
+	LocalCount      uint16           `json:"local_count"`
 	PowerItemSpawns []PowerItemSpawn `json:"power_item_spawns"`
 
 	// Machines is the connected-machine roster for system-link / splitscreen
@@ -211,6 +216,14 @@ type GamePlayer struct {
 	ShotsHit   int16  `json:"shots_hit"`
 	IsLocal    *bool  `json:"is_local"`
 	LocalIndex *int   `json:"local_index"`
+	// Viewport is the normalized on-screen rect (0..1, top-left origin) this
+	// player's splitscreen window occupies on the local output frame, derived
+	// from LocalIndex + the match's local player count via the engine's fixed
+	// splitscreen layout (LocalViewport / AssignLocalViewports). Set only for
+	// local players; nil for network/non-local players (LocalIndex nil). Lets
+	// overlays place per-player elements over the right region at any output
+	// resolution.
+	Viewport *ViewportRect `json:"viewport,omitempty"`
 	// MachineIndex is the network-machine index this player is hosted on.
 	// Populated from the lobby roster (system-link / splitscreen) and lines
 	// up with GameData.Machines[].Index. Nil when machine attribution
@@ -293,7 +306,12 @@ type TickGameGlobals struct {
 // TickPlayer because the engine's update_queue tracks every player slot
 // (locals AND remotes), not just locals.
 type TickLocal struct {
-	LocalIndex    int                `json:"local_index"`
+	LocalIndex int `json:"local_index"`
+	// Viewport is the normalized on-screen rect (0..1, top-left origin) this
+	// local player's splitscreen window occupies, from
+	// LocalViewport(LocalCount, LocalIndex). Mirrors GamePlayer.Viewport so the
+	// per-tick stream is self-sufficient for overlay placement.
+	Viewport      ViewportRect       `json:"viewport"`
 	FPWeapon      *TickFPWeapon      `json:"fp_weapon,omitempty"`
 	ObserverCam   *TickObserverCam   `json:"observer_cam,omitempty"`
 	IAS           *TickInputAbstract `json:"ias,omitempty"`

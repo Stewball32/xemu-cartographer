@@ -87,6 +87,9 @@ export function v2ToV1GameData(
 		time_limit_ticks: game?.config?.time_limit_ticks ?? 0,
 		team_scores: game?.team_scores ?? null,
 		players: game?.players ?? null,
+		// v2 capture has no explicit local_player_count; derive it from the
+		// roster's local players (those with a local_index).
+		local_count: game?.players?.filter((p) => p.local_index != null).length ?? 0,
 		power_item_spawns: powerItemSpawns,
 		machines: game?.machines ?? null,
 		game_difficulty: scenario?.game_difficulty ?? 0,

@@ -108,6 +108,34 @@ export interface TeamScore {
 	score: number;
 }
 
+// ViewportRect is the normalized on-screen region (0..1, top-left origin) a
+// local splitscreen player's view occupies on the output frame. x,y are the
+// top-left corner, w,h the size — multiply by the output pixel size to place
+// per-player overlay elements over the correct region.
+export interface ViewportRect {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+// localViewport mirrors Go scraper.LocalViewport: the fixed CE/H2 splitscreen
+// layout. Returns the normalized screen rect (0..1, top-left origin) a local
+// player occupies — 1p full, 2p horizontal halves (0=top, 1=bottom), 3-4p
+// quadrants (0=TL, 1=TR, 2=BL, 3=BR) — or null when localIndex is out of range
+// for the count (network/non-local player, or count outside 1..4).
+export function localViewport(count: number, localIndex: number): ViewportRect | null {
+	if (localIndex < 0 || count < 1 || count > 4 || localIndex >= count) return null;
+	if (count === 1) return { x: 0, y: 0, w: 1, h: 1 };
+	if (count === 2) {
+		return localIndex === 0 ? { x: 0, y: 0, w: 1, h: 0.5 } : { x: 0, y: 0.5, w: 1, h: 0.5 };
+	}
+	// 3 or 4 → quadrants, row-major.
+	const col = localIndex % 2;
+	const row = Math.floor(localIndex / 2);
+	return { x: col * 0.5, y: row * 0.5, w: 0.5, h: 0.5 };
+}
+
 export interface GamePlayer {
 	index: number;
 	name: string;
@@ -126,6 +154,9 @@ export interface GamePlayer {
 	shots_hit: number;
 	is_local: boolean | null;
 	local_index: number | null;
+	// Set only for local players; normalized splitscreen viewport from
+	// local_index + the match's local_count. Omitted for network/non-local.
+	viewport?: ViewportRect | null;
 	machine_index: number | null;
 	controller_index: number | null;
 }
@@ -154,6 +185,9 @@ export interface GameData {
 	time_limit_ticks: number;
 	team_scores: TeamScore[] | null;
 	players: GamePlayer[] | null;
+	// Number of local splitscreen players on this instance (0..4); pairs with
+	// each local player's local_index + viewport.
+	local_count: number;
 	power_item_spawns: PowerItemSpawn[] | null;
 	machines?: GameMachine[] | null;
 
@@ -425,6 +459,9 @@ export interface TickGameGlobals {
 
 export interface TickLocal {
 	local_index: number;
+	// Normalized splitscreen viewport for this local player (mirrors
+	// GamePlayer.viewport; always present per local in the tick stream).
+	viewport: ViewportRect;
 	fp_weapon?: TickFPWeapon | null;
 	observer_cam?: TickObserverCam | null;
 	ias?: TickInputAbstract | null;
