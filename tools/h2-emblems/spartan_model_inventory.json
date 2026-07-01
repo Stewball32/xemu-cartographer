@@ -1,0 +1,406 @@
+{
+  "source_map": "shared.map (Halo 2 Xbox, cache v8)",
+  "characters": {
+    "masterchief": [
+      {
+        "tag_id": 81,
+        "class": "bipd",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 82,
+        "class": "hlmt",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 83,
+        "class": "mode",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 110,
+        "class": "bitm",
+        "path": "objects\\characters\\masterchief\\bitmaps\\masterchief_bump"
+      },
+      {
+        "tag_id": 111,
+        "class": "bitm",
+        "path": "objects\\characters\\masterchief\\bitmaps\\masterchief"
+      },
+      {
+        "tag_id": 112,
+        "class": "bitm",
+        "path": "objects\\characters\\masterchief\\bitmaps\\masterchief_cc"
+      },
+      {
+        "tag_id": 113,
+        "class": "bitm",
+        "path": "objects\\bitmaps\\reflection_maps\\masterchief_armor"
+      },
+      {
+        "tag_id": 114,
+        "class": "bitm",
+        "path": "objects\\characters\\masterchief\\bitmaps\\masterchief_bump_camo"
+      },
+      {
+        "tag_id": 125,
+        "class": "coll",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 126,
+        "class": "jmad",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 200,
+        "class": "phmo",
+        "path": "objects\\characters\\masterchief\\masterchief"
+      },
+      {
+        "tag_id": 333,
+        "class": "bitm",
+        "path": "objects\\characters\\masterchief\\bitmaps\\flashlight_gel"
+      },
+      {
+        "tag_id": 3879,
+        "class": "mode",
+        "path": "objects\\characters\\masterchief\\fp_body\\fp_body"
+      },
+      {
+        "tag_id": 3929,
+        "class": "bipd",
+        "path": "objects\\characters\\masterchief\\masterchief_mp"
+      },
+      {
+        "tag_id": 3930,
+        "class": "hlmt",
+        "path": "objects\\characters\\masterchief\\masterchief_mp"
+      }
+    ],
+    "elite": [
+      {
+        "tag_id": 374,
+        "class": "bipd",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 375,
+        "class": "hlmt",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 376,
+        "class": "mode",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 380,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\head_bump"
+      },
+      {
+        "tag_id": 381,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\head"
+      },
+      {
+        "tag_id": 382,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\head_change_color"
+      },
+      {
+        "tag_id": 384,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\head_active_camo_bump"
+      },
+      {
+        "tag_id": 385,
+        "class": "bitm",
+        "path": "objects\\cinematics\\covenant\\elite_helmet_charred\\bitmaps\\bubbled_burn_detail_plate"
+      },
+      {
+        "tag_id": 389,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\helmet"
+      },
+      {
+        "tag_id": 390,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\helmet_bump"
+      },
+      {
+        "tag_id": 391,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\helmet_change_color"
+      },
+      {
+        "tag_id": 392,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\helmet_active_camo_bump"
+      },
+      {
+        "tag_id": 394,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\arms_bump"
+      },
+      {
+        "tag_id": 395,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\arms"
+      },
+      {
+        "tag_id": 396,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\arms_color_change"
+      },
+      {
+        "tag_id": 397,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\arms_self_illum"
+      },
+      {
+        "tag_id": 398,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\arms_active_camo_bump"
+      },
+      {
+        "tag_id": 400,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\torso_bump"
+      },
+      {
+        "tag_id": 401,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\torso"
+      },
+      {
+        "tag_id": 402,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\torso_illumination"
+      },
+      {
+        "tag_id": 403,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\torso_change_color"
+      },
+      {
+        "tag_id": 404,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\torso_active_camo_bump"
+      },
+      {
+        "tag_id": 406,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\legs_bump"
+      },
+      {
+        "tag_id": 407,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\legs"
+      },
+      {
+        "tag_id": 408,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\legs_change_color"
+      },
+      {
+        "tag_id": 409,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\legs_self_illum"
+      },
+      {
+        "tag_id": 410,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\legs_active_camo_bump"
+      },
+      {
+        "tag_id": 412,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\council_helmet"
+      },
+      {
+        "tag_id": 413,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\council_helmet_bump"
+      },
+      {
+        "tag_id": 419,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\elite_honor_guard\\bitmaps\\elite_honor_armor"
+      },
+      {
+        "tag_id": 420,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\elite_honor_guard\\bitmaps\\elite_honor_armor_bump"
+      },
+      {
+        "tag_id": 421,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\elite_honor_guard\\bitmaps\\elite_honor_armor_illum"
+      },
+      {
+        "tag_id": 422,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\elite_honor_guard\\bitmaps\\elite_honor_armor_detail"
+      },
+      {
+        "tag_id": 434,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\teeth_bump"
+      },
+      {
+        "tag_id": 435,
+        "class": "bitm",
+        "path": "objects\\characters\\elite\\bitmaps\\teeth"
+      },
+      {
+        "tag_id": 438,
+        "class": "coll",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 439,
+        "class": "jmad",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 520,
+        "class": "phmo",
+        "path": "objects\\characters\\elite\\elite"
+      },
+      {
+        "tag_id": 532,
+        "class": "bitm",
+        "path": "effects\\bitmaps\\energy\\elite_shield_depletion"
+      },
+      {
+        "tag_id": 657,
+        "class": "bitm",
+        "path": "effects\\decals\\blood_splats\\bitmaps\\blood_splat_elite"
+      },
+      {
+        "tag_id": 3926,
+        "class": "bitm",
+        "path": "ui\\hud\\bitmaps\\new_hud\\scope_masks\\binoculars_elite"
+      },
+      {
+        "tag_id": 3933,
+        "class": "mode",
+        "path": "objects\\characters\\elite\\fp_arms\\fp_arms"
+      },
+      {
+        "tag_id": 3943,
+        "class": "mode",
+        "path": "objects\\characters\\elite\\fp_body\\fp_body"
+      },
+      {
+        "tag_id": 3944,
+        "class": "bipd",
+        "path": "objects\\characters\\elite\\elite_mp"
+      },
+      {
+        "tag_id": 3945,
+        "class": "hlmt",
+        "path": "objects\\characters\\elite\\elite_mp"
+      }
+    ],
+    "dervish": [
+      {
+        "tag_id": 1329,
+        "class": "bitm",
+        "path": "objects\\bitmaps\\reflection_maps\\dervish_cubemap"
+      },
+      {
+        "tag_id": 3888,
+        "class": "bitm",
+        "path": "objects\\bitmaps\\detail_maps\\dervish_metal"
+      },
+      {
+        "tag_id": 3889,
+        "class": "mode",
+        "path": "objects\\characters\\dervish\\fp_body\\fp_body"
+      },
+      {
+        "tag_id": 3891,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish"
+      },
+      {
+        "tag_id": 3892,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_bump"
+      },
+      {
+        "tag_id": 3893,
+        "class": "bitm",
+        "path": "objects\\bitmaps\\detail_maps\\dervish_cloth"
+      },
+      {
+        "tag_id": 3894,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_active_camo_bump"
+      },
+      {
+        "tag_id": 3896,
+        "class": "bipd",
+        "path": "objects\\characters\\dervish\\dervish"
+      },
+      {
+        "tag_id": 3897,
+        "class": "hlmt",
+        "path": "objects\\characters\\dervish\\dervish"
+      },
+      {
+        "tag_id": 3898,
+        "class": "mode",
+        "path": "objects\\characters\\dervish\\dervish"
+      },
+      {
+        "tag_id": 3901,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_helmet"
+      },
+      {
+        "tag_id": 3902,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_helmet_bump"
+      },
+      {
+        "tag_id": 3903,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_helmet_active_camo_bump"
+      },
+      {
+        "tag_id": 3907,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_nude_body"
+      },
+      {
+        "tag_id": 3909,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_nude_brand"
+      },
+      {
+        "tag_id": 3910,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_nude_brand_bump"
+      },
+      {
+        "tag_id": 3912,
+        "class": "bitm",
+        "path": "objects\\characters\\dervish\\bitmaps\\dervish_nude_body_bump"
+      },
+      {
+        "tag_id": 3913,
+        "class": "coll",
+        "path": "objects\\characters\\dervish\\dervish"
+      },
+      {
+        "tag_id": 3914,
+        "class": "jmad",
+        "path": "objects\\characters\\dervish\\dervish"
+      }
+    ]
+  }
+}

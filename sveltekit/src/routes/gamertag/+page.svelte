@@ -7,7 +7,8 @@
 	import { toaster, describeAsyncError } from '$lib/stores/toaster';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
-	import H2AppearanceEditor from '$lib/components/gamertag/H2AppearanceEditor.svelte';
+	import AppearanceStudio from '$lib/components/gamertag/AppearanceStudio.svelte';
+	import CharacterPreview from '$lib/components/gamertag/CharacterPreview.svelte';
 	import CESettingsEditor from '$lib/components/gamertag/CESettingsEditor.svelte';
 	import SaveResultCard from '$lib/components/gamertag/SaveResultCard.svelte';
 	import { lanMeta } from '$lib/utils/lansaves';
@@ -185,7 +186,7 @@
 							> save.
 						</p>
 					</header>
-					<H2AppearanceEditor fields={appearanceFields} bind:appearance />
+					<AppearanceStudio fields={appearanceFields} bind:appearance {gamertag} />
 				</Card>
 				<SaveResultCard
 					record={h2Record}
@@ -203,6 +204,9 @@
 							<code class="font-mono">blam.sav</code>.
 						</p>
 					</header>
+					<div class="flex justify-center py-2">
+						<CharacterPreview game="ce" colorIndex={ceSettings.color ?? 0} {gamertag} size={208} />
+					</div>
 					<CESettingsEditor bind:settings={ceSettings} />
 				</Card>
 				<SaveResultCard

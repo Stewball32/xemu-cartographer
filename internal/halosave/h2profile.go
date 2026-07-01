@@ -10,7 +10,10 @@ import "fmt"
 //	                      (0xEC..0xFB, identical in every real sample) plus
 //	                      bytes at 0xFC/0x101/0x102 that vary per profile. NOT
 //	                      part of the name — preserved verbatim from the template.
-//	0x118..0x12F          appearance + controller block (per-profile bytes)
+//	0x118..0x11F          appearance: armor primary/secondary + emblem primary/
+//	                      secondary colour, character model, emblem foreground/
+//	                      background, flags (see H2ProfileFields)
+//	0x120..0x12F          controller block (per-profile bytes)
 //	0x1E0..0x1F3          20-byte trailing digest (HMAC signature; see digest.go)
 //
 // The name field ends at 0xEC, NOT 0x118. An earlier map treated the whole
@@ -19,10 +22,11 @@ import "fmt"
 // Cross-checked against 4 real profiles: bytes 0xEC..0xFB are 0xFF in all of
 // them and 0xFC/0x101/0x102 carry real data — so h2pNameBuf stops at 0xEC.
 //
-// The appearance/control byte labels are PROVISIONAL — derived from only 2
-// sample profiles. The block is exposed raw so it can be copied from a template
-// or patched byte-wise; named single-byte accessors are a convenience layered
-// on top.
+// The emblem/appearance bytes (0x118..0x11F) are CONFIRMED against the in-game
+// s_player_profile struct and two real profiles; the controller bytes
+// (0x12B/0x12F) remain provisional. The block is exposed raw so it can be copied
+// from a template or patched byte-wise; named single-byte accessors are a
+// convenience layered on top.
 const (
 	h2pSize      = 0x1F4 // 500
 	h2pOffName   = 0x08
@@ -41,15 +45,24 @@ type H2ProfileField struct {
 	Label  string `json:"label"`
 }
 
-// H2ProfileFields is the provisional appearance/controller field map (2-sample
-// confidence — confirm with more profiles or H2 menu RE before trusting labels).
+// H2ProfileFields maps the appearance/emblem/controller bytes in the 0x118
+// block. The emblem/colour bytes (0x118..0x11F) are CONFIRMED: they decode
+// cleanly against the in-game `s_player_profile` struct — primary/secondary
+// armor colour, tertiary/quaternary emblem colour, character model, emblem
+// foreground symbol, emblem background shape, flags — and were verified
+// byte-for-byte against two real captured profiles (587C…/E4CADA…). Colours are
+// e_player_color (0..17); foreground 0..63; background 0..31; character 0..3.
+// The controller bytes (0x12B/0x12F) remain provisional. See
+// docs/gamertag-system/H2-EMBLEM-FORMAT.md.
 var H2ProfileFields = []H2ProfileField{
-	{0x118, "armor_primary", "Armor color (primary?)"},
-	{0x119, "armor_secondary", "Armor color (secondary?)"},
-	{0x11A, "emblem_fg", "Emblem foreground?"},
-	{0x11B, "emblem_bg", "Emblem background?"},
-	{0x11D, "emblem_primary_color", "Emblem primary color?"},
-	{0x11E, "emblem_secondary_color", "Emblem secondary color?"},
+	{0x118, "armor_primary", "Armor primary color (0-17)"},
+	{0x119, "armor_secondary", "Armor secondary color (0-17)"},
+	{0x11A, "emblem_primary", "Emblem primary color (0-17)"},
+	{0x11B, "emblem_secondary", "Emblem secondary color (0-17)"},
+	{0x11C, "character_type", "Character model (0=MasterChief 1=Dervish 2=Spartan 3=Elite)"},
+	{0x11D, "emblem_foreground", "Emblem foreground symbol (0-63)"},
+	{0x11E, "emblem_background", "Emblem background shape (0-31)"},
+	{0x11F, "emblem_flags", "Emblem flags"},
 	{0x12B, "ctrl_a", "Controller setting A?"},
 	{0x12F, "ctrl_b", "Controller setting B?"},
 }

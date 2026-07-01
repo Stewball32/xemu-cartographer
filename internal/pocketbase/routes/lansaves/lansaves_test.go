@@ -61,9 +61,9 @@ func TestSpecFromQueryCE(t *testing.T) {
 }
 
 func TestSpecFromQueryH2Appearance(t *testing.T) {
-	q, _ := url.ParseQuery("title=h2&kind=profile&name=CARTOG&app_armor_primary=7&app_emblem_fg=3")
+	q, _ := url.ParseQuery("title=h2&kind=profile&name=CARTOG&app_armor_primary=7&app_emblem_foreground=3")
 	req, _ := specFromQuery(q)
-	if req.Appearance["armor_primary"] != 7 || req.Appearance["emblem_fg"] != 3 {
+	if req.Appearance["armor_primary"] != 7 || req.Appearance["emblem_foreground"] != 3 {
 		t.Errorf("appearance not parsed: %+v", req.Appearance)
 	}
 }

@@ -33,7 +33,7 @@
 </script>
 
 <div class="flex flex-col gap-3">
-	<div class="grid grid-cols-2 gap-3">
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 		<label class="label">
 			<span class="label-text">Title</span>
 			<select class="select" bind:value={form.title} onchange={onTitleChange} {disabled}>
@@ -67,7 +67,7 @@
 		/>
 	</label>
 
-	<div class="grid grid-cols-2 gap-3">
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 		<label class="label">
 			<span class="label-text">Score limit</span>
 			<input
