@@ -32,6 +32,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
 	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
+	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/halo2"      // self-registering Halo 2 GameReader (M20)
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 )
