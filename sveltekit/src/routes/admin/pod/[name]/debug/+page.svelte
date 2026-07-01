@@ -1,14 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { resolve } from '$app/paths';
-	import {
-		ActivityIcon,
-		ArrowLeftIcon,
-		Gamepad2Icon,
-		ServerIcon,
-		TagIcon,
-		WifiIcon
-	} from '@lucide/svelte';
+	import { ArrowLeftIcon } from '@lucide/svelte';
 	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
@@ -18,7 +11,7 @@
 	import { fieldAnnotations } from '$lib/stores/fieldAnnotations.svelte';
 	import { toaster } from '$lib/stores/toaster';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
-	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
+	import LiveStatusBar, { type FeedClass } from '$lib/components/debug/LiveStatusBar.svelte';
 	import TabsResponsive from '$lib/components/debug/TabsResponsive.svelte';
 	import OverviewTab from '$lib/components/debug/overview/OverviewTab.svelte';
 	import XboxTab from '$lib/components/debug/xbox/XboxTab.svelte';
@@ -202,25 +195,56 @@
 	const runnerAttached = $derived(!!inspect?.running || !!scraper?.running);
 	const phase = $derived(v2Game?.phase ?? inspect?.phase ?? 'idle');
 
-	// Combined scraper/phase tile colour: dot reflects whether the scraper is
-	// running, text reflects the phase. When the scraper isn't running we
-	// dim everything to 'off' since the phase value is stale.
-	type StatusKind = 'on' | 'off' | 'warn' | 'info' | 'neutral' | 'pointer' | 'none';
-	const phaseTileKind = $derived<StatusKind>(
-		!scraper?.running ? 'off' : phase === 'live' ? 'on' : phase === 'ready' ? 'warn' : 'neutral'
-	);
+	const running = $derived(!!scraper?.running);
 
-	// Variant tile prefers the scenario's variant_name (e.g. "Slayer",
-	// "Team Slayer Pro") and falls back to the engine gametype string when
-	// the variant is unnamed — same value the gametype tile in the Game
-	// section shows, so the header still surfaces "what's being played".
+	// Identity for the live status bar. Variant prefers the scenario's
+	// variant_name (e.g. "Slayer", "Team Slayer Pro") and falls back to the
+	// engine gametype string when the variant is unnamed.
 	const variantDisplay = $derived(
 		v2Game?.config?.variant_name ||
 			v2Game?.config?.gametype ||
 			gameData?.variant_name ||
 			gameData?.gametype ||
-			'—'
+			''
 	);
+	const mapDisplay = $derived(scraperWSV2.scenario[name]?.map || gameData?.map || '');
+	const titleDisplay = $derived(scraperWSV2.xbox[name]?.title || scraper?.title || '');
+	const xboxNameDisplay = $derived(scraperWSV2.xbox[name]?.name || scraper?.xbox_name || '');
+	const playersCount = $derived(v2Game?.players?.length ?? gameData?.players?.length);
+	const engineTickVal = $derived(scraperWSV2.engineTick[name] || undefined);
+
+	// Compact team score line for the identity bar, e.g. "12 – 8". Only for
+	// team games with reported scores; ordered by team index for stability.
+	const scoreSummary = $derived.by(() => {
+		if (!v2Game?.config?.is_team_game || !(v2Game.team_scores?.length ?? 0)) return undefined;
+		return [...v2Game.team_scores]
+			.sort((a, b) => a.team - b.team)
+			.map((t) => t.score)
+			.join(' – ');
+	});
+
+	// FEED strip — the debug analog of the visualizer's FEED capability grid:
+	// which per-instance envelope classes have delivered at least one payload
+	// this session (presence, not freshness — xbox/scenario/previous_game only
+	// arrive on change, so freshness would read as stale on a healthy runner).
+	const feedClasses = $derived<FeedClass[]>([
+		{ label: 'xbox', live: scraperWSV2.xbox[name] != null, title: 'console identity' },
+		{ label: 'scenario', live: scraperWSV2.scenario[name] != null, title: 'map / scenario tag' },
+		{ label: 'game', live: scraperWSV2.game[name] != null, title: 'roster + config + scores' },
+		{ label: 'tick', live: scraperWSV2.tick[name] != null, title: 'per-tick player state' },
+		{
+			label: 'objects',
+			live: scraperWSV2.objects[name] != null,
+			title: 'world objects + projectiles'
+		},
+		{ label: 'debug', live: scraperWSV2.debug[name] != null, title: 'raw debug fields' },
+		{ label: 'event', live: (scraperWSV2.events[name]?.length ?? 0) > 0, title: 'game event log' },
+		{
+			label: 'previous',
+			live: scraperWSV2.previousGame[name] != null,
+			title: 'previous match summary'
+		}
+	]);
 
 	const tabs = [
 		{ value: 'overview', label: 'Overview' },
@@ -255,50 +279,20 @@
 			</button>
 		{/snippet}
 	</PageHeader>
-	{#snippet wsIcon()}<WifiIcon class="size-3.5" />{/snippet}
-	{#snippet phaseIcon()}<ActivityIcon class="size-3.5" />{/snippet}
-	{#snippet xboxIcon()}<ServerIcon class="size-3.5" />{/snippet}
-	{#snippet titleIcon()}<TagIcon class="size-3.5" />{/snippet}
-	{#snippet variantIcon()}<Gamepad2Icon class="size-3.5" />{/snippet}
-	<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-		<StatTile
-			label="websockets"
-			display={scraperWSV2.connected ? 'connected' : 'disconnected'}
-			statusKind={scraperWSV2.connected ? 'on' : 'off'}
-			title={scraperWSV2.lastError ?? (scraperWSV2.connected ? 'connected' : 'disconnected')}
-			icon={wsIcon}
-		/>
-		<StatTile
-			label="scraper phase"
-			display={phase}
-			statusKind={phaseTileKind}
-			title={scraper?.running
-				? `scraper running · phase ${phase}`
-				: `scraper stopped · last phase ${phase}`}
-			icon={phaseIcon}
-		/>
-		<StatTile
-			label="xbox"
-			display={scraper?.xbox_name || '—'}
-			statusKind={scraper?.xbox_name ? 'on' : 'none'}
-			title={scraper?.xbox_name}
-			icon={xboxIcon}
-		/>
-		<StatTile
-			label="title"
-			display={scraper?.title || '—'}
-			statusKind={scraper?.title ? 'on' : 'none'}
-			title={scraper?.title}
-			icon={titleIcon}
-		/>
-		<StatTile
-			label="variant"
-			display={variantDisplay}
-			statusKind={variantDisplay === '—' ? 'none' : 'on'}
-			title={variantDisplay}
-			icon={variantIcon}
-		/>
-	</div>
+	<LiveStatusBar
+		map={mapDisplay}
+		gametype={variantDisplay}
+		title={titleDisplay}
+		xboxName={xboxNameDisplay}
+		{phase}
+		{running}
+		connected={scraperWSV2.connected}
+		lastError={scraperWSV2.lastError}
+		players={playersCount}
+		{scoreSummary}
+		engineTick={engineTickVal}
+		feed={feedClasses}
+	/>
 	{#if scraperWSV2.lastError}
 		<div class="text-right text-xs text-error-500">{scraperWSV2.lastError}</div>
 	{/if}
