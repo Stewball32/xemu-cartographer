@@ -78,18 +78,26 @@ The leading bytes are the variant name, so two variants that differ in one
 setting (e.g. `CTF 3C 10S` vs `CTF 3C 7S`) differ at exactly `0x30` (time) and the
 digest — which is how the table above was derived.
 
-## 3. Halo CE campaign save — `blam.sav` (512 B) + `savegame.bin` (3.5 MB)
+## 3. Halo CE player profile — `blam.sav` (512 B) + `savegame.bin`
 
-`P-LD50 II` is a **campaign** save (level `a10` = Pillar of Autumn), not an MP
-player profile. `blam.sav` shares the name+struct shape of `blam.lst` (engine `9`);
-`savegame.bin` begins with a **4-byte checksum** (`4F A6 D7 1F`) over the body —
-**not** a standard zlib CRC32 (ruled out) → Halo-custom. Out of scope for the
-profile/gametype generator, documented for completeness.
+> **⚠️ CORRECTION (supersedes the original text below).** Halo: CE **does** have a
+> standalone player profile — `blam.sav` (512 B) IS the profile: name @`0x00`,
+> armor color @`0x18`, control presets @`0x28`/`0x29`, signed digest @`0x30`. The
+> `P-LD50 II` dir was a real profile (with its auto-created `savegame.bin`
+> campaign sibling), not "just a campaign save"; the `engine 9` read at `0x18` was
+> actually a color enum. The definitive, signed, byte-verified format is in
+> [`docs/gamertag-system/CE-PROFILE-FORMAT.md`](../../gamertag-system/CE-PROFILE-FORMAT.md),
+> and the generator is `internal/halosave` `CEProfileBuild`.
 
-> **Halo CE has no standalone multiplayer "player profile" file.** MP player name
-> and controller/look settings are not stored as an editable UDATA save the way
-> Halo 2 stores them. The CE "appearance/controls" half of the brief therefore
-> applies to **Halo 2** (below); CE's editable surface is the **gametype**.
+_Original (incorrect) text:_ `P-LD50 II` is a **campaign** save (level `a10` =
+Pillar of Autumn), not an MP player profile. `blam.sav` shares the name+struct
+shape of `blam.lst` (engine `9`); `savegame.bin` begins with a **4-byte
+checksum** (`4F A6 D7 1F`) over the body — **not** a standard zlib CRC32 (ruled
+out) → Halo-custom.
+
+> ~~**Halo CE has no standalone multiplayer "player profile" file.**~~ — FALSE,
+> see the correction above. CE's editable surface is the gametype **and** the
+> `blam.sav` player profile (name + color + controls).
 
 ---
 

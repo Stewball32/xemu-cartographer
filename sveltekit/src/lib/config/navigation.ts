@@ -2,10 +2,13 @@ import {
 	BookmarkXIcon,
 	BoxIcon,
 	GamepadIcon,
+	IdCardIcon,
+	LibraryIcon,
 	MonitorIcon,
 	PlayIcon,
 	SettingsIcon,
 	ShieldIcon,
+	SwordsIcon,
 	TrophyIcon,
 	TvIcon,
 	UserIcon,
@@ -21,6 +24,7 @@ export interface NavLink {
 	showInRail?: boolean;
 	showInBar?: boolean;
 	adminOnly?: boolean;
+	organizerOnly?: boolean;
 }
 
 export interface NavGroup {
@@ -29,14 +33,26 @@ export interface NavGroup {
 	icon?: Component;
 	links: NavLink[];
 	adminOnly?: boolean;
+	organizerOnly?: boolean;
 }
 
 export const mainGroups: NavGroup[] = [
 	{
 		links: [
 			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true },
+			{ label: 'Gamertag', href: '/gamertag/', icon: IdCardIcon },
 			{ label: 'Series', href: '/series/', icon: TrophyIcon },
 			{ label: 'Teams', href: '/teams/', icon: UsersIcon }
+		]
+	},
+	{
+		label: 'Organizer',
+		href: '/organizer/gametypes/',
+		icon: SwordsIcon,
+		organizerOnly: true,
+		links: [
+			{ label: 'Gametypes', href: '/organizer/gametypes/', icon: SwordsIcon },
+			{ label: 'Games', href: '/organizer/games/', icon: LibraryIcon }
 		]
 	},
 	{

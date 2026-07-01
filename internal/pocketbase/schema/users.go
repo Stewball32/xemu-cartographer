@@ -15,6 +15,18 @@ func init() {
 	register(registerUsersCollection)
 }
 
+// GamertagMaxLen caps users.gamertag — the in-game name, SEPARATE from the
+// account `username`. The gamertag is written into BOTH Halo player profiles, so
+// it must fit the shorter of the two games' name fields (= CE's 11):
+//
+//   - CE: the `blam.sav` name field is a 24-byte UTF-16LE buffer ⇒ **≤11 chars**
+//     (CE-PROFILE-FORMAT.md §2). The tighter, controlling limit.
+//   - H2: the `profile` name field is ~113 chars (looser).
+//
+// Printable-ASCII only (console-name / system-link friendly). The frontend
+// mirrors this number — keep them in sync.
+const GamertagMaxLen = 11
+
 // registerUsersCollection customizes the built-in "users" auth collection
 // that PocketBase creates automatically on first boot.
 //
@@ -39,6 +51,22 @@ func registerUsersCollection(app *pocketbase.PocketBase) error {
 			Max:         34,
 			Presentable: true,
 			Required:    true,
+		})
+	}
+
+	// gamertag is the in-game name (SEPARATE from the login `username`, which
+	// carries no Halo constraints). It is written into the user's CE (console
+	// name) + H2 player profiles, so it's capped to GamertagMaxLen (CE's tighter
+	// 11-char limit) and restricted to printable ASCII (console-name / system-link
+	// friendly). Distinct from default_gamertag (the M07 roster-matching
+	// relation). Optional: a user sets it before generating profiles; the profile
+	// generate hooks read it via the `user` relation, and users_gamertag_regen
+	// re-generates the profiles when it changes.
+	if users.Fields.GetByName("gamertag") == nil {
+		users.Fields.Add(&core.TextField{
+			Name:    "gamertag",
+			Max:     GamertagMaxLen,
+			Pattern: `^[ -~]*$`, // printable ASCII (space..tilde); empty allowed
 		})
 	}
 

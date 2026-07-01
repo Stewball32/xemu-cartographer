@@ -3,7 +3,6 @@ package podman
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
@@ -11,48 +10,21 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Stewball32/xemu-cartographer/internal/consolename"
 )
 
-// Console-name (E:\UDATA\NICKNAME.XBN) layout — see the offset-mapper
-// SYSTEM-INFO.md §7. Plaintext, no checksum: a 4-byte header (04 00 'S' 'M')
-// then the name as UTF-16LE, NUL-terminated, zero-padded to the fixed file size.
+// Console-name (E:\UDATA\NICKNAME.XBN) format now lives in the shared leaf
+// package internal/consolename, so the gamertag identity system can reuse the
+// exact same builder. These thin wrappers keep the podman call sites + tests
+// stable.
 const (
-	nicknameFileSize = 3400 // total NICKNAME.XBN size in bytes
-	nicknameNameMax  = 15   // console-name length cap (chars); conservative
+	nicknameFileSize = consolename.FileSize
+	nicknameNameMax  = consolename.NameMax
 )
 
-// sanitizeConsoleName reduces an arbitrary container name to a safe Xbox console
-// name: printable ASCII only (UTF-16-encodable without surrogates, system-link
-// friendly), trimmed, truncated to nicknameNameMax. Returns "" when nothing
-// usable remains — the caller then leaves the Xbox's random-name default.
-func sanitizeConsoleName(name string) string {
-	var b strings.Builder
-	for _, r := range name {
-		if r >= 0x20 && r < 0x7f { // printable ASCII
-			b.WriteRune(r)
-		}
-	}
-	s := strings.TrimSpace(b.String())
-	if len(s) > nicknameNameMax {
-		s = strings.TrimSpace(s[:nicknameNameMax])
-	}
-	return s
-}
-
-// buildNicknameXBN renders the full fixed-size NICKNAME.XBN payload for an
-// already-sanitized (printable-ASCII) name. The header is 04 00 'S' 'M'; the
-// name follows at +0x04 as UTF-16LE; the NUL terminator + trailing padding are
-// the zeroed remainder of the buffer.
-func buildNicknameXBN(name string) []byte {
-	buf := make([]byte, nicknameFileSize)
-	buf[0], buf[1], buf[2], buf[3] = 0x04, 0x00, 'S', 'M'
-	off := 4
-	for _, r := range name { // sanitized => each rune is < 0x80
-		binary.LittleEndian.PutUint16(buf[off:], uint16(r))
-		off += 2
-	}
-	return buf
-}
+func sanitizeConsoleName(name string) string { return consolename.Sanitize(name) }
+func buildNicknameXBN(name string) []byte    { return consolename.BuildXBN(name) }
 
 func (m *Manager) consoleNamingEnabled() bool { return m.cfg.SetConsoleName }
 

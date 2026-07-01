@@ -121,6 +121,11 @@ var baselineRoles = []struct {
 }{
 	{Slug: "superuser", Label: "Superuser", Description: "PocketBase _superusers tier. Never granted via user_roles; the row exists for discoverability.", Level: 100},
 	{Slug: "admin", Label: "Admin", Description: "Full moderation access (gamertags, teams, reserved names, audit log, scraper, containers, xemu diagnostics).", Level: 50},
+	// Gamertag identity system: lets a tournament/event "organizer" curate the
+	// shared CE + H2 gametype library and the playable-game (XBE) uploads that
+	// every player can download to their box, without any broader admin powers.
+	// Admins have this inherently.
+	{Slug: "organizer", Label: "Organizer", Description: "Can manage the shared Halo: CE / Halo 2 gametype library and game (XBE) uploads for the LAN, without other admin powers.", Level: 30},
 	// M10: lets a non-admin "stream helper" mint/revoke read-only overlay
 	// tokens for OBS without any broader powers. Admins can do this inherently.
 	{Slug: "overlay_manager", Label: "Overlay manager", Description: "Can mint + revoke read-only OBS/spectator overlay tokens (M10), without other admin powers.", Level: 20},

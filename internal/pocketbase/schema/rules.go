@@ -24,3 +24,12 @@ package schema
 // the admin role. Wrap in parens when composing with `||` / `&&` so
 // operator precedence stays predictable.
 const hasAdminRole = `@collection.user_roles.user ?= @request.auth.id && @collection.user_roles.role.slug ?= "admin"`
+
+// hasOrganizerRole matches when the authenticated user holds a user_roles row
+// pointing at the organizer role. Same shape/caveats as hasAdminRole.
+const hasOrganizerRole = `@collection.user_roles.user ?= @request.auth.id && @collection.user_roles.role.slug ?= "organizer"`
+
+// organizerOrAdmin is the mutate gate for the shared gametype library and the
+// game (XBE) uploads in the gamertag identity system: either role passes.
+// Already parenthesised, so it composes directly into a larger rule.
+const organizerOrAdmin = `((` + hasOrganizerRole + `) || (` + hasAdminRole + `))`

@@ -270,10 +270,14 @@ func TestBuildUnchangedIsByteIdenticalClone(t *testing.T) {
 
 // ---- guards / error paths ----
 
-func TestBuildRejectsCEProfile(t *testing.T) {
-	_, err := Build(BuildRequest{Title: TitleCE, Kind: KindProfile, Name: "x"})
-	if err == nil {
-		t.Fatal("expected error: CE has no profile save")
+func TestBuildAcceptsCEProfile(t *testing.T) {
+	// CE DOES have player profiles (blam.sav) — see CE-PROFILE-FORMAT.md.
+	set, err := Build(BuildRequest{Title: TitleCE, Kind: KindProfile, Name: "x"})
+	if err != nil {
+		t.Fatalf("CE profile build should succeed: %v", err)
+	}
+	if set.Files[0].Name != "blam.sav" {
+		t.Errorf("CE profile payload = %q, want blam.sav", set.Files[0].Name)
 	}
 }
 

@@ -101,10 +101,13 @@ func Build(req BuildRequest) (*SaveSet, error) {
 	}
 	switch req.Title {
 	case TitleCE:
-		if req.Kind != KindGametype {
-			return nil, fmt.Errorf("halosave: Halo: CE has no editable %q save — only gametypes (CE has no standalone MP profile file)", req.Kind)
+		switch req.Kind {
+		case KindGametype:
+			return buildCEGametype(req)
+		case KindProfile:
+			return buildCEProfile(req)
 		}
-		return buildCEGametype(req)
+		return nil, fmt.Errorf("halosave: unknown CE kind %q", req.Kind)
 	case TitleH2:
 		switch req.Kind {
 		case KindProfile:
@@ -206,6 +209,67 @@ func buildCEGametype(req BuildRequest) (*SaveSet, error) {
 		Digest:   recomputedDigest(!bytes.Equal(payload, tmpl)),
 		Parsed:   parsed,
 		Warnings: ceWarnings(!bytes.Equal(payload, tmpl)),
+	}
+	set.finish()
+	return set, nil
+}
+
+// buildCEProfile generates a signed Halo: CE player profile (blam.sav). The
+// editable surface (req.Appearance keyed by CEProfileFields): "color" (u32),
+// "thumbstick"/"button" (preset bytes). Name is the in-game MP name. Always
+// re-signed at 0x30.
+func buildCEProfile(req BuildRequest) (*SaveSet, error) {
+	name := req.Name
+	p := CEProfilePatch{Name: &name}
+	if v, ok := req.Appearance["color"]; ok {
+		if v < 0 {
+			return nil, fmt.Errorf("halosave: CE color %d is negative", v)
+		}
+		c := uint32(v)
+		p.Color = &c
+	}
+	if v, ok := req.Appearance["thumbstick"]; ok {
+		if v < 0 || v > 255 {
+			return nil, fmt.Errorf("halosave: CE thumbstick preset %d out of byte range", v)
+		}
+		b := byte(v)
+		p.Thumbstick = &b
+	}
+	if v, ok := req.Appearance["button"]; ok {
+		if v < 0 || v > 255 {
+			return nil, fmt.Errorf("halosave: CE button preset %d out of byte range", v)
+		}
+		b := byte(v)
+		p.Button = &b
+	}
+
+	payload, err := CEProfileBuild(p, true) // always re-sign
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := CEProfileParse(payload)
+	if err != nil {
+		return nil, err // structural round-trip: a generated file must re-parse
+	}
+
+	dir := req.DirName
+	if dir == "" {
+		dir = deriveH2Dir(payload) // 12-hex id, same convention as H2
+	}
+	set := &SaveSet{
+		Title:   TitleCE,
+		Kind:    KindProfile,
+		TitleID: TitleIDHaloCE,
+		DirName: dir,
+		Files: []SaveFile{
+			newSaveFile("blam.sav", payload),
+			newSaveFile("SaveMeta.xbx", SaveMetaBuild(req.Name)),
+		},
+		Digest: recomputedDigest(true),
+		Parsed: parsed,
+		Warnings: []string{
+			"Halo: CE Advanced Setup bytes (0x1C-0x2F: look-sensitivity / invert / vibration) are not yet individually mapped; fresh-profile defaults are applied. A campaign savegame.bin sibling is not generated (CE auto-creates it) — confirm on xemu whether it's required for the profile to list.",
+		},
 	}
 	set.finish()
 	return set, nil
