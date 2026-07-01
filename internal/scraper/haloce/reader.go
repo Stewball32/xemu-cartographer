@@ -202,6 +202,15 @@ func (r *Reader) composeGameData() scraper.GameData {
 	out.Machines = r.readNetworkMachines()
 	r.attributeMachines(out.Players)
 	r.fillPlayerScores(out.Players, gametypeID)
+
+	// Splitscreen viewport mapping. local_player_count
+	// (players_globals + OffPGLocalPlayerCount) drives the per-local screen
+	// rects: each local GamePlayer (LocalIndex != nil) gets the normalized
+	// viewport its splitscreen window occupies; network/non-local players keep
+	// a nil Viewport. See scraper.LocalViewport for the fixed CE layout.
+	out.LocalCount = r.readLocalPlayerCount()
+	scraper.AssignLocalViewports(out.Players, int(out.LocalCount))
+
 	out.TimeLimitTicks = 0 // no verified address
 
 	// Scenario-static data — copy whatever has populated in the cache,

@@ -30,6 +30,7 @@ import type {
 	WeaponInfo,
 	XYZ
 } from '$lib/types/scraper';
+import { localViewport } from '$lib/types/scraper';
 import type {
 	AnyEvent,
 	GameNetwork,
@@ -253,6 +254,12 @@ function v2ToV1Tick(
 		locals:
 			tick?.locals?.map((l) => ({
 				local_index: l.local_index,
+				viewport: localViewport(tick?.locals?.length ?? 0, l.local_index) ?? {
+					x: 0,
+					y: 0,
+					w: 1,
+					h: 1
+				},
 				fp_weapon: l.fp_weapon
 					? {
 							weapon_rendered: 0,
