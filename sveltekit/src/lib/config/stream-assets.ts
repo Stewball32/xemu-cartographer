@@ -54,6 +54,9 @@ export interface StreamAsset {
 	tokenScoped?: boolean;
 	/** Optional per-asset note (e.g. live-verification caveats). */
 	note?: string;
+	/** Extra query appended to BOTH the mock-preview and live OBS URLs (no leading
+	 * `?`/`&`), e.g. `game=h2` to select a themed variant. */
+	query?: string;
 }
 
 /** Standard 1080p browser source — every asset today is a 16:9 source (overlays
@@ -67,10 +70,62 @@ export const MOCK_INSTANCE = 'demo';
 
 export const STREAM_ASSETS: StreamAsset[] = [
 	{
-		id: 'scoreboard',
-		name: 'Scoreboard',
+		id: 'broadcast-scoreboard',
+		name: 'Broadcast scoreboard (CE)',
 		description:
-			'Full roster grouped by team — names, alive/dead, health + shield bars, K/D/A and team scores. The primary overlay.',
+			'The hero scoreboard — themed header (gametype · map · match clock · score-to) over team columns or an FFA list, each row an armor-chipped player with K/D/A, score and vitals. Halo: CE visual language.',
+		icon: LayoutListIcon,
+		kind: 'overlay',
+		path: (i) => `/overlays/${i}/scoreboard/`,
+		preview: true,
+		aspect: SOURCE_1080P,
+		obsHint: 'Transparent · anchor top-center'
+	},
+	{
+		id: 'broadcast-cards',
+		name: 'Player cards (CE)',
+		description:
+			'A bottom strip of per-player cards — a Spartan tinted by the player’s armor colour, gamertag, K/D/A and a big score, clustered by team. Halo: CE visual language.',
+		icon: UsersIcon,
+		kind: 'overlay',
+		path: (i) => `/overlays/${i}/cards/`,
+		preview: true,
+		aspect: SOURCE_1080P,
+		obsHint: 'Transparent · anchor bottom-center'
+	},
+	{
+		id: 'broadcast-scoreboard-h2',
+		name: 'Broadcast scoreboard (H2 theme)',
+		description:
+			'The same scoreboard in Halo 2’s cool-blue menu language. Preview only for now — the H2 live scrape is still in progress.',
+		icon: LayoutListIcon,
+		kind: 'overlay',
+		path: (i) => `/overlays/${i}/scoreboard/`,
+		preview: true,
+		aspect: SOURCE_1080P,
+		obsHint: 'Transparent · anchor top-center',
+		query: 'game=h2',
+		note: 'Halo 2 theme. Live H2 data (roster / scores / emblems) awaits the H2 scraper — mock preview only today.'
+	},
+	{
+		id: 'broadcast-cards-h2',
+		name: 'Player cards (H2 theme)',
+		description:
+			'Player cards in Halo 2’s visual language — each Spartan (or Elite) carries the player’s emblem on the chest plus a corner badge. Preview only for now.',
+		icon: UsersIcon,
+		kind: 'overlay',
+		path: (i) => `/overlays/${i}/cards/`,
+		preview: true,
+		aspect: SOURCE_1080P,
+		obsHint: 'Transparent · anchor bottom-center',
+		query: 'game=h2',
+		note: 'Halo 2 theme. Live H2 data + emblems await the H2 scraper — mock preview only today.'
+	},
+	{
+		id: 'scoreboard',
+		name: 'Scoreboard (compact)',
+		description:
+			'Full roster grouped by team — names, alive/dead, health + shield bars, K/D/A and team scores. The original compact overlay.',
 		icon: LayoutListIcon,
 		kind: 'overlay',
 		path: (i) => `/overlays/${i}/`,
@@ -159,22 +214,29 @@ export function assetById(id: string): StreamAsset | undefined {
 }
 
 /** Mock-preview path for an asset (relative — same-origin). Renders without a
- * game or token via ?mock=1. */
+ * game or token via ?mock=1. Appends the asset's `query` (e.g. game=h2). */
 export function mockPath(asset: StreamAsset, scale?: number): string {
 	const base = asset.path(MOCK_INSTANCE);
-	return scale && scale !== 1 ? `${base}?mock=1&scale=${scale}` : `${base}?mock=1`;
+	const s = scale && scale !== 1 ? `&scale=${scale}` : '';
+	const extra = asset.query ? `&${asset.query}` : '';
+	return `${base}?mock=1${s}${extra}`;
 }
 
 /** Absolute live OBS URL for an asset. Token-scoped assets (the default) carry
- * the scoped overlay token; legacy JWT surfaces get a plain URL. */
+ * the scoped overlay token; legacy JWT surfaces get a plain URL. Appends the
+ * asset's `query` (e.g. game=h2). */
 export function liveURL(
 	origin: string,
 	asset: StreamAsset,
 	instance: string,
 	token: string
 ): string {
-	if (asset.tokenScoped === false) return `${origin}${asset.path(instance)}`;
-	return `${origin}${asset.path(instance)}?token=${encodeURIComponent(token)}`;
+	const path = asset.path(instance);
+	if (asset.tokenScoped === false) {
+		return asset.query ? `${origin}${path}?${asset.query}` : `${origin}${path}`;
+	}
+	const extra = asset.query ? `&${asset.query}` : '';
+	return `${origin}${path}?token=${encodeURIComponent(token)}${extra}`;
 }
 
 /** Absolute mock URL for an asset (for "open preview in new tab"). */

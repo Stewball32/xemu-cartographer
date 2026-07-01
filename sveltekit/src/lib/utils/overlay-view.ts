@@ -80,6 +80,9 @@ export interface PlayerRow {
 	index: number;
 	name: string;
 	team: number;
+	/** CE/H2 armor-palette index (0..17) — tints the broadcast card's Spartan and
+	 * the scoreboard's armor chip. Straight off the roster's `armor_color`. */
+	armorColor: number;
 	isLocal: boolean;
 	/** Live (tick) — only meaningful when the scoreboard's `hasTick` is true. */
 	alive: boolean;
@@ -130,6 +133,7 @@ function joinRow(
 		index: p.index,
 		name: p.name,
 		team: p.team,
+		armorColor: p.armor_color ?? 0,
 		isLocal: p.is_local === true,
 		alive: t ? t.alive : true,
 		respawnIn: t ? t.respawn_in_ticks : null,

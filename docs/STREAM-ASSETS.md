@@ -34,7 +34,10 @@ token-scoped asset** — mint once, paste many.
 
 | Asset | id | Route | Kind | Token | Driven by |
 | ----- | -- | ----- | ---- | ----- | --------- |
-| Scoreboard | `scoreboard` | `/overlays/[instance]/` | overlay | ✓ | `buildScoreboard(game, tick)` |
+| **Broadcast scoreboard** | `broadcast-scoreboard` | `/overlays/[instance]/scoreboard/` | overlay | ✓ | `buildScoreboard` + `matchClock` + `statusStrip` |
+| **Player cards** | `broadcast-cards` | `/overlays/[instance]/cards/` | overlay | ✓ | `buildScoreboard(game, tick)` |
+| **Single card (spotlight)** | _(not a gallery tile)_ | `/overlays/[instance]/card/[slot]/` | overlay | ✓ | `buildScoreboard(game, tick)` |
+| Scoreboard (compact) | `scoreboard` | `/overlays/[instance]/` | overlay | ✓ | `buildScoreboard(game, tick)` |
 | Match-status strip | `status-strip` | `/overlays/[instance]/status/` | overlay | ✓ | `statusStrip(game, scenario)` |
 | **Game timer** | `timer` | `/overlays/[instance]/timer/` | overlay | ✓ | `matchClock(game)` |
 | **Kill feed** | `killfeed` | `/overlays/[instance]/killfeed/` | overlay | ✓ | `buildKillFeed(events)` |
@@ -42,8 +45,30 @@ token-scoped asset** — mint once, paste many.
 | 2D visualizer | `visualizer-2d` | `/visualizer/[instance]/` | scene | ✓ | `buildVizModel(...)` |
 | 3D visualizer | `visualizer-3d` | `/visualizer3d/[instance]/` | scene | ✓ | `buildVizModel(...)` |
 
-**Bold** = added with the Studio hub (the timer + kill feed seed the set and
-prove the pattern beyond the scoreboard).
+**Bold** = the M28 broadcast graphics + the Studio-hub seeds (timer + kill feed).
+
+### Broadcast graphics — themed per game (M28)
+
+The **broadcast scoreboard** and **player cards** are the "hero" surfaces: visually
+designed, and **themed per game** via a `?game=ce|h2` switch (default `ce`). One
+theme layer ([`components/broadcast/theme.ts`](../sveltekit/src/lib/components/broadcast/theme.ts))
+emits `--bc-*` CSS variables — CE reads in UNSC amber/green, H2 in the cool-blue
+menu language — so the same live data renders in two visual languages. Both consume
+the existing pure builders (no new feed plumbing) and the real player art:
+
+- **Scoreboard** — themed header (gametype · map · `matchClock` · score-to) over
+  team columns or an FFA list; each row an armor-chipped player with K/D/A, score,
+  and health/shield vitals. Anchors top-center.
+- **Player cards** — a bottom strip of per-player cards; each a **Spartan tinted by
+  the player's armor colour** ([`CharacterPreview`](../sveltekit/src/lib/components/gamertag/CharacterPreview.svelte)),
+  with gamertag, K/D/A, and a big score. **Halo 2 also carries the player's emblem**
+  (chest decal + corner badge, real extracted sprites) and renders the Arbiter as an
+  Elite. `card/[slot]/` is the single-player spotlight variant.
+
+**CE is live-capable today; the H2 theme is preview-only** until the H2 scraper
+(M20) provides the live roster / scores / emblems — the H2 `/studio/` tiles carry
+that note. Append `&game=h2` to any broadcast URL to switch theme. See
+[M28](milestones/M28-broadcast-graphics.md) for previews + the CE-vs-H2 matrix.
 
 ### Game timer (`timer`)
 
