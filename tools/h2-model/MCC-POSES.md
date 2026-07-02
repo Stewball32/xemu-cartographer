@@ -47,11 +47,17 @@ Don't redistribute the extracted assets.
 5. **`blender_pose_render.py`** — retargets onto the Mark VI 33-bone rig and
    renders the 3 appearance-studio passes (diffuse / primary / secondary). For
    the armed stances (`--rifle`), it attaches the `SM_H2_BattleRifle` static mesh
-   to the `weapon` bone (mapped through the posed `l_hand` frame it parents
-   under) — so the rifle follows MCC's own per-pose attach point (across the
-   body, on the shoulder, on the back, …). The rifle renders as its own gunmetal
-   in the diffuse pass and **solid black in the mask passes**, so the armor tint
-   never colours it.
+   at the anim's `weapon` bone, anchored via the **forearm frame of the hand
+   nearest the weapon** (forearms are AIM-retargeted and reliable; the hands
+   rigid-follow under `--skip`, and hand-frame anchoring left the rifle 7–26 cm
+   off UE truth — the forearm anchor is within ~2.5 cm on every armed pose). The
+   rifle renders as its own gunmetal in the diffuse pass and **solid black in the
+   mask passes**, so the armor tint never colours it.
+6. **Facing correction (gaze rule)** in `pose_world`: some source anims bake the
+   whole character yawed off-camera — `A_H2_Spartan_Idle` ('Default') is authored
+   −45°. When pelvis AND head are co-rotated (gaze follows the body), the pose is
+   squared by the pelvis yaw. When the head compensates back to camera (Crossed
+   Arms: body +32°, head ≈0°), it's a designed ¾ display stance and is left alone.
 
 The `SM_H2_BattleRifle` prop geometry is a UE `StaticMesh` (the native decoder
 does anims/skeletons, not UE meshes), exported once to glTF with **umodel**
@@ -101,13 +107,23 @@ Publish: copy each `out/mcc/render/<Pascal>{,_p,_s}.png` to
 subset is `SPARTAN_ARMED_POSES` / `isArmedPose()` so the selector can group or
 badge them. Each pose's `<pose>{,_p,_s}.png` is in `sveltekit/static/spartan/`.
 
-## Known limitation
+## Verification (all 21 poses, 2026-07-01)
 
-The forearm/arm armor spikes on **extreme arm folds** (Salute, Crossed Arms,
-Double Flex, Peace Sign) — an **inherited** artifact of the H2 mesh-skinning
-decode (`h2_render_model.py`), **not** the pose data: the original hand-set
-`t_pose`/`salute`/`crouch` show the identical spikes, and a NumPy rigid-skin
-simulation of the same data is clean. Pose-data decode is exact. Fixing the
-spikes belongs to the mesh/skin decoder (re-derive the bind / weld armor seams),
-tracked separately. Poses that don't raise the arms (Default-ish, Hands on Hips,
-Kneel, Look Back, Meditation, Yoga, At Ease) render cleanly.
+Two standalone checkers gate the pipeline (no bpy; keep their retarget math in
+sync with `blender_pose_render.py` by hand):
+
+- **`check_pose_retarget.py`** — FKs the UE ground truth AND our retarget per
+  pose, compares matched-joint world positions, renders green/red stick-figure
+  overlays. Result: max error ≤ 8 cm on all 21 poses, and every worst bone is a
+  fingertip (`--skip`ped in the render anyway) — body bones match to mm.
+- **`check_frame_choice.py`** — sweeps every anim's keys at 0/¼/½/¾/1 to confirm
+  the baked LAST key is the held stance (max body drift ≤ 5 cm across every
+  anim — these are idle-in-stance loops, so frame choice is a non-issue; Double
+  Flex's asymmetric flex is genuinely the stance), and measures pelvis/chest/head
+  yaw (the input to the facing gaze rule above).
+
+Historical note: the first committed batch of the 11 unarmed renders predated the
+`86d8e56` node-skin weight fix (the fix landed code-only) and showed severe
+candy-wrapper spikes on folded arms; re-rendering with the fixed decode cleared
+them. If renders ever look spiky again, check they were produced by the current
+`h2_render_model.py` decode before suspecting the pose data.

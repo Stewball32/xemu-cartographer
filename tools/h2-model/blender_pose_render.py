@@ -111,6 +111,22 @@ def pose_world(label):
     if "bip01" in ue_idx:
         lq[ue_idx["bip01"]] = list(ue[ue_idx["bip01"]]["rest_q"])
     Up_q, Up_p = ue_fk(lq, pd["local_t"])
+    # Facing correction (gaze rule): some source anims are authored with the whole
+    # character yawed off-camera (A_H2_Spartan_Idle/'Default' bakes -45deg). When
+    # pelvis AND head are co-rotated (gaze follows the body, so the offset can't
+    # be a designed look-at-camera 3/4 stance like CrossedArms), square the whole
+    # pose by the pelvis yaw about its vertical axis.
+    def _yaw(ui):
+        dq = qmul(Up_q[ui], qconj(Ur_q[ui])); f = qrot(dq, (1, 0, 0))
+        return math.atan2(f[1], f[0])
+    if "pelvis" in ue_idx and "head" in ue_idx:
+        yp, yh = _yaw(ue_idx["pelvis"]), _yaw(ue_idx["head"])
+        if abs(yp) > math.radians(15) and abs(yh - yp) < math.radians(15):
+            rz = np.array([0, 0, math.sin(-yp/2), math.cos(-yp/2)])
+            piv = np.array(Up_p[ue_idx["pelvis"]])
+            for i in range(len(ue)):
+                Up_q[i] = qmul(rz, Up_q[i])
+                Up_p[i] = piv + qrot(rz, np.array(Up_p[i]) - piv)
     C = qmul(Ur_q[ue_idx["pelvis"]], qconj(Owq[nidx["pelvis"]])); Cinv = qconj(C)
     # posed orientation (Halo frame) per bone
     Wq = [None]*len(names)
@@ -139,15 +155,23 @@ def pose_world(label):
             local_off = qrot(qconj(Owq[p]), Owp[i]-Owp[p])
             Pp[i] = Pp[p] + qrot(Pq[p], local_off)
             Pq[i] = rq if rq is not None else qmul(Pq[p], qmul(qconj(Owq[p]), Owq[i]))
-    # weapon-bone transform in render space: it parents under l_hand in the UE rig,
-    # so map its posed UE-world through the posed l_hand's UE->Halo frame alignment.
+    # weapon-bone transform in render space. Anchor via the FOREARM frame of the
+    # hand nearest the weapon: forearms are AIM-retargeted (reliable), whereas
+    # hands rigid-follow under --skip, whose stale frames left the rifle 12-26cm
+    # off UE truth (verified in check_pose_retarget.py) — the forearm anchor is
+    # within ~2.5cm on every armed pose.
     weap = None
-    wi = ue_idx.get("weapon"); lhu = ue_idx.get("l_hand"); lhn = nidx.get("l_hand")
-    if wi is not None and lhu is not None and lhn is not None:
-        A = qmul(Pq[lhn], qconj(Up_q[lhu]))                 # UE l_hand world -> Halo l_hand world
-        wq = qmul(A, Up_q[wi])
-        wp = Pp[lhn] + qrot(A, (Up_p[wi] - Up_p[lhu]) * 0.01)   # UE cm -> Halo units
-        weap = (wq, wp)
+    wi = ue_idx.get("weapon")
+    if wi is not None:
+        dl = np.linalg.norm(np.array(Up_p[wi]) - Up_p[ue_idx["l_hand"]])
+        dr = np.linalg.norm(np.array(Up_p[wi]) - Up_p[ue_idx["r_hand"]])
+        side = "r" if dr < dl else "l"
+        fu = ue_idx.get(f"{side}_forearm"); fn = nidx.get(f"{side}_forearm")
+        if fu is not None and fn is not None:
+            A = qmul(Pq[fn], qconj(Up_q[fu]))               # UE forearm world -> Halo forearm world
+            wq = qmul(A, Up_q[wi])
+            wp = Pp[fn] + qrot(A, (Up_p[wi] - Up_p[fu]) * 0.01)   # UE cm -> Halo units
+            weap = (wq, wp)
     return Pq, Pp, weap
 
 _dc = {}
