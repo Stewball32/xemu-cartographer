@@ -1,8 +1,36 @@
-# Halo 2 two-instance System Link — networking SOLVED, app-level identity wall (2026-07-02)
+# Halo 2 two-instance System Link — SOLVED (2026-07-02)
 
-Goal: get two xemu instances into a shared **Halo 2** System Link lobby. Result:
-the **networking is working** (both instances discover-broadcast to each other over
-the reflector), but the H2 client **does not list** the host's game — an H2
+Goal: get two xemu instances into a shared **Halo 2** System Link lobby. **DONE** —
+both instances are in the same live match (screenshot-verified). The fix was a
+**distinct eeprom serial per instance**; details below.
+
+## ✅ FIX — distinct eeprom serial (verified 2026-07-02)
+
+The networking always worked (see the diagnosis below). The block was H2 treating
+the two instances as the **same console** and filtering the host's game off the
+client's list, because both clone `hdd-ceprof` (same console name + profile) **and
+share the eeprom serial `757934831097`** (only the MAC differed). CE tolerated this;
+H2 does not.
+
+**Fix:** give instance 2 a DISTINCT eeprom serial (`757934830002`) via
+`make_h2sl_eeproms.py` (patches `0x34` + recomputes the factory checksum at `0x30`),
+and point the launcher at `eeprom-h2sl-1.bin` / `eeprom-h2sl-2.bin`. On relaunch,
+instance 2's AVAILABLE GAMES immediately listed **"Halo0001 — Pregame (open)"**, it
+joined, and both consoles showed **"2 player(s) in party"** in one System Link Custom
+Game (`Snake` + `Halo0001`, team BRs on Turf) — verified live. The serial alone was
+sufficient (no console-name or profile change needed).
+
+Bring-up: `make_h2sl_eeproms.py` once, then `udp_reflector.py --bind 9975,9976 --refl
+9985,9986` + `launch-h2-instance.sh 1` + `launch-h2-instance.sh 2`; drive both
+`Don't Sign In → SYSTEM LINK → profile → AVAILABLE GAMES`, host `Create New Game` on
+1, `join` the listed game on 2, host `START GAME`.
+
+---
+
+## Original diagnosis (why frames crossed but the game wasn't listed)
+
+The **networking is working** (both instances discover-broadcast to each other over
+the reflector), but the H2 client **did not list** the host's game — an H2
 **application-level self-filter** because the two instances are clones of one console.
 
 ## Rig (extends the harness — `launch-h2-instance.sh`)

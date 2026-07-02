@@ -17,8 +17,8 @@ SHIM=$D/cart-ptrace-shim.so
 
 # ---- per-instance parameters (distinct MAC eeprom + own overlay + own net ports) ----
 case "$i" in
-  1) PADBASE=0x0510; EEPROM=$D/eeprom3.bin; HDD=$T/ovl-h2-1.qcow2; BINDP=9975; REMP=9985;;
-  2) PADBASE=0x0520; EEPROM=$D/eeprom4.bin; HDD=$T/ovl-h2-2.qcow2; BINDP=9976; REMP=9986;;
+  1) PADBASE=0x0510; EEPROM=$D/eeprom-h2sl-1.bin; HDD=$T/ovl-h2-1.qcow2; BINDP=9975; REMP=9985;;
+  2) PADBASE=0x0520; EEPROM=$D/eeprom-h2sl-2.bin; HDD=$T/ovl-h2-2.qcow2; BINDP=9976; REMP=9986;;
   *) echo "instance must be 1|2"; exit 2;;
 esac
 NAME=h2sl-$i
