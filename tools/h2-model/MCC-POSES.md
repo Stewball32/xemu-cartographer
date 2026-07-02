@@ -127,3 +127,41 @@ Historical note: the first committed batch of the 11 unarmed renders predated th
 candy-wrapper spikes on folded arms; re-rendering with the fixed decode cleared
 them. If renders ever look spiky again, check they were produced by the current
 `h2_render_model.py` decode before suspecting the pose data.
+
+## Re-verification pass 2026-07-02 (all 32 renders reviewed)
+
+Full audit of every rendered PNG (21 H2 + 11 CE Mark V), each viewed directly.
+
+**Confirmed correct / faithful (no defects):**
+- All 11 CE Mark V poses (`tools/ce-model/out/mcc/render/`) — clean, coherent.
+- All 11 H2 unarmed poses. `PeaceSign`'s arm-extended-outward gesture looked odd
+  at first but is FAITHFUL: CE and H2 render it identically from the same MCC
+  `A_H2_PeaceSign` data, so it's the genuine stance, not a bug.
+- 8 of the 10 H2 armed poses (rifle gripped in-hand, sensibly placed).
+- Pipeline integrity re-checked and PASSES: `check_pose_retarget.py` (body ≤8 cm
+  vs UE truth, worst bone always a skipped fingertip), `check_frame_choice.py`
+  (all anims static holds, last-key baking correct), `ue4_anim.decode` structure
+  is clean + identical across all 10 rifle anims (101f, keyEnc0, trans0/rot1, 35
+  tracks, **0 bad quats** each), anim→name map matches the pak exactly, and the
+  published `sveltekit/static/spartan/*.png` are byte-identical to the renders.
+
+**FLAGGED — look wrong for their names, but faithfully reproduce the decode:**
+`RifleAtSide` and `RifleBack` render the battle rifle held **high, up by the head**
+(gripped in the raised hand), which is unintuitive for "at side" / "on back". The
+render is faithful to the decoded anim (body matches UE-FK to cm; the `weapon`
+bone sits ~5 cm from the raised hand at head height in the decode itself), and the
+decode of these two anims is structurally identical to the 8 good ones. So the
+render pipeline is **not** the fault — IF these are wrong, the discrepancy is
+between our `ue4_anim.py` decode and what MCC actually displays for these two
+specific `AnimSequence`s.
+
+**Blocker (could not resolve):** no independent ground truth was obtainable this
+session to confirm/refute the decode of these two — umodel (the reference decoder)
+could not be executed (freshly-downloaded external binary, sandbox-denied),
+MCC itself can't run on this host, and no reference imagery of the exact stances
+was found. **Recommendation:** eyeball `RifleAtSide`/`RifleBack` against in-game
+MCC. If they genuinely differ, the fix is isolated to decoding those two anims —
+run the umodel `.psa` cross-check (binary staged at `/tmp/umodel`; needs approval
+to execute) or the GUI anim export, and diff the final-frame arm/weapon tracks
+against `poses.json`. No speculative arm-repositioning was applied (it would not
+be verifiable without the reference).
