@@ -1,8 +1,36 @@
 # Status
 
-> **Last updated:** 2026-07-01 (patchwork/backup pass — every worktree committed + all branches pushed to origin; see **Repo housekeeping** below. M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
+> **Last updated:** 2026-07-02 (live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below; findings in `../halo-offset-mapper`). Prior 2026-07-01 patchwork/backup pass — every worktree committed + all branches pushed to origin; see **Repo housekeeping** below. M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
+
+## Live offset verification (2026-07-02) — CE + H2, unblocks M19/M20
+
+Ran a live xemu offset-verification session on the `scripts/3way-systemlink/` rig
+(branch `feat/halo2-scraper`) + the `../halo-offset-mapper` runtime tooling. Findings +
+provenance committed & pushed in **halo-offset-mapper** (`docs/ce-offset-mapping-2026-07-02.md`,
+`docs/h2-offset-confirm-2026-07-02.md`).
+
+- **Rig proven from cold:** `udp_reflector.py` + `launch-instance.sh {1,2}` → 2 CE
+  instances → **system link confirmed end-to-end** (host game discovered across the
+  reflector, join, START) → live 2-player Blood Gulch Slayer FFA match. `launch-h2.sh`
+  → H2 boots + drives to a live splitscreen match.
+- **CE:** foundation/player/biped/weapon/object + system-link network layer offsets all
+  re-verified live (zero corrections). NEW: `OffBipedCrouchScale 0x464` static-derived →
+  **runtime-verified** (crouch induced); `AddrScoreSlayer 0x276710` **FFA per-player
+  indexing confirmed** (prior open item); attributed cross-player kill reconfirmed on
+  Blood Gulch (client stayed connected — no desync on open FFA).
+- **H2:** phase-1 GameReader offsets **runtime-verified live** in an H2 match (Turf) —
+  players/objects arrays, biped health/shield/max(45/70)/pos/frags(2), Battle Rifle
+  mag 36/reserve 72, title id `0x4D530064`. This is the H2 scraper read-path piece that
+  was "unverified without xemu".
+- **Reusable tooling added** (halo-offset-mapper): `scripts/runtime/ce_lobby.sh`
+  (system-link lobby driver — gated building blocks; menu nav must be screenshot-verified,
+  not reliably hands-free) + a `tag-handle` schema-kind fix (unblocked `offsetmap validate`).
+- **Remaining:** multi-instance **H2 system link** (reflector recipe applies; needs a
+  2-console H2 match) + H2 combat-stat induction; CE objective-tick values (CTF capture /
+  Oddball possession — physics enter-edge wall); vehicle-seat / overshield / FFA-leader /
+  friendly-fire / time-limit. Robust hands-free menu nav would need screenshot/OCR gating.
 
 ## Repo housekeeping (2026-07-01)
 
