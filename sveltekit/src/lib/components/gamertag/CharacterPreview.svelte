@@ -21,7 +21,9 @@
 		colorIndex = 0,
 		size = 230,
 		gamertag = '',
-		showName = true
+		showName = true,
+		armorOverride,
+		showEmblem = true
 	}: {
 		game: 'ce' | 'h2';
 		appearance?: Appearance;
@@ -29,19 +31,32 @@
 		size?: number;
 		gamertag?: string;
 		showName?: boolean;
+		/** H2 only: override the body armor colour with this palette index (keeping
+		 * the appearance's emblem). Lets a broadcast card tint the Spartan the
+		 * game-accurate team/FFA colour while still wearing the player's emblem.
+		 * Unset → the appearance's own armor colour (existing behaviour). */
+		armorOverride?: number;
+		/** H2 only: draw the emblem chest decal. Set false to render a plain Spartan
+		 * for a player with no profile (avoids a generic placeholder emblem). */
+		showEmblem?: boolean;
 	} = $props();
 
 	const emblem = $derived(readEmblem(appearance ?? {}, DEFAULT_EMBLEM));
 
+	// H2 body armor index: the override (broadcast team/FFA colour) when given,
+	// else the appearance's own primary/secondary.
+	const h2Primary = $derived(armorOverride ?? emblem.armorPrimary);
+	const h2Secondary = $derived(armorOverride ?? emblem.armorSecondary);
+
 	// Primary / secondary armor hexes + the human color name for the caption.
 	const primary = $derived(
-		game === 'ce' ? colorHex(CE_COLORS, colorIndex) : colorHex(H2_COLORS, emblem.armorPrimary)
+		game === 'ce' ? colorHex(CE_COLORS, colorIndex) : colorHex(H2_COLORS, h2Primary)
 	);
 	const secondary = $derived(
-		game === 'ce' ? shade(primary, -0.45) : colorHex(H2_COLORS, emblem.armorSecondary)
+		game === 'ce' ? shade(primary, -0.45) : colorHex(H2_COLORS, h2Secondary)
 	);
 	const colorLabel = $derived(
-		game === 'ce' ? colorName(CE_COLORS, colorIndex) : colorName(H2_COLORS, emblem.armorPrimary)
+		game === 'ce' ? colorName(CE_COLORS, colorIndex) : colorName(H2_COLORS, h2Primary)
 	);
 
 	// Elite for Dervish(1) / Elite(3); Spartan otherwise. CE is always a Spartan.
@@ -135,7 +150,7 @@
 			viewBox="0 0 200 240"
 			title="{game === 'ce' ? 'Halo: CE' : 'Halo 2'} character"
 		/>
-		{#if game === 'h2'}
+		{#if game === 'h2' && showEmblem}
 			<div class="decal" style="width:{Math.round(charW * 0.3)}px;">
 				<EmblemPreview {appearance} size={Math.round(charW * 0.3)} rounded title="Chest emblem" />
 			</div>

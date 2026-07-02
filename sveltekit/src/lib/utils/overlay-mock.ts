@@ -553,3 +553,24 @@ export function mockAppearance(index: number): Appearance {
 		[H2_KEYS.flags]: 0
 	};
 }
+
+// Mock profile-avatar table for the broadcast player cards — the ?mock=1 stand-in
+// for the live /api/public/profiles endpoint, keyed by lowercased gamertag so it
+// matches how the card resolves a live player name. Each seed gets a CE armor
+// colour + an H2 emblem/appearance (a "profile"). SEED index 5 (TartarusX) is
+// deliberately LEFT OUT so the preview shows the graceful fallback (a plain
+// tinted Spartan with no emblem) for a player who has no profile.
+export function mockProfiles(): Record<
+	string,
+	{ ce?: { color: number }; h2?: { appearance: Appearance } }
+> {
+	const out: Record<string, { ce?: { color: number }; h2?: { appearance: Appearance } }> = {};
+	for (const s of SEEDS) {
+		if (s.index === 5) continue; // no profile → fallback demo
+		out[s.name.toLowerCase()] = {
+			ce: { color: s.armorColor },
+			h2: { appearance: mockAppearance(s.index) }
+		};
+	}
+	return out;
+}

@@ -8,7 +8,7 @@
 	import type { PlayerRow } from '$lib/utils/overlay-view';
 	import { broadcastTheme, themeVars } from '$lib/components/broadcast/theme';
 	import BroadcastPlayerCard from '$lib/components/broadcast/BroadcastPlayerCard.svelte';
-	import { mockAppearance } from '$lib/utils/overlay-mock';
+	import { createProfileLookup } from '$lib/stores/broadcast-profiles.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -16,6 +16,7 @@
 	const feed = createOverlayFeed();
 	const theme = $derived(broadcastTheme(data.game));
 	const vm = $derived(buildScoreboard(feed.game, feed.tick));
+	const profiles = createProfileLookup();
 
 	onMount(() =>
 		feed.start({
@@ -33,9 +34,9 @@
 	);
 	const player = $derived(roster.find((p) => p.index === data.slot) ?? null);
 
-	function appearanceFor(idx: number) {
-		return data.game === 'h2' && feed.mock ? mockAppearance(idx) : undefined;
-	}
+	$effect(() => {
+		if (player) profiles.ensure([player.name], feed.mock);
+	});
 </script>
 
 <svelte:head>
@@ -72,7 +73,9 @@
 				{player}
 				game={data.game}
 				teamColor={teamMeta(player.team).color}
-				appearance={appearanceFor(player.index)}
+				isTeamGame={vm.isTeamGame}
+				teamLabel={vm.isTeamGame ? teamMeta(player.team).name : undefined}
+				profile={profiles.get(player.name)}
 				size={210}
 				hasTick={vm.hasTick}
 				hasScores={vm.hasScores}
@@ -82,18 +85,15 @@
 </div>
 
 <style>
+	/* Flush / content-sized — see the scoreboard route for the rationale. */
 	.stage {
-		position: fixed;
-		inset: 0;
-		padding: 1.25rem;
+		display: flex;
+		width: fit-content;
 		font-family: var(--bc-font);
 		color: var(--bc-ink);
 		pointer-events: none;
 		transform: scale(var(--scale, 1));
 		transform-origin: top left;
-		display: flex;
-		align-items: flex-start;
-		justify-content: flex-start;
 	}
 	.spot {
 		position: relative;

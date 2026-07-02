@@ -53,17 +53,22 @@ The **broadcast scoreboard** and **player cards** are the "hero" surfaces: visua
 designed, and **themed per game** via a `?game=ce|h2` switch (default `ce`). One
 theme layer ([`components/broadcast/theme.ts`](../sveltekit/src/lib/components/broadcast/theme.ts))
 emits `--bc-*` CSS variables — CE reads in UNSC amber/green, H2 in the cool-blue
-menu language — so the same live data renders in two visual languages. Both consume
-the existing pure builders (no new feed plumbing) and the real player art:
+menu language — so the same live data renders in two visual languages. They render
+**flush** at the browser-source origin (content-sized, no outer margin) so you size
+the source to the graphic and position it in your scene. Both consume the existing
+pure builders (no new feed plumbing) and the real player art:
 
 - **Scoreboard** — themed header (gametype · map · `matchClock` · score-to) over
   team columns or an FFA list; each row an armor-chipped player with K/D/A, score,
-  and health/shield vitals. Anchors top-center.
-- **Player cards** — a bottom strip of per-player cards; each a **Spartan tinted by
-  the player's armor colour** ([`CharacterPreview`](../sveltekit/src/lib/components/gamertag/CharacterPreview.svelte)),
-  with gamertag, K/D/A, and a big score. **Halo 2 also carries the player's emblem**
-  (chest decal + corner badge, real extracted sprites) and renders the Arbiter as an
-  Elite. `card/[slot]/` is the single-player spotlight variant.
+  and health/shield vitals.
+- **Player cards** — a strip of per-player cards; each a **Spartan tinted by the
+  game-accurate armor colour** ([`CharacterPreview`](../sveltekit/src/lib/components/gamertag/CharacterPreview.svelte))
+  with gamertag, K/D/A, and a big score. **In team games teammates share the team
+  colour** (colour doesn't distinguish them — the emblem + gamertag do); FFA is
+  per-player. Each card renders the player's **gamertag-PROFILE avatar** (Spartan +
+  H2 emblem) resolved from the public [`GET /api/public/profiles`](../internal/pocketbase/routes/public_profiles.go)
+  endpoint, falling back to a plain Spartan when a player has no profile. `card/[slot]/`
+  is the single-player spotlight variant.
 
 **CE is live-capable today; the H2 theme is preview-only** until the H2 scraper
 (M20) provides the live roster / scores / emblems — the H2 `/studio/` tiles carry

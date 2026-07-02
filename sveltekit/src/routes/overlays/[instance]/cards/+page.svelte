@@ -5,15 +5,16 @@
 	// Red / Blue groups with a score header; FFA is one score-sorted row.
 	//
 	// Reuses the shared overlay feed + buildScoreboard (for the joined roster+tick
-	// rows) + the themed BroadcastPlayerCard. H2 emblem art comes from the mock in
-	// preview; live H2 emblems await the H2 scraper (see the M28 milestone note).
+	// rows) + the themed BroadcastPlayerCard. Each player's avatar is resolved from
+	// their gamertag PROFILE via the profile-lookup store (mock in preview; the
+	// public /api/public/profiles endpoint live).
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { buildScoreboard, teamMeta } from '$lib/utils/overlay-view';
 	import type { PlayerRow } from '$lib/utils/overlay-view';
 	import { broadcastTheme, themeVars } from '$lib/components/broadcast/theme';
 	import BroadcastPlayerCard from '$lib/components/broadcast/BroadcastPlayerCard.svelte';
-	import { mockAppearance } from '$lib/utils/overlay-mock';
+	import { createProfileLookup } from '$lib/stores/broadcast-profiles.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -21,6 +22,7 @@
 	const feed = createOverlayFeed();
 	const theme = $derived(broadcastTheme(data.game));
 	const vm = $derived(buildScoreboard(feed.game, feed.tick));
+	const profiles = createProfileLookup();
 
 	onMount(() =>
 		feed.start({
@@ -32,9 +34,14 @@
 	);
 	onDestroy(() => feed.stop());
 
-	// H2 emblems: mock supplies them in preview; live H2 has no emblem feed yet.
-	function appearanceFor(idx: number) {
-		return data.game === 'h2' && feed.mock ? mockAppearance(idx) : undefined;
+	// Fetch each rostered gamertag's profile avatar as the roster changes.
+	$effect(() => {
+		if (vm.playerCount > 0) profiles.ensure(allNames(), feed.mock);
+	});
+	function allNames(): string[] {
+		return vm.isTeamGame
+			? vm.teams.flatMap((t) => t.players.map((p) => p.name))
+			: vm.players.map((p) => p.name);
 	}
 
 	interface Cluster {
@@ -103,7 +110,9 @@
 									player={p}
 									game={data.game}
 									teamColor={vm.isTeamGame ? c.color : teamMeta(p.team).color}
-									appearance={appearanceFor(p.index)}
+									isTeamGame={vm.isTeamGame}
+									teamLabel={vm.isTeamGame ? c.name : undefined}
+									profile={profiles.get(p.name)}
 									size={118}
 									hasTick={vm.hasTick}
 									hasScores={vm.hasScores}
@@ -118,22 +127,18 @@
 </div>
 
 <style>
+	/* Flush / content-sized — see the scoreboard route for the rationale. */
 	.stage {
-		position: fixed;
-		inset: 0;
-		padding: 1.25rem;
+		display: flex;
+		width: fit-content;
 		font-family: var(--bc-font);
 		color: var(--bc-ink);
 		pointer-events: none;
 		transform: scale(var(--scale, 1));
-		transform-origin: bottom center;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
+		transform-origin: top left;
 	}
 
 	.status {
-		align-self: flex-start;
 		display: inline-block;
 		background: rgba(8, 10, 16, 0.72);
 		border: 1px solid rgba(255, 255, 255, 0.12);

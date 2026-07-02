@@ -9,6 +9,7 @@
 	import { buildScoreboard, matchClock, statusStrip, teamMeta } from '$lib/utils/overlay-view';
 	import type { PlayerRow } from '$lib/utils/overlay-view';
 	import { broadcastTheme, themeVars } from '$lib/components/broadcast/theme';
+	import { resolveArmorIndex } from '$lib/components/broadcast/player';
 	import { CE_COLORS, H2_COLORS, colorHex } from '$lib/utils/emblem';
 	import type { PageData } from './$types';
 
@@ -116,7 +117,13 @@
 {#snippet row(p: PlayerRow, color: string, rank?: number)}
 	<div class="prow" class:dead={vm.hasTick && !p.alive} style="--team: {color}">
 		{#if rank}<span class="rank">{rank}</span>{/if}
-		<span class="chip" style="background: {colorHex(palette, p.armorColor)}"></span>
+		<span
+			class="chip"
+			style="background: {colorHex(
+				palette,
+				resolveArmorIndex(data.game, vm.isTeamGame, p.team, p.armorColor)
+			)}"
+		></span>
 		<span class="pname" title={p.name}>{p.name}</span>
 		<span class="pips">
 			{#if p.hasOvershield}<span class="pip os" title="Overshield">OS</span>{/if}
@@ -139,21 +146,20 @@
 {/snippet}
 
 <style>
+	/* Flush / content-sized: the graphic renders edge-to-edge at the canvas
+	   origin (no outer padding or centering frame) so the OBS browser source has
+	   no dead margin — Stewart positions + spaces it in his scene himself. */
 	.stage {
-		position: fixed;
-		inset: 0;
-		padding: 1.1rem;
+		display: flex;
+		width: fit-content;
 		font-family: var(--bc-font);
 		color: var(--bc-ink);
 		pointer-events: none;
 		transform: scale(var(--scale, 1));
-		transform-origin: top center;
-		display: flex;
-		justify-content: center;
+		transform-origin: top left;
 	}
 
 	.status {
-		align-self: flex-start;
 		display: inline-block;
 		background: rgba(8, 10, 16, 0.72);
 		border: 1px solid rgba(255, 255, 255, 0.12);
@@ -173,7 +179,6 @@
 
 	.board {
 		width: 44rem;
-		max-width: 100%;
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;

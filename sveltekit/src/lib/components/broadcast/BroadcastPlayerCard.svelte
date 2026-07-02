@@ -4,20 +4,25 @@
 	// player's emblem (chest decal + corner badge); Halo: CE has no emblem system
 	// so that branch is simply absent, which is the visible CE-vs-H2 difference.
 	//
-	// Game-agnostic: it reads the broadcast theme through `var(--bc-*)` set by an
-	// ancestor, and the per-player Spartan tint from the armor palette. Consumes a
-	// PlayerRow (overlay-view) so the scoreboard + cards share one player shape.
+	// Identity rules (see components/broadcast/player.ts):
+	//   - Armor colour: TEAM games share ONE team colour (colour doesn't tell
+	//     teammates apart — the emblem + gamertag do); FFA is per-player + distinct.
+	//   - Avatar: the player's gamertag PROFILE Spartan + H2 emblem when they have
+	//     one; a plain tinted Spartan (no placeholder emblem) when they don't.
 	import CharacterPreview from '$lib/components/gamertag/CharacterPreview.svelte';
 	import EmblemPreview from '$lib/components/gamertag/EmblemPreview.svelte';
 	import type { PlayerRow } from '$lib/utils/overlay-view';
 	import type { BroadcastGame } from './theme';
-	import { CE_COLORS, H2_COLORS, colorHex, colorName, type Appearance } from '$lib/utils/emblem';
+	import { CE_COLORS, H2_COLORS, colorHex, colorName } from '$lib/utils/emblem';
+	import { resolveArmorIndex, cardAppearance, type ResolvedProfile } from './player';
 
 	let {
 		player,
 		game,
 		teamColor,
-		appearance,
+		isTeamGame,
+		profile,
+		teamLabel,
 		size = 150,
 		hasTick = true,
 		hasScores = true
@@ -26,8 +31,13 @@
 		game: BroadcastGame;
 		/** Team accent (from teamMeta) — ribbon + name rule. */
 		teamColor: string;
-		/** H2 emblem source; ignored for CE. */
-		appearance?: Appearance;
+		/** Whether this is a team game (drives the shared-team-colour rule). */
+		isTeamGame: boolean;
+		/** The player's resolved profile avatar (emblem/appearance), or null. */
+		profile?: ResolvedProfile | null;
+		/** Team name shown under the gamertag in team games (colour identifies the
+		 * team, not the player). Ignored in FFA (the armor-colour chip shows there). */
+		teamLabel?: string;
 		/** Spartan bust height in px. */
 		size?: number;
 		/** Whether live tick data is present (drives health/shield bars). */
@@ -37,8 +47,14 @@
 	} = $props();
 
 	const palette = $derived(game === 'ce' ? CE_COLORS : H2_COLORS);
-	const armorHex = $derived(colorHex(palette, player.armorColor));
-	const armorName = $derived(colorName(palette, player.armorColor));
+	// Game-accurate armor index: shared team colour (team) or per-player (FFA).
+	const colorIndex = $derived(resolveArmorIndex(game, isTeamGame, player.team, player.armorColor));
+	const armorHex = $derived(colorHex(palette, colorIndex));
+	const armorName = $derived(colorName(palette, colorIndex));
+	// H2 emblem from the profile, re-coloured to the game-accurate armor; undefined
+	// for CE or a profile-less player → CharacterPreview draws no emblem.
+	const appearance = $derived(cardAppearance(game, colorIndex, profile ?? null));
+	const showEmblem = $derived(game === 'h2' && !!appearance);
 	const dead = $derived(hasTick && !player.alive);
 	const respawnSecs = $derived(player.respawnIn != null ? Math.ceil(player.respawnIn / 30) : null);
 </script>
@@ -50,8 +66,16 @@
 	<!-- Spartan pod -->
 	<div class="pod">
 		<div class="glow"></div>
-		<CharacterPreview {game} {appearance} colorIndex={player.armorColor} {size} showName={false} />
-		{#if game === 'h2' && appearance}
+		<CharacterPreview
+			{game}
+			{appearance}
+			{colorIndex}
+			armorOverride={colorIndex}
+			{showEmblem}
+			{size}
+			showName={false}
+		/>
+		{#if showEmblem}
 			<div class="emblem-badge">
 				<EmblemPreview {appearance} size={34} rounded ring title="Emblem" />
 			</div>
@@ -73,7 +97,13 @@
 	<!-- identity -->
 	<div class="ident">
 		<span class="name" title={player.name}>{player.name}</span>
-		<span class="armor-chip"><i style="background: {armorHex}"></i>{armorName}</span>
+		{#if isTeamGame}
+			{#if teamLabel}
+				<span class="armor-chip"><i style="background: {teamColor}"></i>{teamLabel}</span>
+			{/if}
+		{:else}
+			<span class="armor-chip"><i style="background: {armorHex}"></i>{armorName}</span>
+		{/if}
 	</div>
 
 	<!-- stats -->

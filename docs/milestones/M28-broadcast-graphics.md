@@ -38,17 +38,21 @@ Everything renders through a **per-game theme** (`ce` / `h2`) so a CE stream rea
 
 - **Theme** — `broadcastTheme(game)` returns a `BroadcastTheme` (accents, panel fills, header gradient, corner radius, tracking); `themeVars(theme)` serialises it to a `--bc-*` declaration string set on each route's wrapper. `parseGame(?game=)` normalises to `ce` (default) / `h2`. Pure, unit-tested ([`theme.test.ts`](../../sveltekit/src/lib/components/broadcast/theme.test.ts)). This file is overlay **chrome** only — the per-player Spartan tint still comes from the armor palette (`CE_COLORS` / `H2_COLORS` in `$lib/utils/emblem`).
 - **Shared params** — `overlayParams(instance, url)` projects `[instance]` + `?token=/mock=/scale=/game=` into one bundle for all three routes; pure, unit-tested ([`overlay-params.test.ts`](../../sveltekit/src/lib/utils/overlay-params.test.ts)).
-- **Player card** — `BroadcastPlayerCard` consumes a `PlayerRow` (extended with `armorColor`, straight off the roster's `armor_color`) + `game` + `teamColor` + optional `appearance` (H2 emblem). CE: bust tinted by `colorIndex`, no emblem branch (CE has none — the visible CE-vs-H2 difference). H2: two-tone armor + emblem chest decal + corner badge; the Arbiter renders as an Elite.
-- **Scoreboard** joins `buildScoreboard(game, tick)` (team/FFA rows + `hasTick`/`hasScores`), `matchClock(game)` (elapsed/countdown), and `statusStrip(game, scenario)` (map + score limit) — all existing pure builders. Rows use a wrap-flex layout (robust to the optional rank / respawn / vitals cells).
-- **Mock** — `overlay-mock` enriched: each seed gets a distinct CE armor index (warm for red, cool for blue) so the cards exercise the palette instead of all-team-colour; new `mockAppearance(slot)` supplies deterministic H2 emblems for the H2 theme preview. Live H2 will source `appearance` from the scraper.
+- **Player card** — `BroadcastPlayerCard` consumes a `PlayerRow` + `game` + `teamColor` + `isTeamGame` + the player's resolved `profile`. Two pure rules ([`components/broadcast/player.ts`](../../sveltekit/src/lib/components/broadcast/player.ts), unit-tested):
+  - **Team-vs-FFA colour** (`resolveArmorIndex`): in a TEAM game every player on a team shares ONE team colour (colour does NOT tell teammates apart — the emblem + gamertag do); FFA is per-player + distinct. Accurate to the game.
+  - **Profile-avatar merge** (`cardAppearance`): the player's gamertag PROFILE emblem, re-coloured to the game-accurate armor so a team game still reads team-coloured. CE has no emblem (the visible CE-vs-H2 difference). A profile-less player renders a plain tinted Spartan — no generic placeholder emblem (`CharacterPreview` gains `armorOverride` + `showEmblem` props for exactly this).
+- **Profile lookup** — [`stores/broadcast-profiles.svelte.ts`](../../sveltekit/src/lib/stores/broadcast-profiles.svelte.ts) resolves each rostered gamertag → its profile appearance. Live: batch-GETs the public **`GET /api/public/profiles?gamertags=`** endpoint ([`routes/public_profiles.go`](../../internal/pocketbase/routes/public_profiles.go)) — cosmetic-only + read-only, because the owner-scoped `ce_profiles`/`h2_profiles` can't be read by an anonymous overlay. Mock: synthesised from `overlay-mock.mockProfiles()`.
+- **Scoreboard** joins `buildScoreboard(game, tick)` (team/FFA rows + `hasTick`/`hasScores`), `matchClock(game)` (elapsed/countdown), and `statusStrip(game, scenario)` (map + score limit) — all existing pure builders. Rows use a wrap-flex layout (robust to the optional rank / respawn / vitals cells); the row armor-chip follows the same team-vs-FFA colour rule.
+- **Flush canvas** — each route's root is a content-sized (`width: fit-content`) box flush at the top-left origin — no outer padding/margin — so the OBS browser source has no dead frame; the streamer positions + spaces it in the scene.
+- **Mock** — `overlay-mock` provides the sample match; `mockProfiles()` supplies per-seed profile avatars (one seed intentionally profile-less, to preview the graceful fallback). Live H2 avatars source `appearance` from the profiles endpoint once the H2 scraper populates profiles.
 
 ## CE-ready-now vs H2-pending
 
 | Surface | CE (live-capable now) | H2 |
 | --- | --- | --- |
 | Broadcast scoreboard | ✅ renders on live CE feed (K/D/A + team score best-effort until a live pass — M25 caveat) | 🎨 **theme only** — needs the H2 scraper for roster/scores |
-| Player cards | ✅ Spartan tint + gamertag + score on live CE | 🎨 **theme only** — cards render, but live emblems/roster need the H2 scraper |
-| Emblems | — (CE has no emblem system, by design) | ⏳ art renders from mock; **live emblems need the H2 scraper's profile read** |
+| Player cards | ✅ Spartan tint + gamertag + score on live CE | 🎨 **theme only** — cards render, but live roster needs the H2 scraper |
+| Profile avatar (emblem) | — (CE has no emblem system, by design) | ✅ resolves via `/api/public/profiles` when a player has an H2 profile; graceful fallback otherwise. Populated live once the H2 scraper writes profiles |
 
 CE is the shippable target today; H2 is wired end-to-end against mock so the moment the H2 scraper lands, the same routes light up live with `?game=h2`.
 
@@ -61,36 +65,38 @@ CE is the shippable target today; H2 is wired end-to-end against mock so the mom
    - Single card — `https://<host>/overlays/<instance>/card/<slot>/?token=<token>` (`<slot>` = roster player index)
    - Halo 2 theme — append `&game=h2`.
    - Style/size without a game — use `?mock=1` (no token needed).
-3. **Width 1920 · Height 1080** (the graphics are designed against a 1080p canvas and self-anchor: scoreboard top-center, cards bottom-center, spotlight top-left). Use `&scale=<0.5..3>` to resize.
+3. **Size the source to the content.** Each graphic renders flush at the top-left of the browser source with no outer margin, so set the source width/height to the graphic (or larger — the extra is transparent) and position it in your scene. Use `&scale=<0.5..3>` to resize.
 4. Leave **"Shutdown source when not visible"** off so the socket stays warm. The background is transparent — it composites straight over your game capture.
 
 ## Previews
 
-Mock data (`?mock=1`), transparent overlay shown over a checkerboard (and one composited over the Blood Gulch map render).
+Mock data (`?mock=1`), flush overlay shown over a checkerboard (and one composited over the Blood Gulch map render). Note the team-colour rule (teammates share the team armor colour) and the H2 profile emblems distinguishing same-coloured teammates.
 
-**Broadcast scoreboard — Halo: CE / Halo 2 theme**
+**Broadcast scoreboard — Halo: CE / Halo 2 theme** (flush top-left; per-row chips follow the team colour)
 
 ![CE scoreboard](assets/M28-broadcast-graphics/scoreboard-ce.png)
 ![H2 scoreboard](assets/M28-broadcast-graphics/scoreboard-h2.png)
 
-**Player cards — Halo: CE / Halo 2 theme** (H2 adds emblem chest decals + corner badges; the Arbiter is an Elite)
+**Player cards — Halo: CE / Halo 2 theme.** Teammates share the team armor colour; the H2 card wears each player's **profile emblem** (chest + corner badge) so colour-identical teammates are still distinct. `TartarusX` has no profile → plain Spartan (graceful fallback); the Arbiter is an Elite.
 
 ![CE cards](assets/M28-broadcast-graphics/cards-ce.png)
 ![H2 cards](assets/M28-broadcast-graphics/cards-h2.png)
 
-**Single-card spotlight (CE)** · **scoreboard composited over gameplay (map render stand-in)**
+**Single-card spotlight (H2 — profile avatar)** · **scoreboard composited over gameplay (map render stand-in)**
 
-![CE single card](assets/M28-broadcast-graphics/card-single-ce.png)
+![H2 single card](assets/M28-broadcast-graphics/card-single-h2.png)
 ![CE scoreboard over map](assets/M28-broadcast-graphics/scoreboard-ce-over-map.png)
 
 ## Verification
 
-- `pnpm check` / `pnpm lint` / `pnpm test` (273, +12 new) / `pnpm build` — green.
+- Frontend: `pnpm check` / `pnpm lint` / `pnpm test` (282, +21 new: theme, params, player rules) / `pnpm build` — green.
+- Backend: `go build` / `go vet` / `go test ./internal/pocketbase/routes/` (public-profiles helpers) — green.
 - Headless 1920×1080 mock renders of all three routes in both themes, over a checkerboard + a busy scene (above).
-- **Pending:** live CE match pass (confirms K/D/A + team scores render, not just mock); H2 everything (blocked on the H2 scraper).
+- **Pending:** live CE match pass (confirms K/D/A + team scores render, not just mock; and profile avatars resolve against real profiles); H2 roster (blocked on the H2 scraper).
 
 ## Log
 
 _Append-only. Never edit past entries; add a new dated line._
 
 - 2026-07-01: created. Themed scoreboard + player-cards + single-card routes on `feat/broadcast-graphics`, reusing the M25/Studio overlay-feed + view builders + `CharacterPreview`/`EmblemPreview`. Per-game `--bc-*` theme layer (CE amber/green vs H2 blue). Registry: 4 `/studio/` tiles (CE live, H2 theme-preview). Mock enriched with distinct armor colours + `mockAppearance`. CE mock-verified; live CE + all H2 pending.
+- 2026-07-01: Stewart refinements. (1) **Flush canvas** — dropped the outer padding/centering frame; each route renders content-sized flush at the origin so OBS has no dead margin. (2) **Team-vs-FFA colour rule** — teammates now share the accurate team armor colour (colour no longer distinguishes teammates); FFA stays per-player (`resolveArmorIndex`). (3) **Profile avatars** — cards use the player's gamertag-PROFILE Spartan + H2 emblem (so colour-identical teammates are told apart by emblem), resolved via a new public cosmetic-only `GET /api/public/profiles` endpoint + the `broadcast-profiles` lookup store; graceful fallback to a plain Spartan when a player has no profile (`CharacterPreview` gained `armorOverride`/`showEmblem`). Pure rules unit-tested (`player.ts`); Go helpers unit-tested (`public_profiles_test.go`). Re-shot previews.
