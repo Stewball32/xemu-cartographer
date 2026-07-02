@@ -97,3 +97,20 @@ Cheapest → most thorough (each needs a relaunch + re-drive to re-test):
 Recommend trying (1) or (2) first; they're the likely identity keys and don't need the
 eeprom checksum. Evidence for this doc: live packet capture of the reflected frames
 (headers above); host/client screenshots in `/tmp/xemu-sl/` this session.
+
+## Console-nickname RE (2026-07-02) + confirmed filter key
+
+**The System Link filter key is the EEPROM SERIAL — verified empirically:** changing ONLY
+the serial (`757934831097`→`757934830002`, distinct MAC already present) made the client list
++ join the host's game. Console name and profile were NOT changed at that point. So the real
+key is the serial, not the console name.
+
+**Where the console nickname actually lives (corrects the "E:\NICKNAME" guess):**
+`E:\UDATA\NICKNAME.XBN` — an XBN binary (`04 00 'SM'` header + UTF-16LE NUL-terminated name,
+≤15 chars; the format `internal/podman/console_name.go` already writes). Software reads it as
+`\Device\Harddisk0\Partition1\UDATA\NICKNAME.XBN`; the UnleashX skin shows it via `$NickName$`.
+It is NOT in `cerbios.ini` or the eeprom. On the shared `hdd-ceprof` base the file is **absent
+(no nickname set)** — so a shared nickname couldn't have been the filter key. RE method: dumped
+the base with `qemu-img convert -O raw`, string-scanned the FATX partitions (C `0x8CA80000`,
+E `0xABE80000`). The two H2 *players* already read as distinct names (Halo0001 vs Snake), which
+is enough for unambiguous screenshots; distinct per-instance nicknames are cosmetic here.
