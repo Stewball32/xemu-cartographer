@@ -1,0 +1,5 @@
+# Local build/render artifacts — mirrors tools/ce-model/.gitignore.
+# Python bytecode cache and the throwaway side-by-side comparison renders
+# (out/mcc/render_*/, _*.png etc. are already handled by out/mcc/.gitignore).
+__pycache__/
+out/mcc/composite_cmp/
