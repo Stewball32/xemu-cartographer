@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install)",
+      "Bash(pnpm i)",
+      "Bash(pnpm approve-builds)",
+      "Bash(pnpm run dev)",
+      "Bash(pnpm run lint)",
+      "Bash(pnpm run format)",
+      "Bash(pnpm run check)",
+      "Bash(pnpm run check:watch)",
+      "Bash(pnpm run test)",
+      "Bash(pnpm run test:watch)",
+      "Bash(pnpm run test:e2e)",
+      "Bash(pnpm run build)",
+      "Bash(pnpm run preview)",
+      "Bash(pnpm run typegen)",
+      "Bash(pnpm exec prettier *)",
+      "Bash(pnpm exec eslint *)",
+      "Bash(pnpm exec svelte-check *)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(pnpm exec playwright *)",
+      "Bash(go test ./...)",
+      "Bash(go test:*)",
+      "Bash(go build ./...)",
+      "Bash(go build:*)",
+      "Bash(go vet ./...)",
+      "Bash(go run *)",
+      "Bash(gofmt -l *)",
+      "Bash(gofmt -w *)",
+      "Bash(goimports -w *)",
+      "Bash(go mod tidy)",
+      "Bash(go mod download)",
+      "Bash(go install *)",
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(podman ps *)",
+      "Bash(podman logs *)",
+      "Bash(podman images *)",
+      "Bash(podman build *)",
+      "Bash(podman compose build *)",
+      "Bash(podman compose up *)",
+      "Bash(podman compose down *)",
+      "Bash(podman compose logs *)",
+      "Bash(podman compose ps *)",
+      "Bash(podman exec *)",
+      "Bash(podman cp *)",
+      "Edit(./sveltekit/src/**)",
+      "Edit(./sveltekit/static/**)",
+      "Edit(./sveltekit/e2e/**)",
+      "Write(./sveltekit/src/**)",
+      "Write(./sveltekit/e2e/**)",
+      "Edit(./internal/**)",
+      "Edit(./cmd/**)",
+      "Write(./internal/**)",
+      "Write(./cmd/**)",
+      "Edit(./tools/**)",
+      "Edit(./scripts/**)",
+      "Write(./tools/**)",
+      "Write(./scripts/**)",
+      "WebFetch(domain:svelte.dev)",
+      "WebFetch(domain:kit.svelte.dev)",
+      "WebFetch(domain:learn.svelte.dev)",
+      "WebFetch(domain:skeleton.dev)",
+      "WebFetch(domain:www.skeleton.dev)",
+      "WebFetch(domain:next.skeleton.dev)",
+      "WebFetch(domain:tailwindcss.com)",
+      "WebFetch(domain:vite.dev)",
+      "WebFetch(domain:vitejs.dev)",
+      "WebFetch(domain:vitest.dev)",
+      "WebFetch(domain:playwright.dev)",
+      "WebFetch(domain:pocketbase.io)",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:go.dev)",
+      "WebFetch(domain:golang.org)",
+      "WebFetch(domain:proxy.golang.org)",
+      "WebFetch(domain:disgo.dev)",
+      "WebFetch(domain:discord.com)",
+      "WebFetch(domain:discord.dev)",
+      "WebFetch(domain:xemu.app)",
+      "mcp__svelte__*",
+      "mcp__playwright__*"
+    ]
+  },
+  "enabledMcpjsonServers": ["svelte", "playwright"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read f; [ -n \"$f\" ] || exit 0; case \"$f\" in *.svelte|*.ts|*.tsx|*.js|*.jsx|*.css|*.json|*.jsonc|*.md|*.html) ( cd \"$(dirname \"$f\")\" && pnpm exec prettier --write \"$(basename \"$f\")\" 2>/dev/null ) || true ;; esac }",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read f; case \"$f\" in *.go) [ -n \"$f\" ] && (command -v goimports >/dev/null && goimports -w \"$f\" || gofmt -w \"$f\") ;; esac }",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f sveltekit/package.json ] && command -v pnpm >/dev/null 2>&1 && ( cd sveltekit && pnpm run check --output=human 2>&1 | tail -40 ) || true",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
