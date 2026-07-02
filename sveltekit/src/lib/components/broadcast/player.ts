@@ -43,8 +43,12 @@ export function resolveArmorIndex(
 }
 
 /** A player's resolved profile appearance (from the public profiles endpoint /
- * the mock). Either half may be absent. */
+ * the mock). Any field may be absent. */
 export interface ResolvedProfile {
+	/** The user's PocketBase avatar image (built-in users.avatar upload) as a
+	 * ready-to-fetch URL — the cards' identity-avatar spot pulls this straight
+	 * from PB instead of rendering anything client-side. */
+	avatar?: string;
 	ce?: { color: number };
 	h2?: { appearance: Appearance };
 }

@@ -51,11 +51,20 @@ export function createProfileLookup() {
 
 	async function fetchBatch(tags: string[]): Promise<void> {
 		try {
-			const url = `${apiBaseURL()}/api/public/profiles?gamertags=${encodeURIComponent(tags.join(','))}`;
+			const base = apiBaseURL();
+			const url = `${base}/api/public/profiles?gamertags=${encodeURIComponent(tags.join(','))}`;
 			const res = await fetch(url);
 			if (!res.ok) return;
 			const body = (await res.json()) as { profiles?: Record<string, ResolvedProfile> };
-			if (body.profiles) profiles = { ...profiles, ...body.profiles };
+			if (!body.profiles) return;
+			// The endpoint returns the PB avatar as a same-origin relative path
+			// (/api/files/...). Resolve it against the PB origin so the <img>
+			// works in dev, where the overlay page runs on Vite's port.
+			const merged: Record<string, ResolvedProfile> = {};
+			for (const [k, p] of Object.entries(body.profiles)) {
+				merged[k] = p.avatar && p.avatar.startsWith('/') ? { ...p, avatar: base + p.avatar } : p;
+			}
+			profiles = { ...profiles, ...merged };
 		} catch {
 			// Network/parse failure → cards fall back to generic Spartans. The tags
 			// stay in `asked`, so a flaky endpoint isn't hammered every tick.

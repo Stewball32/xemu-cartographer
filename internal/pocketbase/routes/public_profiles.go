@@ -41,9 +41,25 @@ type publicH2Appearance struct {
 }
 
 type publicProfile struct {
-	Gamertag string              `json:"gamertag"`
-	CE       *publicCEAppearance `json:"ce"`
-	H2       *publicH2Appearance `json:"h2"`
+	Gamertag string `json:"gamertag"`
+	// Avatar is the user's PocketBase avatar file (the built-in users.avatar
+	// upload) as a same-origin thumb URL, '' when the user has none. The file is
+	// world-readable by PB's own rules (the field is not Protected), so handing
+	// the URL to an anonymous overlay leaks nothing the file server wouldn't.
+	Avatar string              `json:"avatar,omitempty"`
+	CE     *publicCEAppearance `json:"ce"`
+	H2     *publicH2Appearance `json:"h2"`
+}
+
+// userAvatarPath builds the public file URL for a users.avatar upload — PB
+// serves record files at /api/files/{collection}/{recordId}/{filename}; the
+// thumb query keeps the broadcast payload small (cards render ~40-90 px).
+// ” in → ” out.
+func userAvatarPath(userID, filename string) string {
+	if strings.TrimSpace(filename) == "" {
+		return ""
+	}
+	return "/api/files/users/" + userID + "/" + filename + "?thumb=100x100"
 }
 
 func registerPublicProfilesRoute(se *core.ServeEvent) {
@@ -79,7 +95,10 @@ func registerPublicProfilesRoute(se *core.ServeEvent) {
 			lt := strings.ToLower(t)
 			if u, ok := userByTag[lt]; ok {
 				tagForUser[u.Id] = lt
-				out[lt] = publicProfile{Gamertag: t}
+				out[lt] = publicProfile{
+					Gamertag: t,
+					Avatar:   userAvatarPath(u.Id, u.GetString("avatar")),
+				}
 			}
 		}
 		if len(tagForUser) == 0 {
@@ -111,10 +130,12 @@ func registerPublicProfilesRoute(se *core.ServeEvent) {
 			}
 		}
 
-		// Drop tags that resolved to a user but carry no profile at all — nothing
-		// to render, and the caller treats "absent" as "fall back to generic".
+		// Drop tags that resolved to a user but carry nothing renderable — no
+		// game profile AND no avatar. The caller treats "absent" as "fall back
+		// to generic". A user with only an avatar (no game profiles yet) is
+		// kept: the card can still show their PB avatar.
 		for k, v := range out {
-			if v.CE == nil && v.H2 == nil {
+			if v.CE == nil && v.H2 == nil && v.Avatar == "" {
 				delete(out, k)
 			}
 		}

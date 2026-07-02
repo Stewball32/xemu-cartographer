@@ -94,16 +94,30 @@
 		{/if}
 	</div>
 
-	<!-- identity -->
+	<!-- identity: PB profile avatar (pulled straight from PocketBase, cached
+	     file — not client-rendered) + gamertag + team/armor chip -->
 	<div class="ident">
-		<span class="name" title={player.name}>{player.name}</span>
-		{#if isTeamGame}
-			{#if teamLabel}
-				<span class="armor-chip"><i style="background: {teamColor}"></i>{teamLabel}</span>
+		<span class="pb-avatar">
+			{#if profile?.avatar}
+				<img src={profile.avatar} alt="{player.name} avatar" loading="lazy" />
+			{:else}
+				<!-- generic fallback silhouette when the gamertag has no profile/avatar -->
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<circle cx="12" cy="8.4" r="4.2" fill="currentColor" />
+					<path d="M3.5 21q1.4-6 8.5-6t8.5 6Z" fill="currentColor" />
+				</svg>
 			{/if}
-		{:else}
-			<span class="armor-chip"><i style="background: {armorHex}"></i>{armorName}</span>
-		{/if}
+		</span>
+		<span class="who">
+			<span class="name" title={player.name}>{player.name}</span>
+			{#if isTeamGame}
+				{#if teamLabel}
+					<span class="armor-chip"><i style="background: {teamColor}"></i>{teamLabel}</span>
+				{/if}
+			{:else}
+				<span class="armor-chip"><i style="background: {armorHex}"></i>{armorName}</span>
+			{/if}
+		</span>
 	</div>
 
 	<!-- stats -->
@@ -249,10 +263,43 @@
 
 	.ident {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
-		gap: 0.18rem;
+		justify-content: center;
+		gap: 0.5rem;
 		width: 100%;
+		min-width: 0;
+	}
+	/* Dedicated PB-avatar spot: fixed plate, image served by PocketBase. */
+	.pb-avatar {
+		flex-shrink: 0;
+		width: 38px;
+		height: 38px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bc-panel-strong);
+		border: 1px solid var(--bc-edge);
+		border-radius: calc(var(--bc-radius) - 1px);
+		overflow: hidden;
+	}
+	.pb-avatar img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.pb-avatar svg {
+		width: 70%;
+		height: 70%;
+		color: var(--bc-ink-muted);
+		opacity: 0.7;
+	}
+	.who {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.18rem;
+		min-width: 0;
 	}
 	.name {
 		max-width: 100%;

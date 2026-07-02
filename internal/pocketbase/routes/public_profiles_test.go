@@ -28,6 +28,17 @@ func TestParseGamertagList(t *testing.T) {
 	}
 }
 
+func TestUserAvatarPath(t *testing.T) {
+	if got := userAvatarPath("abc123", "me_x7.png"); got != "/api/files/users/abc123/me_x7.png?thumb=100x100" {
+		t.Fatalf("userAvatarPath = %q", got)
+	}
+	for _, empty := range []string{"", "  "} {
+		if got := userAvatarPath("abc123", empty); got != "" {
+			t.Fatalf("userAvatarPath(%q) = %q, want ''", empty, got)
+		}
+	}
+}
+
 func TestCeColorFromSettings(t *testing.T) {
 	cases := []struct {
 		name string

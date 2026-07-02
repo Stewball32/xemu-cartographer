@@ -66,9 +66,11 @@ pure builders (no new feed plumbing) and the real player art:
   with gamertag, K/D/A, and a big score. **In team games teammates share the team
   colour** (colour doesn't distinguish them — the emblem + gamertag do); FFA is
   per-player. Each card renders the player's **gamertag-PROFILE avatar** (Spartan +
-  H2 emblem) resolved from the public [`GET /api/public/profiles`](../internal/pocketbase/routes/public_profiles.go)
-  endpoint, falling back to a plain Spartan when a player has no profile. `card/[slot]/`
-  is the single-player spotlight variant.
+  H2 emblem) plus a dedicated **PocketBase-avatar plate** (the user's `users.avatar`
+  upload, `<img>`'d straight from PB's file server), both resolved from the public
+  [`GET /api/public/profiles`](../internal/pocketbase/routes/public_profiles.go)
+  endpoint, falling back to a plain Spartan / generic silhouette when a player has
+  no profile or avatar. `card/[slot]/` is the single-player spotlight variant.
 
 **CE is live-capable today; the H2 theme is preview-only** until the H2 scraper
 (M20) provides the live roster / scores / emblems — the H2 `/studio/` tiles carry

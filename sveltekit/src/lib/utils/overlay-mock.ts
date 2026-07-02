@@ -17,7 +17,7 @@ import type {
 	ScenarioPayload,
 	TickPayloadV2
 } from '$lib/types/scraper-v2';
-import { H2_KEYS, type Appearance } from '$lib/utils/emblem';
+import { CE_COLORS, colorHex, H2_KEYS, type Appearance } from '$lib/utils/emblem';
 
 /** Instance name the mock pretends to be. Any instance segment works in mock
  * mode — the URL's `[instance]` is ignored when ?mock=1 is set. */
@@ -554,20 +554,43 @@ export function mockAppearance(index: number): Appearance {
 	};
 }
 
+// Mock stand-in for a user's PocketBase avatar file (users.avatar): a small
+// self-contained SVG data-URI — coloured plate + the gamertag's initial — so the
+// preview exercises the cards' PB-avatar <img> spot with a real image and no
+// backend. Live mode replaces this with the /api/files/users/... thumb URL.
+function mockAvatarDataURI(name: string, hex: string): string {
+	const initial = (name[0] ?? '?').toUpperCase();
+	const svg =
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+		`<rect width="64" height="64" rx="10" fill="${hex}"/>` +
+		`<rect width="64" height="32" rx="10" fill="rgba(255,255,255,0.14)"/>` +
+		`<text x="32" y="43" text-anchor="middle" font-family="sans-serif" font-size="32" font-weight="700" fill="#fff">${initial}</text>` +
+		`</svg>`;
+	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 // Mock profile-avatar table for the broadcast player cards — the ?mock=1 stand-in
 // for the live /api/public/profiles endpoint, keyed by lowercased gamertag so it
-// matches how the card resolves a live player name. Each seed gets a CE armor
-// colour + an H2 emblem/appearance (a "profile"). SEED index 5 (TartarusX) is
-// deliberately LEFT OUT so the preview shows the graceful fallback (a plain
-// tinted Spartan with no emblem) for a player who has no profile.
+// matches how the card resolves a live player name. Each seed gets a PB avatar
+// image (data-URI stand-in) + a CE armor colour + an H2 emblem/appearance.
+// Deliberate gaps to preview every fallback branch:
+//   - SEED 5 (TartarusX): NO profile at all → generic avatar + plain Spartan.
+//   - SEED 7 (flood_carrier): profile but NO avatar image → generic avatar spot,
+//     emblem still renders.
 export function mockProfiles(): Record<
 	string,
-	{ ce?: { color: number }; h2?: { appearance: Appearance } }
+	{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
 > {
-	const out: Record<string, { ce?: { color: number }; h2?: { appearance: Appearance } }> = {};
+	const out: Record<
+		string,
+		{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+	> = {};
 	for (const s of SEEDS) {
-		if (s.index === 5) continue; // no profile → fallback demo
+		if (s.index === 5) continue; // no profile → full fallback demo
 		out[s.name.toLowerCase()] = {
+			...(s.index === 7
+				? {} // profile without an avatar image → avatar-spot fallback demo
+				: { avatar: mockAvatarDataURI(s.name, colorHex(CE_COLORS, s.armorColor)) }),
 			ce: { color: s.armorColor },
 			h2: { appearance: mockAppearance(s.index) }
 		};
