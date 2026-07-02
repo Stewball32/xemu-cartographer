@@ -1,8 +1,25 @@
 # Status
 
-> **Last updated:** 2026-07-01 (M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
+> **Last updated:** 2026-07-01 (patchwork/backup pass — every worktree committed + all branches pushed to origin; see **Repo housekeeping** below. M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
+
+## Repo housekeeping (2026-07-01)
+
+Patchwork/backup pass over the 6-worktree working set. **Nothing was merged into `main`**; all changes are committed on their own branches and pushed.
+
+- **Backup (was the top risk):** `main` (74 commits ahead of origin, unpushed) + all 17 local feature/chore branches are now pushed to `origin` and tracking. Previously only an old `main` existed on the remote.
+- **In-progress work committed:**
+  - `chore/xemu-test-harness` — harness now uses xemu 0.8.136's native `xemu` display backend instead of stock-QEMU `sdl` (which that build doesn't compile), fixing the visible-window launch.
+  - `feat/spartan-skinfix-ce-markv` + `feat/spartan-real-poses` — added `tools/h2-model/.gitignore` (mirrors `tools/ce-model/`) so `__pycache__/` + `out/mcc/composite_cmp/` render artifacts stop showing as untracked.
+- **Build/test:** green on `feat/broadcast-graphics` (= `main` + M28) — Go `build`/`vet`/all tests; frontend `lint`/`check` (0 err)/`test` (282)/`build`.
+- **Stashes triaged — all preserved, none applied:**
+  - `stash@{0}` (orphaned, ex-`feat/stream-assets-studio`) — **obsolete**: the visualizer `?map=` demo-mode WIP was finished + merged as `223c718` and has since evolved (`mockStagedModel`). Safe to drop; left in place.
+  - `stash@{1}` (`feat/json-seeder`) — its `02-patch-toml.sh` netif fix is **already on `main`** (functionally identical); the only real delta is a `seed.example.json` credential change → **Stewart's call**.
+  - `stash@{2}` (`chore/align-dev-seed-creds`) — `data.go` seed-credential approach → **Stewart's call** (competes with json-seeder; deliberately left, per the deferred-seeder decision).
+- **TODO/FIXME:** only 3 in source (Halo:CE offset provenance + an M7 live-verify note) — none quick/safe (all need live xemu). Left as-is.
+
+**⚠️ Directory move:** this repo drives 6 git worktrees under `/home/stew/repos/` (`xemu-cartographer`, `xemu-cart-markv`, `xemu-cartographer-emblem-fix`, `-harness`, `-overlay`, `-spartan-poses`). After moving the parent dir, run `git worktree repair` from the main checkout (passing the moved worktree paths) to fix the absolute gitdir links — otherwise the linked worktrees detach.
 
 ## Goals
 
