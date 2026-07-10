@@ -56,6 +56,21 @@ func (c *qmpClient) hmp(cmd string) (string, error) {
 	return strings.TrimSpace(resp.Return), nil
 }
 
+// sendKeyRaw issues an already-formatted HMP `sendkey` command line and maps
+// the result to an error. HMP `sendkey` returns an empty string on success;
+// any non-empty return (e.g. "unknown key: 'foo'") is surfaced as an error so
+// callers don't silently believe a rejected keypress landed.
+func (c *qmpClient) sendKeyRaw(cmd string) error {
+	ret, err := c.hmp(cmd)
+	if err != nil {
+		return err
+	}
+	if s := strings.TrimSpace(ret); s != "" {
+		return fmt.Errorf("%q rejected: %s", cmd, s)
+	}
+	return nil
+}
+
 // parseHexSuffix extracts the last whitespace-separated token and parses it as a hex uint64.
 func parseHexSuffix(s string) (uint64, error) {
 	fields := strings.Fields(s)
