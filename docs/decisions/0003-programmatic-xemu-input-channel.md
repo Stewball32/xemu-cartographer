@@ -102,3 +102,25 @@ controller even on a keyboard-bound instance.
   keyboard-channel + seamless-admin-takeover design needs rework (e.g. runner + admin both
   drive a shared vpad, or an explicit control handoff). The proven runner input path
   remains the **vpad**. Scratch instance torn down; ce-nav untouched.
+- **2026-07-10 — the keyboard channel IS the admin's RFB→Xvnc path (not xdotool→`:0`);
+  built the server-side RFB injector.** Stewart's correction: the `:0` failure above was a
+  mismatch — the admin panel drives the *container's Xvnc*, not a host `-display xemu` SDL
+  window. Traced the proven admin path: `XboxController.svelte` (button→label) →
+  `VNCKeyboard.sendKey` (RFB KeyEvent over WS) → `routes/containers/vnc.go` relay →
+  `ws://127.0.0.1:<BrowserWeb>/websockify` → the container's Xvnc → xemu's keyboard→controller
+  map. **Exact keys** (label / X11 keysym): A=`a`/0x61, B=`b`/0x62, X=`x`/0x78, Y=`y`/0x79,
+  Start=`Return`/0xff0d, Back=`BackSpace`/0xff08, D-pad Up/Down/Left/Right=0xff52/54/51/53,
+  LB=`1` RB=`2` L3=`3` R3=`4`, LT=`w` RT=`o`, sticks ESDF/IJKL. Built `internal/vncinput`: a
+  server-side RFB-3.8-over-WebSocket injector that dials the same `/websockify` target and
+  emits **byte-identical KeyEvents to `VNCKeyboard`** (verified end-to-end against a mock RFB
+  server — `Tap("a")`→`[4,1,…,0x61]`, `Tap("Down")`→`[4,1,…,0xff,0x54]`), plus `cmd/vncinput-poc`
+  to drive a live container. Because the bytes are identical to the admin's proven-working
+  path, the injector drives the controller *by construction*, and admin + runner share one
+  channel natively (satisfies take-over with nothing extra). **Live memory re-verification
+  is still pending:** this session had no way to stand up the container's Xvnc — no host VNC
+  tooling (Xvnc/x11vnc/websockify absent), rootful podman is `sudo`-gated (denied here) so the
+  2-container stack can't be provisioned, no cartographer container was running, and the live
+  server needs admin auth. Run `cmd/vncinput-poc -url ws://127.0.0.1:<BrowserWeb>/websockify
+  -keys "Down Down a"` against a live container and read the state change via the scraper to
+  close the loop. **Decision:** the runner's keyboard/menu + admin-shared input path is
+  `internal/vncinput`; the vpad stays for headless analog automation.
