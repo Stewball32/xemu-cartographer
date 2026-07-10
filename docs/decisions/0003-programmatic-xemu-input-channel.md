@@ -64,3 +64,18 @@ controller even on a keyboard-bound instance.
   (the player containers, like the kiosk, bind `'keyboard'`). The architectural reasoning
   says it still won't reach the controller, but a definitive keyboard-bound check is the
   one remaining way to fully close the door on `sendkey` before committing.
+
+## Log
+
+- **2026-07-10 — uinput virtual pad BUILT + PROVEN live.** Ported `padpool.py` into a
+  backend-owned Go primitive (`internal/vpad`) that creates a uinput Xbox-360 pad and emits
+  button/D-pad/stick/trigger events, with a `cmd/vpad` daemon holding the device + serving a
+  drive FIFO. The derived SDL GUID reproduces ce-nav's TOML binding exactly
+  (`PredictGUID` / `NameCRC16`, unit-tested). Proof: launched a scratch xemu bound to the Go
+  pad's GUID (`0x0701`, distinct from ce-nav), drove it through the CE menus into a Campaign
+  level entirely with the Go pad (menu selection moved; `game_connection` 0→2 then
+  `main_menu` 1→0 in guest memory), then in gameplay the same read→act→verify loop
+  (`cmd/inputpoc -control-fifo`) walked the biped **+1.71 world units** (`disp=1.7141`) —
+  matching padpool's 1.74wu — while QMP `sendkey` moved it 0.0000 in the same run. The Go
+  virtual pad drives the game; `sendkey` does not. Scratch instance torn down; ce-nav
+  untouched.
