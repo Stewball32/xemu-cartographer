@@ -124,3 +124,24 @@ controller even on a keyboard-bound instance.
   -keys "Down Down a"` against a live container and read the state change via the scraper to
   close the loop. **Decision:** the runner's keyboard/menu + admin-shared input path is
   `internal/vncinput`; the vpad stays for headless analog automation.
+- **2026-07-10 — state-aware host RUNNER built (logic + tests).** `internal/hostrunner`
+  composes the scraper READ side (Observation, built from the cache via `ScraperReadout`) with
+  the `internal/vncinput` WRITE side into the CE host-lobby state machine. Every transition is
+  gated on readable state (`Classify`: game_connection 0/1/2, main_menu, machine/team counts,
+  native countdown) — `Sequence` presses `Y→A→A` only when confirmed on the right screen and
+  advances on confirmation, with the two blind map/gametype cards TIMED but bracketed by
+  readable checkpoints; `WalkBack` (B) retreats/cancels the countdown. Native start conditions
+  (2+ boxes, 2+ teams) are READ (`ReadyToStart`), never faked — the runner only times arm (A on
+  gametype) / start (A again). Auto-host loop re-hosts off the post-game screen. Arbitration
+  (`Arbiter`: runner/admin/disabled) suspends the runner so an admin's keysyms drive the SAME
+  channel — native takeover. Observable stream (`RunnerEvent` + `EventSink`) fans intents+keys
+  to the admin WS room via `Registry`. v1 seams present: `Selector` (decision-source),
+  `StartPolicy` (ordered predicates + arm-only/arm+start), optional ready-gate (default off).
+  Control endpoints modelled on `routes/scraper/host.go` (GET/POST `/{name}/host`). **24 unit
+  tests**, no live container. First-live-milestone tool `cmd/hostrunner-probe` demonstrated the
+  read→classify→decide half LIVE against ce-nav (real memory: classified `in_game`, gated
+  press correctly `blocked`). **The first live test needs: a running container + its
+  `ws://127.0.0.1:<BrowserWeb>/websockify` endpoint** — then
+  `hostrunner-probe -sock <qmp> -url <ws> -expect system_link -key a` performs the gated tap +
+  verifies. Full runner wiring (tick from the scraper loop with cache Observations + per-
+  instance vncinput dial + WS `SinkFunc`) is the remaining integration glue.
