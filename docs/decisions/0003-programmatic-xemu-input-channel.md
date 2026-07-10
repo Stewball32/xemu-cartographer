@@ -79,3 +79,26 @@ controller even on a keyboard-bound instance.
   matching padpool's 1.74wu — while QMP `sendkey` moved it 0.0000 in the same run. The Go
   virtual pad drives the game; `sendkey` does not. Scratch instance torn down; ce-nav
   untouched.
+- **2026-07-10 — keyboard-injection path (xdotool→X) does NOT drive the controller on
+  `:0`.** Tested the design premise that player-hosting input could ride the kiosk's
+  *keyboard* channel (admin VNC keysyms + runner-injected keysyms into the same X server).
+  Launched a scratch xemu bound to `'keyboard'` (TOML identical to the kiosk container's
+  default — `port1='keyboard'`, no scancode map) and injected keysyms with **xdotool**
+  (both XTEST-focused and XSendEvent-to-window). Result: **no effect on the guest
+  controller** — the menu selection never moved, `game_connection`/`main_menu` never
+  changed, and the idle→attract loop kept firing (proof zero keys registered, since input
+  resets that timer). Exhaustive: every VNC-map keysym (arrows / a-b-x-y / Return /
+  BackSpace / ESDF / WO), quick + held timings, click-to-grab, mouse-off-menubar, and
+  `background_input_capture=true` — all negative, with the xemu window holding confirmed X
+  keyboard focus (`xdotool getwindowfocus`). So on `:0`, **xdotool→X is NOT equivalent to
+  the admin VNC path** as assumed, and — together with the `sendkey` result — **neither
+  keyboard-injection channel drives xemu's guest controller; only SDL-gamepad input (the
+  vpad) does.** Caveat: this was `:0` (real X server + windowed xemu + WM), not the
+  container's **Xvnc** (headless, single fullscreen window) where the admin VNC keyboard
+  controller is *assumed* to work — that assumption is now **unverified** and may itself be
+  broken (a `sendkey`-style false-positive). **Decision impact:** do not wire the runner to
+  the keyboard channel yet. Next: verify whether the admin VNC keyboard controller actually
+  drives the game *in a real container/Xvnc* before trusting it; if it doesn't, the
+  keyboard-channel + seamless-admin-takeover design needs rework (e.g. runner + admin both
+  drive a shared vpad, or an explicit control handoff). The proven runner input path
+  remains the **vpad**. Scratch instance torn down; ce-nav untouched.
