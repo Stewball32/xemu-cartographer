@@ -36,15 +36,19 @@ func LoadFromEnv() Config {
 		QemuStorageDaemonCmd: envStr("CONTAINERS_QEMU_STORAGE_DAEMON_CMD", "qemu-storage-daemon"),
 		PythonCmd:            envStr("CONTAINERS_PYTHON_CMD", "python3"),
 		FatxToolPath:         envStr("CONTAINERS_FATX_TOOL", ""),
-		Encoder:              envStr("CONTAINERS_ENCODER", "x264enc"),
-		Framerate:            envInt("CONTAINERS_FRAMERATE", 60),
-		CRF:                  envInt("CONTAINERS_CRF", 20),
-		Width:                envInt("CONTAINERS_WIDTH", 960),
-		Height:               envInt("CONTAINERS_HEIGHT", 720),
-		PixelfluxWayland:     envBool("CONTAINERS_PIXELFLUX_WAYLAND", true),
-		DRINode:              envStr("CONTAINERS_DRINODE", "/dev/dri/renderD128"),
-		ShmSize:              envStr("CONTAINERS_SHM_SIZE", "1g"),
-		BrowserShmSize:       envStr("CONTAINERS_BROWSER_SHM_SIZE", "2gb"),
+		// Pre-seed the firefox kiosk profile's NSS trust store with the instance
+		// CA at create time so the kiosk loads xemu's HTTPS view without a warning.
+		SetBrowserTrust:  envBool("CONTAINERS_SET_BROWSER_TRUST", true),
+		CertutilCmd:      envStr("CONTAINERS_CERTUTIL_CMD", "certutil"),
+		Encoder:          envStr("CONTAINERS_ENCODER", "x264enc"),
+		Framerate:        envInt("CONTAINERS_FRAMERATE", 60),
+		CRF:              envInt("CONTAINERS_CRF", 20),
+		Width:            envInt("CONTAINERS_WIDTH", 960),
+		Height:           envInt("CONTAINERS_HEIGHT", 720),
+		PixelfluxWayland: envBool("CONTAINERS_PIXELFLUX_WAYLAND", true),
+		DRINode:          envStr("CONTAINERS_DRINODE", "/dev/dri/renderD128"),
+		ShmSize:          envStr("CONTAINERS_SHM_SIZE", "1g"),
+		BrowserShmSize:   envStr("CONTAINERS_BROWSER_SHM_SIZE", "2gb"),
 	}
 }
 

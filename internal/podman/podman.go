@@ -67,6 +67,17 @@ type Config struct {
 	PythonCmd            string // default "python3"
 	FatxToolPath         string // default <InitDir>/../tools/fatx_console_name.py
 
+	// SetBrowserTrust, when true (default), pre-seeds the firefox kiosk profile's
+	// NSS trust store with the instance CA at create time (host certutil), so the
+	// kiosk loads xemu's HTTPS noVNC view without a "risky connection" warning on
+	// first boot. Best-effort: skipped with a warning if certutil is unavailable
+	// on the host, in which case the bind-mounted policies.json belt
+	// (containers/browser/init/60-trust-xemu-cert.sh) is the fallback.
+	SetBrowserTrust bool
+	// CertutilCmd is the NSS certutil binary used to pre-seed the firefox trust
+	// store. Default "certutil" (the nss / nss-tools package on the host).
+	CertutilCmd string
+
 	// Defaults for container environment variables.
 	Encoder          string
 	Framerate        int
@@ -195,6 +206,17 @@ func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*Container
 	sslDir := filepath.Join(configDir, "ssl")
 	if err := generateXemuCerts(sslDir, name); err != nil {
 		return nil, fmt.Errorf("generate ssl certs: %w", err)
+	}
+
+	// Pre-seed the firefox kiosk profile's NSS trust store with the instance CA
+	// on the host (certutil), so the kiosk loads xemu's HTTPS noVNC view without a
+	// "risky connection" warning on first boot — the durable, verifiable trust
+	// path. Best-effort: a missing host certutil just falls back to the
+	// in-container policies.json belt (60-trust-xemu-cert.sh). See browser_cert.go.
+	if m.browserTrustEnabled() {
+		if err := m.provisionBrowserTrust(browserCfgDir, filepath.Join(sslDir, "ca.pem")); err != nil {
+			log.Printf("podman: warning: pre-seed firefox trust for %q failed (kiosk may show a TLS warning until the in-container policy applies): %v", name, err)
+		}
 	}
 
 	// Write the xemu launch (carrying the -qmp the scraper needs) into the WM
