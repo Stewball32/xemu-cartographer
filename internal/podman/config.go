@@ -20,7 +20,11 @@ func LoadFromEnv() Config {
 		PortStride:     envInt("CONTAINERS_PORT_STRIDE", 10),
 		HostIP:         envStr("CONTAINERS_HOST_IP", "localhost"),
 		DVDPath:        envStr("CONTAINERS_DVD_PATH", ""),
-		PodmanCmd:      envStr("CONTAINERS_PODMAN_CMD", "podman"),
+		// Shared game ISO library. A per-instance ISO named in
+		// CreateOptions.GameISO resolves against this dir; ISOs are bind-mounted
+		// read-only into their instance, never copied onto the overlay.
+		ISODir:    envStr("CONTAINERS_ISO_DIR", "./containers/xemu/shared/isos"),
+		PodmanCmd: envStr("CONTAINERS_PODMAN_CMD", "podman"),
 		// Canonical read-only root qcow2 (the Halo-installed disk) that every
 		// per-instance overlay backs onto. Lives in SharedDir/hdds/. Keep this
 		// in sync with DEFAULT_HDD_NAME in containers/xemu/init/.env.

@@ -41,7 +41,9 @@ func cfg() podman.Config {
 		Enabled:   true,
 		SocketDir: repo + "/containers/xemu/qmp",
 		SharedDir: repo + "/containers/xemu/shared",
-		InitDir:   repo + "/containers/xemu/init",
+		// Overridable so a worktree can mount ITS init scripts (e.g. testing the
+		// dvd_path patch on a feature branch) instead of the main checkout's.
+		InitDir: envOr("HARNESS_INIT_DIR", repo+"/containers/xemu/init"),
 		// The default configs dir is root-owned (prior server-under-sudo runs)
 		// and passwordless sudo here is scoped to podman only (no chown), so the
 		// uid-1000 harness writes per-instance configs into a dir it owns. All
@@ -57,6 +59,7 @@ func cfg() podman.Config {
 		// may be unbootable; point at a known-good disk + its DVD when needed.
 		RootHDD:        envOr("HARNESS_ROOT_HDD", "_default.qcow2"),
 		DVDPath:        os.Getenv("HARNESS_DVD_PATH"),
+		ISODir:         envOr("HARNESS_ISO_DIR", repo+"/containers/xemu/shared/isos"),
 		QemuImgCmd:     "qemu-img",
 		SetConsoleName: false, // cosmetic; skip the FUSE/pyfatx dependency for the throwaway
 		Encoder:        "x264enc",
@@ -95,11 +98,17 @@ func main() {
 
 	switch cmd {
 	case "up":
-		info, err := mgr.Create(name)
+		// HARNESS_GAME_ISO exercises the per-instance ISO path (CreateWithOptions);
+		// absolute or a name resolved against ISODir. Empty falls back to the
+		// global HARNESS_DVD_PATH.
+		info, err := mgr.CreateWithOptions(name, podman.CreateOptions{GameISO: os.Getenv("HARNESS_GAME_ISO")})
 		if err != nil {
 			fatal("create", err)
 		}
 		printInfo(info)
+		if info.GameISO != "" {
+			fmt.Printf("game ISO      = %s (attached as DVD)\n", info.GameISO)
+		}
 		if err := mgr.Start(name); err != nil {
 			fatal("start", err)
 		}

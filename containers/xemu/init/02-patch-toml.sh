@@ -2,7 +2,8 @@
 # =============================================================================
 # 02-patch-toml.sh
 # Idempotent patches for xemu.toml — runs on every container startup.
-# Ensures netif is set under [net.pcap] and qmp_socket_path under [machine].
+# Ensures netif under [net.pcap], qmp_socket_path under [machine], and dvd_path
+# under [sys.files] when a game ISO is bind-mounted at /game.iso.
 # Each patch checks if the value is already present and skips if so.
 # =============================================================================
 
@@ -83,6 +84,33 @@ elif grep -q "^\[machine\]" "$CURRENT_TOML"; then
 else
     printf "\n[machine]\nqmp_socket_path = '$QMP_SOCK'\n" >> "$CURRENT_TOML"
     echo "[02-patch-toml] Appended [machine] block with qmp_socket_path = '$QMP_SOCK'."
+fi
+
+# -----------------------------------------------------------------------------
+# Patch: DVD / game disc
+# When the host provisioner bind-mounts a per-instance game ISO at $DVD_MOUNT
+# (internal/podman containerDVDPath, set from CreateOptions.GameISO or
+# Config.DVDPath), point xemu's dvd_path at it so the disc is ATTACHED at boot.
+# This is THE wire that makes "attach ISO -> boots straight into the game" work:
+# a game disc present at cold boot is auto-launched by the master image's
+# Cerbios/Xbox boot path (verified live 2026-07-10 — Halo 2.iso boots Halo 2,
+# Halo CE.iso boots Halo, no disc boots the UnleashX dashboard; see ADR-0004).
+# No master-image config change is needed for that; the optional
+# cmd/master-autolaunch lever only forces UnleashX's <DVD AutoLaunch>. No ISO
+# mounted (file absent) -> HDD-only boot, no dvd_path. Idempotent.
+# -----------------------------------------------------------------------------
+DVD_MOUNT="/game.iso"
+
+if grep -q "^dvd_path\s*=" "$CURRENT_TOML"; then
+    echo "[02-patch-toml] DVD path already set, skipping."
+elif [ ! -f "$DVD_MOUNT" ]; then
+    echo "[02-patch-toml] No DVD mounted at $DVD_MOUNT, skipping dvd_path (HDD-only boot)."
+elif grep -q "^\[sys\.files\]" "$CURRENT_TOML"; then
+    sed -i "/^\[sys\.files\]/a dvd_path = '$DVD_MOUNT'" "$CURRENT_TOML"
+    echo "[02-patch-toml] Injected dvd_path = '$DVD_MOUNT' under existing [sys.files]."
+else
+    printf "\n[sys.files]\ndvd_path = '%s'\n" "$DVD_MOUNT" >> "$CURRENT_TOML"
+    echo "[02-patch-toml] Appended [sys.files] block with dvd_path = '$DVD_MOUNT'."
 fi
 
 echo "[02-patch-toml] Done."

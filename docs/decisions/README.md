@@ -7,6 +7,7 @@ Architecture Decision Records — one markdown per decision. Copy [`_template.md
 | 0001 | [Version from git tag](0001-version-from-git-tag.md)                   | Accepted | 2026-05-16 |
 | 0002 | [Unified `audit_log` collection](0002-unified-audit-log-collection.md) | Accepted | 2026-05-26 |
 | 0003 | [Programmatic xemu input channel](0003-programmatic-xemu-input-channel.md) | Accepted | 2026-07-10 |
+| 0004 | [ISO-boot provisioning](0004-iso-boot-provisioning.md)                 | Accepted | 2026-07-10 |
 
 ## Status values
 

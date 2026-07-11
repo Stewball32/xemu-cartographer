@@ -3,10 +3,12 @@ package containers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/podman"
 )
 
 func init() {
@@ -21,14 +23,22 @@ func init() {
 		})
 
 		// POST /api/admin/containers — create a new container pair.
+		// Optional "game_iso" attaches a game ISO from the shared library
+		// (Config.ISODir) as the instance's DVD, so it boots straight into
+		// that game. Restricted to a bare filename (no path separators) — the
+		// API can only pick from the library, never an arbitrary host path.
 		Group.POST("", func(e *core.RequestEvent) error {
 			var body struct {
-				Name string `json:"name"`
+				Name    string `json:"name"`
+				GameISO string `json:"game_iso"`
 			}
 			if err := e.BindBody(&body); err != nil || body.Name == "" {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 			}
-			info, err := Manager.Create(body.Name)
+			if body.GameISO != "" && (strings.ContainsAny(body.GameISO, `/\`) || body.GameISO == ".." || strings.HasPrefix(body.GameISO, ".")) {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "game_iso must be a bare filename in the ISO library"})
+			}
+			info, err := Manager.CreateWithOptions(body.Name, podman.CreateOptions{GameISO: body.GameISO})
 			if err != nil {
 				return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 			}

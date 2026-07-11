@@ -28,9 +28,17 @@ type Config struct {
 	HostIP         string // IP/hostname for remote access; defaults to "localhost"
 
 	// DVDPath is an optional host path to a game ISO mounted read-only into each
-	// xemu container (at containerDVDPath). Empty = no DVD. Needed for root HDDs
-	// that boot a game from disc rather than from the HDD install.
+	// xemu container (at containerDVDPath). Empty = no DVD. Acts as the GLOBAL
+	// default disc when a Create doesn't specify a per-instance ISO. Needed for
+	// root HDDs that boot a game from disc rather than from the HDD install.
 	DVDPath string
+
+	// ISODir is the shared host directory holding the game ISO library. A
+	// per-instance ISO named (not absolute) in CreateOptions.GameISO resolves
+	// against this dir. Default SharedDir/isos. ISOs are bind-mounted read-only
+	// into their instance (at containerDVDPath); they are never copied onto the
+	// per-instance overlay, which stays lean.
+	ISODir string
 
 	// PodmanCmd is the command (with optional leading args) used to invoke
 	// podman. Default "podman" runs rootless under the server user.
@@ -75,10 +83,28 @@ const (
 	xemuImage    = "lscr.io/linuxserver/xemu:latest"
 	browserImage = "docker.io/jlesage/firefox"
 
-	// containerDVDPath is where an optional DVD/ISO is mounted inside the xemu
-	// container (see Config.DVDPath); the instance toml's dvd_path targets it.
+	// containerDVDPath is where a per-instance DVD/ISO is bind-mounted inside the
+	// xemu container. The instance toml's dvd_path is patched to this path by the
+	// init script (containers/xemu/init/02-patch-toml.sh) so xemu attaches the
+	// disc at boot. Keep the two in sync.
 	containerDVDPath = "/game.iso"
 )
+
+// CreateOptions configures a new instance beyond its name.
+type CreateOptions struct {
+	// GameISO optionally attaches a game XISO as this instance's DVD. It may be
+	// an absolute host path or a name resolved against Config.ISODir (the shared
+	// ISO library). Empty falls back to Config.DVDPath (the global default disc).
+	//
+	// The ISO is bind-mounted read-only at containerDVDPath; the game is never
+	// copied onto the per-instance overlay, which stays lean. A game disc present
+	// at cold boot is auto-launched by the master image (Cerbios/Xbox boot path),
+	// so an instance created with a GameISO boots STRAIGHT into that game — no
+	// HDD-installed game, no dashboard step, no per-container config. Verified
+	// live (see ADR-0004): with no ISO the instance sits on the UnleashX
+	// dashboard; with an ISO it boots that disc's game.
+	GameISO string
+}
 
 // Manager creates and controls podman containers.
 type Manager struct {
@@ -100,13 +126,29 @@ func NewManager(cfg Config, store Store) (*Manager, error) {
 	return &Manager{cfg: cfg, store: store, containers: containers}, nil
 }
 
-// Create provisions a new xemu + browser container pair without starting them.
+// Create provisions a new xemu + browser container pair without starting them,
+// using the global default disc (Config.DVDPath, if any). See CreateWithOptions
+// to attach a per-instance game ISO.
 func (m *Manager) Create(name string) (*ContainerInfo, error) {
+	return m.CreateWithOptions(name, CreateOptions{})
+}
+
+// CreateWithOptions provisions a new xemu + browser container pair without
+// starting them, optionally attaching a per-instance game ISO as the DVD (see
+// CreateOptions.GameISO).
+func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if _, exists := m.containers[name]; exists {
 		return nil, fmt.Errorf("container %q already exists", name)
+	}
+
+	// Resolve the per-instance disc BEFORE provisioning anything, so a bad ISO
+	// path aborts cleanly (no orphan overlay/config/containers).
+	dvdPath, err := m.resolveGameISO(opts.GameISO)
+	if err != nil {
+		return nil, err
 	}
 
 	idx := nextIndex(m.containers)
@@ -115,6 +157,7 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		Name:    name,
 		Index:   idx,
 		Ports:   ports,
+		GameISO: dvdPath,
 		Created: time.Now(),
 	}
 
@@ -163,7 +206,7 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 	}
 
 	// --- xemu container ---
-	if err := m.createXemu(name, ports, configDir); err != nil {
+	if err := m.createXemu(name, ports, configDir, dvdPath); err != nil {
 		return nil, fmt.Errorf("create xemu container: %w", err)
 	}
 
@@ -241,7 +284,7 @@ func (m *Manager) WaitForQMP(name string, timeout time.Duration) error {
 	}
 }
 
-func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
+func (m *Manager) createXemu(name string, ports Ports, configDir, dvdPath string) error {
 	encoder := m.cfg.Encoder
 	if encoder == "" {
 		encoder = "x264enc"
@@ -315,11 +358,13 @@ func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
 		"-v", fmt.Sprintf("%s:/qmp", abs(m.cfg.SocketDir)),
 		"-v", fmt.Sprintf("%s:/shared", abs(m.cfg.SharedDir)),
 	}
-	// Optional read-only DVD/ISO for root HDDs that launch the game from disc
-	// (a Halo *install* disk boots the game off the DVD, like the host rig's
-	// hdd-ceprof + Halo CE.iso). The instance toml's dvd_path points xemu here.
-	if m.cfg.DVDPath != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", abs(m.cfg.DVDPath), containerDVDPath))
+	// Per-instance read-only DVD/ISO. When set, the game boots off this disc
+	// (a game disc present at cold boot auto-launches — see ADR-0004) with no
+	// HDD-installed game needed. dvdPath is already resolved to an absolute host
+	// path by resolveGameISO. The instance toml's dvd_path (patched by
+	// 02-patch-toml.sh) points xemu at containerDVDPath inside the container.
+	if dvdPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", dvdPath, containerDVDPath))
 	}
 	args = append(args, xemuImage)
 
