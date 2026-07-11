@@ -9,8 +9,21 @@ import (
 func systemLink() Observation {
 	return Observation{Fresh: true, Phase: PhaseMenu, Connection: ConnSystemLink}
 }
-func hosting() Observation {
-	return Observation{Fresh: true, Phase: PhaseMenu, Connection: ConnHosting}
+
+// hosting reports the create-game screens with a LIVE cursor parked at index 0 of
+// both carousels (13 maps / 26 gametypes) — the common case where a default-Steps
+// pick (target 0) lands immediately. Use hostingCur to place the cursor elsewhere.
+func hosting() Observation { return hostingCur(0, 0) }
+
+// hostingCur is a hosting observation with the map/gametype select-list cursors at
+// the given live indices (counts 13/26, both valid) — for exercising the closed-
+// loop carousel navigation.
+func hostingCur(mapCur, gtCur int) Observation {
+	return Observation{
+		Fresh: true, Phase: PhaseMenu, Connection: ConnHosting,
+		MapCursor: mapCur, MapCursorCount: 13, MapCursorValid: true,
+		GametypeCursor: gtCur, GametypeCursorCount: 26, GametypeCursorValid: true,
+	}
 }
 func lobby() Observation {
 	return Observation{Fresh: true, Phase: PhaseMenu, Connection: ConnHosting, MachineCount: 2, TeamCount: 2, Map: "bloodgulch", Gametype: "slayer"}
@@ -54,8 +67,10 @@ func TestSequenceParksAtMapSelectUntilPick(t *testing.T) {
 	}
 }
 
-// TestSequenceNavigatesToChosenCard: a pick with D-pad Steps walks the carousel
-// (Right × steps) before pressing A, for both the map and gametype cards.
+// TestSequenceNavigatesToChosenCard: a pick with a non-default target index drives
+// the carousel toward it CLOSED-LOOP — pressing the D-pad only after the previous
+// move has visibly landed (live cursor changed), and pressing A only once the
+// re-read cursor == target — for both the map and gametype cards.
 func TestSequenceNavigatesToChosenCard(t *testing.T) {
 	sel := NewAtomicSelector()
 	sel.Set(Pick{Name: "wizard", Steps: 2}, Pick{Name: "koth", Steps: 1})
@@ -63,22 +78,125 @@ func TestSequenceNavigatesToChosenCard(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 
 	s.Step(systemLink(), t0) // Y
-	// Map card: 2 Right presses, then A.
-	if a := s.Step(hosting(), t0.Add(1*time.Second)); a.Key() != "Right" {
-		t.Fatalf("map nav 1 should be Right, got %v", a)
+	// Map card, target index 2. The cursor moves one card per confirmed press.
+	if a := s.Step(hostingCur(0, 0), t0.Add(1*time.Second)); a.Key() != "Right" {
+		t.Fatalf("map nav from 0 should press Right, got %v", a)
 	}
-	if a := s.Step(hosting(), t0.Add(2*time.Second)); a.Key() != "Right" {
-		t.Fatalf("map nav 2 should be Right, got %v", a)
+	if a := s.Step(hostingCur(1, 0), t0.Add(2*time.Second)); a.Key() != "Right" {
+		t.Fatalf("map nav from 1 should press Right, got %v", a)
 	}
-	if a := s.Step(hosting(), t0.Add(3*time.Second)); a.Key() != "a" || a.Intent != "select map" {
-		t.Fatalf("after 2 nav should press A (map), got %v", a)
+	if a := s.Step(hostingCur(2, 0), t0.Add(3*time.Second)); a.Key() != "a" || a.Intent != "select map" {
+		t.Fatalf("cursor reached target 2 → press A (map), got %v", a)
 	}
-	// Gametype card after the blind timer: 1 Right, then A.
-	if a := s.Step(hosting(), t0.Add(3*time.Second+DefaultTiming.BlindAdvanceAfter)); a.Key() != "Right" {
-		t.Fatalf("gametype nav should be Right, got %v", a)
+	// Gametype card after the blind timer, target index 1.
+	if a := s.Step(hostingCur(2, 0), t0.Add(3*time.Second+DefaultTiming.BlindAdvanceAfter)); a.Key() != "Right" {
+		t.Fatalf("gametype nav from 0 should press Right, got %v", a)
 	}
-	if a := s.Step(hosting(), t0.Add(6*time.Second)); a.Key() != "a" || a.Intent != "select gametype" {
-		t.Fatalf("after gametype nav should press A, got %v", a)
+	if a := s.Step(hostingCur(2, 1), t0.Add(6*time.Second)); a.Key() != "a" || a.Intent != "select gametype" {
+		t.Fatalf("gametype cursor reached target 1 → press A, got %v", a)
+	}
+}
+
+// TestSequenceCardWaitsForCursorMove: after a nav press the step HOLDS until the
+// live cursor actually changes (no overshoot) — it must not press the D-pad again
+// on the same cursor before RepressAfter.
+func TestSequenceCardWaitsForCursorMove(t *testing.T) {
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "wizard", Steps: 5}, Pick{Name: "slayer"})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+	s.Step(systemLink(), t0) // Y
+
+	if a := s.Step(hostingCur(0, 0), t0.Add(1*time.Second)); a.Key() != "Right" {
+		t.Fatalf("first map nav should press Right, got %v", a)
+	}
+	// Same cursor, within RepressAfter → wait (don't double-press → don't overshoot).
+	if a := s.Step(hostingCur(0, 0), t0.Add(1500*time.Millisecond)); a.Kind != ActionWait {
+		t.Fatalf("nav should hold until cursor moves, got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestSequenceCardRepressesStuckCursor: if a press is dropped (cursor never moves),
+// the step RE-PRESSES the D-pad after RepressAfter rather than hanging.
+func TestSequenceCardRepressesStuckCursor(t *testing.T) {
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "wizard", Steps: 5}, Pick{Name: "slayer"})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+	s.Step(systemLink(), t0) // Y
+
+	s.Step(hostingCur(0, 0), t0.Add(1*time.Second)) // Right
+	a := s.Step(hostingCur(0, 0), t0.Add(1*time.Second+DefaultTiming.RepressAfter+time.Millisecond))
+	if a.Key() != "Right" {
+		t.Fatalf("stuck cursor should re-press Right after RepressAfter, got %v (%s)", a.Key(), a.Reason)
+	}
+}
+
+// TestSequenceCardWrapsShortWay: from a high cursor toward a low target, the
+// shorter way around the wrapping ring is BACKWARD (Left), not many Rights.
+func TestSequenceCardWrapsShortWay(t *testing.T) {
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "battlecreek", Steps: 1}, Pick{Name: "slayer"}) // map target 1
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+	s.Step(systemLink(), t0) // Y
+	// Cursor at 12 of 13; target 1. Forward = 2 (12→13/0→1 via wrap), backward = 11.
+	// 2 < 11, so the short way is FORWARD (Right, relying on wrap).
+	if a := s.Step(hostingCur(12, 0), t0.Add(1*time.Second)); a.Key() != "Right" {
+		t.Fatalf("cursor 12 → target 1 (count 13) should go Right (wrap, 2 steps), got %v", a)
+	}
+	// Now target 5 from cursor 1: forward = 4, backward = 9 → Right.
+	sel.Set(Pick{Name: "x", Steps: 5}, Pick{Name: "slayer"})
+	// And a case where backward is shorter: cursor 1, target 11 → fwd 10, bwd 3 → Left.
+	sel.Set(Pick{Name: "y", Steps: 11}, Pick{Name: "slayer"})
+	s2 := DefaultHostSequence(DefaultTiming, sel)
+	s2.Step(systemLink(), t0)
+	if a := s2.Step(hostingCur(1, 0), t0.Add(1*time.Second)); a.Key() != "Left" {
+		t.Fatalf("cursor 1 → target 11 (count 13) should go Left (backward, 3 steps), got %v", a)
+	}
+}
+
+// TestSequenceCardHoldsWithoutCursor: with NO live cursor the card step HOLDS
+// (never presses A on a blind default) — the closed loop refuses to commit blind.
+func TestSequenceCardHoldsWithoutCursor(t *testing.T) {
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "bloodgulch"}, Pick{Name: "slayer"})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+	s.Step(systemLink(), t0) // Y
+	// Hosting but the widget isn't readable (no cursor) → hold, no A.
+	noCursor := Observation{Fresh: true, Phase: PhaseMenu, Connection: ConnHosting}
+	for i := 0; i < 4; i++ {
+		a := s.Step(noCursor, t0.Add(time.Duration(1+i)*time.Second))
+		if a.Kind == ActionTap {
+			t.Fatalf("must not press without a live cursor (tick %d), got tap %q", i, a.Key())
+		}
+	}
+}
+
+// TestCarouselNav locks the pure shorter-path decision incl. wrap.
+func TestCarouselNav(t *testing.T) {
+	cases := []struct {
+		cursor, target, count int
+		wantRight             bool
+		wantRemaining         int
+	}{
+		{0, 0, 13, true, 0},   // already on target
+		{0, 2, 13, true, 2},   // forward, no wrap
+		{5, 3, 13, false, 2},  // backward shorter, no wrap
+		{12, 1, 13, true, 2},  // forward via wrap (2) beats backward (11)
+		{1, 11, 13, false, 3}, // backward (3) beats forward via wrap (10)
+		{16, 18, 27, true, 2}, // gametype forward (doc: Race 16 → CTF 18)
+		{0, 0, 0, true, 0},    // empty list guard
+		{6, 6, 13, true, 0},   // on target mid-list
+		{0, 12, 13, false, 1}, // target just below via one Left (wrap)
+	}
+	for _, c := range cases {
+		right, rem := carouselNav(c.cursor, c.target, c.count)
+		if right != c.wantRight || rem != c.wantRemaining {
+			t.Errorf("carouselNav(%d,%d,%d) = (right=%v, rem=%d), want (right=%v, rem=%d)",
+				c.cursor, c.target, c.count, right, rem, c.wantRight, c.wantRemaining)
+		}
 	}
 }
 

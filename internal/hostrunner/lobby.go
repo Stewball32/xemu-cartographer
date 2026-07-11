@@ -20,15 +20,26 @@ type Transition struct {
 	Blind  bool
 
 	// Card navigation (map/gametype select screens). When NavKey is set this is a
-	// card step: it FIRST presses NavKey (a D-pad direction) StepsFn(sel) times to
-	// reach the chosen card, then presses Key (A). ParkUntilSelection makes the
-	// step HOLD (the front-loaded lobby wait) until the player has actually chosen
-	// — the runner creates the lobby with Y right away, then parks at map-select
-	// rather than pressing a blind default. StepsFn resolves the D-pad step count
-	// from the live selection (0 = the default-highlighted card).
+	// card step. It drives the carousel CURSOR-RELATIVE and CLOSED-LOOP: each tick
+	// it reads the LIVE highlighted index via CursorFn, computes the shorter path to
+	// the target card (StepsFn), presses NavKey (forward) / NavKeyBack (reverse)
+	// toward it — one confirmed move at a time — and presses Key (A) only once the
+	// re-read cursor == target. No fixed default: the target is the pick's absolute
+	// carousel index and the start is non-deterministic. ParkUntilSelection makes
+	// the step HOLD (the front-loaded lobby wait) until the player has actually
+	// chosen — the runner creates the lobby with Y right away, then parks at
+	// map-select rather than pressing a blind default.
+	//
+	// StepsFn resolves the TARGET absolute carousel index from the live selection.
+	// CursorFn reads the live cursor (index, count, ok) for THIS list from the
+	// observation; ok=false when the widget isn't readable (the step then holds
+	// rather than navigating blind). NavKeyBack is the reverse D-pad label used when
+	// the shorter way around the ring is backwards (empty ⇒ forward-only).
 	NavKey             string
+	NavKeyBack         string
 	ParkUntilSelection bool
 	StepsFn            func(Selector) int
+	CursorFn           func(Observation) (index, count int, ok bool)
 }
 
 // StepTiming controls debounce + blind-advance behaviour. Zero value uses
@@ -67,11 +78,12 @@ type Sequence struct {
 	timing StepTiming
 	sel    Selector // selection source for park gate + card navigation (may be nil)
 
-	cursor    int
-	enteredAt time.Time // when the current step became active
-	lastPress time.Time // last time the current step's key was emitted
-	pressed   bool      // has the current step's confirm key (A) been pressed
-	navDone   int       // D-pad nav presses emitted for the current card step
+	cursor        int
+	enteredAt     time.Time // when the current step became active
+	lastPress     time.Time // last time the current step's key was emitted
+	pressed       bool      // has the current step's confirm key (A) been pressed
+	navDone       int       // D-pad nav presses emitted for the current card step
+	lastNavCursor int       // live cursor value at the last nav press (for confirmed-move debounce)
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -91,11 +103,16 @@ func (s *Sequence) SetSelector(sel Selector) { s.sel = sel }
 // Refinement (Stewart, 2026-07-10): Y advertises the joinable lobby immediately,
 // so the runner front-loads it and then HOLDS at the map-select card screen until
 // a map/gametype is actually chosen (ParkUntilSelection) — no blind default pick.
-// When the selection arrives it applies in ONE forward pass: D-pad to the chosen
-// map card → A → D-pad to the chosen gametype → A → enlisted-players lobby. The
-// two card presses stay blind (no distinguishing global) but bracketed by
-// readable checkpoints — On requires we're hosting, terminal Done requires a
-// readable lobby. Keys use vncinput labels: Y='y', A='a', D-pad Right='Right'.
+//
+// Cursor-relative nav (2026-07-11): the card presses are no longer blind. Each
+// select-map / select-gametype step reads the LIVE highlighted index from the CE
+// menu widget system (Observation.MapCursor / .GametypeCursor, +0x4C), drives the
+// carousel toward the pick's absolute index the shorter way around the ring, and
+// presses A only once the re-read cursor == target — closing the loop on confirmed
+// state from any non-deterministic start (incl. wrap). See stepCard / carouselNav.
+// The steps are still bracketed by readable checkpoints (On requires we're hosting,
+// terminal Done requires a readable lobby). Keys use vncinput labels: Y='y', A='a',
+// D-pad Right='Right', Left='Left'.
 func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 	onSystemLink := func(o Observation) bool { return Classify(o) == ScreenSystemLink }
 	hosting := func(o Observation) bool {
@@ -112,19 +129,23 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 		},
 		{
 			Name: "select-map", Intent: "select map", Key: "a",
-			NavKey: "Right", ParkUntilSelection: true,
-			StepsFn: func(s Selector) int { return s.MapPick().Steps },
-			On:      hosting,
-			Done:    inLobby, // only truly confirmable once the lobby is readable
-			Blind:   true,
+			NavKey: "Right", NavKeyBack: "Left", ParkUntilSelection: true,
+			StepsFn:  func(s Selector) int { return s.MapPick().Steps },
+			CursorFn: func(o Observation) (int, int, bool) { return o.MapCursor, o.MapCursorCount, o.MapCursorValid },
+			On:       hosting,
+			Done:     inLobby, // only truly confirmable once the lobby is readable
+			Blind:    true,
 		},
 		{
 			Name: "select-gametype", Intent: "select gametype", Key: "a",
-			NavKey:  "Right",
+			NavKey: "Right", NavKeyBack: "Left",
 			StepsFn: func(s Selector) int { return s.GametypePick().Steps },
-			On:      hosting,
-			Done:    inLobby,
-			Blind:   true,
+			CursorFn: func(o Observation) (int, int, bool) {
+				return o.GametypeCursor, o.GametypeCursorCount, o.GametypeCursorValid
+			},
+			On:    hosting,
+			Done:  inLobby,
+			Blind: true,
 		},
 		{
 			Name: "reach-lobby", Intent: "reach lobby", Key: "",
@@ -152,6 +173,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.enteredAt = now
 	s.pressed = false
 	s.navDone = 0
+	s.lastNavCursor = 0
 	s.lastPress = time.Time{}
 }
 
@@ -160,6 +182,7 @@ func (s *Sequence) advance(now time.Time) {
 	s.enteredAt = now
 	s.pressed = false
 	s.navDone = 0
+	s.lastNavCursor = 0
 	s.lastPress = time.Time{}
 }
 
@@ -212,33 +235,12 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 		return wait("parked at map-select — awaiting player map/gametype pick")
 	}
 
-	// (N) card step: navigate NavKey × Pick.Steps to the chosen card, then press
-	// Key (A), then advance on the blind timer (sub-screens are indistinguishable).
+	// (N) card step: CURSOR-RELATIVE + CLOSED-LOOP carousel navigation. Read the
+	// live highlighted index, move toward the target one confirmed step at a time,
+	// and press Key (A) only once the re-read cursor == target — never blind, never
+	// an assumed default.
 	if t.NavKey != "" {
-		if t.On != nil && !t.On(obs) {
-			return blocked(fmt.Sprintf("card step %q: hosting segment not observed (on %s)", t.Name, screenName(obs)))
-		}
-		steps := 0
-		if t.StepsFn != nil && s.sel != nil {
-			if n := t.StepsFn(s.sel); n > 0 {
-				steps = n
-			}
-		}
-		if s.navDone < steps {
-			s.navDone++
-			s.lastPress = now
-			return tap(t.NavKey, t.Intent, fmt.Sprintf("navigating to card (%d/%d)", s.navDone, steps))
-		}
-		if !s.pressed {
-			s.pressed = true
-			s.lastPress = now
-			return tap(t.Key, t.Intent, "card reached, pressing "+t.Key)
-		}
-		if now.Sub(s.lastPress) >= s.timing.BlindAdvanceAfter {
-			s.advance(now)
-			return s.Step(obs, now) // evaluate the next step this tick
-		}
-		return wait("card " + t.Name + ", awaiting timed advance")
+		return s.stepCard(t, obs, now)
 	}
 
 	// (3) blind card step (no nav): gate entry on On, press once and advance on a
@@ -271,6 +273,95 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 	return blocked(fmt.Sprintf("expected screen for %q not observed (on %s)", t.Name, screenName(obs)))
 }
 
+// stepCard drives one card-select step (SELECT MAP / SELECT GAMETYPE) cursor-
+// relative and closed-loop:
+//
+//  1. gate on On (must still be in the hosting segment);
+//  2. read the LIVE cursor via CursorFn; if it isn't readable, HOLD (never press
+//     blind) — the create-game screens expose the widget, so a miss is transient;
+//  3. compute the shorter way around the (wrapping) carousel to the target index
+//     (StepsFn) and press NavKey/NavKeyBack, but only once the previous move has
+//     visibly landed (cursor changed) or RepressAfter elapsed — so a slow/dropped
+//     press self-corrects and we never overshoot;
+//  4. once the re-read cursor == target, press Key (A) and advance on the timer.
+//
+// Because the cursor is re-read every tick, the loop closes on confirmed state:
+// A fires only when the highlighted card IS the pick, from any start, incl. wrap.
+func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action {
+	if t.On != nil && !t.On(obs) {
+		return blocked(fmt.Sprintf("card step %q: hosting segment not observed (on %s)", t.Name, screenName(obs)))
+	}
+
+	cursor, count, ok := 0, 0, false
+	if t.CursorFn != nil {
+		cursor, count, ok = t.CursorFn(obs)
+	}
+	if !ok || count <= 0 {
+		// No live cursor → we can't confirm which card is highlighted. HOLD rather
+		// than navigate to a possibly-wrong card (replaces the old blind default).
+		return wait(fmt.Sprintf("card %s: awaiting live cursor read", t.Name))
+	}
+
+	target := 0
+	if t.StepsFn != nil && s.sel != nil {
+		target = t.StepsFn(s.sel)
+	}
+	// Clamp the target into the live list range (defensive against a stale index).
+	target = ((target % count) + count) % count
+
+	right, remaining := carouselNav(cursor, target, count)
+	if remaining > 0 {
+		// Move toward the target. Press only when the last move has landed (cursor
+		// changed since our last press) or the repress timer has elapsed.
+		moved := s.navDone == 0 || cursor != s.lastNavCursor
+		if moved || now.Sub(s.lastPress) >= s.timing.RepressAfter {
+			s.navDone++
+			s.lastNavCursor = cursor
+			s.lastPress = now
+			key := t.NavKey
+			if !right && t.NavKeyBack != "" {
+				key = t.NavKeyBack
+			}
+			return tap(key, t.Intent, fmt.Sprintf("nav %s: cursor %d→%d (%d left)", t.Name, cursor, target, remaining))
+		}
+		return wait(fmt.Sprintf("card %s: nav pressed, awaiting cursor move (%d→%d)", t.Name, cursor, target))
+	}
+
+	// remaining == 0: the re-read cursor is ON the target — commit with A.
+	if !s.pressed {
+		s.pressed = true
+		s.lastPress = now
+		return tap(t.Key, t.Intent, fmt.Sprintf("cursor on target %d, pressing %s", target, t.Key))
+	}
+	if now.Sub(s.lastPress) >= s.timing.BlindAdvanceAfter {
+		s.advance(now)
+		return s.Step(obs, now) // evaluate the next step this tick
+	}
+	return wait("card " + t.Name + ": " + t.Key + " pressed, awaiting advance")
+}
+
+// carouselNav computes the D-pad move for a WRAPPING carousel from cursor to
+// target over count items. It returns right=true to press forward (NavKey) or
+// false to press backward (NavKeyBack), whichever way around the ring is shorter,
+// and remaining = presses left (0 when already on target). The caller re-reads the
+// live cursor each tick and re-invokes this, so a dropped/slow press just recomputes
+// next tick — the loop is self-correcting and closes only when remaining hits 0.
+//
+// (target − cursor) mod count is the forward distance; count − that is the reverse.
+func carouselNav(cursor, target, count int) (right bool, remaining int) {
+	if count <= 0 {
+		return true, 0
+	}
+	fwd := ((target-cursor)%count + count) % count
+	if fwd == 0 {
+		return true, 0
+	}
+	if bwd := count - fwd; bwd < fwd {
+		return false, bwd
+	}
+	return true, fwd
+}
+
 // WalkBack presses the B face button to retreat one screen — and, if the native
 // countdown is active, that same B cancels the countdown. It rewinds the cursor
 // by one on a plain back-step so the machine re-presses forward from there.
@@ -285,6 +376,7 @@ func (s *Sequence) WalkBack(obs Observation, now time.Time) Action {
 		s.enteredAt = now
 		s.pressed = false
 		s.navDone = 0
+		s.lastNavCursor = 0
 		s.lastPress = time.Time{}
 	}
 	return tap("b", "walk back", "pressing B to back out one screen")

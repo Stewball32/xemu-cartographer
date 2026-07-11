@@ -38,3 +38,36 @@ type LobbyEnumerator interface {
 	// where the carousels are readable, so the caller keeps the last-known set.
 	EnumerateLobby() LobbyOptions
 }
+
+// LobbyCursor is the LIVE highlighted-card state of the create-game SELECT MAP /
+// SELECT GAMETYPE carousels, read directly from the running game (CE: the menu
+// widget-instance's +0x4C selected index + +0x54 item count). Index is the
+// 0-based carousel position of the currently-highlighted card; Count is the live
+// list length. Valid is true only when the corresponding list widget was found
+// ACTIVE (count > 0) this read — false off the screen or when the read failed, in
+// which case Index/Count are meaningless and the caller must not navigate on them.
+//
+// It is the missing piece that makes carousel navigation cursor-relative and
+// closed-loop: presses = (targetIndex − Index) mod Count, and the runner confirms
+// Index == targetIndex by re-reading before committing (A). The enumerated LIST
+// (LobbyOptions) supplies targetIndex; this supplies the live cursor.
+type LobbyCursor struct {
+	MapIndex      int
+	MapCount      int
+	MapValid      bool
+	GametypeIndex int
+	GametypeCount int
+	GametypeValid bool
+}
+
+// LobbyCursorReader is an OPTIONAL capability a GameReader may implement to expose
+// the LIVE carousel cursor (LobbyCursor) for the player-hosting navigation. Paired
+// with LobbyEnumerator: the enumerator gives the option LIST + absolute indices,
+// this gives the live highlighted index so the runner navigates cursor-relative.
+// Called from the scraper loop goroutine only — same discipline as the other reads.
+type LobbyCursorReader interface {
+	// ReadLobbyCursor reads the live map + gametype select-list cursors. Returns a
+	// zero-Valid LobbyCursor when the widgets aren't readable (not on the create-game
+	// screens, tags not loaded) so the caller holds rather than navigating blind.
+	ReadLobbyCursor() LobbyCursor
+}

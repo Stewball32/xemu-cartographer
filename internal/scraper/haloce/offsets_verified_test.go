@@ -68,6 +68,22 @@ func TestRuntimeVerifiedOffsets(t *testing.T) {
 		// same offset the old s32 target_object_index used.
 		{"OffProjArmingTime", OffProjArmingTime, 0x1C},
 		{"OffProjDetonationTimer", OffProjDetonationTimer, 0x14},
+
+		// CE UI widget-instance model (RUNTIME-VERIFIED 2026-07-11, halo-offset-mapper
+		// docs/ce-menu-system-2026-07-11.md) — the LIVE menu-list cursor that closes
+		// the create-game map/gametype navigation. See widget.go.
+		{"OffUiWidgetBlockHeader", OffUiWidgetBlockHeader, 0x00},
+		{"OffUiWidgetDefTagHandle", OffUiWidgetDefTagHandle, 0x10},
+		{"OffUiWidgetDefDataPtr", OffUiWidgetDefDataPtr, 0x14},
+		{"OffUiWidgetSelectedIndex", OffUiWidgetSelectedIndex, 0x4C},
+		{"OffUiWidgetItemListPtr", OffUiWidgetItemListPtr, 0x50},
+		{"OffUiWidgetItemCount", OffUiWidgetItemCount, 0x54},
+		{"ConstUiWidgetHeaderFlag", ConstUiWidgetHeaderFlag, 0x80000000},
+		{"ConstUiWidgetBlockSize", ConstUiWidgetBlockSize, 0x68},
+		{"ConstUiWidgetHeapGVALo", ConstUiWidgetHeapGVALo, 0x81E00000},
+		{"ConstUiWidgetHeapGVAHi", ConstUiWidgetHeapGVAHi, 0x82000000},
+		// The cache-tag-entry handle field the widget block mirrors at +0x10.
+		{"OffTagHandle", OffTagHandle, 0x0C},
 	}
 
 	for _, tc := range cases {

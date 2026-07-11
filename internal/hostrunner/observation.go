@@ -77,6 +77,20 @@ type Observation struct {
 	// CardText is an optional hint for the blind map/gametype card screens. ""
 	// when unavailable; when a reader provides it, Classify prefers it.
 	CardText string
+
+	// LIVE create-game carousel cursors (the highlighted-card index + list length
+	// read directly from the CE menu widget system). *Valid is true only when the
+	// corresponding SELECT MAP / SELECT GAMETYPE list widget is active this read.
+	// These make card navigation cursor-relative + closed-loop: the runner presses
+	// toward *Cursor==target and confirms the re-read landed before committing (A),
+	// so no fixed default and any non-deterministic start is handled. Empty/false
+	// off the create-game screens (the card steps then hold, never press blind).
+	MapCursor           int
+	MapCursorCount      int
+	MapCursorValid      bool
+	GametypeCursor      int
+	GametypeCursorCount int
+	GametypeCursorValid bool
 }
 
 // Screen is the classified host-flow screen. The map/gametype select screens

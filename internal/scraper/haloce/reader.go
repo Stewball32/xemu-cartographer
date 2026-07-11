@@ -39,6 +39,14 @@ type Reader struct {
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
 
+	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
+	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
+	// a loaded UI cache (front-end session) but the heap block's absolute address
+	// is allocation-order-dependent, so ReadLobbyCursor caches the handle and
+	// re-scans the heap by handle each call. Cleared on entry to menu (front-end
+	// reload) by OnStateChange; nil until the first successful resolve. See widget.go.
+	lobbyCursorHandles map[string]uint32
+
 	// Diagnostic one-shot flags for the two readers under offset investigation
 	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
 	// empty on Xbox builds). Set true after the first call logs its raw

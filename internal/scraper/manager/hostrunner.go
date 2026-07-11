@@ -103,7 +103,30 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 	ro.MachineCount = len(r.gameData.Machines)
 	ro.PlayerCount = len(r.gameData.Players)
 	ro.TeamCount = distinctTeams(r.gameData)
+	r.fillLobbyCursor(gs, &ro)
 	return ro
+}
+
+// fillLobbyCursor projects the reader's LIVE create-game carousel cursors (CE
+// widget +0x4C/+0x54) into the readout. Gated to the front-end menu (gs ==
+// GameStateMenu) — the SELECT MAP / SELECT GAMETYPE screens are front-end menus in
+// BOTH the system-link and split-screen create paths, so this covers the live-nav
+// case while keeping the ~2 MiB UI-heap scan off the in-game 30 Hz hot path.
+// No-op when the bound reader can't read a cursor (title without a
+// LobbyCursorReader). Off the create-game screens the widgets read count 0 →
+// *Valid false, so the runner's card steps hold rather than navigating blind.
+// Loop-goroutine only (reads r.reader directly).
+func (r *runner) fillLobbyCursor(gs scraper.GameState, ro *hostrunner.ScraperReadout) {
+	if gs != scraper.GameStateMenu || r.reader == nil {
+		return
+	}
+	cur, ok := r.reader.(scraper.LobbyCursorReader)
+	if !ok {
+		return
+	}
+	c := cur.ReadLobbyCursor()
+	ro.MapCursor, ro.MapCursorCount, ro.MapCursorValid = c.MapIndex, c.MapCount, c.MapValid
+	ro.GametypeCursor, ro.GametypeCursorCount, ro.GametypeCursorValid = c.GametypeIndex, c.GametypeCount, c.GametypeValid
 }
 
 // stateInputInt coerces a StateInputs value (stored as its native memory width —
