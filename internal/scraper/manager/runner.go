@@ -247,6 +247,11 @@ type runner struct {
 	host           *hostrunner.Runner
 	hostPump       *vncinput.Pump
 	lastHostTickAt time.Time
+
+	// lastEnumAt throttles the create-game map/gametype carousel enumeration
+	// (enumerateLobby in hostrunner.go), decoupling it from the Ready poll cadence.
+	// Loop-goroutine only.
+	lastEnumAt time.Time
 }
 
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {

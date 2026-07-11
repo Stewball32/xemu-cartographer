@@ -140,18 +140,23 @@ func registerSelection() {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "both map and gametype must be chosen"})
 		}
 
-		// Validate against + derive nav Steps from the LIVE list; accept free-form
-		// when the instance isn't enumerable yet.
+		// Validate the pick against the LIVE list (reject maps/gametypes not on this
+		// disc); accept free-form when the instance isn't enumerable yet. Each list's
+		// Steps is the ABSOLUTE carousel index (position), which becomes the runner's
+		// navigation TARGET: the runner reads the live cursor (CE menu widget +0x4C)
+		// each tick and drives the carousel cursor-relative —
+		// presses = (target − liveCursor) mod count — confirming the re-read landed
+		// before pressing A, so any non-deterministic start (incl. wrap) is handled.
+		// When the list isn't enumerable, target stays 0 (the runner still closes the
+		// loop on the live cursor, just toward index 0).
+		mapSteps, gtSteps := 0, 0
 		list := liveMaps(name)
-		mapSteps, ok1 := 0, true
-		gtSteps, ok2 := 0, true
 		if list.Available {
-			mapSteps, ok1 = list.IndexOf(list.Maps, mapName)
-			gtSteps, ok2 = list.IndexOf(list.Gametypes, gametype)
-			if !ok1 {
+			var ok bool
+			if mapSteps, ok = list.IndexOf(list.Maps, mapName); !ok {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "map not available on this instance: " + mapName})
 			}
-			if !ok2 {
+			if gtSteps, ok = list.IndexOf(list.Gametypes, gametype); !ok {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "gametype not available on this instance: " + gametype})
 			}
 		}

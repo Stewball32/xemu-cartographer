@@ -32,6 +32,18 @@ type ScraperReadout struct {
 	CountdownActive bool
 	CountdownPaused bool
 	CardText        string
+
+	// LIVE create-game carousel cursors (CE widget +0x4C/+0x54), filled only while
+	// hosting the setup screens. *Valid is false when the widget isn't readable —
+	// the runner then holds rather than navigating on a stale index. See the
+	// LobbyCursor projection in scraper/manager buildHostReadout.
+	MapCursor           int
+	MapCursorCount      int
+	MapCursorValid      bool
+	GametypeCursor      int
+	GametypeCursorCount int
+	GametypeCursorValid bool
+	GametypeListLen     int
 }
 
 // Observation projects a ScraperReadout into the runner's Observation. Unknown
@@ -49,18 +61,25 @@ func (s ScraperReadout) Observation() Observation {
 		conn = Connection(s.GameConnection)
 	}
 	return Observation{
-		Fresh:           s.Fresh,
-		Tick:            s.Tick,
-		Phase:           phase,
-		MenuActive:      s.MenuActive,
-		Connection:      conn,
-		Map:             s.Map,
-		Gametype:        s.Gametype,
-		MachineCount:    s.MachineCount,
-		TeamCount:       s.TeamCount,
-		PlayerCount:     s.PlayerCount,
-		CountdownActive: s.CountdownActive,
-		CountdownPaused: s.CountdownPaused,
-		CardText:        s.CardText,
+		Fresh:               s.Fresh,
+		Tick:                s.Tick,
+		Phase:               phase,
+		MenuActive:          s.MenuActive,
+		Connection:          conn,
+		Map:                 s.Map,
+		Gametype:            s.Gametype,
+		MachineCount:        s.MachineCount,
+		TeamCount:           s.TeamCount,
+		PlayerCount:         s.PlayerCount,
+		CountdownActive:     s.CountdownActive,
+		CountdownPaused:     s.CountdownPaused,
+		CardText:            s.CardText,
+		MapCursor:           s.MapCursor,
+		MapCursorCount:      s.MapCursorCount,
+		MapCursorValid:      s.MapCursorValid,
+		GametypeCursor:      s.GametypeCursor,
+		GametypeCursorCount: s.GametypeCursorCount,
+		GametypeCursorValid: s.GametypeCursorValid,
+		GametypeListLen:     s.GametypeListLen,
 	}
 }

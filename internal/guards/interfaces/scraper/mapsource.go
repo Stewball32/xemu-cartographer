@@ -2,10 +2,10 @@ package scraper
 
 // MapOption is one selectable map (or gametype) enumerated LIVE from a specific
 // instance — the actual game/disc on that box, so modded discs' custom maps show
-// up. Steps is the D-pad distance from the map-select carousel's default-
-// highlighted card to this option, which the host runner navigates to apply the
-// pick. It's derived from the enumerated order (index), so it is only meaningful
-// alongside a live-read carousel.
+// up. Steps is the option's ABSOLUTE 0-based index (position) in the live carousel,
+// NOT a D-pad press count: the carousel start is non-deterministic, so navigating to
+// a pick is cursor-relative (presses = (Steps − liveCursorIndex) mod count) and must
+// be computed at nav time. See internal/scraper/haloce EnumerateLobby.
 type MapOption struct {
 	Name  string `json:"name"`
 	Steps int    `json:"steps"`

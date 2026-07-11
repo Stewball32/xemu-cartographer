@@ -285,6 +285,12 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			r.maybeEmitScenario(svc)
 		}
 
+		// Refresh the create-game map/gametype carousel enumeration (throttled)
+		// so /api/play/options serves the real per-instance lists. Runs in Ready
+		// because the source UI tags are only loaded while the front-end is up;
+		// keeps the last-known set when unavailable (mid-match).
+		r.enumerateLobby()
+
 		// Drive the player-hosting runner: navigate the CE menu → system-link
 		// host lobby, gated on the just-read state. The lobby flow lives entirely
 		// in Ready (menu / pregame / postgame), so this is where auto-hosting
