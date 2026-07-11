@@ -691,15 +691,29 @@ func (m *Manager) runSudo(args ...string) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("runSudo: no command")
 	}
-	parts := strings.Fields(m.cfg.PodmanCmd)
-	if len(parts) > 0 && filepath.Base(parts[len(parts)-1]) == "podman" {
-		parts = parts[:len(parts)-1]
-	}
-	full := make([]string, 0, len(parts)+len(args))
-	full = append(full, parts...)
-	full = append(full, args...)
+	full := append(sudoPrefix(m.cfg.PodmanCmd), args...)
 	cmd := exec.Command(full[0], full[1:]...)
 	return cmd.CombinedOutput()
+}
+
+// sudoPrefix extracts the privilege prefix from PodmanCmd: everything BEFORE the
+// "podman" element. It drops "podman" AND any podman-specific flags that follow
+// it (e.g. --runtime=crun), so a non-podman command (rm) isn't handed to podman.
+// A bare "podman" (rootless) yields no prefix — the command runs directly, which
+// is correct since rootless podman doesn't produce root-owned files.
+//
+// Fixes a bug where the previous "drop only a trailing podman" logic left
+// `--runtime=crun` in place for the default PodmanCmd "sudo -n podman
+// --runtime=crun", causing runSudo to invoke `sudo podman --runtime=crun rm -rf`
+// (podman rejects `rm -rf`) and orphan every removed instance's bind-mount files.
+func sudoPrefix(podmanCmd string) []string {
+	parts := strings.Fields(podmanCmd)
+	for i, p := range parts {
+		if filepath.Base(p) == "podman" {
+			return parts[:i:i]
+		}
+	}
+	return parts
 }
 
 // containerOwnedPaths returns every host-side path that podman + container

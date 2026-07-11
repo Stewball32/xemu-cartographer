@@ -145,3 +145,31 @@ controller even on a keyboard-bound instance.
   `hostrunner-probe -sock <qmp> -url <ws> -expect system_link -key a` performs the gated tap +
   verifies. Full runner wiring (tick from the scraper loop with cache Observations + per-
   instance vncinput dial + WS `SinkFunc`) is the remaining integration glue.
+- **2026-07-10 — live container confirmations (provisioned via the app's own Manager).**
+  Brought up a throwaway `livetest` pair with `cmd/podman-harness` (drives `internal/podman`
+  Manager.Create/Start over passwordless `sudo podman`; BrowserWeb=3603, QMP at
+  `containers/xemu/qmp/livetest.sock`).
+  - **2b Firefox cert-fix — PASS.** `certutil -L` shows `xemu-cartographer dev CA` (`C,,`) in
+    the profile's cert9.db; the enterprise policy installs `/xemu-cert/ca.pem`; xemu HTTPS:3601
+    serves the SAN-pinned leaf (`CN=localhost`, issuer `CN=xemu-cartographer dev CA`); a fresh
+    Firefox kiosk reaches the xemu Selkies view with **no "risky connection" interstitial**
+    (screenshot) and **zero SEC_ERROR** in the logs.
+  - **2a vncinput RFB — PARTIAL.** `cmd/vncinput-poc` completed the RFB-3.8 handshake against
+    the live container websockify (`ws://127.0.0.1:3603/websockify`) and delivered keys; xemu
+    reacted (process exited), so input DOES traverse the real path (RFB → browser Xvnc →
+    Firefox → Selkies → xemu). No clean guest-memory delta because Halo never booted (below).
+  - **2c runner gated press — BLOCKED** by the same boot issue (runner logic already proven
+    live on ce-nav).
+  - **Blocker: the container's Xbox guest hangs in the 2BL/Cerbios boot loop** — EIP loops in
+    `0x1b–0x20xxxx`, the kernel's `0x80000000` mapping never appears. Ruled out: HDD/overlay
+    (verified 128 GiB / 8.42 GiB Halo install, backing resolves), net (disabled cleanly), GL
+    (hang is pre-video). Likely an **eeprom ↔ `_default.qcow2` HDD-lock pairing gap** the
+    provisioning doesn't resolve (neither the image's auto-eeprom nor the host `eeprom-ceprof.bin`
+    boots it). Also **image drift**: the current `lscr.io/linuxserver/xemu` uses **openbox**, not
+    the **labwc** autostart `Manager.Create` writes — so xemu's `-qmp` (and the `04-patch-startwm`
+    GPU-fallback) never apply (I injected `-qmp` into the openbox autostart by hand).
+  - **Bug found + FIXED:** with the default `PodmanCmd="sudo -n podman --runtime=crun"`,
+    `runSudo` failed to strip `podman` (it only dropped a *trailing* `podman`), so
+    `removeContainerFiles`/`CleanupOrphans` ran `sudo podman rm -rf` (rejected) and orphaned every
+    removed instance's bind-mount files. Fixed with `sudoPrefix` (+ unit tests). Instance torn
+    down; box left clean; ce-nav untouched.
