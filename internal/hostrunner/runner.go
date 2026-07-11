@@ -2,6 +2,7 @@ package hostrunner
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,6 +48,12 @@ type Runner struct {
 	started   bool
 	startAt   time.Time
 	lastPhase Phase
+
+	// ready is the player-scoped start request (requirement 6 made live): the
+	// /api/play/ready route flips it so the runner presses start once the native
+	// preconditions pass, even under the default arm-only policy. Atomic because
+	// a request goroutine writes it while the tick goroutine reads it.
+	ready atomic.Bool
 }
 
 // New builds a Runner. nil input/sink default to no-ops; empty config fields get
@@ -84,6 +91,31 @@ func (r *Runner) Arbiter() *Arbiter { return r.arb }
 
 // Sequence exposes the lobby sequence (for tests / inspection).
 func (r *Runner) Sequence() *Sequence { return r.seq }
+
+// SetReady sets the player-scoped start request. true = press start once native
+// conditions pass (arm+start); false = stay armed in the lobby (arm-only).
+func (r *Runner) SetReady(v bool) { r.ready.Store(v) }
+
+// Ready reports the current player-scoped start request.
+func (r *Runner) Ready() bool { return r.ready.Load() }
+
+// SetSelection records the player's map / gametype pick when the runner's
+// Selector is an *AtomicSelector (the live decision-source). Returns false when
+// the runner was built with a non-mutable selector. v1 records intent — the
+// sequence still presses the default card (see AtomicSelector's note).
+func (r *Runner) SetSelection(mapName, gametypeName string) bool {
+	sel, ok := r.cfg.Selector.(*AtomicSelector)
+	if !ok {
+		return false
+	}
+	sel.Set(Pick{Name: mapName}, Pick{Name: gametypeName})
+	return true
+}
+
+// Selection returns the runner's current map / gametype picks (intent).
+func (r *Runner) Selection() (mapPick, gametypePick Pick) {
+	return r.cfg.Selector.MapPick(), r.cfg.Selector.GametypePick()
+}
 
 // Tick decides + executes + broadcasts one step. It stands down (no input) when
 // an admin holds authority or the runner is disabled, and never acts on a stale
@@ -135,8 +167,10 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 
 	// Sequence complete = settled in the lobby with the gametype selected (armed).
 	r.armed = true
-	if r.cfg.Start.Mode != ArmAndStart {
-		return wait("armed; arm-only — awaiting operator/admin start")
+	// arm+start when the policy says so OR a player has hit "ready" in the play
+	// tab — the native predicates below still gate the actual start press.
+	if r.cfg.Start.Mode != ArmAndStart && !r.ready.Load() {
+		return wait("armed; arm-only — awaiting operator/admin/player start")
 	}
 	if ok, why := r.cfg.Start.Evaluate(obs); !ok {
 		return wait("armed; holding start: " + why)

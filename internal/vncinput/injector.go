@@ -183,6 +183,28 @@ func (i *Injector) ChordHold(d time.Duration, labels ...string) error {
 	return firstErr
 }
 
+// SendPointer sends one RFB PointerEvent (§7.5.5): message-type=5, button-mask,
+// then x/y as big-endian u16s in framebuffer coordinates. The admin's noVNC
+// canvas focuses xemu's Selkies view with a pointer event; the injector is
+// otherwise KeyEvent-only, so this exists solely to reproduce that focus grab —
+// Selkies forwards keys only when its canvas has DOM focus (ADR-0003 Log).
+func (i *Injector) SendPointer(x, y uint16, buttonMask uint8) error {
+	return i.write(pointerEvent(buttonMask, x, y))
+}
+
+// FocusClick taps the left mouse button at a benign top-left coordinate to give
+// the container's Selkies canvas DOM focus so subsequent KeyEvents register.
+// Best-effort: coordinate (4,4) is the empty screen corner in CE menus, so the
+// click can't activate a centered menu control. Called once by the input pump on
+// (re)connect (see pump.go).
+func (i *Injector) FocusClick() error {
+	if err := i.SendPointer(4, 4, 0x01); err != nil { // button 1 down
+		return err
+	}
+	time.Sleep(20 * time.Millisecond)
+	return i.SendPointer(4, 4, 0x00) // release
+}
+
 // Close releases all held keys best-effort, then closes the connection.
 func (i *Injector) Close() error {
 	err := i.ws.Close(websocket.StatusNormalClosure, "")
@@ -202,6 +224,17 @@ func keyEvent(keysym Keysym, down bool) []byte {
 		b[1] = 1
 	}
 	binary.BigEndian.PutUint32(b[4:], keysym)
+	return b
+}
+
+// pointerEvent builds an RFB PointerEvent message (§7.5.5): type=5, button-mask,
+// x-position (BE u16), y-position (BE u16).
+func pointerEvent(buttonMask uint8, x, y uint16) []byte {
+	b := make([]byte, 6)
+	b[0] = 5
+	b[1] = buttonMask
+	binary.BigEndian.PutUint16(b[2:], x)
+	binary.BigEndian.PutUint16(b[4:], y)
 	return b
 }
 

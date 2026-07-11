@@ -244,3 +244,43 @@ controller even on a keyboard-bound instance.
     `WaitForQMP` (the real fix); `DVDPath`/`CONTAINERS_DVD_PATH` (an independent, generically-
     useful knob to boot Halo from an ISO); and `hostrunner-probe -readvia qmp` (rootless reads).
     deftst torn down; `_default.qcow2` perms restored; box left clean.
+- **2026-07-10 — INTEGRATION GLUE landed: the runner is now wired live into the server.** The
+  state-aware runner is no longer a standalone component — it's driven per instance from the
+  scraper loop and exposes a player-scoped API. What shipped:
+  - **Tick from the scraper loop.** `manager.runner.tickHost` (in `manager/hostrunner.go`) builds a
+    `hostrunner.ScraperReadout` from LOOP-OWNED state only — the reader's `LastStateInputs`
+    (`main_menu` + the new `game_connection`, added to the CE reader's `ReadGameState`) and the
+    loop's working `GameData` copy — then calls `Runner.Tick` from `runReady`/`runLive`. So the
+    runner never touches a GameReader off-goroutine; `game_connection`'s low-GVA translation rides
+    the existing bind-time `Init`/`RefreshLowHVA` discipline (re-Init on every XBE swap via
+    `runIdle`). Throttled to ~2.5 Hz (`hostTickMinInterval`) so the 30 Hz Live poll doesn't flood.
+  - **vncinput attaches per instance.** `internal/vncinput.Pump` — an async command queue owning one
+    `*Injector` on its own goroutine (lazy dial + reconnect + focus-click on connect via the new
+    `SendPointer`/`FocusClick` RFB PointerEvent, addressing the Selkies DOM-focus gotcha). The
+    Manager dials it to the container's `ws://127.0.0.1:<BrowserWeb>/websockify` (resolved through
+    the podman manager) on `Start` and Closes it on `Stop`, tied to discovery add/remove. Keeps the
+    Injector single-goroutine while never blocking the scraper loop on RFB writes.
+  - **WS stream → admin room.** A `hostrunner.SinkFunc` (built in `cmd/server/hostrunner.go`)
+    marshals each `RunnerEvent` into a `"host_runner"`-typed `websocket.Message` and
+    `svc.WS.SendToRoomRaw("admin", …)` — player intents, emitted keys, native box/team counts.
+  - **Arbitration + player API.** `scraperroutes.SetHostControl` now wired (`GET`/`POST
+    /api/admin/scraper/{name}/host` = run/override/disable). New player-scoped `/api/play/*` group
+    (RequireAuth, NOT admin) resolves the caller's container via `gamertags.SanitizedForUser` +
+    `scraperiface.MatchContainer(Membership())` (admin `?container=` override): `current`, `options`
+    (CE map/gametype catalog + selection), `selection`, `ready`/`unready` (arm+start toggle),
+    `request`/`teardown`. Player actions touch ONLY player-intent (ready/selection) and are refused
+    (409) when the runner isn't runner-driven — an admin takeover always wins. Gated behind
+    `HOSTRUNNER_ENABLED` (default off); the admin kiosk + VNC keyboard path is untouched.
+  - **Pre-existing router bug fixed.** The `host.go` `POST /{name}/host` collided with the earlier
+    `POST /scraper/stop/{name}` in Go's ServeMux (both match `/stop/host` → panic at registration),
+    so the full server had been un-bootable since the runner commit (prior live tests used probes,
+    not `serve`). Renamed the scraper stop route to the consistent `POST /{name}/stop` (no frontend
+    caller; e2e mocks already expected that form).
+  - **Validation.** Container-free logic is unit-tested (pump dial/reconnect/queue, readout builder
+    + team/state-input helpers, runner ready/selection overrides, play resolve/catalog; race-clean).
+    Live process-level smoke: the server now BOOTS with all routes mounted, and authed requests
+    exercise the whole auth→resolve→status path (idle `current`, the 13-map/7-gametype catalog,
+    404 on unmatched control, host-control `Status`, arbitration validation). The actual
+    container-drive step (runner ticks → presses → guest state change) needs `sudo podman` +
+    root memory reads, which this session's sandbox blocked; those primitives were already proven
+    live on this branch (2a/2c above).

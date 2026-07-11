@@ -285,6 +285,12 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			r.maybeEmitScenario(svc)
 		}
 
+		// Drive the player-hosting runner: navigate the CE menu → system-link
+		// host lobby, gated on the just-read state. The lobby flow lives entirely
+		// in Ready (menu / pregame / postgame), so this is where auto-hosting
+		// happens. Throttled internally; a no-op when host-running is disabled.
+		r.tickHost(gs, tick)
+
 		r.broadcastPoll(svc)
 		r.sleepOrCancel(readyPollInterval)
 	}
@@ -378,6 +384,11 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			r.publishGameData(snap)
 			r.maybeEmitScenario(svc)
 		}
+
+		// Tick the host runner during a live match too (throttled). In-game it
+		// just reports "match live" on the observable stream — the auto-host loop
+		// re-engages once the match ends and the loop returns to Ready.
+		r.tickHost(gs, tick)
 
 		// One state_update per fresh engine tick (~30Hz).
 		r.broadcastPoll(svc)

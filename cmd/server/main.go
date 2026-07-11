@@ -11,6 +11,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
@@ -18,6 +19,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
 	overlaysroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
+	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
@@ -67,6 +69,10 @@ func main() {
 	var hub *ws.Hub
 	var watcherCancel context.CancelFunc
 	var scrMgr *scrapermgr.Manager
+	// podMgr is set below only when CONTAINERS_ENABLED; the host-runner URL
+	// resolver reads it at call time (through a getter) so it can be wired before
+	// podman is constructed.
+	var podMgr *podman.Manager
 
 	// Register record lifecycle hooks (callback registration, fires later).
 	hooks.RegisterAll(app)
@@ -111,6 +117,23 @@ func main() {
 		// reads live container rosters to route a player to their kiosk.
 		routes.SetScraper(scrMgr)
 
+		// Player-hosting (ADR-0003): the host-runner Registry owns the per-instance
+		// state-aware runners and fans their observable stream to the admin WS room.
+		// It's wired to both the admin arbitration endpoints (/api/admin/scraper/
+		// {name}/host) and the player-scoped /api/play/* group. The Manager attaches
+		// a runner + vncinput input pump per instance on Start when HOSTRUNNER_ENABLED
+		// — resolving each container's websockify URL through the podman manager
+		// (nil-safe: no URL → runner ticks + emits state but presses nothing).
+		hostReg := hostrunner.NewRegistry(newHostRunnerSink(svc))
+		scraperroutes.SetHostControl(hostReg)
+		playroutes.SetScraper(scrMgr)
+		playroutes.SetHostControl(hostReg)
+		scrMgr.SetHostRunner(
+			hostReg,
+			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),
+			envBool("HOSTRUNNER_ENABLED", false),
+		)
+
 		// Capture-policy loader: read the persisted (instance, class) rows
 		// now so runners started immediately after this (auto-start via the
 		// discovery watcher, manual /api/admin/scraper/start) inherit the
@@ -136,6 +159,7 @@ func main() {
 			if err != nil {
 				return err
 			}
+			podMgr = mgr // host-runner URL resolver reads this to find websockify ports
 			containers.SetManager(mgr)
 			containers.SetServices(svc)
 

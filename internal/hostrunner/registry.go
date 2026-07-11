@@ -18,6 +18,15 @@ type Status struct {
 	TeamCount       int      `json:"team_count"`
 	CountdownActive bool     `json:"countdown_active"`
 	ReadyToStart    bool     `json:"ready_to_start"`
+
+	// Map / Gametype are the READ (currently-loaded) values from the last
+	// observation; SelectedMap / SelectedGametype are the player's picked intent
+	// off the runner's selector; Ready is the player's arm+start request.
+	Map              string `json:"map,omitempty"`
+	Gametype         string `json:"gametype,omitempty"`
+	SelectedMap      string `json:"selected_map,omitempty"`
+	SelectedGametype string `json:"selected_gametype,omitempty"`
+	Ready            bool   `json:"ready"`
 }
 
 // Registry owns the per-instance runners and is itself the runners' EventSink:
@@ -87,6 +96,10 @@ func (reg *Registry) Status(instance string) Status {
 	st := Status{Instance: instance, Present: present}
 	if present {
 		st.Authority = r.Arbiter().Authority().String()
+		st.Ready = r.Ready()
+		mp, gt := r.Selection()
+		st.SelectedMap = mp.Name
+		st.SelectedGametype = gt.Name
 	}
 	if hasEv {
 		st.Screen = ev.Screen
@@ -94,6 +107,8 @@ func (reg *Registry) Status(instance string) Status {
 		st.LastIntent = ev.Intent
 		st.LastKeys = ev.Keys
 		st.Tick = ev.Tick
+		st.Map = ev.Map
+		st.Gametype = ev.Gametype
 		st.MachineCount = ev.MachineCount
 		st.TeamCount = ev.TeamCount
 		st.CountdownActive = ev.CountdownActive
@@ -103,6 +118,27 @@ func (reg *Registry) Status(instance string) Status {
 		}
 	}
 	return st
+}
+
+// SetReady sets an instance's player-scoped start request. Returns false when no
+// runner is attached.
+func (reg *Registry) SetReady(instance string, ready bool) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	r.SetReady(ready)
+	return true
+}
+
+// SetSelection records the player's map / gametype pick for an instance. Returns
+// false when no runner is attached or its selector isn't mutable.
+func (reg *Registry) SetSelection(instance, mapName, gametypeName string) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	return r.SetSelection(mapName, gametypeName)
 }
 
 // SetAuthority sets an instance's arbitration state. Returns false if there's no

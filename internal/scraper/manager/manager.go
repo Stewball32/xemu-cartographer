@@ -29,8 +29,10 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
@@ -63,6 +65,17 @@ type Manager struct {
 	policyMu sync.RWMutex
 	policies []capture.Policy
 	reloadMu sync.Mutex
+
+	// Host-runner wiring (player-hosting, ADR-0003). Set once at boot via
+	// SetHostRunner before any Start. When hostEnabled, each Start attaches a
+	// state-aware hostrunner.Runner (ticked from the scraper loop goroutine) and
+	// dials a per-instance vncinput.Pump as its input channel, resolving the
+	// container's websockify URL via hostURL. All three are read-only after boot
+	// so no lock is needed. hostReg may be non-nil while hostEnabled is false —
+	// the control/play endpoints then just report "no runner attached".
+	hostReg     *hostrunner.Registry
+	hostURL     func(name string) (wsURL string, ok bool)
+	hostEnabled bool
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -86,6 +99,20 @@ func (m *Manager) Close() {
 	if m.agg != nil {
 		m.agg.stop()
 	}
+}
+
+// SetHostRunner wires the player-hosting subsystem (ADR-0003). reg owns the
+// per-instance runners + fans the observable stream to the admin WS room;
+// urlForInstance resolves a container name to its websockify URL (nil / not-ok →
+// the runner attaches with no input channel, ticking + emitting state but
+// pressing nothing); enabled gates whether runners are attached at all. Call
+// once before any Start (i.e. before the discovery watcher runs). Passing a
+// non-nil reg with enabled=false keeps the control/play endpoints functional
+// (they report "no runner attached") without auto-driving any instance.
+func (m *Manager) SetHostRunner(reg *hostrunner.Registry, urlForInstance func(name string) (string, bool), enabled bool) {
+	m.hostReg = reg
+	m.hostURL = urlForInstance
+	m.hostEnabled = enabled
 }
 
 // Start spins up a runner for the named instance. It opens the xemu instance
@@ -150,8 +177,41 @@ func (m *Manager) Start(name, sock string) error {
 		Snapshot: &hostSummary{Instance: name, Phase: PhaseIdle},
 	})
 
+	// Attach the player-hosting runner (ADR-0003). Created before the loop
+	// goroutine starts so r.host / r.hostPump are visible to it without a race
+	// (goroutine start is a happens-before edge). The runner is TICKED from the
+	// scraper loop goroutine (see tickHost in loop.go) so it never touches a
+	// GameReader from another goroutine; its input pump does the blocking RFB
+	// writes off the loop goroutine.
+	m.attachHostRunner(r)
+
 	go r.loop(m.svc)
 	return nil
+}
+
+// attachHostRunner builds and registers the per-instance host runner + its
+// vncinput input pump when host-running is enabled. No-op when disabled or
+// unwired. Called from Start before the loop goroutine launches.
+func (m *Manager) attachHostRunner(r *runner) {
+	if !m.hostEnabled || m.hostReg == nil {
+		return
+	}
+	var input hostrunner.Input
+	if m.hostURL != nil {
+		if url, ok := m.hostURL(r.name); ok && url != "" {
+			// Pump lifetime is bound to the runner's context (cancelled on Stop);
+			// Stop also Closes it explicitly so teardown blocks on the goroutine.
+			pump := vncinput.NewPump(r.ctx, url)
+			r.hostPump = pump
+			input = pump // *vncinput.Pump satisfies hostrunner.Input
+		}
+	}
+	hr := hostrunner.New(hostrunner.Config{
+		Instance: r.name,
+		Selector: hostrunner.NewAtomicSelector(hostrunner.Pick{}, hostrunner.Pick{}),
+	}, input, m.hostReg)
+	r.host = hr
+	m.hostReg.Register(r.name, hr)
 }
 
 // Stop cancels the named runner's context, closes its xemu.Instance, and
@@ -171,6 +231,17 @@ func (m *Manager) Stop(name string) error {
 	}
 	r.cancel()
 	<-r.done
+
+	// Tear down the host runner + input pump after the loop goroutine has
+	// exited (so no in-flight tickHost touches r.host). Registry.Remove drops the
+	// runner + its last event; pump.Close blocks until its goroutine stops.
+	if m.hostReg != nil {
+		m.hostReg.Remove(name)
+	}
+	if r.hostPump != nil {
+		_ = r.hostPump.Close()
+	}
+
 	m.agg.post(summaryUpdate{Instance: name, Removed: true})
 	return nil
 }

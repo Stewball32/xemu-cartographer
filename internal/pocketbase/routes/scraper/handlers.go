@@ -78,10 +78,18 @@ func init() {
 			return e.JSON(http.StatusOK, st)
 		})
 
-		// POST /api/admin/scraper/stop/{name} — idempotent.
+		// POST /api/admin/scraper/{name}/stop — idempotent.
 		// Returns 204 whether the runner was found or not (Manager.Stop never
 		// errors on unknown names; matches container Stop semantics).
-		Group.POST("/stop/{name}", func(e *core.RequestEvent) error {
+		//
+		// Path shape is {name}/stop (not the earlier /stop/{name}) so it's
+		// consistent with {name}/inspect and {name}/host — and, critically, so
+		// POST {name}/stop doesn't collide with POST {name}/host in Go's
+		// ServeMux (POST /stop/{name} and POST /{name}/host both match
+		// /stop/host, which panics the router at registration). No frontend
+		// calls this route (scraper start/stop are discovery/curl-driven); the
+		// e2e mocks already expect the {name}/stop form.
+		Group.POST("/{name}/stop", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")
 			if name == "" {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})

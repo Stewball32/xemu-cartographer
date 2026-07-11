@@ -17,6 +17,12 @@ type RunnerEvent struct {
 	Keys   []string `json:"keys,omitempty"`
 	Reason string   `json:"reason,omitempty"`
 
+	// Map / Gametype are the READ (currently-loaded) values from the observation
+	// — what the admin stream shows the box is actually on, distinct from the
+	// player's selected intent (which the play API reads off the runner).
+	Map      string `json:"map,omitempty"`
+	Gametype string `json:"gametype,omitempty"`
+
 	// Native start conditions — READ, never controlled — always surfaced so the
 	// UI can show why start is (not) happening.
 	MachineCount    int  `json:"machine_count"`
@@ -48,6 +54,8 @@ func buildEvent(instance string, obs Observation, auth Authority, kind string, a
 		Intent:          act.Intent,
 		Keys:            act.Keys,
 		Reason:          act.Reason,
+		Map:             obs.Map,
+		Gametype:        obs.Gametype,
 		MachineCount:    obs.MachineCount,
 		TeamCount:       obs.TeamCount,
 		PlayerCount:     obs.PlayerCount,

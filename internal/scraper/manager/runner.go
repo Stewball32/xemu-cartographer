@@ -9,8 +9,10 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
@@ -226,6 +228,17 @@ type runner struct {
 	// Owned for the runner's lifetime; closed in the loop's shutdown
 	// defer.
 	sinks *sinkManager
+
+	// Host-runner (player-hosting, ADR-0003). host is the state-aware auto-host
+	// runner, ticked from the loop goroutine (tickHost in hostrunner.go); nil
+	// when host-running is disabled. hostPump is its vncinput input channel
+	// (nil when no websockify URL resolved). lastHostTickAt throttles ticks so
+	// the observable stream + input re-evaluation stay bounded. All three are
+	// set at Start before the loop launches and read only from the loop
+	// goroutine (hostPump also closed from Stop after the loop exits).
+	host           *hostrunner.Runner
+	hostPump       *vncinput.Pump
+	lastHostTickAt time.Time
 }
 
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {

@@ -102,9 +102,20 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	}
 	gameCanScore, _ := mem.ReadU32At(gameCanScoreHVA)
 
+	// game_connection (0 menu/SP, 1 system-link, 2 hosting, 3 film) drives the
+	// host-runner's lobby state machine (internal/hostrunner) — surfaced through
+	// LastStateInputs so the integration adapter reads it off the loop goroutine
+	// without a game-specific coupling. Best-effort: a failed read leaves it 0
+	// (menu), which the runner classifies as ScreenMainMenu, never a false lobby.
+	var gameConnection uint16
+	if hva, e := inst.LowHVA(AddrGameConnection); e == nil {
+		gameConnection, _ = mem.ReadU16At(hva)
+	}
+
 	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore)
 	r.lastStateInputs = scraper.StateInputs{
 		"main_menu":               mainMenu,
+		"game_connection":         gameConnection,
 		"initialized":             initialized,
 		"active":                  active,
 		"paused":                  paused,
