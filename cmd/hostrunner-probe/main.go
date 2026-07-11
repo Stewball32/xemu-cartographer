@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
@@ -47,6 +48,8 @@ func main() {
 	url := flag.String("url", "", "optional container websockify URL — when set, actually taps via vncinput")
 	expectStr := flag.String("expect", "system_link", "screen the press is gated on (main_menu/system_link/hosting/lobby)")
 	key := flag.String("key", "a", "vncinput label to tap when gated-ok (a/y/b/Up/Down/...)")
+	readVia := flag.String("readvia", "proc", "state read path: 'proc' (/proc/pid/mem, needs root/ptrace) or 'qmp' (memsave, rootless-container-safe)")
+	memsaveDir := flag.String("memsave-dir", "", "with -readvia qmp: the CONTAINER-side dir xemu writes memsave files to (e.g. /qmp); defaults to the socket's dir (host-rig case)")
 	flag.Parse()
 
 	expect, ok := screens[*expectStr]
@@ -54,7 +57,22 @@ func main() {
 		log.Fatalf("unknown -expect %q", *expectStr)
 	}
 
-	obs := readObservation(*sock)
+	// readObs picks the read path: /proc (production, needs root) or QMP memsave
+	// (harness/rootless container — no ptrace). readDir is always the socket's
+	// host-side dir; writeDir is where xemu writes the dump (container view).
+	readObs := func() hostrunner.Observation {
+		if *readVia == "qmp" {
+			readDir := filepath.Dir(*sock)
+			writeDir := *memsaveDir
+			if writeDir == "" {
+				writeDir = readDir
+			}
+			return readObservationQMP(*sock, writeDir, readDir)
+		}
+		return readObservation(*sock)
+	}
+
+	obs := readObs()
 	fmt.Printf("== hostrunner-probe ==\n")
 	fmt.Printf("read: fresh=%v phase=%s menu_active=%v game_connection=%d map=%q gametype=%q machines=%d\n",
 		obs.Fresh, obs.Phase, obs.MenuActive, obs.Connection, obs.Map, obs.Gametype, obs.MachineCount)
@@ -88,7 +106,7 @@ func main() {
 		return
 	}
 	time.Sleep(700 * time.Millisecond)
-	after := readObservation(*sock)
+	after := readObs()
 	fmt.Printf("[verify] game_connection %d → %d, screen %s → %s\n",
 		obs.Connection, after.Connection, hostrunner.Classify(obs), hostrunner.Classify(after))
 }

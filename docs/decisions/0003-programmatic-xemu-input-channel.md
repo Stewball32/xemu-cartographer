@@ -173,3 +173,43 @@ controller even on a keyboard-bound instance.
     `removeContainerFiles`/`CleanupOrphans` ran `sudo podman rm -rf` (rejected) and orphaned every
     removed instance's bind-mount files. Fixed with `sudoPrefix` (+ unit tests). Instance torn
     down; box left clean; ce-nav untouched.
+- **2026-07-10 (cont.) — both blockers FIXED; 2a + 2c now PASS on a freshly-provisioned instance.**
+  - **`-qmp` autostart (CRITICAL) — FIXED + CONFIRMED.** `Manager.Create` now writes the xemu
+    launch (carrying `-qmp unix:/qmp/<name>.sock`) into **both** the openbox (X11) *and* labwc
+    (Wayland) autostart paths (`writeXemuAutostart`), so whichever WM the current image runs, the
+    flag fires — robust to the openbox↔labwc drift instead of hard-pinning either. Added a loud
+    provisioning assert: `Start` calls `WaitForQMP` (75 s) and errors if the bind-mounted socket
+    never appears. Verified live: the freshly-provisioned container's QMP socket came up and the
+    scraper's read path read live CE globals through it. (`TestXemuAutostartCarriesQMP` guards both.)
+  - **Halo boot hang — ROOT-CAUSED + FIXED.** The cause was **not** GL or a code bug: a real
+    (HDD-**locked**) Halo disk only unlocks in 2BL/Cerbios with its **paired eeprom (HDDKey)**, and
+    the provisioning seeded **no eeprom** at all (neither `internal/podman` nor the init scripts) —
+    so xemu self-generated a **random** eeprom whose key never matches, and the guest loops in
+    2BL forever (the exact reported symptom). Proven by A/B: `hdd-ceprof` + a random eeprom hangs;
+    `hdd-ceprof` + its paired `eeprom-ceprof.bin` boots to the CE main menu. **Fix:** new
+    `Config.RootEeprom` (env `CONTAINERS_ROOT_EEPROM`) — `seedEeprom` copies the root's paired
+    eeprom into `<config>/.local/share/xemu/xemu/eeprom.bin` at create time (idempotent; abs or
+    relative to SharedDir; no-op when unset for an unlocked root). Also added `Config.DVDPath`
+    (env `CONTAINERS_DVD_PATH`) to bind-mount a Halo ISO at `/game.iso` for disc boot. **The
+    shipped `_default.qcow2` still needs a matching eeprom (or replacement with a known-good
+    bootable Halo disk) — that pairing is the operator's to supply via `CONTAINERS_ROOT_EEPROM`.**
+    Confirmed end-to-end: `Manager.Create` with `RootEeprom` set (zero manual steps) boots CE to
+    the main menu — kernel `0x80000000` maps (`deadbeef`), `main_menu=1`, `game_connection=0`,
+    full-screen HALO menu screenshot. (`TestSeedEeprom` guards seed/idempotency/path-resolution.)
+  - **2a vncinput RFB memory-delta — PASS.** With the Selkies canvas focused (one RFB
+    PointerEvent) the injector's KeyEvents drive the live game: screenshot-verified menu
+    navigation (Down×3 → GAME DEMOS, Up → MULTIPLAYER, A → submenu, team toggle Red→Blue) and a
+    clean **fixed-global memory delta — `game_connection` 0→2** (menu → hosting) read back over
+    QMP as the runner navigated into a split-screen host lobby. **Focus gotcha:** Selkies only
+    forwards keys when its canvas has DOM focus; a pointer click focuses it and focus persists
+    across RFB reconnects. The `vncinput` injector is KeyEvent-only (no PointerEvent) — a runner
+    that starts cold may need a focus-click first (follow-up).
+  - **2c hostrunner gated press — PASS (end-to-end).** Added a **QMP-memsave read mode** to
+    `cmd/hostrunner-probe` (`-readvia qmp -memsave-dir /qmp`): memsave needs no ptrace, so the
+    probe reads a **rootless** container's memory where the `/proc/<pid>/mem` path is blocked
+    (YAMA `ptrace_scope=1` denies a uid-1000 non-ancestor even at the same uid; production reads
+    `/proc` as root). Demonstrated the full read→classify→gate→act→verify: the gate **blocks** on
+    a wrong `-expect` ("expected main_menu, observed hosting — not pressing") and **taps** on the
+    right one, firing a single A press through `internal/vncinput`, with the verify confirming
+    `game_connection` **0→2** (main_menu → hosting). livetest torn down; test-only shared disks
+    removed; `_default.qcow2` perms restored; box left clean.

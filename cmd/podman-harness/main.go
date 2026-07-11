@@ -53,7 +53,11 @@ func cfg() podman.Config {
 		PortStride:     portStride,
 		HostIP:         "localhost",
 		PodmanCmd:      podmanCmd,
-		RootHDD:        "_default.qcow2",
+		// Overridable for live tests via env: the app default root (_default.qcow2)
+		// may be unbootable; point at a known-good disk + its DVD when needed.
+		RootHDD:        envOr("HARNESS_ROOT_HDD", "_default.qcow2"),
+		RootEeprom:     os.Getenv("HARNESS_ROOT_EEPROM"),
+		DVDPath:        os.Getenv("HARNESS_DVD_PATH"),
 		QemuImgCmd:     "qemu-img",
 		SetConsoleName: false, // cosmetic; skip the FUSE/pyfatx dependency for the throwaway
 		Encoder:        "x264enc",
@@ -163,6 +167,13 @@ func raw(args []string) {
 	if err := c.Run(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 func fatal(what string, err error) {

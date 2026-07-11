@@ -27,6 +27,11 @@ type Config struct {
 	PortStride     int
 	HostIP         string // IP/hostname for remote access; defaults to "localhost"
 
+	// DVDPath is an optional host path to a game ISO mounted read-only into each
+	// xemu container (at containerDVDPath). Empty = no DVD. Needed for root HDDs
+	// that boot a game from disc rather than from the HDD install.
+	DVDPath string
+
 	// PodmanCmd is the command (with optional leading args) used to invoke
 	// podman. Default "podman" runs rootless under the server user.
 	// Set to e.g. "sudo -n podman" to escalate when device passthrough is
@@ -37,6 +42,17 @@ type Config struct {
 	// Halo-installed disk) inside SharedDir/hdds. Every per-instance overlay
 	// uses it as a copy-on-write backing file. Default "_default.qcow2".
 	RootHDD string
+
+	// RootEeprom is the eeprom (256 B) paired with RootHDD's HDDKey. A real
+	// Xbox Halo disk is HDD-LOCKED: 2BL/Cerbios can only unlock it with the
+	// matching eeprom, so each instance must be seeded with this file — WITHOUT
+	// it xemu generates a RANDOM eeprom whose key does not match, the disk never
+	// unlocks, and the guest hangs in the Cerbios/2BL boot loop (never reaching
+	// Halo). Seeded into <config>/.local/share/xemu/xemu/eeprom.bin at create
+	// time (idempotent — never clobbers an existing per-instance eeprom).
+	// Path is absolute or relative to SharedDir. Empty = let xemu self-generate
+	// (only viable for an UNLOCKED root). Env CONTAINERS_ROOT_EEPROM.
+	RootEeprom string
 
 	// QemuImgCmd is the qemu-img binary used to create overlays on the host.
 	// Default "qemu-img"; must be installed on the host running the server.
@@ -69,6 +85,10 @@ type Config struct {
 const (
 	xemuImage    = "lscr.io/linuxserver/xemu:latest"
 	browserImage = "docker.io/jlesage/firefox"
+
+	// containerDVDPath is where an optional DVD/ISO is mounted inside the xemu
+	// container (see Config.DVDPath); the instance toml's dvd_path targets it.
+	containerDVDPath = "/game.iso"
 )
 
 // Manager creates and controls podman containers.
@@ -135,6 +155,14 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		}
 	}
 
+	// Seed the eeprom paired with the root HDD's HDDKey. A real Xbox Halo disk
+	// is HDD-locked and only unlocks with the matching eeprom; without it xemu
+	// self-generates a random one that can't unlock the disk, hanging the guest
+	// in the Cerbios/2BL boot loop. No-op (xemu self-generates) when unset.
+	if err := m.seedEeprom(configDir); err != nil {
+		return nil, fmt.Errorf("seed eeprom: %w", err)
+	}
+
 	// Pre-generate a CA + server-cert pair for xemu's HTTPS listener.
 	// nginx serves the server leaf (with SAN for localhost), and the
 	// firefox container imports the CA as a trusted root via
@@ -145,18 +173,12 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		return nil, fmt.Errorf("generate ssl certs: %w", err)
 	}
 
-	// Generate labwc autostart with QMP enabled (only if it doesn't exist).
-	autostartDir := filepath.Join(configDir, ".config", "labwc")
-	autostartPath := filepath.Join(autostartDir, "autostart")
-	if _, err := os.Stat(autostartPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(autostartDir, 0o755); err != nil {
-			return nil, fmt.Errorf("mkdir %s: %w", autostartDir, err)
-		}
-		qmpArg := fmt.Sprintf("-qmp unix:/qmp/%s.sock,server,nowait", name)
-		autostart := fmt.Sprintf("#!/bin/bash\nfoot -e /opt/xemu/AppRun %s -full-screen\n", qmpArg)
-		if err := os.WriteFile(autostartPath, []byte(autostart), 0o755); err != nil {
-			return nil, fmt.Errorf("write autostart: %w", err)
-		}
+	// Write the xemu launch (carrying the -qmp the scraper needs) into the WM
+	// autostart. The image runs openbox (X11) or labwc (Wayland) depending on
+	// PIXELFLUX_WAYLAND, reading DIFFERENT autostart files — so we write BOTH.
+	// See writeXemuAutostart + WaitForQMP (the loud assert).
+	if err := writeXemuAutostart(configDir, name); err != nil {
+		return nil, err
 	}
 
 	// --- xemu container ---
@@ -176,6 +198,101 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		log.Printf("podman: warning: failed to save state: %v", err)
 	}
 	return info, nil
+}
+
+// xemuAutostartScript returns the WM autostart that launches xemu with the QMP
+// socket the scraper reads. wayland=true wraps it in foot (labwc/Wayland);
+// wayland=false runs the app directly (openbox/X11).
+func xemuAutostartScript(name string, wayland bool) string {
+	launch := fmt.Sprintf("/opt/xemu/AppRun -qmp unix:/qmp/%s.sock,server,nowait -full-screen", name)
+	if wayland {
+		launch = "foot -e " + launch
+	}
+	return "#!/bin/bash\n" + launch + "\n"
+}
+
+// writeXemuAutostart writes the xemu launch (carrying -qmp) into BOTH the openbox
+// (X11) and labwc (Wayland) autostart locations, so whichever WM the current
+// lscr.io/linuxserver/xemu image runs, -qmp fires and the scraper gets a QMP
+// socket. The image only seeds these from /defaults when absent, so pre-writing
+// wins. Robust to a future image flipping WMs; if a THIRD mechanism ever appears,
+// WaitForQMP fails loudly at Start.
+func writeXemuAutostart(configDir, name string) error {
+	for _, t := range []struct {
+		subdir  string
+		wayland bool
+	}{
+		{"openbox", false},
+		{"labwc", true},
+	} {
+		dir := filepath.Join(configDir, ".config", t.subdir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
+		p := filepath.Join(dir, "autostart")
+		if err := os.WriteFile(p, []byte(xemuAutostartScript(name, t.wayland)), 0o755); err != nil {
+			return fmt.Errorf("write %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// seedEeprom copies the root HDD's paired eeprom (Config.RootEeprom) into the
+// instance config at .local/share/xemu/xemu/eeprom.bin, which the toml's
+// eeprom_path points at. This is what lets a fresh instance actually BOOT a
+// real (HDD-locked) Halo disk: 2BL/Cerbios unlocks the disk with the eeprom's
+// HDDKey, and a random self-generated eeprom's key won't match (→ boot-loop
+// hang). No-op when RootEeprom is unset (xemu self-generates — only viable for
+// an unlocked root). Idempotent: never clobbers an eeprom already present (xemu
+// may have rewritten it, or an operator seeded a per-instance one).
+func (m *Manager) seedEeprom(configDir string) error {
+	if m.cfg.RootEeprom == "" {
+		return nil
+	}
+	src := m.cfg.RootEeprom
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(m.cfg.SharedDir, src)
+	}
+	dstDir := filepath.Join(configDir, ".local", "share", "xemu", "xemu")
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dstDir, err)
+	}
+	dst := filepath.Join(dstDir, "eeprom.bin")
+	if _, err := os.Stat(dst); err == nil {
+		return nil // already present — do not overwrite
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read root eeprom %s: %w", src, err)
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	log.Printf("podman: seeded paired eeprom for instance (from %s)", src)
+	return nil
+}
+
+// qmpStartTimeout bounds how long Start waits for xemu's QMP socket to appear.
+// Covers container start + WM launch + xemu opening the monitor (well before
+// the guest boots).
+const qmpStartTimeout = 75 * time.Second
+
+// WaitForQMP polls for the instance's bind-mounted QMP socket to appear. It's
+// the loud assert that xemu actually launched with -qmp — if the WM/autostart
+// mechanism drifts and drops the flag, this fails instead of leaving the scraper
+// silently unable to read the container's memory.
+func (m *Manager) WaitForQMP(name string, timeout time.Duration) error {
+	sock := abs(filepath.Join(m.cfg.SocketDir, name+".sock"))
+	deadline := time.Now().Add(timeout)
+	for {
+		if fi, err := os.Stat(sock); err == nil && fi.Mode()&os.ModeSocket != 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("QMP socket %s did not appear within %s — xemu likely launched without -qmp (WM/autostart drift?)", sock, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
@@ -251,8 +368,14 @@ func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
 		"-v", fmt.Sprintf("%s:/custom-cont-init.d:ro", abs(m.cfg.InitDir)),
 		"-v", fmt.Sprintf("%s:/qmp", abs(m.cfg.SocketDir)),
 		"-v", fmt.Sprintf("%s:/shared", abs(m.cfg.SharedDir)),
-		xemuImage,
 	}
+	// Optional read-only DVD/ISO for root HDDs that launch the game from disc
+	// (a Halo *install* disk boots the game off the DVD, like the host rig's
+	// hdd-ceprof + Halo CE.iso). The instance toml's dvd_path points xemu here.
+	if m.cfg.DVDPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", abs(m.cfg.DVDPath), containerDVDPath))
+	}
+	args = append(args, xemuImage)
 
 	out, err := m.run(args...)
 	if err != nil {
@@ -380,21 +503,27 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	return nil
 }
 
-// Start starts both the xemu and browser containers.
+// Start starts both the xemu and browser containers, then asserts xemu came up
+// with QMP (WaitForQMP) so a dropped -qmp fails loudly instead of leaving the
+// scraper unable to read the instance's memory.
 func (m *Manager) Start(name string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, ok := m.containers[name]; !ok {
+		m.mu.Unlock()
 		return fmt.Errorf("container %q not found", name)
 	}
 	if out, err := m.run("start", name); err != nil {
+		m.mu.Unlock()
 		return fmt.Errorf("start %s: %s: %s", name, err, out)
 	}
 	if out, err := m.run("start", name+"-browser"); err != nil {
+		m.mu.Unlock()
 		return fmt.Errorf("start %s-browser: %s: %s", name, err, out)
 	}
-	return nil
+	m.mu.Unlock()
+
+	// Assert QMP outside the lock (it polls for up to qmpStartTimeout).
+	return m.WaitForQMP(name, qmpStartTimeout)
 }
 
 // Stop stops both the browser and xemu containers.
