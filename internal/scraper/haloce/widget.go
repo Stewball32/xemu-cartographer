@@ -1,6 +1,9 @@
 package haloce
 
 import (
+	"bytes"
+	"encoding/binary"
+
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
 
@@ -48,16 +51,27 @@ func (r *Reader) ReadLobbyCursor() scraper.LobbyCursor {
 
 	var cur scraper.LobbyCursor
 	if mapHandle != 0 {
-		if sel, count, ok := findWidgetSelection(heap, mapHandle); ok && count > 0 {
+		if sel, count, ok := findWidgetSelection(heap, mapHandle); ok && liveIndex(sel, count) {
 			cur.MapIndex, cur.MapCount, cur.MapValid = sel, count, true
 		}
 	}
 	if gtHandle != 0 {
-		if sel, count, ok := findWidgetSelection(heap, gtHandle); ok && count > 0 {
+		if sel, count, ok := findWidgetSelection(heap, gtHandle); ok && liveIndex(sel, count) {
 			cur.GametypeIndex, cur.GametypeCount, cur.GametypeValid = sel, count, true
 		}
 	}
 	return cur
+}
+
+// liveIndex reports whether a widget's (sel, count) read is a settled, live
+// cursor: the list is active (count > 0) AND the selected index is in range
+// [0, count). During a carousel SCROLL ANIMATION the +0x4C field briefly holds an
+// out-of-range intermediate value (the CE analog of H2's render-copy settle
+// window); rejecting those makes ReadLobbyCursor report the cursor invalid so the
+// runner holds that tick and re-reads once the scroll settles, rather than
+// navigating on a garbage index.
+func liveIndex(sel, count int) bool {
+	return count > 0 && sel >= 0 && sel < count
 }
 
 // lobbyCursorDelaHandles returns the SELECT MAP / SELECT GAMETYPE list widgets'
@@ -138,17 +152,24 @@ func (r *Reader) resolveDelaHandles(paths ...string) map[string]uint32 {
 // is validated by the block header (hdr & 0xFFFF0000 == 0x80000000). heap starts at
 // GVA ConstUiWidgetHeapGVALo. Returns ok=false when no valid block matches.
 //
-// Heap blocks are u32-aligned (their header is a u32), so a 4-byte-stride scan
-// finds every handle field.
+// The handle bytes are found with bytes.Index (byte-granular, exactly like
+// ce_widget.py) so no allocation-alignment assumption can make it miss the live
+// block during a screen transition (where a freed + a fresh block briefly coexist).
 func findWidgetSelection(heap []byte, handle uint32) (sel, count int, ok bool) {
-	n := len(heap)
+	var hb [4]byte
+	binary.LittleEndian.PutUint32(hb[:], handle)
 	hoff := int(OffUiWidgetDefTagHandle)
-	end := n - int(OffUiWidgetItemCount) - 4
-	for off := hoff; off <= end; off += 4 {
-		if leU32Int(heap, off) != handle {
+	for o := 0; ; {
+		i := bytes.Index(heap[o:], hb[:])
+		if i < 0 {
+			break
+		}
+		off := o + i
+		o = off + 1 // advance one byte so overlapping matches aren't skipped
+		nb := off - hoff
+		if nb < 0 || nb+int(OffUiWidgetItemCount)+4 > len(heap) {
 			continue
 		}
-		nb := off - hoff // candidate block base
 		if leU32Int(heap, nb)&ConstUiWidgetHeaderMask != ConstUiWidgetHeaderFlag {
 			continue
 		}

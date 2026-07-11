@@ -91,6 +91,14 @@ type Observation struct {
 	GametypeCursor      int
 	GametypeCursorCount int
 	GametypeCursorValid bool
+
+	// GametypeListLen is the number of gametypes in the player-picker enumeration
+	// (the ustr built-in set). The SELECT GAMETYPE widget carousel PREPENDS any
+	// user-saved custom variants ahead of the built-ins, so its live count exceeds
+	// this; the difference (GametypeCursorCount − GametypeListLen) is the custom
+	// prefix the runner adds to a pick's ustr index to hit the right widget card.
+	// Maps have no such prefix (widget index == ustr index), so no map equivalent.
+	GametypeListLen int
 }
 
 // Screen is the classified host-flow screen. The map/gametype select screens

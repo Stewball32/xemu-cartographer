@@ -43,6 +43,7 @@ type ScraperReadout struct {
 	GametypeCursor      int
 	GametypeCursorCount int
 	GametypeCursorValid bool
+	GametypeListLen     int
 }
 
 // Observation projects a ScraperReadout into the runner's Observation. Unknown
@@ -79,5 +80,6 @@ func (s ScraperReadout) Observation() Observation {
 		GametypeCursor:      s.GametypeCursor,
 		GametypeCursorCount: s.GametypeCursorCount,
 		GametypeCursorValid: s.GametypeCursorValid,
+		GametypeListLen:     s.GametypeListLen,
 	}
 }

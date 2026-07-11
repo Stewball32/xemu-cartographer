@@ -577,10 +577,13 @@ const (
 	// TagPathMPMapSelectList is the SELECT MAP list widget; +0x4C == the
 	// highlighted map's mp_map_list carousel index (see TagPathMPMapList).
 	TagPathMPMapSelectList = `ui\shell\main_menu\multiplayer_type_select\mp_map_select\mp_map_select_list`
-	// TagPathGametypeSelectList is the SELECT GAMETYPE list widget; +0x4C == the
-	// highlighted gametype's carousel index, INCLUDING user-saved variants that
-	// prepend the built-ins (so it can exceed the ustr-tag name count).
-	TagPathGametypeSelectList = `ui\shell\main_menu\multiplayer_type_select\gametype_select\gametype_select_list`
+	// TagPathGametypeSelectList is the create-game SELECT GAMETYPE list widget;
+	// +0x4C == the highlighted gametype's carousel index, INCLUDING user-saved
+	// variants that prepend the built-ins (so it can exceed the ustr-tag name
+	// count). NOTE the exact path: there is a SECOND gametype_select_list under the
+	// playlist editor (…\settings_select\multiplayer_setup\playlist_edit\…), so the
+	// match must be the full path, not the leaf (RUNTIME-VERIFIED 2026-07-11 live).
+	TagPathGametypeSelectList = `ui\shell\main_menu\gametype_select\gametype_select_list`
 )
 
 // ----------------------------------------------------------------------

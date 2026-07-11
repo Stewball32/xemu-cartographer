@@ -40,6 +40,13 @@ type Transition struct {
 	ParkUntilSelection bool
 	StepsFn            func(Selector) int
 	CursorFn           func(Observation) (index, count int, ok bool)
+
+	// PrefixFn returns how many live carousel cards PRECEDE the enumerated list
+	// (i.e. the offset to add to a pick's enumeration index to reach its live
+	// widget index). For SELECT GAMETYPE this is the count of user-saved custom
+	// variants prepended ahead of the built-ins; nil (SELECT MAP) means the widget
+	// index equals the enumeration index. See GametypeListLen on Observation.
+	PrefixFn func(Observation) int
 }
 
 // StepTiming controls debounce + blind-advance behaviour. Zero value uses
@@ -143,9 +150,10 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 			CursorFn: func(o Observation) (int, int, bool) {
 				return o.GametypeCursor, o.GametypeCursorCount, o.GametypeCursorValid
 			},
-			On:    hosting,
-			Done:  inLobby,
-			Blind: true,
+			PrefixFn: gametypeCustomPrefix,
+			On:       hosting,
+			Done:     inLobby,
+			Blind:    true,
 		},
 		{
 			Name: "reach-lobby", Intent: "reach lobby", Key: "",
@@ -306,6 +314,12 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 	if t.StepsFn != nil && s.sel != nil {
 		target = t.StepsFn(s.sel)
 	}
+	// The pick's index is in the ENUMERATION space; shift it into the live WIDGET
+	// space by the custom-variant prefix (0 for maps; the prepended-custom count
+	// for gametypes) so the target lands on the right card.
+	if t.PrefixFn != nil {
+		target += t.PrefixFn(obs)
+	}
 	// Clamp the target into the live list range (defensive against a stale index).
 	target = ((target % count) + count) % count
 
@@ -348,6 +362,21 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 // next tick — the loop is self-correcting and closes only when remaining hits 0.
 //
 // (target − cursor) mod count is the forward distance; count − that is the reverse.
+// gametypeCustomPrefix is the SELECT GAMETYPE PrefixFn: the number of user-saved
+// custom variants the carousel prepends ahead of the built-ins = live widget count
+// − enumerated (built-in) count. Zero when the enumeration isn't available yet or
+// the disc has no custom variants (stock), so a stock pick maps 1:1. Never
+// negative.
+func gametypeCustomPrefix(o Observation) int {
+	if o.GametypeListLen <= 0 {
+		return 0
+	}
+	if p := o.GametypeCursorCount - o.GametypeListLen; p > 0 {
+		return p
+	}
+	return 0
+}
+
 func carouselNav(cursor, target, count int) (right bool, remaining int) {
 	if count <= 0 {
 		return true, 0

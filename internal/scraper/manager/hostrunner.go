@@ -127,6 +127,11 @@ func (r *runner) fillLobbyCursor(gs scraper.GameState, ro *hostrunner.ScraperRea
 	c := cur.ReadLobbyCursor()
 	ro.MapCursor, ro.MapCursorCount, ro.MapCursorValid = c.MapIndex, c.MapCount, c.MapValid
 	ro.GametypeCursor, ro.GametypeCursorCount, ro.GametypeCursorValid = c.GametypeIndex, c.GametypeCount, c.GametypeValid
+	// Enumerated (built-in) gametype count — the runner subtracts it from the live
+	// widget count to find the custom-variant prefix (see gametypeCustomPrefix).
+	r.cacheMu.Lock()
+	ro.GametypeListLen = len(r.cache.AvailableGametypes)
+	r.cacheMu.Unlock()
 }
 
 // stateInputInt coerces a StateInputs value (stored as its native memory width —

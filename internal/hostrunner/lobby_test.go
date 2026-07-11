@@ -174,6 +174,63 @@ func TestSequenceCardHoldsWithoutCursor(t *testing.T) {
 	}
 }
 
+// TestSequenceGametypeCustomPrefix: a gametype pick's index is in the ENUMERATION
+// (built-in) space, but the live carousel prepends custom variants — so the runner
+// must offset the target by the custom prefix (widgetCount − enumLen) and press A
+// on the SHIFTED widget index, not the raw enumeration index.
+func TestSequenceGametypeCustomPrefix(t *testing.T) {
+	sel := NewAtomicSelector()
+	// Map default (0), gametype "Race" at enumeration index 15.
+	sel.Set(Pick{Name: "bloodgulch", Steps: 0}, Pick{Name: "Race", Steps: 15})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	// hostGT: hosting obs with map cursor 0 (default) and the given gametype cursor,
+	// gametype list len 26 built-ins over a 27-card carousel (1 custom prepended).
+	hostGT := func(gtCur int) Observation {
+		o := hostingCur(0, gtCur)
+		o.GametypeCursorCount = 27
+		o.GametypeListLen = 26
+		return o
+	}
+
+	s.Step(systemLink(), t0)                      // Y
+	s.Step(hostingCur(0, 0), t0.Add(time.Second)) // map cursor 0 == target 0 → A (map)
+	// Advance past the map card's blind timer into select-gametype.
+	adv := t0.Add(time.Second + DefaultTiming.BlindAdvanceAfter)
+	// Drive the gametype cursor up to the SHIFTED target 16 (= ustr 15 + prefix 1).
+	// From cursor 14: carouselNav(14,16,27) → Right; at 16 → A.
+	if a := s.Step(hostGT(14), adv); a.Key() != "Right" {
+		t.Fatalf("gametype nav from 14 toward 16 should press Right, got %v", a)
+	}
+	if a := s.Step(hostGT(15), adv.Add(time.Second)); a.Key() != "Right" {
+		t.Fatalf("gametype nav from 15 toward 16 should press Right, got %v", a)
+	}
+	a := s.Step(hostGT(16), adv.Add(2*time.Second))
+	if a.Key() != "a" || a.Intent != "select gametype" {
+		t.Fatalf("gametype cursor at shifted target 16 (ustr 15 + prefix 1) should press A, got %v", a)
+	}
+}
+
+// TestGametypeCustomPrefix locks the prefix computation.
+func TestGametypeCustomPrefix(t *testing.T) {
+	cases := []struct {
+		count, listLen, want int
+	}{
+		{27, 26, 1}, // one custom variant prepended (the live-verified case)
+		{26, 26, 0}, // stock disc, no customs
+		{29, 26, 3}, // three customs
+		{26, 0, 0},  // enumeration not available → no shift (fail safe)
+		{20, 26, 0}, // widget < enum (shouldn't happen) → clamp to 0, never negative
+	}
+	for _, c := range cases {
+		got := gametypeCustomPrefix(Observation{GametypeCursorCount: c.count, GametypeListLen: c.listLen})
+		if got != c.want {
+			t.Errorf("gametypeCustomPrefix(count=%d,len=%d) = %d, want %d", c.count, c.listLen, got, c.want)
+		}
+	}
+}
+
 // TestCarouselNav locks the pure shorter-path decision incl. wrap.
 func TestCarouselNav(t *testing.T) {
 	cases := []struct {
