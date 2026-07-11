@@ -140,23 +140,25 @@ func registerSelection() {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "both map and gametype must be chosen"})
 		}
 
-		// Validate against + derive nav Steps from the LIVE list; accept free-form
-		// when the instance isn't enumerable yet.
+		// Validate the pick against the LIVE list (reject maps/gametypes not on this
+		// disc); accept free-form when the instance isn't enumerable yet. The list's
+		// Steps is the ABSOLUTE carousel index, not a press count — navigation is
+		// cursor-relative and computed at nav time by the runner (gametype: card-pool
+		// walk-until-target; map: blocked on the CE menu-cursor wall — see haloce
+		// EnumerateLobby). So the runner receives 0 nav steps here (holds at the
+		// carousel default) until that lands; this never blind-navigates to a wrong
+		// card from a non-deterministic start.
 		list := liveMaps(name)
-		mapSteps, ok1 := 0, true
-		gtSteps, ok2 := 0, true
 		if list.Available {
-			mapSteps, ok1 = list.IndexOf(list.Maps, mapName)
-			gtSteps, ok2 = list.IndexOf(list.Gametypes, gametype)
-			if !ok1 {
+			if _, ok := list.IndexOf(list.Maps, mapName); !ok {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "map not available on this instance: " + mapName})
 			}
-			if !ok2 {
+			if _, ok := list.IndexOf(list.Gametypes, gametype); !ok {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "gametype not available on this instance: " + gametype})
 			}
 		}
 
-		if !HostRunners.SetSelection(name, mapName, mapSteps, gametype, gtSteps) {
+		if !HostRunners.SetSelection(name, mapName, 0, gametype, 0) {
 			return e.JSON(http.StatusConflict, map[string]string{"error": "selection unavailable for " + name})
 		}
 		return e.JSON(http.StatusOK, HostRunners.Status(name))

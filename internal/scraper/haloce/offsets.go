@@ -473,7 +473,36 @@ const (
 	OffTagHeaderTagArray      uint32 = 0x00     // u32 → cache tag entry array
 	OffTagHeaderScenarioTagID uint32 = 0x04     // u32; scenario tag idx = value & 0xFFFF
 	OffTagHeaderTagCount      uint32 = 0x0C     // u32 → loaded tag count
+	OffTagGroupFourCC         uint32 = 0x00     // 4-byte tag group, stored byte-REVERSED (ustr → 'r','t','s','u')
 	ConstTagEntrySize         uint32 = 0x20     // cache tag entry stride (= TagInstStride)
+)
+
+// ----------------------------------------------------------------------
+// unicode_string_list ('ustr') tag layout — the create-game MAP / GAMETYPE
+// carousel NAME source. Reached via the cache tag header (AddrTagHeaderPtr) by
+// walking the tag array for a 'ustr'-group entry whose name path matches
+// (TagPathMPMapList / TagPathGameSettingNames / TagPathMPMapDescriptions), then
+// following OffTagDataPtr (0x14) to the tag meta below.
+//
+// The tag meta is the 'strings' tag_block header {count@0x00, array_ptr@0x04};
+// each element is a 20-byte tag_data reference {byte_size@0x00, …, text_ptr@0x0C}
+// whose text_ptr targets inline UTF-16LE display text of byte_size bytes.
+//
+// RUNTIME-VERIFIED 2026-07-10 (halo-offset-mapper docs/ce-mapselect-2026-07-10.md;
+// ce-nav split-screen, xemu 0.8.136): mp_map_list → 13 stock maps in carousel
+// order (Battle Creek … Longest, default cursor Blood Gulch) cross-checked against
+// the on-screen SELECT MAP carousel; default_multiplayer_game_setting_names → the
+// 26 built-in gametype variants in SELECT GAMETYPE carousel order.
+const (
+	OffUstrCount       uint32 = 0x00 // u32 element count (strings tag_block header)
+	OffUstrArrayPtr    uint32 = 0x04 // u32 → element array base
+	ConstUstrElemSize  uint32 = 0x14 // 20-byte tag_data element stride
+	OffUstrElemSize    uint32 = 0x00 // u32 inline-text byte size
+	OffUstrElemTextPtr uint32 = 0x0C // u32 → inline UTF-16LE text
+
+	// Guards against a mis-resolved pointer producing a huge/garbage read.
+	MaxUstrElemCount = 256 // upper bound on carousel entries
+	MaxUstrTextBytes = 512 // upper bound on one name's UTF-16LE byte size
 )
 
 // ----------------------------------------------------------------------
