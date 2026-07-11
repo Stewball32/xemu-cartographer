@@ -18,6 +18,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
+	isosroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/isos"
 	overlaysroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
@@ -165,6 +166,12 @@ func main() {
 			podMgr = mgr // host-runner URL resolver reads this to find websockify ports
 			containers.SetManager(mgr)
 			containers.SetServices(svc)
+			// ISO library: the admin catalog route scans the shared ISO dir +
+			// validates filenames against it; the player request-instance flow
+			// provisions a fresh box booting the chosen ISO. Both are additive to
+			// the untouched admin kiosk/VNC path.
+			isosroutes.SetManager(mgr)
+			playroutes.SetProvisioner(podmanProvisioner{m: mgr})
 
 			if podmanCfg.SocketDir != "" {
 				ctx, cancel := context.WithCancel(context.Background())

@@ -42,6 +42,30 @@ type MapSource interface {
 	AvailableMaps(instance string) scraperiface.MapList
 }
 
+// HostProvisioner spins up a fresh xemu instance booting a chosen ISO. It's the
+// wire behind POST /api/play/request: a player picks a game from the library and
+// the server provisions + starts a box booting straight into it (ADR-0004).
+// Kept an interface so this package stays free of a compile-time podman
+// dependency (matching Scraper / PlayControl / MapSource); main.go injects an
+// adapter over the podman Manager.
+type HostProvisioner interface {
+	// Provision creates AND starts a container named `name`, attaching the
+	// shared-library ISO `filename` as its DVD so it boots into that game.
+	Provision(name, filename string) (ProvisionResult, error)
+	// Exists reports whether a container of this name is already provisioned, so
+	// request-instance can fail closed (one hosted box per player) instead of
+	// colliding.
+	Exists(name string) bool
+}
+
+// ProvisionResult is the podman-free slice of the freshly-provisioned container
+// the request endpoint echoes back to the player.
+type ProvisionResult struct {
+	Name    string `json:"name"`
+	Index   int    `json:"index"`
+	GameISO string `json:"game_iso"`
+}
+
 // Group is the router group for /api/play endpoints (RequireAuth, no admin).
 var Group *router.RouterGroup[*core.RequestEvent]
 
@@ -56,6 +80,10 @@ var HostRunners PlayControl
 // Maps is the injected live map source. nil → the picker reports available:false.
 var Maps MapSource
 
+// Provisioner is the injected instance-provisioning surface. nil → request-
+// instance returns 503 (server stays bootable without podman).
+var Provisioner HostProvisioner
+
 // SetScraper wires the scraper manager (for gamertag→container resolution).
 func SetScraper(s scraperiface.Service) { Scraper = s }
 
@@ -65,6 +93,10 @@ func SetHostControl(c PlayControl) { HostRunners = c }
 // SetMapSource wires the live per-instance map/gametype source. Call before
 // RegisterAll.
 func SetMapSource(m MapSource) { Maps = m }
+
+// SetProvisioner wires the instance-provisioning surface (the podman-backed
+// adapter). Call before RegisterAll. Safe to leave nil.
+func SetProvisioner(p HostProvisioner) { Provisioner = p }
 
 var registry []func()
 

@@ -64,3 +64,84 @@ func TestResolveGameISO(t *testing.T) {
 		})
 	}
 }
+
+// TestISOLibrary covers the catalog-facing library listing: only disc-image
+// files (by extension), sorted, directories + other files skipped, and a
+// missing library dir returning empty (not an error).
+func TestISOLibrary(t *testing.T) {
+	dir := t.TempDir()
+	isoDir := filepath.Join(dir, "isos")
+	if err := os.MkdirAll(isoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Two discs (out of alpha order to prove sorting), one non-disc file, and a
+	// subdirectory (must be skipped).
+	for _, f := range []string{"Halo 2.iso", "Halo CE.xiso", "readme.txt"} {
+		if err := os.WriteFile(filepath.Join(isoDir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(isoDir, "nested.iso"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{cfg: Config{ISODir: isoDir}}
+	got, err := m.ISOLibrary()
+	if err != nil {
+		t.Fatalf("ISOLibrary: %v", err)
+	}
+	want := []string{"Halo 2.iso", "Halo CE.xiso"}
+	if len(got) != len(want) {
+		t.Fatalf("ISOLibrary = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ISOLibrary[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+
+	// Missing library dir → empty, no error.
+	m2 := &Manager{cfg: Config{ISODir: filepath.Join(dir, "does-not-exist")}}
+	got2, err := m2.ISOLibrary()
+	if err != nil {
+		t.Fatalf("ISOLibrary(missing dir): %v", err)
+	}
+	if len(got2) != 0 {
+		t.Fatalf("ISOLibrary(missing dir) = %v, want empty", got2)
+	}
+}
+
+// TestISOExists covers the create-time existence guard: a bare filename present
+// in the library passes; a missing name, an empty name, a path-traversal name,
+// and a directory all fail.
+func TestISOExists(t *testing.T) {
+	dir := t.TempDir()
+	isoDir := filepath.Join(dir, "isos")
+	if err := os.MkdirAll(isoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(isoDir, "halo-ce.iso"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(isoDir, "adir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{cfg: Config{ISODir: isoDir}}
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"halo-ce.iso", true},
+		{"missing.iso", false},
+		{"", false},
+		{"../isos/halo-ce.iso", false}, // separators rejected — can't escape the dir
+		{"sub/halo-ce.iso", false},
+		{"adir", false}, // a directory is not a file
+	}
+	for _, c := range cases {
+		if got := m.ISOExists(c.name); got != c.want {
+			t.Errorf("ISOExists(%q) = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

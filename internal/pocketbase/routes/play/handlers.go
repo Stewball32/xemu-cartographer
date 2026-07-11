@@ -15,8 +15,9 @@ func init() {
 	register(registerSelection)
 	register(registerReady)
 	register(registerUnready)
-	register(registerRequest)
 	register(registerTeardown)
+	// registerISOs + registerRequest (the ISO picker + instance provisioning)
+	// live in provision.go.
 }
 
 // requireHost guards the endpoints that need the host-runner subsystem. Returns
@@ -188,16 +189,6 @@ func registerReady() {
 // POST /api/play/unready — stay armed in the lobby (arm-only). Returns status.
 func registerUnready() {
 	Group.POST("/unready", playAction(func(name string) bool {
-		return HostRunners.SetReady(name, false)
-	}))
-}
-
-// POST /api/play/request — claim a fresh hosting session on the caller's matched
-// box: reset the start request so the runner sets up an arm-only lobby (the
-// runner auto-navigates to a host lobby whenever it's runner-driven). Returns
-// status. Container provisioning itself stays admin-only (routes/containers).
-func registerRequest() {
-	Group.POST("/request", playAction(func(name string) bool {
 		return HostRunners.SetReady(name, false)
 	}))
 }
