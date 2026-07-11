@@ -213,3 +213,34 @@ controller even on a keyboard-bound instance.
     right one, firing a single A press through `internal/vncinput`, with the verify confirming
     `game_connection` **0→2** (main_menu → hosting). livetest torn down; test-only shared disks
     removed; `_default.qcow2` perms restored; box left clean.
+- **2026-07-10 (correction) — the eeprom/HDD-lock diagnosis above was WRONG; `_default.qcow2`
+  boots fine. Firmware also ruled out. The sole real bug was the `-qmp` autostart drift.**
+  Prompted by Stewart to verify the firmware/TOML paths, I ran the controlled test the earlier
+  A/B skipped (it changed disk + eeprom + net + DVD at once, and its "working boot" used
+  `hdd-ceprof`, never `_default.qcow2` itself). Findings, all direct-observed:
+  - **Firmware is correct + identical to the working host rig.** The base template + every
+    per-instance TOML point at `/shared/bios/mcpx_1.0.bin` + `/shared/bios/Cerbios.bin`; those
+    bind-mounts resolve and are **byte-identical** to `~/.local/share/xemu/xemu/{mcpx_1.0.bin,
+    Cerbios.bin}` (md5 `d49c52a4102f` / `1255c9d4fe90`). Corroborated: the container booted
+    `hdd-ceprof` to Halo using this exact firmware — a wrong BIOS/MCPX can't boot any disk.
+    **BIOS/bootrom is NOT the cause.**
+  - **`_default.qcow2` BOOTS — the disk is good and the eeprom pairing is NOT needed.** A fresh
+    `Manager.Create` on `_default.qcow2` (128 GiB / 8.42 GiB used, standalone, its own HDDKey)
+    with a **RANDOM** eeprom booted straight to a working **UnleashX dashboard** (FATX E:/F:
+    mounted, a "Play Halo" entry) and **launched Halo CE** ("Play Halo" → the CE Spartans
+    loading screen; kernel `0x80000000` maps throughout). This holds with **net on or off** —
+    net-enabled only adds a *non-fatal* xemu pcap dialog ("Operation not permitted", a
+    PUID=1000/NET_ADMIN harness artifact; prod runs root) shown *over* the already-booted guest.
+    So **eeprom, firmware, net, and HDD-lock are each individually falsified** as the boot cause:
+    with a modded BIOS (Cerbios) the ATA HDD lock is ignored, so any eeprom boots any disk.
+  - **Conclusion:** the prior "2BL hang / kernel never maps" was a **misdiagnosis** — almost
+    certainly a downstream symptom of the `-qmp` autostart drift (labwc autostart written while
+    the image runs openbox → our launch/`-qmp`/config never applied, so the guest state couldn't
+    be observed and manual reads misread it). The one real, confirmed fix is the **`-qmp`
+    autostart written to both openbox+labwc + the `WaitForQMP` assert**. With that in place a
+    fresh `_default.qcow2` instance boots to the dashboard and launches Halo unaided.
+  - **Reverted:** the `RootEeprom`/`seedEeprom`/`CONTAINERS_ROOT_EEPROM` provisioning + its test
+    (fixed a non-problem; Cerbios ignores the lock). **Kept:** the `-qmp` autostart fix +
+    `WaitForQMP` (the real fix); `DVDPath`/`CONTAINERS_DVD_PATH` (an independent, generically-
+    useful knob to boot Halo from an ISO); and `hostrunner-probe -readvia qmp` (rootless reads).
+    deftst torn down; `_default.qcow2` perms restored; box left clean.

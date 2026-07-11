@@ -1,90 +1,9 @@
 package podman
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// TestSeedEeprom guards the fix-#2 provisioning step: the root HDD's paired
-// eeprom must land at the toml's eeprom_path, resolve relative to SharedDir,
-// no-op when unset, and never clobber an existing per-instance eeprom.
-func TestSeedEeprom(t *testing.T) {
-	dst := func(cfgDir string) string {
-		return filepath.Join(cfgDir, ".local", "share", "xemu", "xemu", "eeprom.bin")
-	}
-
-	t.Run("unset is a no-op", func(t *testing.T) {
-		cfgDir := t.TempDir()
-		m := &Manager{cfg: Config{}}
-		if err := m.seedEeprom(cfgDir); err != nil {
-			t.Fatalf("seedEeprom: %v", err)
-		}
-		if _, err := os.Stat(dst(cfgDir)); !os.IsNotExist(err) {
-			t.Fatalf("expected no eeprom written, got err=%v", err)
-		}
-	})
-
-	t.Run("absolute path is seeded", func(t *testing.T) {
-		src := filepath.Join(t.TempDir(), "eeprom-ceprof.bin")
-		want := []byte("PAIRED-EEPROM-256B-STUB")
-		if err := os.WriteFile(src, want, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		cfgDir := t.TempDir()
-		m := &Manager{cfg: Config{RootEeprom: src}}
-		if err := m.seedEeprom(cfgDir); err != nil {
-			t.Fatalf("seedEeprom: %v", err)
-		}
-		got, err := os.ReadFile(dst(cfgDir))
-		if err != nil {
-			t.Fatalf("read seeded eeprom: %v", err)
-		}
-		if string(got) != string(want) {
-			t.Fatalf("seeded eeprom = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("relative path resolves against SharedDir", func(t *testing.T) {
-		shared := t.TempDir()
-		if err := os.WriteFile(filepath.Join(shared, "root.eeprom"), []byte("REL"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		cfgDir := t.TempDir()
-		m := &Manager{cfg: Config{SharedDir: shared, RootEeprom: "root.eeprom"}}
-		if err := m.seedEeprom(cfgDir); err != nil {
-			t.Fatalf("seedEeprom: %v", err)
-		}
-		got, _ := os.ReadFile(dst(cfgDir))
-		if string(got) != "REL" {
-			t.Fatalf("relative seed = %q, want REL", got)
-		}
-	})
-
-	t.Run("does not clobber an existing eeprom", func(t *testing.T) {
-		src := filepath.Join(t.TempDir(), "paired.bin")
-		if err := os.WriteFile(src, []byte("PAIRED"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		cfgDir := t.TempDir()
-		existing := dst(cfgDir)
-		if err := os.MkdirAll(filepath.Dir(existing), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(existing, []byte("INSTANCE-CUSTOMISED"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		m := &Manager{cfg: Config{RootEeprom: src}}
-		if err := m.seedEeprom(cfgDir); err != nil {
-			t.Fatalf("seedEeprom: %v", err)
-		}
-		got, _ := os.ReadFile(existing)
-		if string(got) != "INSTANCE-CUSTOMISED" {
-			t.Fatalf("existing eeprom was clobbered: %q", got)
-		}
-	})
-}
 
 func TestSudoPrefix(t *testing.T) {
 	cases := []struct {

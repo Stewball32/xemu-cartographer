@@ -24,11 +24,7 @@ func LoadFromEnv() Config {
 		// Canonical read-only root qcow2 (the Halo-installed disk) that every
 		// per-instance overlay backs onto. Lives in SharedDir/hdds/. Keep this
 		// in sync with DEFAULT_HDD_NAME in containers/xemu/init/.env.
-		RootHDD: envStr("CONTAINERS_ROOT_HDD", "_default.qcow2"),
-		// Eeprom paired with the root HDD's HDDKey — required to boot a real
-		// (HDD-locked) Halo disk; absolute or relative to SharedDir. Empty = xemu
-		// self-generates a random eeprom (only unlocks an UNLOCKED root).
-		RootEeprom: envStr("CONTAINERS_ROOT_EEPROM", ""),
+		RootHDD:    envStr("CONTAINERS_ROOT_HDD", "_default.qcow2"),
 		QemuImgCmd: envStr("CONTAINERS_QEMU_IMG_CMD", "qemu-img"),
 		// Write the container name into the instance's Xbox console name
 		// (E:\UDATA\NICKNAME.XBN) inside its overlay at create time.

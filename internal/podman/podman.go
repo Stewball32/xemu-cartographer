@@ -43,17 +43,6 @@ type Config struct {
 	// uses it as a copy-on-write backing file. Default "_default.qcow2".
 	RootHDD string
 
-	// RootEeprom is the eeprom (256 B) paired with RootHDD's HDDKey. A real
-	// Xbox Halo disk is HDD-LOCKED: 2BL/Cerbios can only unlock it with the
-	// matching eeprom, so each instance must be seeded with this file — WITHOUT
-	// it xemu generates a RANDOM eeprom whose key does not match, the disk never
-	// unlocks, and the guest hangs in the Cerbios/2BL boot loop (never reaching
-	// Halo). Seeded into <config>/.local/share/xemu/xemu/eeprom.bin at create
-	// time (idempotent — never clobbers an existing per-instance eeprom).
-	// Path is absolute or relative to SharedDir. Empty = let xemu self-generate
-	// (only viable for an UNLOCKED root). Env CONTAINERS_ROOT_EEPROM.
-	RootEeprom string
-
 	// QemuImgCmd is the qemu-img binary used to create overlays on the host.
 	// Default "qemu-img"; must be installed on the host running the server.
 	QemuImgCmd string
@@ -155,14 +144,6 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		}
 	}
 
-	// Seed the eeprom paired with the root HDD's HDDKey. A real Xbox Halo disk
-	// is HDD-locked and only unlocks with the matching eeprom; without it xemu
-	// self-generates a random one that can't unlock the disk, hanging the guest
-	// in the Cerbios/2BL boot loop. No-op (xemu self-generates) when unset.
-	if err := m.seedEeprom(configDir); err != nil {
-		return nil, fmt.Errorf("seed eeprom: %w", err)
-	}
-
 	// Pre-generate a CA + server-cert pair for xemu's HTTPS listener.
 	// nginx serves the server leaf (with SAN for localhost), and the
 	// firefox container imports the CA as a trusted root via
@@ -234,41 +215,6 @@ func writeXemuAutostart(configDir, name string) error {
 			return fmt.Errorf("write %s: %w", p, err)
 		}
 	}
-	return nil
-}
-
-// seedEeprom copies the root HDD's paired eeprom (Config.RootEeprom) into the
-// instance config at .local/share/xemu/xemu/eeprom.bin, which the toml's
-// eeprom_path points at. This is what lets a fresh instance actually BOOT a
-// real (HDD-locked) Halo disk: 2BL/Cerbios unlocks the disk with the eeprom's
-// HDDKey, and a random self-generated eeprom's key won't match (→ boot-loop
-// hang). No-op when RootEeprom is unset (xemu self-generates — only viable for
-// an unlocked root). Idempotent: never clobbers an eeprom already present (xemu
-// may have rewritten it, or an operator seeded a per-instance one).
-func (m *Manager) seedEeprom(configDir string) error {
-	if m.cfg.RootEeprom == "" {
-		return nil
-	}
-	src := m.cfg.RootEeprom
-	if !filepath.IsAbs(src) {
-		src = filepath.Join(m.cfg.SharedDir, src)
-	}
-	dstDir := filepath.Join(configDir, ".local", "share", "xemu", "xemu")
-	if err := os.MkdirAll(dstDir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dstDir, err)
-	}
-	dst := filepath.Join(dstDir, "eeprom.bin")
-	if _, err := os.Stat(dst); err == nil {
-		return nil // already present — do not overwrite
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("read root eeprom %s: %w", src, err)
-	}
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", dst, err)
-	}
-	log.Printf("podman: seeded paired eeprom for instance (from %s)", src)
 	return nil
 }
 

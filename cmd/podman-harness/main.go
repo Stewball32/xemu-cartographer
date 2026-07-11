@@ -56,7 +56,6 @@ func cfg() podman.Config {
 		// Overridable for live tests via env: the app default root (_default.qcow2)
 		// may be unbootable; point at a known-good disk + its DVD when needed.
 		RootHDD:        envOr("HARNESS_ROOT_HDD", "_default.qcow2"),
-		RootEeprom:     os.Getenv("HARNESS_ROOT_EEPROM"),
 		DVDPath:        os.Getenv("HARNESS_DVD_PATH"),
 		QemuImgCmd:     "qemu-img",
 		SetConsoleName: false, // cosmetic; skip the FUSE/pyfatx dependency for the throwaway
