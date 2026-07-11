@@ -42,15 +42,25 @@ func TestResolveContainerAdminOverride(t *testing.T) {
 	}
 }
 
-func TestInCatalog(t *testing.T) {
-	if !inCatalog(hostrunner.CEMaps, "Blood Gulch") {
-		t.Fatal("Blood Gulch should be in the CE map catalog")
+// The live map list drives selection-nav Steps by carousel index — there is no
+// hardcoded/stock table anywhere in the path.
+func TestMapListIndexOf(t *testing.T) {
+	list := scraperiface.MapList{
+		Available: true,
+		Maps: []scraperiface.MapOption{
+			{Name: "battlecreek", Steps: 0},
+			{Name: "custom_modded_map", Steps: 1}, // a modded disc's map — must be enumerable
+			{Name: "bloodgulch", Steps: 2},
+		},
 	}
-	if inCatalog(hostrunner.CEMaps, "Zanzibar") {
-		t.Fatal("Zanzibar (an H2 map) must not be in the CE map catalog")
+	if steps, ok := list.IndexOf(list.Maps, "bloodgulch"); !ok || steps != 2 {
+		t.Fatalf("bloodgulch should navigate 2 steps, got %d ok=%v", steps, ok)
 	}
-	if !inCatalog(hostrunner.CEGametypes, "Team Slayer") {
-		t.Fatal("Team Slayer should be a CE gametype")
+	if steps, ok := list.IndexOf(list.Maps, "custom_modded_map"); !ok || steps != 1 {
+		t.Fatalf("a modded map must be found in the live list, got %d ok=%v", steps, ok)
+	}
+	if _, ok := list.IndexOf(list.Maps, "not_on_this_disc"); ok {
+		t.Fatal("a map not on this instance must not resolve")
 	}
 }
 

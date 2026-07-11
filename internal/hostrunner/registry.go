@@ -21,11 +21,14 @@ type Status struct {
 
 	// Map / Gametype are the READ (currently-loaded) values from the last
 	// observation; SelectedMap / SelectedGametype are the player's picked intent
-	// off the runner's selector; Ready is the player's arm+start request.
+	// off the runner's selector; Selected is whether a pick has been made (false =
+	// the runner is parked at map-select awaiting a choice); Ready is the player's
+	// arm+start request.
 	Map              string `json:"map,omitempty"`
 	Gametype         string `json:"gametype,omitempty"`
 	SelectedMap      string `json:"selected_map,omitempty"`
 	SelectedGametype string `json:"selected_gametype,omitempty"`
+	Selected         bool   `json:"selected"`
 	Ready            bool   `json:"ready"`
 }
 
@@ -97,6 +100,7 @@ func (reg *Registry) Status(instance string) Status {
 	if present {
 		st.Authority = r.Arbiter().Authority().String()
 		st.Ready = r.Ready()
+		st.Selected = r.HasSelection()
 		mp, gt := r.Selection()
 		st.SelectedMap = mp.Name
 		st.SelectedGametype = gt.Name
@@ -131,14 +135,28 @@ func (reg *Registry) SetReady(instance string, ready bool) bool {
 	return true
 }
 
-// SetSelection records the player's map / gametype pick for an instance. Returns
-// false when no runner is attached or its selector isn't mutable.
-func (reg *Registry) SetSelection(instance, mapName, gametypeName string) bool {
+// SetSelection records the player's map / gametype picks for an instance, with
+// the D-pad Steps the runner navigates to each chosen card (computed by the play
+// API from the live map carousel index; 0 = default-highlighted card). Setting a
+// selection un-parks the runner. Returns false when no runner is attached or its
+// selector isn't mutable.
+func (reg *Registry) SetSelection(instance, mapName string, mapSteps int, gametypeName string, gametypeSteps int) bool {
 	r, ok := reg.Get(instance)
 	if !ok {
 		return false
 	}
-	return r.SetSelection(mapName, gametypeName)
+	return r.SetSelection(Pick{Name: mapName, Steps: mapSteps}, Pick{Name: gametypeName, Steps: gametypeSteps})
+}
+
+// ClearSelection resets an instance's selection so the runner re-parks at
+// map-select. Returns false when no runner is attached or its selector isn't
+// mutable.
+func (reg *Registry) ClearSelection(instance string) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	return r.ClearSelection()
 }
 
 // SetAuthority sets an instance's arbitration state. Returns false if there's no

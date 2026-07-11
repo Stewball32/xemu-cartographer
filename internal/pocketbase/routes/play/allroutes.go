@@ -29,7 +29,17 @@ type PlayControl interface {
 	Status(instance string) hostrunner.Status
 	SetAuthority(instance string, auth hostrunner.Authority) bool
 	SetReady(instance string, ready bool) bool
-	SetSelection(instance, mapName, gametypeName string) bool
+	// SetSelection records the pick with the D-pad Steps the runner navigates to
+	// each chosen card (computed from the live carousel index).
+	SetSelection(instance, mapName string, mapSteps int, gametypeName string, gametypeSteps int) bool
+	ClearSelection(instance string) bool
+}
+
+// MapSource is the LIVE per-instance map/gametype list (refinement 2). The
+// player API sources the picker from here — the actual game/disc on THAT box —
+// never a fixed/stock table. Satisfied structurally by the scraper *Manager.
+type MapSource interface {
+	AvailableMaps(instance string) scraperiface.MapList
 }
 
 // Group is the router group for /api/play endpoints (RequireAuth, no admin).
@@ -43,11 +53,18 @@ var Scraper scraperiface.Service
 // need it return 503 (server still bootable without the subsystem).
 var HostRunners PlayControl
 
+// Maps is the injected live map source. nil → the picker reports available:false.
+var Maps MapSource
+
 // SetScraper wires the scraper manager (for gamertag→container resolution).
 func SetScraper(s scraperiface.Service) { Scraper = s }
 
 // SetHostControl wires the host-runner registry. Call before RegisterAll.
 func SetHostControl(c PlayControl) { HostRunners = c }
+
+// SetMapSource wires the live per-instance map/gametype source. Call before
+// RegisterAll.
+func SetMapSource(m MapSource) { Maps = m }
 
 var registry []func()
 

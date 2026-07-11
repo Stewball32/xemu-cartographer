@@ -101,6 +101,46 @@ func (m *Manager) Close() {
 	}
 }
 
+// AvailableMaps returns the LIVE per-instance map/gametype carousel for the
+// player-hosting map picker (refinement 2). It reads the runner's cache — which
+// is filled by the carousel enumeration (SetAvailableMaps) — and NEVER a stock
+// table: an instance with no enumeration yet reports Available=false with empty
+// lists, so a modded disc's custom maps are never masked by a hardcoded set.
+// Returns a zero (unavailable) MapList for an unknown instance.
+func (m *Manager) AvailableMaps(name string) scraperiface.MapList {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return scraperiface.MapList{}
+	}
+	c := r.readCache()
+	return scraperiface.MapList{
+		Available: len(c.AvailableMaps) > 0 || len(c.AvailableGametypes) > 0,
+		Maps:      c.AvailableMaps,
+		Gametypes: c.AvailableGametypes,
+	}
+}
+
+// SetAvailableMaps records the live-enumerated map/gametype carousel for an
+// instance. The enumeration itself — a guest-memory read of the CE map-select
+// carousel while the runner is parked there, and/or a parse of the instance's
+// disc / HDD `.map` files — is the remaining per-instance live read (it needs
+// offset/disc work + a live box to verify); this is the seam it writes into, so
+// nothing downstream assumes a fixed map set. No-op for an unknown instance.
+func (m *Manager) SetAvailableMaps(name string, maps, gametypes []scraperiface.MapOption) {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	r.withCache(func(c *instanceCache) {
+		c.AvailableMaps = maps
+		c.AvailableGametypes = gametypes
+	})
+}
+
 // SetHostRunner wires the player-hosting subsystem (ADR-0003). reg owns the
 // per-instance runners + fans the observable stream to the admin WS room;
 // urlForInstance resolves a container name to its websockify URL (nil / not-ok →
@@ -208,7 +248,9 @@ func (m *Manager) attachHostRunner(r *runner) {
 	}
 	hr := hostrunner.New(hostrunner.Config{
 		Instance: r.name,
-		Selector: hostrunner.NewAtomicSelector(hostrunner.Pick{}, hostrunner.Pick{}),
+		// Empty selector → the runner parks at map-select until a player picks
+		// (refinement 1); it never auto-hosts a default map.
+		Selector: hostrunner.NewAtomicSelector(),
 	}, input, m.hostReg)
 	r.host = hr
 	m.hostReg.Register(r.name, hr)

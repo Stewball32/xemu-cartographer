@@ -102,6 +102,14 @@ type instanceCache struct {
 	// panic / ctx-cancel mid-match still moves the data); dropped on
 	// Ready→Idle.
 	PreviousGame *previousGame
+
+	// Live map/gametype carousel enumeration for the player-hosting map picker
+	// (refinement 2 — the list is READ LIVE per instance, never a stock table).
+	// Populated via Manager.SetAvailableMaps by the carousel enumeration when the
+	// runner parks at map-select; empty means "not enumerable for this instance"
+	// and the play API returns available:false rather than a fixed set.
+	AvailableMaps      []scraperiface.MapOption
+	AvailableGametypes []scraperiface.MapOption
 }
 
 // previousGame is the just-ended match captured on Live→Ready. Serialised as

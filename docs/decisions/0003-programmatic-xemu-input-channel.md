@@ -279,8 +279,30 @@ controller even on a keyboard-bound instance.
   - **Validation.** Container-free logic is unit-tested (pump dial/reconnect/queue, readout builder
     + team/state-input helpers, runner ready/selection overrides, play resolve/catalog; race-clean).
     Live process-level smoke: the server now BOOTS with all routes mounted, and authed requests
-    exercise the whole auth→resolve→status path (idle `current`, the 13-map/7-gametype catalog,
+    exercise the whole auth→resolve→status path (idle `current`, the map/gametype list,
     404 on unmatched control, host-control `Status`, arbitration validation). The actual
     container-drive step (runner ticks → presses → guest state change) needs `sudo podman` +
     root memory reads, which this session's sandbox blocked; those primitives were already proven
     live on this branch (2a/2c above).
+- **2026-07-10 — two runner/API refinements (Stewart), folded in.**
+  1. **Runner PARKS at map-select awaiting the pick.** The host sequence now presses Y to create +
+     advertise the joinable lobby immediately, then HOLDS at the readable map-select checkpoint
+     while no map/gametype is chosen — it no longer defers lobby creation to a pick, nor presses a
+     blind default. When the selection arrives it applies in one forward pass: D-pad `Right ×
+     Pick.Steps` to the chosen map card → A → `Right × Steps` to the gametype → A → enlisted-players
+     lobby. Implemented in `internal/hostrunner` (`Selector.HasSelection` park gate; `AtomicSelector`
+     starts EMPTY; `Transition.NavKey`/`ParkUntilSelection`/`StepsFn`; `Sequence.navDone`). The
+     production runner is built with an empty `AtomicSelector` (parks); `DefaultSelector` stays the
+     non-parking fallback for tests. Player `teardown` clears the selection so the box re-parks for
+     the next player. Fully unit-tested (park-until-pick, carousel navigation).
+  2. **Available maps/gametypes are READ LIVE per instance — never a hardcoded/stock table.** Removed
+     the CE stock catalog. `/api/play/options` + selection validation now source from a per-instance
+     `MapSource` (`scraperiface.MapList{Available, Maps, Gametypes}`, satisfied by the scraper
+     `Manager`): an un-enumerable box returns `available:false` + empty (the client lets the player
+     type a name free-form; modded discs make any fixed table wrong), and a chosen name's D-pad
+     `Steps` come from the live carousel index (`MapList.IndexOf`). The manager holds the enumerated
+     list in its per-instance cache with a `SetAvailableMaps` seam; the enumeration read itself — the
+     CE map-select carousel from guest memory while parked there, and/or the instance's disc/HDD
+     `.map` files — is the remaining per-instance live read (needs offset/disc work + a live box), so
+     until it lands the list is honestly empty, never stock. Verified live: `options` returns
+     `available:false` with empty lists; nothing in the path assumes a stock set.

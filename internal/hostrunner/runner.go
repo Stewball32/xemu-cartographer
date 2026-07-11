@@ -79,7 +79,7 @@ func New(cfg Config, input Input, sink EventSink) *Runner {
 	}
 	return &Runner{
 		cfg:   cfg,
-		seq:   DefaultHostSequence(cfg.Timing),
+		seq:   DefaultHostSequence(cfg.Timing, cfg.Selector),
 		arb:   NewArbiter(),
 		input: input,
 		sink:  sink,
@@ -99,18 +99,34 @@ func (r *Runner) SetReady(v bool) { r.ready.Store(v) }
 // Ready reports the current player-scoped start request.
 func (r *Runner) Ready() bool { return r.ready.Load() }
 
-// SetSelection records the player's map / gametype pick when the runner's
-// Selector is an *AtomicSelector (the live decision-source). Returns false when
-// the runner was built with a non-mutable selector. v1 records intent — the
-// sequence still presses the default card (see AtomicSelector's note).
-func (r *Runner) SetSelection(mapName, gametypeName string) bool {
+// SetSelection records the player's map / gametype picks (with the D-pad Steps
+// the runner navigates to each chosen card) when the runner's Selector is an
+// *AtomicSelector. Setting a selection un-parks the runner: it applies the pick
+// in one forward pass. Returns false when the runner was built with a non-mutable
+// selector.
+func (r *Runner) SetSelection(mapPick, gametypePick Pick) bool {
 	sel, ok := r.cfg.Selector.(*AtomicSelector)
 	if !ok {
 		return false
 	}
-	sel.Set(Pick{Name: mapName}, Pick{Name: gametypeName})
+	sel.Set(mapPick, gametypePick)
 	return true
 }
+
+// ClearSelection resets the runner to unselected so it re-parks at map-select
+// awaiting the next pick (e.g. a player teardown). Returns false for a non-mutable
+// selector.
+func (r *Runner) ClearSelection() bool {
+	sel, ok := r.cfg.Selector.(*AtomicSelector)
+	if !ok {
+		return false
+	}
+	sel.Clear()
+	return true
+}
+
+// HasSelection reports whether a map/gametype has been chosen (the park gate).
+func (r *Runner) HasSelection() bool { return r.cfg.Selector.HasSelection() }
 
 // Selection returns the runner's current map / gametype picks (intent).
 func (r *Runner) Selection() (mapPick, gametypePick Pick) {

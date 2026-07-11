@@ -128,6 +128,9 @@ func main() {
 		scraperroutes.SetHostControl(hostReg)
 		playroutes.SetScraper(scrMgr)
 		playroutes.SetHostControl(hostReg)
+		// The play map picker is sourced LIVE per instance from the scraper (never
+		// a stock table) — the Manager satisfies playroutes.MapSource.
+		playroutes.SetMapSource(scrMgr)
 		scrMgr.SetHostRunner(
 			hostReg,
 			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),

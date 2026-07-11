@@ -19,11 +19,74 @@ func mainMenu() Observation {
 	return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu}
 }
 
+// proceedSelector is a non-parking selection (default cards, 0 D-pad steps) so
+// the sequence flow tests exercise the press mechanics without the park gate.
+func proceedSelector() Selector {
+	return FixedSelector{Map: Pick{Name: "default"}, Gametype: Pick{Name: "default"}}
+}
+
+// TestSequenceParksAtMapSelectUntilPick: with no selection the runner presses Y
+// (creates + advertises the lobby) then HOLDS at map-select — it must NOT press A
+// on a blind default. Once a pick arrives it applies it in the forward pass.
+func TestSequenceParksAtMapSelectUntilPick(t *testing.T) {
+	sel := NewAtomicSelector()
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	if a := s.Step(systemLink(), t0); a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("first press should be Y (create+advertise lobby), got %v", a)
+	}
+	// Reached map-select (hosting) with NO pick → park, never press A.
+	for i := 0; i < 5; i++ {
+		a := s.Step(hosting(), t0.Add(time.Duration(1+i)*time.Second))
+		if a.Kind == ActionTap {
+			t.Fatalf("must not press while parked (tick %d), got tap %q", i, a.Key())
+		}
+		if a.Kind != ActionWait {
+			t.Fatalf("parked step should wait, got %v (%s)", a.Kind, a.Reason)
+		}
+	}
+	// Player picks → forward pass presses A (default card, 0 steps).
+	sel.Set(Pick{Name: "bloodgulch"}, Pick{Name: "slayer"})
+	a := s.Step(hosting(), t0.Add(10*time.Second))
+	if a.Kind != ActionTap || a.Key() != "a" || a.Intent != "select map" {
+		t.Fatalf("after pick should press A (select map), got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestSequenceNavigatesToChosenCard: a pick with D-pad Steps walks the carousel
+// (Right × steps) before pressing A, for both the map and gametype cards.
+func TestSequenceNavigatesToChosenCard(t *testing.T) {
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "wizard", Steps: 2}, Pick{Name: "koth", Steps: 1})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	s.Step(systemLink(), t0) // Y
+	// Map card: 2 Right presses, then A.
+	if a := s.Step(hosting(), t0.Add(1*time.Second)); a.Key() != "Right" {
+		t.Fatalf("map nav 1 should be Right, got %v", a)
+	}
+	if a := s.Step(hosting(), t0.Add(2*time.Second)); a.Key() != "Right" {
+		t.Fatalf("map nav 2 should be Right, got %v", a)
+	}
+	if a := s.Step(hosting(), t0.Add(3*time.Second)); a.Key() != "a" || a.Intent != "select map" {
+		t.Fatalf("after 2 nav should press A (map), got %v", a)
+	}
+	// Gametype card after the blind timer: 1 Right, then A.
+	if a := s.Step(hosting(), t0.Add(3*time.Second+DefaultTiming.BlindAdvanceAfter)); a.Key() != "Right" {
+		t.Fatalf("gametype nav should be Right, got %v", a)
+	}
+	if a := s.Step(hosting(), t0.Add(6*time.Second)); a.Key() != "a" || a.Intent != "select gametype" {
+		t.Fatalf("after gametype nav should press A, got %v", a)
+	}
+}
+
 // TestSequenceFullFlow walks the host flow end-to-end with a controlled clock,
 // asserting each gated press fires on the right screen and confirms before the
 // next.
 func TestSequenceFullFlow(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	t0 := time.Unix(1000, 0)
 
 	// On system link, first tick presses Y (create game).
@@ -68,7 +131,7 @@ func TestSequenceFullFlow(t *testing.T) {
 
 // TestSequenceBlocksOnWrongScreen: a non-blind step never presses blindly.
 func TestSequenceBlocksOnWrongScreen(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	// On the main menu, create-game (expects system link) must NOT press Y.
 	a := s.Step(mainMenu(), time.Unix(1000, 0))
 	if a.Kind != ActionBlocked {
@@ -79,7 +142,7 @@ func TestSequenceBlocksOnWrongScreen(t *testing.T) {
 // TestSequenceRepress: a non-blind step re-presses after RepressAfter if the
 // press didn't land.
 func TestSequenceRepress(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	t0 := time.Unix(1000, 0)
 	if a := s.Step(systemLink(), t0); a.Key() != "y" {
 		t.Fatal("expected first Y press")
@@ -96,7 +159,7 @@ func TestSequenceRepress(t *testing.T) {
 // TestSequenceCatchUp: if we're already in the lobby (presses landed fast), the
 // sequence reports Done without pressing anything.
 func TestSequenceCatchUp(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	a := s.Step(lobby(), time.Unix(1000, 0))
 	if a.Kind != ActionDone {
 		t.Fatalf("got %v, want done (already in lobby)", a.Kind)
@@ -104,7 +167,7 @@ func TestSequenceCatchUp(t *testing.T) {
 }
 
 func TestWalkBackCancelsCountdown(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	// advance the cursor a couple steps so we can observe it does NOT rewind
 	// while a countdown is active.
 	s.cursor = 3
@@ -120,7 +183,7 @@ func TestWalkBackCancelsCountdown(t *testing.T) {
 }
 
 func TestWalkBackRewinds(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	s.cursor = 2
 	a := s.WalkBack(lobby(), time.Unix(1000, 0))
 	if a.Kind != ActionTap || a.Key() != "b" || a.Intent != "walk back" {
@@ -132,7 +195,7 @@ func TestWalkBackRewinds(t *testing.T) {
 }
 
 func TestSequenceStaleNoAction(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming)
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	if a := s.Step(Observation{Fresh: false}, time.Unix(1000, 0)); a.Kind != ActionWait {
 		t.Fatalf("stale obs should wait, got %v", a.Kind)
 	}

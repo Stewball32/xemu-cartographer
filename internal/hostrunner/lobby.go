@@ -18,6 +18,17 @@ type Transition struct {
 	On     func(Observation) bool
 	Done   func(Observation) bool
 	Blind  bool
+
+	// Card navigation (map/gametype select screens). When NavKey is set this is a
+	// card step: it FIRST presses NavKey (a D-pad direction) StepsFn(sel) times to
+	// reach the chosen card, then presses Key (A). ParkUntilSelection makes the
+	// step HOLD (the front-loaded lobby wait) until the player has actually chosen
+	// — the runner creates the lobby with Y right away, then parks at map-select
+	// rather than pressing a blind default. StepsFn resolves the D-pad step count
+	// from the live selection (0 = the default-highlighted card).
+	NavKey             string
+	ParkUntilSelection bool
+	StepsFn            func(Selector) int
 }
 
 // StepTiming controls debounce + blind-advance behaviour. Zero value uses
@@ -54,27 +65,38 @@ func (t StepTiming) orDefault() StepTiming {
 type Sequence struct {
 	steps  []Transition
 	timing StepTiming
+	sel    Selector // selection source for park gate + card navigation (may be nil)
 
 	cursor    int
 	enteredAt time.Time // when the current step became active
 	lastPress time.Time // last time the current step's key was emitted
-	pressed   bool      // has the current step been pressed since it became active
+	pressed   bool      // has the current step's confirm key (A) been pressed
+	navDone   int       // D-pad nav presses emitted for the current card step
 }
 
-// NewSequence builds a Sequence over steps with the given timing.
+// NewSequence builds a Sequence over steps with the given timing. Set Selector
+// separately (DefaultHostSequence does) to enable the park gate + card nav.
 func NewSequence(steps []Transition, timing StepTiming) *Sequence {
 	return &Sequence{steps: steps, timing: timing.orDefault()}
 }
 
+// SetSelector wires the selection source used by the park gate + card navigation.
+func (s *Sequence) SetSelector(sel Selector) { s.sel = sel }
+
 // DefaultHostSequence is the CE system-link host flow:
 //
-//	System Link (gc==1) --Y--> map card --A--> gametype card --A--> LOBBY
+//	System Link (gc==1) --Y--> [PARK @ map-select until pick] --nav+A--> gametype
+//	  --nav+A--> LOBBY
 //
-// The two card presses are Blind (no distinguishing global); they are bracketed
-// by readable checkpoints — On requires we're hosting, and the terminal Done
-// requires a readable lobby (Screen==ScreenLobby). Keys use vncinput labels:
-// Y='y', A='a'.
-func DefaultHostSequence(timing StepTiming) *Sequence {
+// Refinement (Stewart, 2026-07-10): Y advertises the joinable lobby immediately,
+// so the runner front-loads it and then HOLDS at the map-select card screen until
+// a map/gametype is actually chosen (ParkUntilSelection) — no blind default pick.
+// When the selection arrives it applies in ONE forward pass: D-pad to the chosen
+// map card → A → D-pad to the chosen gametype → A → enlisted-players lobby. The
+// two card presses stay blind (no distinguishing global) but bracketed by
+// readable checkpoints — On requires we're hosting, terminal Done requires a
+// readable lobby. Keys use vncinput labels: Y='y', A='a', D-pad Right='Right'.
+func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 	onSystemLink := func(o Observation) bool { return Classify(o) == ScreenSystemLink }
 	hosting := func(o Observation) bool {
 		s := Classify(o)
@@ -82,23 +104,27 @@ func DefaultHostSequence(timing StepTiming) *Sequence {
 	}
 	inLobby := func(o Observation) bool { return Classify(o) == ScreenLobby }
 
-	return NewSequence([]Transition{
+	seq := NewSequence([]Transition{
 		{
 			Name: "create-game", Intent: "create system-link game", Key: "y",
 			On:   onSystemLink,
-			Done: hosting, // landed in the hosting setup (map card or beyond)
+			Done: hosting, // landed in the hosting setup (map-select or beyond)
 		},
 		{
 			Name: "select-map", Intent: "select map", Key: "a",
-			On:    hosting,
-			Done:  inLobby, // only truly confirmable once the lobby is readable
-			Blind: true,
+			NavKey: "Right", ParkUntilSelection: true,
+			StepsFn: func(s Selector) int { return s.MapPick().Steps },
+			On:      hosting,
+			Done:    inLobby, // only truly confirmable once the lobby is readable
+			Blind:   true,
 		},
 		{
 			Name: "select-gametype", Intent: "select gametype", Key: "a",
-			On:    hosting,
-			Done:  inLobby,
-			Blind: true,
+			NavKey:  "Right",
+			StepsFn: func(s Selector) int { return s.GametypePick().Steps },
+			On:      hosting,
+			Done:    inLobby,
+			Blind:   true,
 		},
 		{
 			Name: "reach-lobby", Intent: "reach lobby", Key: "",
@@ -106,6 +132,8 @@ func DefaultHostSequence(timing StepTiming) *Sequence {
 			Done: inLobby, // sentinel: confirms we're settled in the lobby
 		},
 	}, timing)
+	seq.sel = sel
+	return seq
 }
 
 // Cursor / Current expose progress for events + tests.
@@ -123,6 +151,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.cursor = 0
 	s.enteredAt = now
 	s.pressed = false
+	s.navDone = 0
 	s.lastPress = time.Time{}
 }
 
@@ -130,6 +159,7 @@ func (s *Sequence) advance(now time.Time) {
 	s.cursor++
 	s.enteredAt = now
 	s.pressed = false
+	s.navDone = 0
 	s.lastPress = time.Time{}
 }
 
@@ -172,8 +202,47 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 		return wait("awaiting " + t.Name)
 	}
 
-	// (3) blind card step: gate entry on On (we're in the hosting segment), then
-	// press once and advance on a timer — the sub-screens are indistinguishable.
+	// (P) PARK: the front-loaded map-select hold. The lobby is already created
+	// (Y pressed, hosting advertised), so wait here on the readable map-select
+	// checkpoint until the player has chosen — never a blind default.
+	if t.ParkUntilSelection && (s.sel == nil || !s.sel.HasSelection()) {
+		if t.On != nil && !t.On(obs) {
+			return blocked(fmt.Sprintf("park step %q: hosting segment not observed (on %s)", t.Name, screenName(obs)))
+		}
+		return wait("parked at map-select — awaiting player map/gametype pick")
+	}
+
+	// (N) card step: navigate NavKey × Pick.Steps to the chosen card, then press
+	// Key (A), then advance on the blind timer (sub-screens are indistinguishable).
+	if t.NavKey != "" {
+		if t.On != nil && !t.On(obs) {
+			return blocked(fmt.Sprintf("card step %q: hosting segment not observed (on %s)", t.Name, screenName(obs)))
+		}
+		steps := 0
+		if t.StepsFn != nil && s.sel != nil {
+			if n := t.StepsFn(s.sel); n > 0 {
+				steps = n
+			}
+		}
+		if s.navDone < steps {
+			s.navDone++
+			s.lastPress = now
+			return tap(t.NavKey, t.Intent, fmt.Sprintf("navigating to card (%d/%d)", s.navDone, steps))
+		}
+		if !s.pressed {
+			s.pressed = true
+			s.lastPress = now
+			return tap(t.Key, t.Intent, "card reached, pressing "+t.Key)
+		}
+		if now.Sub(s.lastPress) >= s.timing.BlindAdvanceAfter {
+			s.advance(now)
+			return s.Step(obs, now) // evaluate the next step this tick
+		}
+		return wait("card " + t.Name + ", awaiting timed advance")
+	}
+
+	// (3) blind card step (no nav): gate entry on On, press once and advance on a
+	// timer. Retained for compatibility; the default sequence uses NavKey steps.
 	if t.Blind {
 		if t.On != nil && !t.On(obs) {
 			return blocked(fmt.Sprintf("blind step %q: hosting segment not observed (on %s)", t.Name, screenName(obs)))
@@ -215,6 +284,7 @@ func (s *Sequence) WalkBack(obs Observation, now time.Time) Action {
 		s.cursor--
 		s.enteredAt = now
 		s.pressed = false
+		s.navDone = 0
 		s.lastPress = time.Time{}
 	}
 	return tap("b", "walk back", "pressing B to back out one screen")

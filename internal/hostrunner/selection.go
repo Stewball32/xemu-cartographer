@@ -10,16 +10,20 @@ type Pick struct {
 	Steps int // D-pad steps from the default highlight (v1 uses 0)
 }
 
-// Selector is the v1 seam requirement: selection is a decision-source that emits
-// "the pick is X", kept SEPARATE from the runner that applies it. v1 ships a
-// single static source (FixedSelector); later sources (rotation, vote, admin
-// queue) implement the same interface without touching the runner.
+// Selector is the decision-source seam: selection is emitted separately from the
+// runner that applies it. HasSelection gates the front-loaded park at map-select
+// (the runner creates the lobby with Y immediately, then HOLDS at the map-select
+// card screen until HasSelection reports a pick — never auto-picking a default).
 type Selector interface {
 	MapPick() Pick
 	GametypePick() Pick
+	// HasSelection reports whether a map+gametype have been actively chosen. The
+	// runner parks at map-select while this is false.
+	HasSelection() bool
 }
 
-// FixedSelector is the v1 single source: constant map + gametype picks.
+// FixedSelector is a constant source: fixed map + gametype picks. HasSelection is
+// true only when both names are non-empty, so a zero-value FixedSelector parks.
 type FixedSelector struct {
 	Map      Pick
 	Gametype Pick
@@ -27,9 +31,13 @@ type FixedSelector struct {
 
 func (f FixedSelector) MapPick() Pick      { return f.Map }
 func (f FixedSelector) GametypePick() Pick { return f.Gametype }
+func (f FixedSelector) HasSelection() bool { return f.Map.Name != "" && f.Gametype.Name != "" }
 
-// DefaultSelector picks whatever card is highlighted by default (bare A on each
-// card screen) — the minimal v1 that needs no D-pad navigation.
+// DefaultSelector is the non-parking fallback used when a runner is built with no
+// selector: it treats the default-highlighted cards as an implicit selection
+// (bare A, no D-pad nav), so the flow proceeds without waiting. Production runners
+// are built with an empty AtomicSelector instead, which PARKS until a player picks
+// (see the manager's attachHostRunner).
 func DefaultSelector() Selector {
 	return FixedSelector{
 		Map:      Pick{Name: "default", Steps: 0},
@@ -38,31 +46,23 @@ func DefaultSelector() Selector {
 }
 
 // AtomicSelector is a concurrency-safe Selector the player-scoped API mutates
-// (SetSelection) while the runner reads it on the scraper-loop goroutine. It is
-// the decision-source seam made live: a player picks a map/gametype in the play
-// tab, the /api/play route calls Set, and the pick surfaces on the observable
-// stream + status as the runner's intent.
+// (Set) while the runner reads it on the scraper-loop goroutine. It STARTS EMPTY
+// (unselected) so a production runner parks at map-select until a player picks —
+// there is deliberately no default. Set marks it selected and the runner then
+// applies the pick in one forward pass (D-pad Pick.Steps to the chosen card → A).
 //
-// v1 note: the CE host sequence still presses the default-highlighted card (see
-// DefaultHostSequence), so Steps is recorded but not yet walked — mapping a map
-// NAME to its card's D-pad position is follow-up work. The pick is honest intent
-// until then, not a guaranteed on-screen selection.
+// Steps is supplied by the caller from the live map carousel index (see the play
+// API's SetSelection), so a modded disc's custom maps navigate correctly; when
+// the live carousel index is unknown, Steps is 0 (the default-highlighted card).
 type AtomicSelector struct {
-	mu sync.RWMutex
-	m  Pick
-	g  Pick
+	mu  sync.RWMutex
+	m   Pick
+	g   Pick
+	set bool
 }
 
-// NewAtomicSelector seeds the initial picks (default-highlighted when zero).
-func NewAtomicSelector(mapPick, gametypePick Pick) *AtomicSelector {
-	if mapPick == (Pick{}) {
-		mapPick = Pick{Name: "default"}
-	}
-	if gametypePick == (Pick{}) {
-		gametypePick = Pick{Name: "default"}
-	}
-	return &AtomicSelector{m: mapPick, g: gametypePick}
-}
+// NewAtomicSelector returns an EMPTY selector (unselected → the runner parks).
+func NewAtomicSelector() *AtomicSelector { return &AtomicSelector{} }
 
 func (s *AtomicSelector) MapPick() Pick {
 	s.mu.RLock()
@@ -76,10 +76,25 @@ func (s *AtomicSelector) GametypePick() Pick {
 	return s.g
 }
 
-// Set replaces both picks.
+// HasSelection reports whether a pick has been made (the park gate).
+func (s *AtomicSelector) HasSelection() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.set
+}
+
+// Set replaces both picks and marks the selector selected.
 func (s *AtomicSelector) Set(mapPick, gametypePick Pick) {
 	s.mu.Lock()
-	s.m, s.g = mapPick, gametypePick
+	s.m, s.g, s.set = mapPick, gametypePick, true
+	s.mu.Unlock()
+}
+
+// Clear resets to unselected (the runner re-parks at map-select). Used to reset a
+// session so the next lobby waits for a fresh pick.
+func (s *AtomicSelector) Clear() {
+	s.mu.Lock()
+	s.m, s.g, s.set = Pick{}, Pick{}, false
 	s.mu.Unlock()
 }
 

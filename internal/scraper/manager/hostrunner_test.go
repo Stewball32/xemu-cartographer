@@ -3,9 +3,36 @@ package manager
 import (
 	"testing"
 
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 )
+
+// The live map source is per-instance and never falls back to a stock table: an
+// un-enumerated instance reports available=false/empty; once enumerated (incl. a
+// modded disc's custom map) it reflects exactly what was read.
+func TestManagerAvailableMaps(t *testing.T) {
+	m := &Manager{runners: map[string]*runner{}}
+	m.runners["pod1"] = &runner{name: "pod1"}
+
+	if l := m.AvailableMaps("nope"); l.Available || len(l.Maps) != 0 {
+		t.Fatalf("unknown instance must be unavailable+empty, got %+v", l)
+	}
+	if l := m.AvailableMaps("pod1"); l.Available || len(l.Maps) != 0 {
+		t.Fatalf("un-enumerated instance must report available=false (no stock table), got %+v", l)
+	}
+
+	m.SetAvailableMaps("pod1",
+		[]scraperiface.MapOption{{Name: "battlecreek", Steps: 0}, {Name: "custom_modded_map", Steps: 1}},
+		[]scraperiface.MapOption{{Name: "slayer", Steps: 0}})
+	l := m.AvailableMaps("pod1")
+	if !l.Available || len(l.Maps) != 2 || l.Maps[1].Name != "custom_modded_map" {
+		t.Fatalf("enumerated maps should surface live (incl. modded), got %+v", l)
+	}
+	if len(l.Gametypes) != 1 || l.Gametypes[0].Name != "slayer" {
+		t.Fatalf("enumerated gametypes should surface, got %+v", l.Gametypes)
+	}
+}
 
 func TestStateInputInt(t *testing.T) {
 	si := scraper.StateInputs{
