@@ -25,6 +25,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
@@ -69,6 +70,7 @@ func main() {
 	var bot *discordbot.Bot
 	var hub *ws.Hub
 	var watcherCancel context.CancelFunc
+	var reaperCancel context.CancelFunc
 	var scrMgr *scrapermgr.Manager
 	// podMgr is set below only when CONTAINERS_ENABLED; the host-runner URL
 	// resolver reads it at call time (through a getter) so it can be wired before
@@ -173,6 +175,30 @@ func main() {
 			isosroutes.SetManager(mgr)
 			playroutes.SetProvisioner(podmanProvisioner{m: mgr})
 
+			// Idle-out reaper (optional, REAPER_ENABLED): reclaim player-hosted
+			// boxes that nobody joins — an empty lobby with no live match and no
+			// guest machine for the idle window is torn down (stop scraper +
+			// podman remove). Scoped to the "play-" prefix so admin/manual boxes
+			// are never auto-reaped. Reads activity from the scraper + host-runner;
+			// removes through this podman manager. A disabled config makes Run a
+			// no-op, so the wiring is unconditional and just doesn't spin a
+			// goroutine.
+			reap := reaper.New(
+				reaperConfigFromEnv(),
+				reaperSource{scr: scrMgr, host: hostReg},
+				reaperRemover{scr: scrMgr, pod: mgr},
+				reaper.WithLogger(log.Printf),
+			)
+			if reap.Enabled() {
+				// Surface the per-instance countdown on /api/play/current so the
+				// host gets a heads-up before an idle box is reclaimed.
+				playroutes.SetIdleReporter(reaperIdleReporter{r: reap})
+				rctx, rcancel := context.WithCancel(context.Background())
+				reaperCancel = rcancel
+				go reap.Run(rctx)
+				log.Printf("reaper: idle-out enabled (REAPER_* env controls timeout/prefix)")
+			}
+
 			if podmanCfg.SocketDir != "" {
 				ctx, cancel := context.WithCancel(context.Background())
 				watcherCancel = cancel
@@ -262,6 +288,11 @@ func main() {
 	app.OnTerminate().BindFunc(func(te *core.TerminateEvent) error {
 		if watcherCancel != nil {
 			watcherCancel()
+		}
+		// Stop the reaper before the scrapers so no reap pass fires against a
+		// manager that's tearing down.
+		if reaperCancel != nil {
+			reaperCancel()
 		}
 
 		// Stop scrapers BEFORE the hub so in-flight tick broadcasts don't try to

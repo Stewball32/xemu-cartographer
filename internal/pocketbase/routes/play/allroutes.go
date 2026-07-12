@@ -14,6 +14,8 @@
 package play
 
 import (
+	"time"
+
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -66,6 +68,20 @@ type ProvisionResult struct {
 	GameISO string `json:"game_iso"`
 }
 
+// IdleReporter surfaces the idle-out reaper's countdown for the caller's own
+// instance so GET /api/play/current can warn the host before an unused box is
+// reclaimed. Kept an interface (returning primitives, not a reaper type) so
+// this package stays free of a compile-time dependency on internal/reaper —
+// main.go injects an adapter over the live reaper. nil disables the heads-up
+// (the reap field is simply omitted).
+type IdleReporter interface {
+	// IdleInfo reports whether the named instance is currently accruing idle
+	// time and, if so, when it will be reaped and whether it's inside the
+	// pre-reap warning window. ok=false when the box is active / unknown /
+	// reaping disabled.
+	IdleInfo(instance string) (idleSince, reapAt time.Time, warning bool, ok bool)
+}
+
 // Group is the router group for /api/play endpoints (RequireAuth, no admin).
 var Group *router.RouterGroup[*core.RequestEvent]
 
@@ -84,6 +100,10 @@ var Maps MapSource
 // instance returns 503 (server stays bootable without podman).
 var Provisioner HostProvisioner
 
+// Idle is the injected reaper heads-up source. nil → /current omits the reap
+// countdown (reaping disabled or not wired).
+var Idle IdleReporter
+
 // SetScraper wires the scraper manager (for gamertag→container resolution).
 func SetScraper(s scraperiface.Service) { Scraper = s }
 
@@ -97,6 +117,10 @@ func SetMapSource(m MapSource) { Maps = m }
 // SetProvisioner wires the instance-provisioning surface (the podman-backed
 // adapter). Call before RegisterAll. Safe to leave nil.
 func SetProvisioner(p HostProvisioner) { Provisioner = p }
+
+// SetIdleReporter wires the reaper heads-up source. Call before RegisterAll.
+// Safe to leave nil (no heads-up).
+func SetIdleReporter(i IdleReporter) { Idle = i }
 
 var registry []func()
 
