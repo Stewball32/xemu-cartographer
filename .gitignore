@@ -46,7 +46,6 @@ sveltekit/static/game-geometry/
 # Environment
 .env
 !.env.example
-!sveltekit/.env.example
 
 # Local dev seed overrides — seed.local.json etc. are personal/local; only
 # the committed template (seed.example.json) is tracked.
