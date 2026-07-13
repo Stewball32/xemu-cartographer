@@ -753,7 +753,9 @@ func (m *Manager) CleanupOrphans() ([]string, error) {
 // collide with another deployment's on a shared podman daemon.
 func (m *Manager) NamePrefix() string { return m.cfg.NamePrefix }
 
-// List returns all managed containers enriched with live podman status.
+// List returns all managed containers from the persisted store. Note: this is
+// the recorded state only — it does NOT reflect live podman status. Callers
+// that need liveness must consult Status / KioskLive per container.
 func (m *Manager) List() ([]ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
