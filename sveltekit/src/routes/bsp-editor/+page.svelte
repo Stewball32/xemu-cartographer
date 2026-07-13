@@ -8,7 +8,7 @@
 	// It loads the SAME geometry cache the visualizers consume (loadBspMesh raw),
 	// and its export is a culled BspMesh in the identical JSON schema PLUS a tag
 	// layer (embedded + a stable-keyed sidecar that survives re-extraction). See
-	// BSP-EDITOR.md for the load→auto-tag→fix→export→visualizer loop.
+	// docs/BSP-EDITOR.md for the load→auto-tag→fix→export→visualizer loop.
 	import { onMount, onDestroy } from 'svelte';
 	import { base } from '$app/paths';
 	import * as THREE from 'three';
