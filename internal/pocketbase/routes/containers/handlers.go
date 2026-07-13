@@ -38,6 +38,11 @@ func init() {
 			if body.GameISO != "" && (strings.ContainsAny(body.GameISO, `/\`) || body.GameISO == ".." || strings.HasPrefix(body.GameISO, ".")) {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "game_iso must be a bare filename in the ISO library"})
 			}
+			// Namespace the container under the deployment's prefix (empty in prod).
+			// Idempotent: an operator may type the bare or already-prefixed name.
+			if p := Manager.NamePrefix(); p != "" && !strings.HasPrefix(body.Name, p) {
+				body.Name = p + body.Name
+			}
 			info, err := Manager.CreateWithOptions(body.Name, podman.CreateOptions{GameISO: body.GameISO})
 			if err != nil {
 				return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})

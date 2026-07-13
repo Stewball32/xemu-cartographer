@@ -33,3 +33,7 @@ func (p podmanProvisioner) Exists(name string) bool {
 	_, ok := p.m.Get(name)
 	return ok
 }
+
+// NamePrefix exposes the manager's configured container-name namespace so the
+// play flow can prefix per-player box names (empty in prod).
+func (p podmanProvisioner) NamePrefix() string { return p.m.NamePrefix() }

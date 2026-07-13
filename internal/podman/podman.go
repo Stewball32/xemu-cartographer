@@ -27,6 +27,12 @@ type Config struct {
 	PortStride     int
 	HostIP         string // IP/hostname for remote access; defaults to "localhost"
 
+	// NamePrefix namespaces every container this deployment creates (empty in
+	// prod). Callers that generate names (the admin create route + the per-player
+	// play flow) prepend it, so a beta sharing the host podman daemon can't share
+	// a container name with prod. See LoadFromEnv / Manager.NamePrefix.
+	NamePrefix string
+
 	// DVDPath is an optional host path to a game ISO mounted read-only into each
 	// xemu container (at containerDVDPath). Empty = no DVD. Acts as the GLOBAL
 	// default disc when a Create doesn't specify a per-instance ISO. Needed for
@@ -726,6 +732,11 @@ func (m *Manager) CleanupOrphans() ([]string, error) {
 	}
 	return orphans, nil
 }
+
+// NamePrefix is the configured container-name namespace (empty in prod). Name-
+// generating callers prepend it so this deployment's container names can't
+// collide with another deployment's on a shared podman daemon.
+func (m *Manager) NamePrefix() string { return m.cfg.NamePrefix }
 
 // List returns all managed containers enriched with live podman status.
 func (m *Manager) List() ([]ContainerInfo, error) {

@@ -56,6 +56,10 @@ type HostProvisioner interface {
 	// request-instance can fail closed (one hosted box per player) instead of
 	// colliding.
 	Exists(name string) bool
+	// NamePrefix is the deployment's container-name namespace (empty in prod).
+	// request-instance prepends it so a beta sharing the host podman daemon
+	// gives players "beta-play-<uid>" boxes that can't collide with prod's.
+	NamePrefix() string
 }
 
 // ProvisionResult is the podman-free slice of the freshly-provisioned container

@@ -19,7 +19,14 @@ func LoadFromEnv() Config {
 		PortBase:       envInt("CONTAINERS_PORT_BASE", 3100),
 		PortStride:     envInt("CONTAINERS_PORT_STRIDE", 10),
 		HostIP:         envStr("CONTAINERS_HOST_IP", "localhost"),
-		DVDPath:        envStr("CONTAINERS_DVD_PATH", ""),
+		// NamePrefix namespaces every container this deployment creates. Empty in
+		// prod. A beta/preview sharing the host's rootful podman daemon sets e.g.
+		// "beta-" so its container names can never collide with prod's — even the
+		// auto-generated per-player "play-<uid>" boxes become "beta-play-<uid>".
+		// The prefix is baked into the logical name at creation and flows through
+		// the store / podman name / socket / dirs unchanged (no double-prefixing).
+		NamePrefix: envStr("CONTAINERS_NAME_PREFIX", ""),
+		DVDPath:    envStr("CONTAINERS_DVD_PATH", ""),
 		// Shared game ISO library. A per-instance ISO named in
 		// CreateOptions.GameISO resolves against this dir; ISOs are bind-mounted
 		// read-only into their instance, never copied onto the overlay.

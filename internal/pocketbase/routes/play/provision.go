@@ -105,7 +105,7 @@ func registerRequest() {
 		}
 
 		isAdmin := roles.IsAdminAuth(e.App, e.Auth)
-		name := instanceName(e.Auth.Id, body.Name, isAdmin)
+		name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, isAdmin)
 		if name == "" {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "could not determine an instance name"})
 		}
@@ -136,20 +136,24 @@ func registerRequest() {
 //     check then fails a second request closed).
 //   - An admin may pass an explicit name (sanitized to podman-safe chars); an
 //     empty override falls back to the same per-user derivation.
+//   - prefix (the deployment's container-name namespace, empty in prod) is
+//     prepended to EVERY derived name, so a beta sharing the host podman daemon
+//     gives players "beta-play-<uid>" boxes that can never collide with prod's
+//     "play-<uid>". Returns "" (no prefix) when there's nothing to derive from,
+//     so the caller still rejects it.
 //
-// Returns "" only when there's nothing to derive from (no userID, no override).
 // Split out so it's unit-testable with no request/podman.
-func instanceName(userID, override string, isAdmin bool) string {
+func instanceName(prefix, userID, override string, isAdmin bool) string {
 	if isAdmin {
 		if s := sanitizeName(override); s != "" {
-			return s
+			return prefix + s
 		}
 	}
 	uid := sanitizeName(userID)
 	if uid == "" {
 		return ""
 	}
-	return "play-" + uid
+	return prefix + "play-" + uid
 }
 
 // sanitizeName lowercases and keeps only podman-safe name characters
