@@ -63,6 +63,12 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Test
+        # Scoped to ./cmd/... ./internal/... (mirrors Taskfile `test`) to skip
+        # the root-owned containers/ mount. Makes the 58 existing test files
+        # load-bearing on every push/PR.
+        run: go test ./cmd/... ./internal/...
+
       - name: Build
         run: CGO_ENABLED=0 go build -o bin/server ./cmd/server
 
