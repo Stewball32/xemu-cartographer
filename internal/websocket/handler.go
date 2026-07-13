@@ -92,6 +92,13 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 func buildAcceptOptions() *websocket.AcceptOptions {
 	origins := os.Getenv("WS_ALLOWED_ORIGINS")
 	if origins == "" {
+		// FAIL-OPEN default (dev convenience): with no allowlist the handshake
+		// accepts ALL origins (InsecureSkipVerify), widening the cross-site
+		// WebSocket-hijacking surface. Auth (JWT / overlay token) is still
+		// required, so this is not an open door — but it is looser than a prod
+		// deploy wants. Behavior is intentionally unchanged; this only warns.
+		// Recommendation: set WS_ALLOWED_ORIGINS to your public origin(s).
+		log.Printf("SECURITY WARNING: WS_ALLOWED_ORIGINS unset — the WebSocket endpoint accepts all origins (InsecureSkipVerify). Set it to your public origin(s) in production.")
 		return &websocket.AcceptOptions{
 			InsecureSkipVerify: true,
 		}

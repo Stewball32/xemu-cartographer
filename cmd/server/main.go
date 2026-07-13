@@ -52,7 +52,13 @@ func configureOverlayTokens() {
 		if _, err := rand.Read(secret); err != nil {
 			log.Printf("overlay tokens: failed to generate ephemeral secret: %v", err)
 		}
-		log.Printf("overlay tokens: OVERLAY_TOKEN_SECRET unset — using an ephemeral secret; minted tokens won't survive a restart. Set OVERLAY_TOKEN_SECRET in production.")
+		// FAIL-OPEN default (dev convenience): with no configured secret, tokens
+		// are signed with a random secret regenerated every boot, so every minted
+		// overlay token silently becomes invalid after a restart (a quiet prod
+		// outage). Behavior is intentionally unchanged; this only warns loudly.
+		// Recommendation: set a stable OVERLAY_TOKEN_SECRET in production (and
+		// consider failing closed there — see docs/review-fixes-2026-07-12.md).
+		log.Printf("SECURITY WARNING: OVERLAY_TOKEN_SECRET unset — signing overlay tokens with an EPHEMERAL secret; every minted token is invalidated on each restart. Set a stable OVERLAY_TOKEN_SECRET in production.")
 	}
 	overlaytoken.Configure(secret)
 
