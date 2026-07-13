@@ -2,7 +2,6 @@
 package podman
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -60,6 +59,12 @@ type Config struct {
 	// QemuImgCmd is the qemu-img binary used to create overlays on the host.
 	// Default "qemu-img"; must be installed on the host running the server.
 	QemuImgCmd string
+
+	// KioskLiveTimeout bounds the `podman inspect` liveness probe that the
+	// kiosk reverse-proxy runs (Manager.KioskLive) before dialing a container's
+	// browser port. Keeps a hung podman from stalling a kiosk request. Zero
+	// falls back to defaultKioskLiveTimeout (2s).
+	KioskLiveTimeout time.Duration
 
 	// SetConsoleName, when true (default), writes the container name into the
 	// instance's Xbox console name (E:\UDATA\NICKNAME.XBN) inside its overlay at
@@ -774,18 +779,7 @@ func (m *Manager) Status(name string) (string, error) {
 	if err != nil {
 		return "unknown", nil
 	}
-
-	// podman inspect --format returns JSON-escaped string; try to unquote.
-	s := string(out)
-	var unquoted string
-	if json.Unmarshal(out, &unquoted) == nil {
-		s = unquoted
-	}
-	// Trim whitespace/newlines.
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
-		s = s[:len(s)-1]
-	}
-	return s, nil
+	return parsePodmanStatus(out), nil
 }
 
 // Logs shells `podman logs --tail N` against either the xemu (which="xemu") or

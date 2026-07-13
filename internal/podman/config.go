@@ -3,6 +3,7 @@ package podman
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // LoadFromEnv builds a Config from CONTAINERS_* environment variables, falling
@@ -37,6 +38,8 @@ func LoadFromEnv() Config {
 		// in sync with DEFAULT_HDD_NAME in containers/xemu/init/.env.
 		RootHDD:    envStr("CONTAINERS_ROOT_HDD", "_default.qcow2"),
 		QemuImgCmd: envStr("CONTAINERS_QEMU_IMG_CMD", "qemu-img"),
+		// Liveness-probe timeout for the kiosk proxy's pre-dial `podman inspect`.
+		KioskLiveTimeout: time.Duration(envInt("CONTAINERS_KIOSK_LIVE_TIMEOUT_MS", 2000)) * time.Millisecond,
 		// Write the container name into the instance's Xbox console name
 		// (E:\UDATA\NICKNAME.XBN) inside its overlay at create time.
 		SetConsoleName:       envBool("CONTAINERS_SET_CONSOLE_NAME", true),
