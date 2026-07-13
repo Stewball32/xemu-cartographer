@@ -16,8 +16,8 @@ type podmanProvisioner struct{ m *podman.Manager }
 // library ISO `filename` attached as its DVD, so it boots straight into that
 // game (ADR-0004). If Start fails after a successful Create the partial info is
 // still returned alongside the error so the caller can surface both.
-func (p podmanProvisioner) Provision(name, filename string) (playroutes.ProvisionResult, error) {
-	info, err := p.m.CreateWithOptions(name, podman.CreateOptions{GameISO: filename})
+func (p podmanProvisioner) Provision(name, filename, display string) (playroutes.ProvisionResult, error) {
+	info, err := p.m.CreateWithOptions(name, podman.CreateOptions{GameISO: filename, DisplayName: display})
 	if err != nil {
 		return playroutes.ProvisionResult{}, err
 	}

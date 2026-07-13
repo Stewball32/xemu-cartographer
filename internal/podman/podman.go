@@ -121,6 +121,13 @@ type CreateOptions struct {
 	// live (see ADR-0004): with no ISO the instance sits on the UnleashX
 	// dashboard; with an ISO it boots that disc's game.
 	GameISO string
+
+	// DisplayName is the canonical PRETTY name (printable ASCII, ≤15) that the
+	// container name was slugified from. When set, it — not the mangled podman
+	// name — is written as the Xbox console nickname and persisted as the
+	// instance's canonical identity. Empty falls back to the container name (the
+	// pre-decoupling behavior).
+	DisplayName string
 }
 
 // Manager creates and controls podman containers.
@@ -171,11 +178,12 @@ func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*Container
 	idx := nextIndex(m.containers)
 	ports := AllocatePorts(m.cfg.PortBase, m.cfg.PortStride, idx)
 	info := &ContainerInfo{
-		Name:    name,
-		Index:   idx,
-		Ports:   ports,
-		GameISO: dvdPath,
-		Created: time.Now(),
+		Name:        name,
+		DisplayName: opts.DisplayName,
+		Index:       idx,
+		Ports:       ports,
+		GameISO:     dvdPath,
+		Created:     time.Now(),
 	}
 
 	// Provision the instance's copy-on-write HDD overlay (thin layer over the
@@ -185,12 +193,14 @@ func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*Container
 		return nil, fmt.Errorf("provision hdd overlay: %w", err)
 	}
 
-	// Stamp the container name into the instance's Xbox console name inside its
-	// overlay (before first boot), so instances are distinguishable on system
-	// link / the dashboard. Best-effort: a missing FATX toolchain just means the
-	// instance keeps the Xbox's random default name.
+	// Stamp the PRETTY display name (if given, else the container name) into the
+	// instance's Xbox console name inside its overlay (before first boot), so
+	// instances are distinguishable on system link / the dashboard. The display
+	// name is the canonical identity; the container name is a slug derived from
+	// it. Best-effort: a missing FATX toolchain just means the instance keeps the
+	// Xbox's random default name.
 	if m.consoleNamingEnabled() {
-		if err := m.writeConsoleName(m.overlayPath(name), name); err != nil {
+		if err := m.writeConsoleName(m.overlayPath(name), consoleNameFor(name, opts.DisplayName)); err != nil {
 			log.Printf("podman: warning: set console name for %q failed (instance will use the Xbox random default): %v", name, err)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/instancename"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
@@ -105,7 +106,7 @@ func registerRequest() {
 		}
 
 		isAdmin := roles.IsAdminAuth(e.App, e.Auth)
-		name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, isAdmin)
+		display, name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, isAdmin)
 		if name == "" {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "could not determine an instance name"})
 		}
@@ -115,7 +116,7 @@ func registerRequest() {
 			})
 		}
 
-		res, err := Provisioner.Provision(name, filename)
+		res, err := Provisioner.Provision(name, filename, display)
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -129,31 +130,44 @@ func registerRequest() {
 	})
 }
 
-// instanceName is the pure container-naming decision for request-instance.
+// instanceName is the pure DECOUPLED-naming decision for request-instance. It
+// returns the canonical pretty display name AND the derived podman container
+// name:
 //
-//   - A non-admin ALWAYS gets a single stable per-user box, "play-<uid>", so a
-//     player can't name arbitrary containers or field more than one (the Exists
-//     check then fails a second request closed).
-//   - An admin may pass an explicit name (sanitized to podman-safe chars); an
-//     empty override falls back to the same per-user derivation.
+//   - A non-admin ALWAYS gets a single stable per-user box "play-<uid>" (so a
+//     player can't name arbitrary containers or field more than one — the Exists
+//     check then fails a second request closed) with an EMPTY display name (the
+//     console name falls back to the container name).
+//   - An admin may pass an explicit pretty name: it's validated as a display
+//     name (printable ASCII, ≤15) and the container name is its slug. If the
+//     pretty name slugs to empty (all punctuation), the display is kept but the
+//     container falls back to the per-user "play-<uid>" scheme for uniqueness.
 //   - prefix (the deployment's container-name namespace, empty in prod) is
-//     prepended to EVERY derived name, so a beta sharing the host podman daemon
-//     gives players "beta-play-<uid>" boxes that can never collide with prod's
-//     "play-<uid>". Returns "" (no prefix) when there's nothing to derive from,
-//     so the caller still rejects it.
+//     prepended to the container name so a beta sharing the host podman daemon
+//     gives "beta-*" boxes that can't collide with prod's. It is NOT applied to
+//     the display name (that's the pretty canonical, unmangled).
 //
-// Split out so it's unit-testable with no request/podman.
-func instanceName(prefix, userID, override string, isAdmin bool) string {
+// container is "" only when there's nothing to derive from (no userID and no
+// usable override), so the caller still rejects it. Split out so it's
+// unit-testable with no request/podman.
+func instanceName(prefix, userID, override string, isAdmin bool) (display, container string) {
+	uid := sanitizeName(userID)
+	perUser := ""
+	if uid != "" {
+		perUser = prefix + "play-" + uid
+	}
 	if isAdmin {
-		if s := sanitizeName(override); s != "" {
-			return prefix + s
+		if d := instancename.Display(override); d != "" {
+			if slug := instancename.Slug(d); slug != "" {
+				return d, prefix + slug
+			}
+			// Pretty name present but slugs to empty — keep the display, fall
+			// back to the uid scheme for a valid, unique container name.
+			return d, perUser
 		}
 	}
-	uid := sanitizeName(userID)
-	if uid == "" {
-		return ""
-	}
-	return prefix + "play-" + uid
+	// Non-admin, or admin with no usable override: uid-based box, no pretty name.
+	return "", perUser
 }
 
 // sanitizeName lowercases and keeps only podman-safe name characters

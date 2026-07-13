@@ -2,37 +2,46 @@ package play
 
 import "testing"
 
-// TestInstanceName covers the container-naming decision for request-instance:
-// non-admins always get a stable per-user name (can't override), admins may
-// override with a sanitized name, and an empty/absent basis yields "".
+// TestInstanceName covers the DECOUPLED naming decision for request-instance:
+// non-admins always get a stable per-user container (no pretty display), admins
+// may pass a pretty display name (≤15, printable ASCII) whose slug becomes the
+// container name, and an empty/absent basis yields an empty container.
 func TestInstanceName(t *testing.T) {
 	cases := []struct {
-		name     string
-		prefix   string
-		userID   string
-		override string
-		isAdmin  bool
-		want     string
+		name          string
+		prefix        string
+		userID        string
+		override      string
+		isAdmin       bool
+		wantDisplay   string
+		wantContainer string
 	}{
-		// prod: empty prefix (unchanged behavior).
-		{"non-admin derives per-user", "", "abc123def456ghi", "", false, "play-abc123def456ghi"},
-		{"non-admin cannot override", "", "abc123def456ghi", "custom-box", false, "play-abc123def456ghi"},
-		{"admin may override", "", "abc123def456ghi", "smoke-1", true, "smoke-1"},
-		{"admin empty override falls back to per-user", "", "abc123def456ghi", "", true, "play-abc123def456ghi"},
-		{"admin override sanitized", "", "abc123def456ghi", "My Box!!", true, "mybox"},
-		{"admin override that sanitizes to empty falls back", "", "abc123def456ghi", "!!!", true, "play-abc123def456ghi"},
-		{"no userID and no usable override → empty", "", "", "", false, ""},
-		{"userID sanitized in derivation", "", "AB-c.1", "", false, "play-ab-c.1"},
-		// beta: non-empty prefix namespaces every derived name.
-		{"beta prefixes per-user", "beta-", "abc123def456ghi", "", false, "beta-play-abc123def456ghi"},
-		{"beta prefixes admin override", "beta-", "abc123def456ghi", "smoke-1", true, "beta-smoke-1"},
-		{"beta empty basis stays empty (no bare prefix)", "beta-", "", "", false, ""},
+		// prod: empty prefix.
+		{"non-admin: per-user box, no display", "", "abc123def456ghi", "", false, "", "play-abc123def456ghi"},
+		{"non-admin cannot override", "", "abc123def456ghi", "custom-box", false, "", "play-abc123def456ghi"},
+		{"admin override → display + slug container", "", "abc123def456ghi", "smoke-1", true, "smoke-1", "smoke-1"},
+		{"admin empty override falls back to per-user", "", "abc123def456ghi", "", true, "", "play-abc123def456ghi"},
+		{"admin pretty name: display kept, container slugged", "", "abc123def456ghi", "My Box!!", true, "My Box!!", "my-box"},
+		{"admin all-punctuation: display kept, container uid-fallback", "", "abc123def456ghi", "!!!", true, "!!!", "play-abc123def456ghi"},
+		{"no userID and no usable override → empty container", "", "", "", false, "", ""},
+		{"userID slug in derivation", "", "AB-c.1", "", false, "", "play-ab-c.1"},
+		// beta: non-empty prefix namespaces the CONTAINER only, never the display.
+		{"beta per-user box", "beta-", "abc123def456ghi", "", false, "", "beta-play-abc123def456ghi"},
+		{"beta admin override", "beta-", "abc123def456ghi", "smoke-1", true, "smoke-1", "beta-smoke-1"},
+		{"beta empty basis → empty container", "beta-", "", "", false, "", ""},
+		// 15-char cap: a long pretty name truncates to 15 for display, slug follows.
+		{"admin long name truncated to 15 + slugged", "beta-", "uid", "Way Too Long Name Here", true, "Way Too Long Na", "beta-way-too-long-na"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := instanceName(c.prefix, c.userID, c.override, c.isAdmin); got != c.want {
-				t.Fatalf("instanceName(%q, %q, %q, admin=%v) = %q, want %q",
-					c.prefix, c.userID, c.override, c.isAdmin, got, c.want)
+			gotDisplay, gotContainer := instanceName(c.prefix, c.userID, c.override, c.isAdmin)
+			if gotDisplay != c.wantDisplay || gotContainer != c.wantContainer {
+				t.Fatalf("instanceName(%q,%q,%q,admin=%v) = (%q,%q), want (%q,%q)",
+					c.prefix, c.userID, c.override, c.isAdmin,
+					gotDisplay, gotContainer, c.wantDisplay, c.wantContainer)
+			}
+			if len([]rune(gotDisplay)) > 15 {
+				t.Errorf("display %q exceeds 15 chars", gotDisplay)
 			}
 		})
 	}

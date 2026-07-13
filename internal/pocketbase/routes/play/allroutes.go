@@ -49,9 +49,11 @@ type MapSource interface {
 // dependency (matching Scraper / PlayControl / MapSource); main.go injects an
 // adapter over the podman Manager.
 type HostProvisioner interface {
-	// Provision creates AND starts a container named `name`, attaching the
-	// shared-library ISO `filename` as its DVD so it boots into that game.
-	Provision(name, filename string) (ProvisionResult, error)
+	// Provision creates AND starts a container named `name` (the slugified
+	// podman name), attaching the shared-library ISO `filename` as its DVD so it
+	// boots into that game. `display` is the canonical PRETTY name written as the
+	// Xbox console nickname (empty for auto per-player boxes → the name is used).
+	Provision(name, filename, display string) (ProvisionResult, error)
 	// Exists reports whether a container of this name is already provisioned, so
 	// request-instance can fail closed (one hosted box per player) instead of
 	// colliding.

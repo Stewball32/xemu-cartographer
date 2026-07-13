@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/instancename"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 )
 
@@ -32,18 +33,27 @@ func init() {
 				Name    string `json:"name"`
 				GameISO string `json:"game_iso"`
 			}
-			if err := e.BindBody(&body); err != nil || body.Name == "" {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+			if err := e.BindBody(&body); err != nil {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+			}
+			// Decoupled naming: validate the pretty CANONICAL/display name
+			// (printable ASCII, ≤15), then derive the podman CONTAINER name by
+			// slugifying it under the deployment prefix. The display name is
+			// stored + written as the Xbox console nickname; the slug is what
+			// podman sees.
+			display := instancename.Display(body.Name)
+			if display == "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name must be 1-15 printable characters"})
+			}
+			slug := instancename.Slug(display)
+			if slug == "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name has no letters/digits to form a container name"})
 			}
 			if body.GameISO != "" && (strings.ContainsAny(body.GameISO, `/\`) || body.GameISO == ".." || strings.HasPrefix(body.GameISO, ".")) {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "game_iso must be a bare filename in the ISO library"})
 			}
-			// Namespace the container under the deployment's prefix (empty in prod).
-			// Idempotent: an operator may type the bare or already-prefixed name.
-			if p := Manager.NamePrefix(); p != "" && !strings.HasPrefix(body.Name, p) {
-				body.Name = p + body.Name
-			}
-			info, err := Manager.CreateWithOptions(body.Name, podman.CreateOptions{GameISO: body.GameISO})
+			container := Manager.NamePrefix() + slug
+			info, err := Manager.CreateWithOptions(container, podman.CreateOptions{GameISO: body.GameISO, DisplayName: display})
 			if err != nil {
 				return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 			}

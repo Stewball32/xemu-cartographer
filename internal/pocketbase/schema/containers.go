@@ -24,6 +24,14 @@ func registerContainersCollection(app *pocketbase.PocketBase) error {
 			Max:         64,
 			Presentable: true,
 		},
+		// Canonical PRETTY display name (printable ASCII, ≤15) that `name` was
+		// slugified from — the Xbox console nickname + future H2 profile name.
+		// Decoupled from the podman `name` on purpose. Optional (legacy/unnamed
+		// instances leave it empty and are identified by `name`).
+		&core.TextField{
+			Name: "display_name",
+			Max:  15,
+		},
 		&core.NumberField{
 			Name:    "index",
 			OnlyInt: true,
