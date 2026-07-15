@@ -5,39 +5,35 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// registerSyncPresetsCollection creates the `sync_presets` collection — the
-// "express preset" the LAN-sync client pulls: a named bundle of WHICH
-// checked-in players' profiles, WHICH games (isos), and WHICH apps to push to a
-// station, in priority order, with a per-category conflict policy.
+// registerSyncPresetsCollection creates the `sync_presets` collection (SPEC
+// §4.2) — the "express preset" the LAN-sync client pulls: a named bundle of an
+// event's checked-in players' profiles, plus selected games (isos) + apps, with
+// a priority ordering and a per-category conflict/prune policy.
 //
-// Exactly one preset is the "active" one the client resolves by default (GET
-// /api/lan/sync/manifest?preset=active). Single-active is NOT yet enforced —
-// see the TODO on the `active` field.
+// Exactly one preset is `active` — the client resolves it by default (GET
+// /api/lan/sync/manifest?preset=active). Single-active is NOT yet enforced (see
+// the TODO on `active`).
 //
-// Relations (staleness — see the M/scaffold report's edge-case notes): the
-// player/game/app references are PB RelationFields with CascadeDelete=false, so
-// deleting a referenced iso/app/user NULLIFIES the reference (PB drops the id
-// from the list) rather than cascading the preset away. That keeps a preset
-// alive when one of its items disappears; the manifest resolver must therefore
-// tolerate dangling/absent ids at read time.
+// Fields mirror the SPEC table: name, active, event, games, apps, priority
+// (json id→int ordering map, higher = fill first), policy (json per-category
+// {conflict, prune}). NOTE: unlike the first scaffold, there is NO explicit
+// `players` relation and NO separate per-category select fields — players are
+// resolved from the event's check-ins, and policy is a single JSON blob (the
+// client reads it verbatim into the manifest).
 //
-// ⚠️ Ordering caveat: PB relation LISTS are unordered sets, so "priority order"
-// cannot be expressed by the relation field itself. `priority` holds the
-// explicit ordered id sequence the client should process; the resolver reads it
-// to order the manifest.
+// Staleness (SPEC §4.5 / report edge cases): the games/apps relations use
+// CascadeDelete=false, so deleting a referenced iso/app NULLIFIES the reference
+// (PB drops the id from the list) rather than cascading the preset away — the
+// manifest resolver must tolerate dangling ids.
 //
-// Registered from identity.go (phase 6) AFTER isos + apps (relation targets)
-// and after phase 1 (user_roles, for the organizer/admin mutate rule).
+// Registered from identity.go (phase 6) AFTER lan_events + isos + apps (its
+// relation targets) and after phase 1 (user_roles, for the mutate rule).
 func registerSyncPresetsCollection(app *pocketbase.PocketBase) error {
 	if collectionExists(app, "sync_presets") {
 		return reconcileSyncPresetsRules(app)
 	}
 
-	usersCol, err := requireCollection(app, "users")
-	if err != nil {
-		return err
-	}
-	eventsCol, err := requireCollection(app, "game_events")
+	eventsCol, err := requireCollection(app, "lan_events")
 	if err != nil {
 		return err
 	}
@@ -53,23 +49,16 @@ func registerSyncPresetsCollection(app *pocketbase.PocketBase) error {
 	collection := core.NewBaseCollection("sync_presets")
 	collection.Fields.Add(
 		&core.TextField{Name: "name", Required: true, Min: 1, Max: 120, Presentable: true},
-		&core.TextField{Name: "description", Max: 2000},
-		// Event this preset draws its checked-in players from (optional; a
-		// preset may also pin an explicit player list via `players`). Same
-		// game_events scope caveat as checkins.event.
+		// The single preset the client pulls by default (?preset=active).
+		// TODO(lan-sync): enforce single-active via a hook (clear other presets'
+		// `active` on save), or move "active" to a singleton pointer collection.
+		&core.BoolField{Name: "active"},
+		// The LAN event whose checked-in players' profiles this preset syncs.
 		&core.RelationField{
 			Name:         "event",
+			Required:     true,
 			CollectionId: eventsCol.Id,
 			MaxSelect:    1,
-		},
-		// Explicit player set (the checked-in players whose CE/H2 profiles sync).
-		// Nullify-on-delete. Empty = "resolve from event's checked-in set" (TODO
-		// in the manifest resolver).
-		&core.RelationField{
-			Name:          "players",
-			CollectionId:  usersCol.Id,
-			MaxSelect:     999,
-			CascadeDelete: false,
 		},
 		// Games (ISOs) to push. preset→iso reference; nullify-on-delete.
 		&core.RelationField{
@@ -85,23 +74,19 @@ func registerSyncPresetsCollection(app *pocketbase.PocketBase) error {
 			MaxSelect:     999,
 			CascadeDelete: false,
 		},
-		// Explicit priority ordering (relation lists are unordered). Shape TBD
-		// with the client — a stub such as
-		//   {"players":["u1",...],"games":["i1",...],"apps":["a1",...]}
-		// or a flat ranked list. Resolver reads this to order manifest items.
+		// Ordering map: record id → int priority, higher = fill first. Relation
+		// lists are unordered sets, so ordering lives here. Shape:
+		//   {"iso_ce": 100, "app_xbmc": 50, ...}
 		&core.JSONField{Name: "priority", MaxSize: 1 << 16},
-		// Per-category conflict policy: what the client does when the target
-		// already has an item in this category.
-		//   skip      — leave the existing item, don't push
-		//   overwrite — replace the existing item
-		//   prune     — overwrite AND remove target items not in this preset
-		&core.SelectField{Name: "profiles_conflict", Values: conflictPolicyValues, MaxSelect: 1},
-		&core.SelectField{Name: "games_conflict", Values: conflictPolicyValues, MaxSelect: 1},
-		&core.SelectField{Name: "apps_conflict", Values: conflictPolicyValues, MaxSelect: 1},
-		// The single preset the client pulls by default. TODO(lan-sync): enforce
-		// single-active via a hook (clear other presets' `active` on save), or
-		// move "active" to a separate singleton pointer collection.
-		&core.BoolField{Name: "active"},
+		// Per-category conflict/prune policy, read verbatim into the manifest's
+		// top-level `policy`. Shape (SPEC §4.3):
+		//   {"profiles":{"conflict":"overwrite","prune":true},
+		//    "games":{"conflict":"skip","prune":false},
+		//    "apps":{"conflict":"skip","prune":false}}
+		// conflict ∈ {skip, overwrite}; prune ∈ {true, false}. ("prune" as a
+		// per-category conflict verb collapses to overwrite+remove-not-in-set on
+		// the client; here it's carried as the policy flag.)
+		&core.JSONField{Name: "policy", MaxSize: 1 << 16},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -112,9 +97,6 @@ func registerSyncPresetsCollection(app *pocketbase.PocketBase) error {
 	return app.Save(collection)
 }
 
-// conflictPolicyValues is the shared per-category conflict-policy enum.
-var conflictPolicyValues = []string{"skip", "overwrite", "prune"}
-
 func reconcileSyncPresetsRules(app *pocketbase.PocketBase) error {
 	existing, err := app.FindCollectionByNameOrId("sync_presets")
 	if err != nil {
@@ -124,10 +106,9 @@ func reconcileSyncPresetsRules(app *pocketbase.PocketBase) error {
 	return app.Save(existing)
 }
 
-// setSyncPresetsRules: any authed user may read presets (the admin UI +
-// manifest preview); only organizers/admins may create/edit/remove them. The
-// on-Xbox client reads the resolved manifest through the LAN endpoint (superuser
-// context), not this collection's REST API.
+// setSyncPresetsRules: any authed user may read presets (admin UI + preview);
+// only organizers/admins may create/edit/remove them. The on-Xbox client reads
+// the RESOLVED manifest via the LAN endpoint (superuser context), not this REST.
 func setSyncPresetsRules(c *core.Collection) {
 	read := "@request.auth.id != \"\""
 	mutate := organizerOrAdmin

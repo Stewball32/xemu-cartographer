@@ -1,8 +1,10 @@
 package lansync
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -10,136 +12,122 @@ import (
 
 // GET /api/lan/sync/manifest?preset=<id|active>
 //
-// Resolves a sync_preset into the concrete set the client installs. This is THE
-// contract the norcal-og-xbox client consumes — the shape below is a STUB to be
-// reconciled against the client session's exact expected JSON.
+// Resolves a sync_preset into the flat payload the on-Xbox JSON reader consumes
+// (SPEC §4.3). THIS is the contract the norcal-og-xbox client depends on — the
+// shape below matches SPEC v1.0 exactly and reuses the /api/lan/saves/manifest
+// field vocabulary (title_id / fatx_dir / footprint_bytes / format / path).
 //
-// SCAFFOLD: the preset lookup + conflict-policy read are wired; the actual
-// resolution of players→profiles, games→isos, apps→apps into item arrays is
-// stubbed (empty arrays + TODO). Items ship in priority order once resolved.
+// SCAFFOLD: the preset lookup, event header, and policy passthrough are wired;
+// the actual resolution of checkins→profiles, preset.games→isos, preset.apps→
+// apps into the item arrays is stubbed (empty arrays + TODO). Items ship in
+// preset.priority order once resolved.
+const specVersion = "1.0"
+
 func init() {
 	register(func() {
 		Group.GET("/manifest", handleManifest)
 	})
 }
 
-// syncProfileRef is one checked-in player's CE+H2 profiles to install.
-type syncProfileRef struct {
-	Gamertag string       `json:"gamertag"`
-	Priority int          `json:"priority"`
-	CE       *syncFileRef `json:"ce,omitempty"`
-	H2       *syncFileRef `json:"h2,omitempty"`
-}
-
-// syncFileRef is a single downloadable artifact reference.
-type syncFileRef struct {
-	ID          string `json:"id"`
-	HasFile     bool   `json:"has_file"`
-	DownloadURL string `json:"download_url,omitempty"`
-}
-
-// syncGameRef is one game (ISO) to install, pulled as an extracted tree.
-type syncGameRef struct {
+// syncItem is one manifest entry. A single flat struct covers all three
+// categories (SPEC §4.3 field reference); category-specific fields use omitempty
+// so a profile omits dest_dir/priority and a game/app omits player/fatx_dir.
+type syncItem struct {
 	ID             string `json:"id"`
-	Name           string `json:"name"`
+	Category       string `json:"category"` // "profile" | "game" | "app"
+	Player         string `json:"player,omitempty"`
+	Title          string `json:"title,omitempty"`
 	TitleID        string `json:"title_id,omitempty"`
-	Priority       int    `json:"priority"`
-	ExtractedReady bool   `json:"extracted_ready"`
-	DownloadURL    string `json:"download_url"`
-}
-
-// syncAppRef is one app to install into the Xbox "Apps" folder.
-type syncAppRef struct {
-	ID             string `json:"id"`
 	Name           string `json:"name"`
-	Priority       int    `json:"priority"`
-	ExtractedReady bool   `json:"extracted_ready"`
-	DownloadURL    string `json:"download_url"`
+	FatxDir        string `json:"fatx_dir,omitempty"`  // profiles
+	DestDir        string `json:"dest_dir,omitempty"`  // games, apps (relative to data drive)
+	FootprintBytes uint64 `json:"footprint_bytes"`
+	Format         string `json:"format"` // "tar" | "zip"
+	Path           string `json:"path"`   // ready-to-GET relative URL
+	Priority       int    `json:"priority,omitempty"`
+	Conflict       string `json:"conflict"` // per-item override of policy default
 }
 
-// conflictPolicy is the per-category skip/overwrite/prune the client applies.
-type conflictPolicy struct {
-	Profiles string `json:"profiles"`
-	Games    string `json:"games"`
-	Apps     string `json:"apps"`
+type catPolicy struct {
+	Conflict string `json:"conflict"` // "skip" | "overwrite"
+	Prune    bool   `json:"prune"`
 }
 
-// presetHeader identifies the resolved preset.
+type manifestPolicy struct {
+	Profiles catPolicy `json:"profiles"`
+	Games    catPolicy `json:"games"`
+	Apps     catPolicy `json:"apps"`
+}
+
 type presetHeader struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Active bool   `json:"active"`
 }
 
-// syncManifest is the top-level response — the contract the client consumes.
-type syncManifest struct {
-	Hub            string           `json:"hub"`
-	Version        int              `json:"version"`
-	Preset         presetHeader     `json:"preset"`
-	ConflictPolicy conflictPolicy   `json:"conflict_policy"`
-	Profiles       []syncProfileRef `json:"profiles"`
-	Games          []syncGameRef    `json:"games"`
-	Apps           []syncAppRef     `json:"apps"`
-	Counts         manifestCounts   `json:"counts"`
+type eventHeader struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
-type manifestCounts struct {
-	Profiles int `json:"profiles"`
-	Games    int `json:"games"`
-	Apps     int `json:"apps"`
+// syncManifest is the top-level response (SPEC §4.3).
+type syncManifest struct {
+	SpecVersion string         `json:"spec_version"`
+	Hub         string         `json:"hub"`
+	GeneratedAt string         `json:"generated_at"`
+	Preset      presetHeader   `json:"preset"`
+	Event       eventHeader    `json:"event"`
+	Policy      manifestPolicy `json:"policy"`
+	Profiles    []syncItem     `json:"profiles"`
+	Games       []syncItem     `json:"games"`
+	Apps        []syncItem     `json:"apps"`
 }
 
 func handleManifest(e *core.RequestEvent) error {
 	sel := strings.TrimSpace(e.Request.URL.Query().Get("preset"))
 
 	preset, err := resolvePreset(e.App, sel)
-	if err != nil {
+	if err != nil || preset == nil {
 		return e.JSON(http.StatusNotFound, map[string]string{
 			"error": "no matching sync preset (pass ?preset=<id> or ?preset=active)",
 		})
 	}
 
 	man := syncManifest{
-		Hub:     "xemu-cartographer",
-		Version: 1,
+		SpecVersion: specVersion,
+		Hub:         "norcal-halo-lan",
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
 		Preset: presetHeader{
 			ID:     preset.Id,
 			Name:   preset.GetString("name"),
 			Active: preset.GetBool("active"),
 		},
-		ConflictPolicy: conflictPolicy{
-			Profiles: policyOrDefault(preset.GetString("profiles_conflict")),
-			Games:    policyOrDefault(preset.GetString("games_conflict")),
-			Apps:     policyOrDefault(preset.GetString("apps_conflict")),
-		},
-		// TODO(lan-sync): resolve the concrete sets, ordered by preset.priority:
-		//   Profiles — for each checked-in player (preset.players, or the
-		//     checked_in set of preset.event when players is empty), look up the
-		//     user's gamertag → ce_profiles / h2_profiles (mirror
-		//     routes/lansaves identity), emitting /api/lan/saves/file/<kind>/<id>
-		//     download URLs.
-		//   Games    — expand preset.games (isos), emit /api/lan/sync/games/<id>/download,
-		//     carry extracted_ready.
-		//   Apps     — expand preset.apps, emit /api/lan/sync/apps/<id>/download,
-		//     carry extracted_ready.
-		// Tolerate dangling relation ids (nullify-on-delete leaves gaps).
-		Profiles: []syncProfileRef{},
-		Games:    []syncGameRef{},
-		Apps:     []syncAppRef{},
-	}
-	man.Counts = manifestCounts{
-		Profiles: len(man.Profiles),
-		Games:    len(man.Games),
-		Apps:     len(man.Apps),
+		Event:  resolveEventHeader(e.App, preset.GetString("event")),
+		Policy: resolvePolicy(preset),
+		// TODO(lan-sync): resolve the concrete sets, ordered by preset.priority
+		// (id→int, higher first). Tolerate dangling relation ids (nullify-on-delete).
+		//   Profiles — for each checked-in gamertag of preset.event (checkins
+		//     where event == preset.event), resolve gamertag → owning user →
+		//     ce_profiles / h2_profiles (mirror routes/lansaves identity), emit
+		//     category="profile", format="tar", path=/api/lan/saves/download?...,
+		//     fatx_dir/title_id/footprint_bytes from the generated bundle.
+		//   Games — expand preset.games (isos), category="game", format="tar",
+		//     path=/api/lan/sync/dl/game/<id>, dest_dir=<halo_dir>\<name>,
+		//     footprint from the extracted tree.
+		//   Apps  — expand preset.apps, category="app", format="zip",
+		//     path=/api/lan/sync/dl/app/<id>, dest_dir=<apps_dir>\<name>.
+		// Per-item `conflict` defaults to the category policy conflict.
+		Profiles: []syncItem{},
+		Games:    []syncItem{},
+		Apps:     []syncItem{},
 	}
 
 	return e.JSON(http.StatusOK, man)
 }
 
-// resolvePreset returns the preset for the selector: a bare id, "active"/"" for
-// the active preset. TODO(lan-sync): if several rows have active=true (not yet
-// enforced single-active), this returns the first — reconcile with the
-// single-active hook.
+// resolvePreset returns the preset for the selector: a bare id, or "active"/""
+// for the active preset. TODO(lan-sync): if several rows have active=true (not
+// yet enforced single-active), this returns the first.
 func resolvePreset(app core.App, sel string) (*core.Record, error) {
 	if sel != "" && sel != "active" {
 		return app.FindRecordById("sync_presets", sel)
@@ -147,11 +135,45 @@ func resolvePreset(app core.App, sel string) (*core.Record, error) {
 	return app.FindFirstRecordByFilter("sync_presets", "active = true", dbx.Params{})
 }
 
-// policyOrDefault falls back to "skip" (the safest non-destructive default) when
-// a preset leaves a category's conflict policy unset.
-func policyOrDefault(v string) string {
-	if v == "" {
-		return "skip"
+// resolveEventHeader projects the preset's lan_event into {id, label}. Empty on
+// a missing/dangling event id (tolerated).
+func resolveEventHeader(app core.App, eventID string) eventHeader {
+	if eventID == "" {
+		return eventHeader{}
 	}
-	return v
+	rec, err := app.FindRecordById("lan_events", eventID)
+	if err != nil || rec == nil {
+		return eventHeader{ID: eventID}
+	}
+	return eventHeader{ID: rec.Id, Label: rec.GetString("label")}
+}
+
+// resolvePolicy reads the preset's `policy` JSON verbatim into the manifest
+// shape, defaulting each category to the safest non-destructive policy
+// (conflict=skip, prune=false) when a field is absent.
+func resolvePolicy(preset *core.Record) manifestPolicy {
+	def := manifestPolicy{
+		Profiles: catPolicy{Conflict: "skip"},
+		Games:    catPolicy{Conflict: "skip"},
+		Apps:     catPolicy{Conflict: "skip"},
+	}
+	raw := strings.TrimSpace(preset.GetString("policy"))
+	if raw == "" || raw == "null" {
+		return def
+	}
+	var parsed manifestPolicy
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return def // malformed policy → safe defaults (TODO: surface a warning)
+	}
+	// Fill any category the organizer left unset with the safe default.
+	if parsed.Profiles.Conflict == "" {
+		parsed.Profiles.Conflict = "skip"
+	}
+	if parsed.Games.Conflict == "" {
+		parsed.Games.Conflict = "skip"
+	}
+	if parsed.Apps.Conflict == "" {
+		parsed.Apps.Conflict = "skip"
+	}
+	return parsed
 }
