@@ -78,4 +78,16 @@ func init() {
 	register(registerH2ProfilesCollection)
 	register(registerGametypesCollection)
 	register(registerGameTitlesCollection)
+
+	// 6. LAN-sync provisioning chain (scaffold). Order matters:
+	//    - isos (moved here from its own init() so it registers before
+	//      sync_presets, which relates to it) + apps must exist before
+	//      sync_presets (which relates to both isos + apps).
+	//    - checkins + sync_presets relate to game_events (phase 4) + users, and
+	//      their mutate rules compose organizerOrAdmin (phase 1 user_roles), so
+	//      they must follow both.
+	register(registerISOsCollection)
+	register(registerAppsCollection)
+	register(registerCheckinsCollection)
+	register(registerSyncPresetsCollection)
 }
