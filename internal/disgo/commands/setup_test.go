@@ -6,28 +6,35 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
 )
 
-// TestSetupChannelSpec verifies the fixed channel set + that each spec assigns
-// its created ID to the right binding field (the pure part of /setup; the
-// Discord REST provisioning is thin plumbing verified live).
+// TestSetupChannelSpec verifies the fixed channel set + that each Discord channel
+// name maps to a distinct, valid post-hook (the pure part of /setup; the Discord
+// REST provisioning + binding writes are thin plumbing verified live).
 func TestSetupChannelSpec(t *testing.T) {
 	spec := setupChannelSpec()
-	wantNames := []string{"container-status", "kiosk-links", "announcements", "bot-log"}
-	if len(spec) != len(wantNames) {
-		t.Fatalf("spec has %d channels, want %d", len(spec), len(wantNames))
+	want := map[string]string{
+		"container-status": discordcfg.HookContainerStatus,
+		"kiosk-links":      discordcfg.HookKioskLinks,
+		"announcements":    discordcfg.HookAnnouncements,
+		"bot-log":          discordcfg.HookBotLog,
 	}
-
-	var ch discordcfg.Channels
-	for i, s := range spec {
-		if s.name != wantNames[i] {
-			t.Errorf("spec[%d].name = %q, want %q", i, s.name, wantNames[i])
+	if len(spec) != len(want) {
+		t.Fatalf("spec has %d channels, want %d", len(spec), len(want))
+	}
+	postHooks := map[string]bool{}
+	for _, h := range discordcfg.PostHooks {
+		postHooks[h] = true
+	}
+	seen := map[string]bool{}
+	for _, s := range spec {
+		if want[s.name] != s.hook {
+			t.Errorf("channel %q → hook %q, want %q", s.name, s.hook, want[s.name])
 		}
-		s.assign(&ch, "id-"+s.name)
-	}
-	// Each assign wrote its distinct field.
-	if ch.ContainerStatus != "id-container-status" ||
-		ch.KioskLinks != "id-kiosk-links" ||
-		ch.Announcements != "id-announcements" ||
-		ch.BotLog != "id-bot-log" {
-		t.Errorf("assign fns didn't map to distinct fields: %+v", ch)
+		if !postHooks[s.hook] {
+			t.Errorf("hook %q for %q is not in PostHooks", s.hook, s.name)
+		}
+		if seen[s.hook] {
+			t.Errorf("hook %q bound more than once", s.hook)
+		}
+		seen[s.hook] = true
 	}
 }

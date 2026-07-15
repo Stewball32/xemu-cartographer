@@ -35,21 +35,21 @@ func init() {
 // setupCategoryName is the category the bot channels live under.
 const setupCategoryName = "Cartographer"
 
-// channelSpec is one provisioned channel: the Discord channel name and where its
-// ID is stored in the guild's Channels binding.
+// channelSpec is one provisioned channel: the Discord channel name and the
+// discordcfg hook its ID is bound to.
 type channelSpec struct {
-	name   string
-	assign func(*discordcfg.Channels, string)
+	name string
+	hook string
 }
 
 // setupChannelSpec is the fixed set of function channels /setup provisions. Pure
 // (no Discord/DB), so the shape is unit-testable.
 func setupChannelSpec() []channelSpec {
 	return []channelSpec{
-		{"container-status", func(c *discordcfg.Channels, id string) { c.ContainerStatus = id }},
-		{"kiosk-links", func(c *discordcfg.Channels, id string) { c.KioskLinks = id }},
-		{"announcements", func(c *discordcfg.Channels, id string) { c.Announcements = id }},
-		{"bot-log", func(c *discordcfg.Channels, id string) { c.BotLog = id }},
+		{"container-status", discordcfg.HookContainerStatus},
+		{"kiosk-links", discordcfg.HookKioskLinks},
+		{"announcements", discordcfg.HookAnnouncements},
+		{"bot-log", discordcfg.HookBotLog},
 	}
 }
 
@@ -70,14 +70,16 @@ func handleSetup(_ discord.SlashCommandInteractionData, e *handler.CommandEvent)
 	}
 
 	// Seed from anything already persisted so re-runs prefer stored IDs.
-	ch, _ := discordcfg.GetChannels(app, gid.String())
+	bindings, _ := discordcfg.GetBindings(app, gid.String())
 	var log []string
 
-	catID, made, err := ensureCategory(e, *gid, existing, ch.Category)
+	catID, made, err := ensureCategory(e, *gid, existing, bindings[discordcfg.HookCategory])
 	if err != nil {
 		return replyEphemeral(e, "Failed to create the category: "+err.Error())
 	}
-	ch.Category = catID.String()
+	if err := discordcfg.SetBinding(app, gid.String(), discordcfg.HookCategory, catID.String()); err != nil {
+		return replyEphemeral(e, "Category ready but saving the binding failed: "+err.Error())
+	}
 	log = append(log, statusLine(setupCategoryName, made))
 
 	for _, spec := range setupChannelSpec() {
@@ -85,12 +87,10 @@ func handleSetup(_ discord.SlashCommandInteractionData, e *handler.CommandEvent)
 		if err != nil {
 			return replyEphemeral(e, fmt.Sprintf("Failed to create #%s: %s", spec.name, err.Error()))
 		}
-		spec.assign(&ch, id.String())
+		if err := discordcfg.SetBinding(app, gid.String(), spec.hook, id.String()); err != nil {
+			return replyEphemeral(e, fmt.Sprintf("#%s ready but saving its binding failed: %s", spec.name, err.Error()))
+		}
 		log = append(log, statusLine("#"+spec.name, made))
-	}
-
-	if err := discordcfg.SetChannels(app, gid.String(), ch); err != nil {
-		return replyEphemeral(e, "Channels are ready but saving the config failed: "+err.Error())
 	}
 
 	emb := discord.Embed{
