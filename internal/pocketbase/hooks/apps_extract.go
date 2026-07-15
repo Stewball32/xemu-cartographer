@@ -1,45 +1,88 @@
 package hooks
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"log"
+
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/pocketbase/pocketbase/tools/types"
+
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 )
 
 func init() {
 	register(registerAppsExtractHook)
 }
 
-// registerAppsExtractHook eagerly unpacks an uploaded app ZIP into its derived
-// EXTRACTED tree on create, so the LAN-sync client pulls an unpacked app ready
-// to drop into the Xbox "Apps" folder. Like the ISO cache, it is keyed to the
-// immutable row (the zip is write-once — see apps_immutable), so no content
-// hashing is needed, and it is evictable + regenerable.
-//
-// SCAFFOLD: the actual unzip + cache bookkeeping is stubbed (see extractApp).
+// registerAppsExtractHook validates + measures an uploaded app ZIP on create so
+// the LAN-sync client knows its on-drive footprint before pulling it. Apps
+// download as the stored zip (SPEC §4.4), so — unlike ISOs — there is no tree to
+// stream; "extraction" here reads the zip's central directory, computes the
+// FATX-rounded UNCOMPRESSED footprint (drive-fill math), and marks the row
+// ready. Failures are logged, leaving extracted_ready=false.
 func registerAppsExtractHook(app *pocketbase.PocketBase) {
 	app.OnRecordAfterCreateSuccess("apps").BindFunc(func(e *core.RecordEvent) error {
 		id := e.Record.Id
-		file := e.Record.GetString("file")
-		routine.FireAndForget(func() { extractApp(app, id, file) })
+		routine.FireAndForget(func() {
+			if err := ExtractAppRecord(app, id); err != nil {
+				log.Printf("lansync: app measure %s: %v", id, err)
+			}
+		})
 		return e.Next()
 	})
 }
 
-// extractApp is the (stubbed) eager unzip step.
-//
-// TODO(lan-sync): implement:
-//  1. Resolve the stored zip on disk (PB file storage path for this row/field)
-//     or open it via the filesystem/blob API.
-//  2. mkdir a per-row cache dir under LAN_SYNC_EXTRACT_DIR (e.g. <dir>/apps/<id>).
-//  3. Unzip into it (archive/zip), guarding against path traversal (zip-slip).
-//  4. On success re-fetch the row + set extracted_path / extracted_ready=true /
-//     extracted_at=now + app.Save. On failure log + leave extracted_ready=false.
-//
-// Idempotent + safe to re-run; eviction deletes the cache dir + clears the fields.
-func extractApp(app *pocketbase.PocketBase, recordID, file string) {
-	_ = app
-	_ = recordID
-	_ = file
-	// no-op stub — see TODO above.
+// ExtractAppRecord reads the app's stored zip, computes its footprint, and
+// writes the cache fields back (extracted_ready / extracted_at /
+// footprint_bytes). Exported + synchronous so the seed shares the hook's path.
+func ExtractAppRecord(app core.App, recordID string) error {
+	rec, err := app.FindRecordById("apps", recordID)
+	if err != nil {
+		return err
+	}
+	// Idempotent: already measured → no-op (avoids the create hook's async fire
+	// redoing the seed's synchronous measure). Clear extracted_ready to redo.
+	if rec.GetBool("extracted_ready") {
+		return nil
+	}
+	filename := rec.GetString("file")
+	if filename == "" {
+		return fmt.Errorf("app %s has no uploaded file", recordID)
+	}
+
+	data, err := readStoredFile(app, rec, filename)
+	if err != nil {
+		return err
+	}
+
+	cfg := lansync.Load()
+	footprint, err := lansync.ZipFootprint(bytes.NewReader(data), int64(len(data)), cfg.FATXCluster)
+	if err != nil {
+		return err
+	}
+
+	rec.Set("extracted_ready", true)
+	rec.Set("extracted_at", types.NowDateTime())
+	rec.Set("footprint_bytes", footprint)
+	return app.Save(rec)
+}
+
+// readStoredFile reads a record's stored file field bytes via the PB filesystem.
+func readStoredFile(app core.App, rec *core.Record, filename string) ([]byte, error) {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return nil, err
+	}
+	defer fsys.Close()
+
+	r, err := fsys.GetReader(rec.BaseFilesPath() + "/" + filename)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	return io.ReadAll(r)
 }

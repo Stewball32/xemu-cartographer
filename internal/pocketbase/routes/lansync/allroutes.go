@@ -30,6 +30,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
@@ -38,12 +39,17 @@ import (
 // the on-Xbox client cannot present a browser JWT.
 var Group *router.RouterGroup[*core.RequestEvent]
 
+// cfg holds the resolved LAN-sync paths + client-facing dir names (SPEC dest_dir
+// roots, FATX cluster). Loaded once from env in RegisterAll.
+var cfg lansync.Config
+
 var registry []func()
 
 func register(fn func()) { registry = append(registry, fn) }
 
 // RegisterAll creates the group + registers all handlers.
 func RegisterAll(se *core.ServeEvent) {
+	cfg = lansync.Load()
 	Group = se.Router.Group("/api/lan/sync")
 	Group.BindFunc(authorizeLAN())
 	for _, fn := range registry {

@@ -74,6 +74,9 @@ func registerISOsCollection(app *pocketbase.PocketBase) error {
 		&core.BoolField{
 			Name: "available",
 		},
+		// Destination folder name under the client's games dir (SPEC dest_dir =
+		// <halo_dir>\<dest_name>, e.g. "\Halo\HaloCE"). Empty → derived from name.
+		&core.TextField{Name: "dest_name", Max: 64},
 		// --- LAN-sync: derived, rebuildable EXTRACTED cache (isos_extract hook) ---
 		// Host path to the unpacked disc tree for this row. Empty until the
 		// extraction hook runs; safe to delete + regenerate (evictable).
@@ -82,6 +85,9 @@ func registerISOsCollection(app *pocketbase.PocketBase) error {
 		&core.BoolField{Name: "extracted_ready"},
 		// When the cache was last (re)built. Nil = never / evicted.
 		&core.DateField{Name: "extracted_at"},
+		// FATX cluster-rounded on-disk footprint of the extracted tree (drive-fill
+		// math). Computed by the extraction hook. 0 until extracted.
+		&core.NumberField{Name: "footprint_bytes", OnlyInt: true, Min: f64(0)},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -112,9 +118,11 @@ func reconcileISOsExtractedFields(app *pocketbase.PocketBase) error {
 		return nil
 	}
 	existing.Fields.Add(
+		&core.TextField{Name: "dest_name", Max: 64},
 		&core.TextField{Name: "extracted_path", Max: 1024},
 		&core.BoolField{Name: "extracted_ready"},
 		&core.DateField{Name: "extracted_at"},
+		&core.NumberField{Name: "footprint_bytes", OnlyInt: true, Min: f64(0)},
 	)
 	return app.Save(existing)
 }

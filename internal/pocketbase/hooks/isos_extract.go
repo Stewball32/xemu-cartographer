@@ -1,9 +1,15 @@
 package hooks
 
 import (
+	"log"
+	"os"
+
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/pocketbase/pocketbase/tools/types"
+
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 )
 
 func init() {
@@ -11,43 +17,53 @@ func init() {
 }
 
 // registerISOsExtractHook eagerly produces the derived EXTRACTED tree for an ISO
-// the moment its catalog row is created, so headless stations pull an unpacked
-// disc rather than a raw XISO. The cache is keyed to the immutable row (the
-// binary is write-once — see isos_immutable), so it never needs content hashing;
-// it is evictable + regenerable at any time.
+// when its catalog row is created, so headless stations pull an unpacked disc
+// rather than a raw XISO. Runs on AfterCreateSuccess (row exists first) in a
+// routine.FireAndForget so the potentially slow, multi-GiB extraction doesn't
+// block record creation. Failures are logged, leaving extracted_ready=false so
+// the manifest advertises the row as not-ready (the download 409s).
 //
-// SCAFFOLD: the actual extract-xiso shell-out + cache bookkeeping is stubbed
-// (see extractISO). Wired on AfterCreateSuccess so the row exists before the
-// (potentially slow, multi-GiB) extraction runs; done in a routine.FireAndForget
-// so record creation isn't blocked on it.
+// The cache is keyed to the immutable row (isos_immutable), so it never needs
+// content hashing and is evictable + regenerable at any time.
 func registerISOsExtractHook(app *pocketbase.PocketBase) {
 	app.OnRecordAfterCreateSuccess("isos").BindFunc(func(e *core.RecordEvent) error {
-		// Clone the fields the goroutine needs — event records aren't
-		// concurrency-safe (CLAUDE.md convention).
-		id := e.Record.Id
-		filename := e.Record.GetString("filename")
-		routine.FireAndForget(func() { extractISO(app, id, filename) })
+		id := e.Record.Id // clone: event records aren't concurrency-safe
+		routine.FireAndForget(func() {
+			if err := ExtractISORecord(app, id); err != nil {
+				log.Printf("lansync: iso extract %s: %v", id, err)
+			}
+		})
 		return e.Next()
 	})
 }
 
-// extractISO is the (stubbed) eager extraction step.
-//
-// TODO(lan-sync): implement:
-//  1. Resolve `filename` against the shared ISO dir (podman Config.ISODir).
-//  2. mkdir a per-row cache dir under LAN_SYNC_EXTRACT_DIR (e.g. <dir>/isos/<id>).
-//  3. Shell out to extract-xiso (installed at /usr/bin/extract-xiso):
-//     `extract-xiso -d <cacheDir> <isoPath>` (or -x), streaming, with a
-//     timeout + context cancellation.
-//  4. On success, re-fetch the row and set extracted_path / extracted_ready=true
-//     / extracted_at=now, then app.Save. On failure, log + leave
-//     extracted_ready=false so the manifest advertises the row as not-ready.
-//
-// Extraction should be idempotent + safe to re-run (eviction just deletes the
-// cache dir + clears the fields; this hook — or a future /extract route — rebuilds).
-func extractISO(app *pocketbase.PocketBase, recordID, filename string) {
-	_ = app
-	_ = recordID
-	_ = filename
-	// no-op stub — see TODO above.
+// ExtractISORecord extracts the ISO for a record id and writes the cache fields
+// back onto it (extracted_path / extracted_ready / extracted_at /
+// footprint_bytes). Exported + synchronous so the seed (and any future on-demand
+// re-extract route) can share the exact path the hook uses. Idempotent.
+func ExtractISORecord(app core.App, recordID string) error {
+	rec, err := app.FindRecordById("isos", recordID)
+	if err != nil {
+		return err
+	}
+	// Idempotent: already-cached (ready + tree present) is a no-op, so the
+	// create hook's async fire doesn't redo the seed's synchronous extract. To
+	// force a re-extract, clear extracted_ready or delete extracted_path.
+	if rec.GetBool("extracted_ready") {
+		if p := rec.GetString("extracted_path"); p != "" {
+			if _, statErr := os.Stat(p); statErr == nil {
+				return nil
+			}
+		}
+	}
+	cfg := lansync.Load()
+	treeDir, footprint, err := lansync.ExtractISO(cfg, rec.GetString("filename"), recordID)
+	if err != nil {
+		return err
+	}
+	rec.Set("extracted_path", treeDir)
+	rec.Set("extracted_ready", true)
+	rec.Set("extracted_at", types.NowDateTime())
+	rec.Set("footprint_bytes", footprint)
+	return app.Save(rec)
 }

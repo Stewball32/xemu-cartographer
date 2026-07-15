@@ -2,24 +2,22 @@ package lansync
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 )
 
 // Kiosk-scoped download endpoints (SPEC §4.4) — headless stations pull the
-// server-extracted artifacts:
+// server-extracted artifacts, under authorizeLAN:
 //
-//	GET /api/lan/sync/dl/game/{id}  → tar of the extracted disc tree for isos/{id}
-//	GET /api/lan/sync/dl/app/{id}   → app zip for apps/{id}
+//	GET /api/lan/sync/dl/game/{id}  → tar of the extracted disc tree (isos/{id})
+//	GET /api/lan/sync/dl/app/{id}   → the stored app zip (apps/{id})
 //
-// (Profiles reuse the existing GET /api/lan/saves/download?... — already
-// authorizeLAN-gated.) The manifest hands the client the exact `path`, so the
-// client builds no URLs.
-//
-// SCAFFOLD: both validate the row + that its extracted cache is ready, then 501
-// with a TODO. The transport (tar of the extracted tree for games; the stored
-// zip for apps) is deferred.
+// (Profiles reuse GET /api/lan/saves/file/{kind}/{id}.) The manifest hands the
+// client the exact `path`, so it builds no URLs.
 func init() {
 	register(func() {
 		Group.GET("/dl/game/{id}", handleGameDownload)
@@ -27,44 +25,64 @@ func init() {
 	})
 }
 
+// handleGameDownload streams the extracted disc tree for an ISO as a tar built
+// on the fly from the cached tree (extracted_path).
 func handleGameDownload(e *core.RequestEvent) error {
-	return handleExtractedDownload(e, "isos", "game", "tar")
-}
-
-func handleAppDownload(e *core.RequestEvent) error {
-	return handleExtractedDownload(e, "apps", "app", "zip")
-}
-
-// handleExtractedDownload is the shared stub for the game/app pulls: resolve the
-// row, require the extracted cache to be ready, then 501.
-func handleExtractedDownload(e *core.RequestEvent, collection, category, format string) error {
 	id := strings.TrimSpace(e.Request.PathValue("id"))
 	if id == "" {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "id is required"})
 	}
-
-	rec, err := e.App.FindRecordById(collection, id)
+	rec, err := e.App.FindRecordById("isos", id)
 	if err != nil || rec == nil {
-		return e.JSON(http.StatusNotFound, map[string]string{"error": category + " record not found"})
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "game record not found"})
 	}
 	if !rec.GetBool("extracted_ready") {
-		// The extraction hook hasn't produced (or has evicted) the cache.
 		return e.JSON(http.StatusConflict, map[string]string{
-			"error": "extracted cache not ready — the extraction hook has not produced this artifact yet",
+			"error": "extracted tree not ready — the extraction hook has not produced this game yet",
 		})
 	}
+	treeDir := rec.GetString("extracted_path")
+	if treeDir == "" {
+		return e.JSON(http.StatusConflict, map[string]string{"error": "extracted_path is empty"})
+	}
 
-	// TODO(lan-sync): stream the artifact.
-	//   game → tar the extracted tree at rec.GetString("extracted_path")
-	//          (mirror routes/lansaves/download.go's archive path).
-	//   app  → serve the stored zip (extracted_path or the PB file blob).
-	// Add a disk-space / path-safety (zip-slip) pre-flight. For now, advertise
-	// the resolved cache location so the client contract can be exercised.
-	return e.JSON(http.StatusNotImplemented, map[string]any{
-		"error":          "artifact download not implemented (scaffold)",
-		"category":       category,
-		"format":         format,
-		"id":             id,
-		"extracted_path": rec.GetString("extracted_path"),
-	})
+	data, err := lansync.TarDir(treeDir)
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{"error": "tar extracted tree: " + err.Error()})
+	}
+
+	h := e.Response.Header()
+	h.Set("Content-Disposition", "attachment; filename=\""+destName(rec)+".tar\"")
+	h.Set("X-Fatx-Footprint-Bytes", strconv.FormatInt(int64(rec.GetInt("footprint_bytes")), 10))
+	return e.Blob(http.StatusOK, "application/x-tar", data)
+}
+
+// handleAppDownload streams the stored app zip (SPEC §4.4: apps download as zip).
+func handleAppDownload(e *core.RequestEvent) error {
+	id := strings.TrimSpace(e.Request.PathValue("id"))
+	if id == "" {
+		return e.JSON(http.StatusBadRequest, map[string]string{"error": "id is required"})
+	}
+	rec, err := e.App.FindRecordById("apps", id)
+	if err != nil || rec == nil {
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "app record not found"})
+	}
+	filename := rec.GetString("file")
+	if filename == "" {
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "no app zip uploaded for this record"})
+	}
+
+	fsys, err := e.App.NewFilesystem()
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{"error": "filesystem unavailable"})
+	}
+	defer fsys.Close()
+
+	// Stream the stored zip (Range-capable via PB's filesystem.Serve).
+	e.Response.Header().Set("X-Fatx-Footprint-Bytes", strconv.FormatInt(int64(rec.GetInt("footprint_bytes")), 10))
+	key := rec.BaseFilesPath() + "/" + filename
+	if err := fsys.Serve(e.Response, e.Request, key, filename); err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{"error": "serve failed: " + err.Error()})
+	}
+	return nil
 }

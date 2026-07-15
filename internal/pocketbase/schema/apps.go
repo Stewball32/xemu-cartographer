@@ -51,14 +51,21 @@ func registerAppsCollection(app *pocketbase.PocketBase) error {
 			MaxSelect: 1,
 			MaxSize:   512 << 20, // 512 MiB
 		},
+		// Destination folder name under the client's apps dir (SPEC dest_dir =
+		// <apps_dir>\<dest_name>, e.g. "\Apps\XBMC4Gamers"). Empty → from name.
+		&core.TextField{Name: "dest_name", Max: 64},
 		// --- Derived, rebuildable EXTRACTED cache (see apps_extract hook) ---
 		// Absolute/relative host path to the unpacked tree for this row. Empty
-		// until the extraction hook runs; safe to delete + regenerate.
+		// until the extraction hook runs; safe to delete + regenerate. (Apps
+		// download as the stored zip; this is used for validation/footprint.)
 		&core.TextField{Name: "extracted_path", Max: 1024},
-		// Whether the extracted cache is present + complete (served to clients).
+		// Whether the zip validated + footprint computed (served to clients).
 		&core.BoolField{Name: "extracted_ready"},
 		// When the cache was last (re)built. Nil = never / evicted.
 		&core.DateField{Name: "extracted_at"},
+		// FATX cluster-rounded uncompressed footprint of the zip (drive-fill
+		// math). Computed by the extraction hook. 0 until measured.
+		&core.NumberField{Name: "footprint_bytes", OnlyInt: true, Min: f64(0)},
 		// Whether players/clients may pull this app (retire without deleting).
 		&core.BoolField{Name: "available"},
 		&core.RelationField{
