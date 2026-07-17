@@ -58,22 +58,35 @@ func TestResultsTargets_FanOut(t *testing.T) {
 	}
 }
 
+// ensureCollection creates the two collections the results-config layer now
+// reads/writes: the canonical routing table (results channel = `announcements`
+// hook) + the small settings collection (posted_categories filter).
 func ensureCollection(t *testing.T, app core.App) {
 	t.Helper()
-	if _, err := app.FindCollectionByNameOrId("discord_guilds"); err == nil {
-		return
+	if _, err := app.FindCollectionByNameOrId(discordcfg.RoutesCollection); err != nil {
+		c := core.NewBaseCollection(discordcfg.RoutesCollection)
+		c.Fields.Add(
+			&core.TextField{Name: "guild_id", Required: true},
+			&core.TextField{Name: "hook", Required: true, Max: 64},
+			&core.TextField{Name: "channel_id", Required: true},
+			&core.AutodateField{Name: "created", OnCreate: true},
+		)
+		c.AddIndex("idx_routes_guild_hook_t", true, "guild_id, hook", "")
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save discord_routes: %v", err)
+		}
 	}
-	c := core.NewBaseCollection("discord_guilds")
-	c.Fields.Add(
-		&core.TextField{Name: "guild_id", Required: true},
-		&core.TextField{Name: "results_channel"},
-		&core.TextField{Name: "tournament_channel"},
-		&core.SelectField{Name: "posted_categories", MaxSelect: 4, Values: []string{"casual", "competitive", "tournament", "custom"}},
-		&core.AutodateField{Name: "created", OnCreate: true},
-	)
-	c.AddIndex("idx_discord_guilds_guild_id_unique_t", true, "guild_id", "")
-	if err := app.Save(c); err != nil {
-		t.Fatalf("save discord_guilds: %v", err)
+	if _, err := app.FindCollectionByNameOrId("discord_guild_settings"); err != nil {
+		c := core.NewBaseCollection("discord_guild_settings")
+		c.Fields.Add(
+			&core.TextField{Name: "guild_id", Required: true},
+			&core.SelectField{Name: "posted_categories", MaxSelect: 4, Values: []string{"casual", "competitive", "tournament", "custom"}},
+			&core.AutodateField{Name: "created", OnCreate: true},
+		)
+		c.AddIndex("idx_settings_guild_t", true, "guild_id", "")
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save discord_guild_settings: %v", err)
+		}
 	}
 }
 

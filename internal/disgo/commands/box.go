@@ -11,7 +11,8 @@ import (
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
-// /mybox — a player's own xemu container, driven from Discord.
+// /box — a player's own xemu container, driven from Discord (renamed from the
+// old /mybox; same subcommand group shape).
 //
 // A Discord user is mapped to a cartographer account via the Discord OAuth link
 // (svc.PB.FindUserByDiscordID), then to their gamertag(s), then matched against
@@ -19,13 +20,18 @@ import (
 // /api/play "my match" page uses. Replies are ephemeral (only the caller sees
 // their own box).
 //
+// Permissions: a USER command — no default_member_permissions (open); guild
+// admins can still tune per-command access in Server Settings → Integrations.
+// The only in-code authorization is DATA-scoping: every subcommand resolves the
+// invoking user's own container, never anyone else's.
+//
 // READY now (read-only, use the wired Services): `status`, `link`.
 // STUBBED (need the podman provisioner/manager surfaced through Services —
 // see the TODO in the request/stop handlers): `request`, `stop`.
 func init() {
 	register(Command{
 		Create: discord.SlashCommandCreate{
-			Name:        "mybox",
+			Name:        "box",
 			Description: "Your xemu container",
 			Options: []discord.ApplicationCommandOption{
 				discord.ApplicationCommandOptionSubCommand{
@@ -52,39 +58,39 @@ func init() {
 				},
 			},
 		},
-		Handler: handleMybox,
+		Handler: handleBox,
 	})
 }
 
-func handleMybox(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+func handleBox(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	sub := ""
 	if data.SubCommandName != nil {
 		sub = *data.SubCommandName
 	}
 	switch sub {
 	case "status":
-		return handleMyboxStatus(data, e)
+		return handleBoxStatus(data, e)
 	case "link":
-		return handleMyboxLink(data, e)
+		return handleBoxLink(data, e)
 	case "request":
-		return handleMyboxRequest(data, e)
+		return handleBoxRequest(data, e)
 	case "stop":
-		return handleMyboxStop(data, e)
+		return handleBoxStop(data, e)
 	default:
 		return replyEphemeral(e, "Unknown subcommand.")
 	}
 }
 
-// handleMyboxStatus — READY. Resolve the caller's live container and report it.
-func handleMyboxStatus(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+// handleBoxStatus — READY. Resolve the caller's live container and report it.
+func handleBoxStatus(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	container, res := resolveCallerContainer(e.User().ID.String())
-	return replyEmbedEphemeral(e, myboxStatusEmbed(container, res))
+	return replyEmbedEphemeral(e, boxStatusEmbed(container, res))
 }
 
-// handleMyboxLink — READY. Give the caller a play link for their container. The
+// handleBoxLink — READY. Give the caller a play link for their container. The
 // /play page re-resolves the caller's gamertag server-side, so the link is the
 // same for everyone; it just needs the public base URL (PUBLIC_APP_URL).
-func handleMyboxLink(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+func handleBoxLink(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	container, res := resolveCallerContainer(e.User().ID.String())
 	base := os.Getenv("PUBLIC_APP_URL")
 	if base == "" {
@@ -96,12 +102,12 @@ func handleMyboxLink(data discord.SlashCommandInteractionData, e *handler.Comman
 	return replyEphemeral(e, fmt.Sprintf("Open your box (**%s**): %s/play/", container, base))
 }
 
-// handleMyboxRequest — STUB. Spinning up a container needs the podman
+// handleBoxRequest — STUB. Spinning up a container needs the podman
 // provisioner, which is NOT on guards.Services today (it lives in the
 // containers/play route packages). TODO: surface a small provisioner interface
 // on Services (mirroring scraperiface) and call it here — resolve the caller's
 // account, pick the ISO by `game`, provision + start, reply with the link.
-func handleMyboxRequest(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+func handleBoxRequest(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	game, _ := data.OptString("game")
 	msg := "Spinning up containers from Discord isn't wired yet."
 	if game != "" {
@@ -110,10 +116,10 @@ func handleMyboxRequest(data discord.SlashCommandInteractionData, e *handler.Com
 	return replyEphemeral(e, msg+" For now, request one on the web /play page.")
 }
 
-// handleMyboxStop — STUB. Same reason as request: teardown needs the podman
+// handleBoxStop — STUB. Same reason as request: teardown needs the podman
 // manager surfaced through Services. TODO: resolve the caller's container and
 // call Manager.Stop/Remove through a Services interface.
-func handleMyboxStop(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
+func handleBoxStop(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	return replyEphemeral(e, "Stopping your container from Discord isn't wired yet. For now, tear it down on the web /play page.")
 }
 
@@ -150,22 +156,22 @@ func resolveCallerContainer(discordID string) (string, resolveResult) {
 	return container, resolveMatched
 }
 
-// myboxStatusEmbed renders the caller's container status. Pure (no interaction /
+// boxStatusEmbed renders the caller's container status. Pure (no interaction /
 // Services), so it's unit-testable — the resolution above is the thin live part.
-func myboxStatusEmbed(container string, res resolveResult) discord.Embed {
+func boxStatusEmbed(container string, res resolveResult) discord.Embed {
 	const blurple = 0x5865f2
 	switch res {
 	case resolveMatched:
 		return discord.Embed{
 			Title:       "Your box",
 			Color:       blurple,
-			Description: fmt.Sprintf("You're matched to **%s**. Use `/mybox link` to open it.", container),
+			Description: fmt.Sprintf("You're matched to **%s**. Use `/box link` to open it.", container),
 		}
 	case resolveIdle:
 		return discord.Embed{
 			Title:       "Your box",
 			Color:       blurple,
-			Description: "You're not in a live match right now. Join a container (or `/mybox request`) to get playing.",
+			Description: "You're not in a live match right now. Join a container (or `/box request`) to get playing.",
 		}
 	case resolveNotLinked:
 		return discord.Embed{

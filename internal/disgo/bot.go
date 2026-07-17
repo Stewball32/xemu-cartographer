@@ -57,6 +57,8 @@ func NewBot() (*Bot, error) {
 	for _, cmd := range allCmds {
 		mux.SlashCommand("/"+cmd.Create.Name, cmd.Handler)
 	}
+	// Bind message-component routes (e.g. the /config tags multi-select submit).
+	commands.BindComponents(mux)
 
 	// Create client
 	client, err := disgo.New(token,

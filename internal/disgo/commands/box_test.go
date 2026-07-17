@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// TestMyboxStatusEmbed covers the pure /mybox status embed builder for each
+// TestBoxStatusEmbed covers the pure /box status embed builder for each
 // resolution outcome (the live resolution itself is thin plumbing verified on a
 // connected gateway).
-func TestMyboxStatusEmbed(t *testing.T) {
+func TestBoxStatusEmbed(t *testing.T) {
 	cases := []struct {
 		name      string
 		container string
@@ -23,7 +23,7 @@ func TestMyboxStatusEmbed(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			emb := myboxStatusEmbed(c.container, c.res)
+			emb := boxStatusEmbed(c.container, c.res)
 			if emb.Title != c.wantTitle {
 				t.Errorf("title = %q, want %q", emb.Title, c.wantTitle)
 			}

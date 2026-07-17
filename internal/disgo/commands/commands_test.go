@@ -126,18 +126,28 @@ func TestApplyConfig(t *testing.T) {
 		t.Fatalf("NewTestApp: %v", err)
 	}
 	t.Cleanup(app.Cleanup)
-	// discord_guilds collection.
-	c := core.NewBaseCollection("discord_guilds")
-	c.Fields.Add(
+	// Canonical routing table (results channel = announcements hook) + the
+	// posted-categories settings collection.
+	routes := core.NewBaseCollection(discordcfg.RoutesCollection)
+	routes.Fields.Add(
 		&core.TextField{Name: "guild_id", Required: true},
-		&core.TextField{Name: "results_channel"},
-		&core.TextField{Name: "tournament_channel"},
+		&core.TextField{Name: "hook", Required: true, Max: 64},
+		&core.TextField{Name: "channel_id", Required: true},
+		&core.AutodateField{Name: "created", OnCreate: true},
+	)
+	routes.AddIndex("idx_routes_gh_t", true, "guild_id, hook", "")
+	if err := app.Save(routes); err != nil {
+		t.Fatalf("save discord_routes: %v", err)
+	}
+	settings := core.NewBaseCollection("discord_guild_settings")
+	settings.Fields.Add(
+		&core.TextField{Name: "guild_id", Required: true},
 		&core.SelectField{Name: "posted_categories", MaxSelect: 4, Values: []string{"casual", "competitive", "tournament", "custom"}},
 		&core.AutodateField{Name: "created", OnCreate: true},
 	)
-	c.AddIndex("idx_dg_unique_t", true, "guild_id", "")
-	if err := app.Save(c); err != nil {
-		t.Fatalf("save discord_guilds: %v", err)
+	settings.AddIndex("idx_settings_g_t", true, "guild_id", "")
+	if err := app.Save(settings); err != nil {
+		t.Fatalf("save discord_guild_settings: %v", err)
 	}
 
 	if err := applyConfig(app, "guild-9", "chan-9", "casual, competitive, bogus"); err != nil {

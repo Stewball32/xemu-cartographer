@@ -9,9 +9,10 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
 )
 
-// newBindingsApp spins a bare test PB with just the discord_channel_bindings
-// collection (mirrors internal/pocketbase/schema/discord_channel_bindings.go —
-// we don't import schema, which would trigger every collection's init()).
+// newBindingsApp spins a bare test PB with just the canonical discord_routes
+// collection (mirrors internal/pocketbase/schema/discord_routes.go — we don't
+// import schema, which would trigger every collection's init()). `hook` is
+// free-text per the Discord bot spec.
 func newBindingsApp(t *testing.T) core.App {
 	t.Helper()
 	app, err := tests.NewTestApp()
@@ -20,11 +21,10 @@ func newBindingsApp(t *testing.T) core.App {
 	}
 	t.Cleanup(func() { app.Cleanup() })
 
-	col := core.NewBaseCollection("discord_channel_bindings")
+	col := core.NewBaseCollection(discordcfg.RoutesCollection)
 	col.Fields.Add(
 		&core.TextField{Name: "guild_id", Required: true, Max: 32},
-		&core.SelectField{Name: "hook", Required: true, MaxSelect: 1,
-			Values: []string{"category", "container_status", "kiosk_links", "announcements", "bot_log"}},
+		&core.TextField{Name: "hook", Required: true, Max: 64},
 		&core.TextField{Name: "channel_id", Required: true, Max: 32},
 	)
 	col.AddIndex("idx_test_guild_hook", true, "guild_id, hook", "")

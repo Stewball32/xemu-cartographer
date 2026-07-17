@@ -39,18 +39,29 @@ func ensureGameCollections(t *testing.T, app core.App) {
 		}
 	}
 
-	if _, err := app.FindCollectionByNameOrId("discord_guilds"); err != nil {
-		c := core.NewBaseCollection("discord_guilds")
+	if _, err := app.FindCollectionByNameOrId("discord_routes"); err != nil {
+		c := core.NewBaseCollection("discord_routes")
 		c.Fields.Add(
 			&core.TextField{Name: "guild_id", Required: true},
-			&core.TextField{Name: "results_channel"},
-			&core.TextField{Name: "tournament_channel"},
+			&core.TextField{Name: "hook", Required: true, Max: 64},
+			&core.TextField{Name: "channel_id", Required: true},
+			&core.AutodateField{Name: "created", OnCreate: true},
+		)
+		c.AddIndex("idx_routes_gh_hooktest", true, "guild_id, hook", "")
+		if err := app.Save(c); err != nil {
+			t.Fatalf("save discord_routes: %v", err)
+		}
+	}
+	if _, err := app.FindCollectionByNameOrId("discord_guild_settings"); err != nil {
+		c := core.NewBaseCollection("discord_guild_settings")
+		c.Fields.Add(
+			&core.TextField{Name: "guild_id", Required: true},
 			&core.SelectField{Name: "posted_categories", MaxSelect: 4, Values: []string{"casual", "competitive", "tournament", "custom"}},
 			&core.AutodateField{Name: "created", OnCreate: true},
 		)
-		c.AddIndex("idx_dg_guild_id_unique_t", true, "guild_id", "")
+		c.AddIndex("idx_settings_g_hooktest", true, "guild_id", "")
 		if err := app.Save(c); err != nil {
-			t.Fatalf("save discord_guilds: %v", err)
+			t.Fatalf("save discord_guild_settings: %v", err)
 		}
 	}
 }
@@ -86,11 +97,18 @@ func TestGameResultTargets_CategoryFilter(t *testing.T) {
 	})
 
 	// One guild posts competitive → should receive it; one posts only casual.
-	saveRec(t, app, "discord_guilds", map[string]any{
-		"guild_id": "g-comp", "results_channel": "111", "posted_categories": []string{"competitive"},
+	// Results channel = the `announcements` route; category filter = settings.
+	saveRec(t, app, "discord_routes", map[string]any{
+		"guild_id": "g-comp", "hook": "announcements", "channel_id": "111",
 	})
-	saveRec(t, app, "discord_guilds", map[string]any{
-		"guild_id": "g-casual", "results_channel": "222", "posted_categories": []string{"casual"},
+	saveRec(t, app, "discord_guild_settings", map[string]any{
+		"guild_id": "g-comp", "posted_categories": []string{"competitive"},
+	})
+	saveRec(t, app, "discord_routes", map[string]any{
+		"guild_id": "g-casual", "hook": "announcements", "channel_id": "222",
+	})
+	saveRec(t, app, "discord_guild_settings", map[string]any{
+		"guild_id": "g-casual", "posted_categories": []string{"casual"},
 	})
 
 	embed, targets := gameResultTargets(app, game)

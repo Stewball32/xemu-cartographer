@@ -98,6 +98,13 @@ func main() {
 			return err
 		}
 
+		// Env-driven superuser bootstrap (all builds, incl. prod-style beta) —
+		// creates a superuser from SEED_SUPERUSER_EMAIL/PASSWORD if set and none
+		// with that email exists yet. No-op when unset.
+		if err := seed.EnsureEnvSuperuser(app); err != nil {
+			return err
+		}
+
 		// Register snapshot hooks AFTER seeding so the seeder's own writes don't
 		// overwrite the snapshot mid-run.
 		seed.RegisterContainerSnapshotHooks(app)

@@ -35,3 +35,23 @@ func register(cmd Command) {
 func All() []Command {
 	return registry
 }
+
+// componentRegistry holds message-component (button / select) route
+// registrations. Each entry binds its handler onto the mux — components carry
+// no slash-command definition to sync, only a custom_id route (e.g. the
+// /config tags multi-select). Populated via registerComponent from init().
+var componentRegistry []func(*handler.Mux)
+
+// registerComponent adds a component route binder to the registry.
+// Call this from init() in a command file that owns a component.
+func registerComponent(fn func(*handler.Mux)) {
+	componentRegistry = append(componentRegistry, fn)
+}
+
+// BindComponents binds every registered component route onto the mux.
+// Called by bot.go alongside the slash-command handlers.
+func BindComponents(m *handler.Mux) {
+	for _, fn := range componentRegistry {
+		fn(m)
+	}
+}
