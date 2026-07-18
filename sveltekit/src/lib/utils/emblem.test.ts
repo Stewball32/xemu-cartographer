@@ -71,7 +71,7 @@ describe('clampIndex', () => {
 
 describe('palette lookups clamp safely', () => {
 	it('colorHex / colorName never throw on bad input', () => {
-		expect(colorHex(H2_COLORS, 2)).toBe('#ea1f2f'); // red
+		expect(colorHex(H2_COLORS, 2)).toBe('#BE2C2C'); // red (game-exact, mainmenu.map globals)
 		expect(colorName(H2_COLORS, 13)).toBe('Purple');
 		expect(colorHex(H2_COLORS, 999)).toBe(H2_COLORS[17].hex);
 		expect(colorName(H2_COLORS, -1)).toBe(H2_COLORS[0].name);

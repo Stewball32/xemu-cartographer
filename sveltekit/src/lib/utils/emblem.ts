@@ -27,57 +27,26 @@
 export { FOREGROUNDS, FOREGROUND_COUNT, foregroundSvg } from './emblem-foregrounds';
 export type { ForegroundMeta } from './emblem-foregrounds';
 
+// Game-exact armor/player palettes (CE + H2) — single source of truth.
+import { CE_ARMOR_COLORS, H2_ARMOR_COLORS } from '$lib/data/halo-armor-palettes';
+
 export interface PaletteColor {
 	name: string;
 	hex: string;
 }
 
-// e_player_color (18) — the Halo 2 armor/emblem palette, in enum order.
-// Hex derived from the app's `--color-armor-*` oklch tokens (layout.css), which
-// are tuned to the in-game biped tints, so swatches match the rest of the UI.
-export const H2_COLORS: PaletteColor[] = [
-	{ name: 'White', hex: '#f0eeeb' }, // 0
-	{ name: 'Steel', hex: '#69737d' }, // 1
-	{ name: 'Red', hex: '#ea1f2f' }, // 2
-	{ name: 'Orange', hex: '#f87300' }, // 3
-	{ name: 'Gold', hex: '#e3ae28' }, // 4
-	{ name: 'Olive', hex: '#757628' }, // 5
-	{ name: 'Green', hex: '#00a327' }, // 6
-	{ name: 'Sage', hex: '#7a9a69' }, // 7
-	{ name: 'Cyan', hex: '#1ad1d1' }, // 8
-	{ name: 'Teal', hex: '#00918b' }, // 9
-	{ name: 'Cobalt', hex: '#003fb7' }, // 10
-	{ name: 'Blue', hex: '#0070e5' }, // 11
-	{ name: 'Violet', hex: '#6b2ae3' }, // 12
-	{ name: 'Purple', hex: '#7a31ca' }, // 13
-	{ name: 'Pink', hex: '#fe8dc5' }, // 14
-	{ name: 'Crimson', hex: '#ae002b' }, // 15
-	{ name: 'Brown', hex: '#6d3714' }, // 16
-	{ name: 'Tan', hex: '#ccb48c' } // 17
-];
+// e_player_color (18) — the Halo 2 armor/emblem palette, in enum order. EXACT
+// values come from the game itself: extracted from Halo 2 (Xbox) mainmenu.map
+// globals player-color table (float32 RGB, value*255; byte-identical in
+// shared.map). See src/lib/data/halo-armor-palettes.json. The same 18-color
+// palette drives both armor (0x118/0x119) and emblem (0x11A/0x11B) colors.
+export const H2_COLORS: PaletteColor[] = H2_ARMOR_COLORS.map((c) => ({ name: c.name, hex: c.hex }));
 
-// Halo: CE armor palette (18) — c20.reclaimers.net order, which matches the
-// blam.sav 0x18 color enum (Red=2 / Blue=3 confirmed against real saves).
-export const CE_COLORS: PaletteColor[] = [
-	{ name: 'White', hex: '#f0eeeb' }, // 0
-	{ name: 'Black', hex: '#1a1a1d' }, // 1
-	{ name: 'Red', hex: '#ea1f2f' }, // 2
-	{ name: 'Blue', hex: '#0070e5' }, // 3
-	{ name: 'Gray', hex: '#84868c' }, // 4
-	{ name: 'Yellow', hex: '#f3cb00' }, // 5
-	{ name: 'Green', hex: '#00a327' }, // 6
-	{ name: 'Pink', hex: '#fe8dc5' }, // 7
-	{ name: 'Purple', hex: '#7a31ca' }, // 8
-	{ name: 'Cyan', hex: '#1ad1d1' }, // 9
-	{ name: 'Cobalt', hex: '#003fb7' }, // 10
-	{ name: 'Orange', hex: '#f87300' }, // 11
-	{ name: 'Teal', hex: '#00918b' }, // 12
-	{ name: 'Sage', hex: '#7a9a69' }, // 13
-	{ name: 'Brown', hex: '#6d3714' }, // 14
-	{ name: 'Tan', hex: '#ccb48c' }, // 15
-	{ name: 'Maroon', hex: '#850e2c' }, // 16
-	{ name: 'Salmon', hex: '#eb827b' } // 17
-];
+// Halo: CE armor palette (18) — c20.reclaimers.net hard-coded armor colors;
+// index = the blam.sav 0x18 color enum ("c20 palette order"). EXACT values from
+// c20 (replacing the prior oklch approximations) — Red=#FE0000, Blue=#0201E3,
+// etc. See src/lib/data/halo-armor-palettes.json.
+export const CE_COLORS: PaletteColor[] = CE_ARMOR_COLORS.map((c) => ({ name: c.name, hex: c.hex }));
 
 export interface NamedIndex {
 	index: number;
