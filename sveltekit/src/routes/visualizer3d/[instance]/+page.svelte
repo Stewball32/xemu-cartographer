@@ -157,9 +157,9 @@
 
 	{#if feed.missingToken}
 		<div class="hint">
-			No overlay token. Mint one at <code>/overlays/manage/</code> (scope
-			<code>host:{data.instance}</code>) and append <code>?token=…</code>, or append
-			<code>?mock=1</code> to preview.
+			No overlay token. Append <code>?token=…</code> with an overlay token scoped to
+			<code>host:{data.instance}</code> (ask an admin to mint one via
+			<code>/api/overlay-tokens</code>), or append <code>?mock=1</code> to preview.
 		</div>
 	{/if}
 
