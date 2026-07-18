@@ -1,351 +1,207 @@
 {
-  "meta": {
-    "description": "Exact in-game armor/player color palettes for Halo: Combat Evolved (Xbox) and Halo 2 (Xbox). Keyed by game then color index; each entry is {name, hex, rgb}. RGB is 0-255, red-green-blue order.",
-    "ce": {
-      "count": 18,
-      "indexOrder": "c20 palette order == blam.sav profile color enum (u32 @ 0x18)",
-      "source": "c20.reclaimers.net hard-coded multiplayer armor colors (armor color values by MosesOfEgypt; testing by Lavadeeto). https://c20.reclaimers.net/h1/engine/hard-coded-data/",
-      "note": "Diffuse tint values as authored; in-game appearance is further affected by cubemaps/specular. 'mccName' fields are the alternate names MCC used at launch."
-    },
-    "h2": {
-      "count": 18,
-      "indexOrder": "e_player_color enum == profile appearance bytes 0x118 (armor primary), 0x119 (armor secondary), 0x11A (emblem primary), 0x11B (emblem secondary). Emblem colors use this SAME 18-color palette.",
-      "source": "Extracted from Halo 2 (Xbox) mainmenu.map globals player-color table, stored as float32 RGB (value*255). Confirmed byte-identical in shared.map. Build 02.09.27.09809.",
-      "note": "Values were authored as 8-bit RGB and stored as N/255 floats; listed rgb is round(float*255). This is the diffuse player tint applied to armor and emblems."
-    },
-    "generatedFrom": "halo-offset-mapper / xemu-cartographer toolchain; H2 values re-extracted from local game files at build time."
-  },
-  "ce": {
-    "0": {
-      "name": "White",
-      "hex": "#FFFFFF",
-      "rgb": [
-        255,
-        255,
-        255
-      ]
-    },
-    "1": {
-      "name": "Black",
-      "hex": "#000000",
-      "rgb": [
-        0,
-        0,
-        0
-      ]
-    },
-    "2": {
-      "name": "Red",
-      "hex": "#FE0000",
-      "rgb": [
-        254,
-        0,
-        0
-      ]
-    },
-    "3": {
-      "name": "Blue",
-      "hex": "#0201E3",
-      "rgb": [
-        2,
-        1,
-        227
-      ]
-    },
-    "4": {
-      "name": "Gray",
-      "hex": "#707E71",
-      "rgb": [
-        112,
-        126,
-        113
-      ],
-      "mccName": "Grey"
-    },
-    "5": {
-      "name": "Yellow",
-      "hex": "#FFFF01",
-      "rgb": [
-        255,
-        255,
-        1
-      ]
-    },
-    "6": {
-      "name": "Green",
-      "hex": "#00FF01",
-      "rgb": [
-        0,
-        255,
-        1
-      ]
-    },
-    "7": {
-      "name": "Pink",
-      "hex": "#FF56B9",
-      "rgb": [
-        255,
-        86,
-        185
-      ]
-    },
-    "8": {
-      "name": "Purple",
-      "hex": "#AB10F4",
-      "rgb": [
-        171,
-        16,
-        244
-      ]
-    },
-    "9": {
-      "name": "Cyan",
-      "hex": "#01FFFF",
-      "rgb": [
-        1,
-        255,
-        255
-      ]
-    },
-    "10": {
-      "name": "Cobalt",
-      "hex": "#6493ED",
-      "rgb": [
-        100,
-        147,
-        237
-      ],
-      "mccName": "Light Blue"
-    },
-    "11": {
-      "name": "Orange",
-      "hex": "#FF7F00",
-      "rgb": [
-        255,
-        127,
-        0
-      ]
-    },
-    "12": {
-      "name": "Teal",
-      "hex": "#1ECC91",
-      "rgb": [
-        30,
-        204,
-        145
-      ],
-      "mccName": "Lapis Lazuli"
-    },
-    "13": {
-      "name": "Sage",
-      "hex": "#006401",
-      "rgb": [
-        0,
-        100,
-        1
-      ],
-      "mccName": "Forest Green"
-    },
-    "14": {
-      "name": "Brown",
-      "hex": "#603814",
-      "rgb": [
-        96,
-        56,
-        20
-      ]
-    },
-    "15": {
-      "name": "Tan",
-      "hex": "#C69C6C",
-      "rgb": [
-        198,
-        156,
-        108
-      ]
-    },
-    "16": {
-      "name": "Maroon",
-      "hex": "#9D0B0E",
-      "rgb": [
-        157,
-        11,
-        14
-      ],
-      "mccName": "Cherry"
-    },
-    "17": {
-      "name": "Salmon",
-      "hex": "#F5999E",
-      "rgb": [
-        245,
-        153,
-        158
-      ]
-    }
-  },
-  "h2": {
-    "0": {
-      "name": "White",
-      "hex": "#FDFEFF",
-      "rgb": [
-        253,
-        254,
-        255
-      ]
-    },
-    "1": {
-      "name": "Steel",
-      "hex": "#535353",
-      "rgb": [
-        83,
-        83,
-        83
-      ]
-    },
-    "2": {
-      "name": "Red",
-      "hex": "#BE2C2C",
-      "rgb": [
-        190,
-        44,
-        44
-      ]
-    },
-    "3": {
-      "name": "Orange",
-      "hex": "#F57A1F",
-      "rgb": [
-        245,
-        122,
-        31
-      ]
-    },
-    "4": {
-      "name": "Gold",
-      "hex": "#F5D22C",
-      "rgb": [
-        245,
-        210,
-        44
-      ]
-    },
-    "5": {
-      "name": "Olive",
-      "hex": "#9FAC59",
-      "rgb": [
-        159,
-        172,
-        89
-      ]
-    },
-    "6": {
-      "name": "Green",
-      "hex": "#21922F",
-      "rgb": [
-        33,
-        146,
-        47
-      ]
-    },
-    "7": {
-      "name": "Sage",
-      "hex": "#235644",
-      "rgb": [
-        35,
-        86,
-        68
-      ]
-    },
-    "8": {
-      "name": "Cyan",
-      "hex": "#16A0A0",
-      "rgb": [
-        22,
-        160,
-        160
-      ]
-    },
-    "9": {
-      "name": "Teal",
-      "hex": "#36747A",
-      "rgb": [
-        54,
-        116,
-        122
-      ]
-    },
-    "10": {
-      "name": "Cobalt",
-      "hex": "#416C8F",
-      "rgb": [
-        65,
-        108,
-        143
-      ]
-    },
-    "11": {
-      "name": "Blue",
-      "hex": "#28459B",
-      "rgb": [
-        40,
-        69,
-        155
-      ]
-    },
-    "12": {
-      "name": "Violet",
-      "hex": "#6A4EB6",
-      "rgb": [
-        106,
-        78,
-        182
-      ]
-    },
-    "13": {
-      "name": "Purple",
-      "hex": "#75466D",
-      "rgb": [
-        117,
-        70,
-        109
-      ]
-    },
-    "14": {
-      "name": "Pink",
-      "hex": "#FB9BC9",
-      "rgb": [
-        251,
-        155,
-        201
-      ]
-    },
-    "15": {
-      "name": "Crimson",
-      "hex": "#981244",
-      "rgb": [
-        152,
-        18,
-        68
-      ]
-    },
-    "16": {
-      "name": "Brown",
-      "hex": "#664E3E",
-      "rgb": [
-        102,
-        78,
-        62
-      ]
-    },
-    "17": {
-      "name": "Tan",
-      "hex": "#B19256",
-      "rgb": [
-        177,
-        146,
-        86
-      ]
-    }
-  }
+	"meta": {
+		"description": "Exact in-game armor/player color palettes for Halo: Combat Evolved (Xbox) and Halo 2 (Xbox). Keyed by game then color index; each entry is {name, hex, rgb}. RGB is 0-255, red-green-blue order.",
+		"ce": {
+			"count": 18,
+			"indexOrder": "c20 palette order == blam.sav profile color enum (u32 @ 0x18)",
+			"source": "c20.reclaimers.net hard-coded multiplayer armor colors (armor color values by MosesOfEgypt; testing by Lavadeeto). https://c20.reclaimers.net/h1/engine/hard-coded-data/",
+			"note": "Diffuse tint values as authored; in-game appearance is further affected by cubemaps/specular. 'mccName' fields are the alternate names MCC used at launch."
+		},
+		"h2": {
+			"count": 18,
+			"indexOrder": "e_player_color enum == profile appearance bytes 0x118 (armor primary), 0x119 (armor secondary), 0x11A (emblem primary), 0x11B (emblem secondary). Emblem colors use this SAME 18-color palette.",
+			"source": "Extracted from Halo 2 (Xbox) mainmenu.map globals player-color table, stored as float32 RGB (value*255). Confirmed byte-identical in shared.map. Build 02.09.27.09809.",
+			"note": "Values were authored as 8-bit RGB and stored as N/255 floats; listed rgb is round(float*255). This is the diffuse player tint applied to armor and emblems."
+		},
+		"generatedFrom": "halo-offset-mapper / xemu-cartographer toolchain; H2 values re-extracted from local game files at build time."
+	},
+	"ce": {
+		"0": {
+			"name": "White",
+			"hex": "#FFFFFF",
+			"rgb": [255, 255, 255]
+		},
+		"1": {
+			"name": "Black",
+			"hex": "#000000",
+			"rgb": [0, 0, 0]
+		},
+		"2": {
+			"name": "Red",
+			"hex": "#FE0000",
+			"rgb": [254, 0, 0]
+		},
+		"3": {
+			"name": "Blue",
+			"hex": "#0201E3",
+			"rgb": [2, 1, 227]
+		},
+		"4": {
+			"name": "Gray",
+			"hex": "#707E71",
+			"rgb": [112, 126, 113],
+			"mccName": "Grey"
+		},
+		"5": {
+			"name": "Yellow",
+			"hex": "#FFFF01",
+			"rgb": [255, 255, 1]
+		},
+		"6": {
+			"name": "Green",
+			"hex": "#00FF01",
+			"rgb": [0, 255, 1]
+		},
+		"7": {
+			"name": "Pink",
+			"hex": "#FF56B9",
+			"rgb": [255, 86, 185]
+		},
+		"8": {
+			"name": "Purple",
+			"hex": "#AB10F4",
+			"rgb": [171, 16, 244]
+		},
+		"9": {
+			"name": "Cyan",
+			"hex": "#01FFFF",
+			"rgb": [1, 255, 255]
+		},
+		"10": {
+			"name": "Cobalt",
+			"hex": "#6493ED",
+			"rgb": [100, 147, 237],
+			"mccName": "Light Blue"
+		},
+		"11": {
+			"name": "Orange",
+			"hex": "#FF7F00",
+			"rgb": [255, 127, 0]
+		},
+		"12": {
+			"name": "Teal",
+			"hex": "#1ECC91",
+			"rgb": [30, 204, 145],
+			"mccName": "Lapis Lazuli"
+		},
+		"13": {
+			"name": "Sage",
+			"hex": "#006401",
+			"rgb": [0, 100, 1],
+			"mccName": "Forest Green"
+		},
+		"14": {
+			"name": "Brown",
+			"hex": "#603814",
+			"rgb": [96, 56, 20]
+		},
+		"15": {
+			"name": "Tan",
+			"hex": "#C69C6C",
+			"rgb": [198, 156, 108]
+		},
+		"16": {
+			"name": "Maroon",
+			"hex": "#9D0B0E",
+			"rgb": [157, 11, 14],
+			"mccName": "Cherry"
+		},
+		"17": {
+			"name": "Salmon",
+			"hex": "#F5999E",
+			"rgb": [245, 153, 158]
+		}
+	},
+	"h2": {
+		"0": {
+			"name": "White",
+			"hex": "#FDFEFF",
+			"rgb": [253, 254, 255]
+		},
+		"1": {
+			"name": "Steel",
+			"hex": "#535353",
+			"rgb": [83, 83, 83]
+		},
+		"2": {
+			"name": "Red",
+			"hex": "#BE2C2C",
+			"rgb": [190, 44, 44]
+		},
+		"3": {
+			"name": "Orange",
+			"hex": "#F57A1F",
+			"rgb": [245, 122, 31]
+		},
+		"4": {
+			"name": "Gold",
+			"hex": "#F5D22C",
+			"rgb": [245, 210, 44]
+		},
+		"5": {
+			"name": "Olive",
+			"hex": "#9FAC59",
+			"rgb": [159, 172, 89]
+		},
+		"6": {
+			"name": "Green",
+			"hex": "#21922F",
+			"rgb": [33, 146, 47]
+		},
+		"7": {
+			"name": "Sage",
+			"hex": "#235644",
+			"rgb": [35, 86, 68]
+		},
+		"8": {
+			"name": "Cyan",
+			"hex": "#16A0A0",
+			"rgb": [22, 160, 160]
+		},
+		"9": {
+			"name": "Teal",
+			"hex": "#36747A",
+			"rgb": [54, 116, 122]
+		},
+		"10": {
+			"name": "Cobalt",
+			"hex": "#416C8F",
+			"rgb": [65, 108, 143]
+		},
+		"11": {
+			"name": "Blue",
+			"hex": "#28459B",
+			"rgb": [40, 69, 155]
+		},
+		"12": {
+			"name": "Violet",
+			"hex": "#6A4EB6",
+			"rgb": [106, 78, 182]
+		},
+		"13": {
+			"name": "Purple",
+			"hex": "#75466D",
+			"rgb": [117, 70, 109]
+		},
+		"14": {
+			"name": "Pink",
+			"hex": "#FB9BC9",
+			"rgb": [251, 155, 201]
+		},
+		"15": {
+			"name": "Crimson",
+			"hex": "#981244",
+			"rgb": [152, 18, 68]
+		},
+		"16": {
+			"name": "Brown",
+			"hex": "#664E3E",
+			"rgb": [102, 78, 62]
+		},
+		"17": {
+			"name": "Tan",
+			"hex": "#B19256",
+			"rgb": [177, 146, 86]
+		}
+	}
 }

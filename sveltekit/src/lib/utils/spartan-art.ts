@@ -118,8 +118,7 @@ export function spartanTinted(
 ): string {
 	const p = `${uid}-p`,
 		s = `${uid}-s`;
-	const img = (suffix: string) =>
-		`${base}/${pose}${suffix}.png`;
+	const img = (suffix: string) => `${base}/${pose}${suffix}.png`;
 	return (
 		maskTag(p, img('_p')) +
 		maskTag(s, img('_s')) +

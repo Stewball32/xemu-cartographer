@@ -4,7 +4,6 @@ import {
 	GamepadIcon,
 	IdCardIcon,
 	LibraryIcon,
-	MonitorIcon,
 	PlayIcon,
 	SettingsIcon,
 	ShieldIcon,
@@ -67,12 +66,11 @@ export const mainGroups: NavGroup[] = [
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
 			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon },
-			// Both route outside the admin layout (RequireAuth + manage-overlays
-			// gate) so overlay_managers can use them directly. Studio is the
-			// stream-asset hub (gallery + previews + per-asset OBS links); Overlays
-			// is the focused token mint/list/revoke page.
-			{ label: 'Studio', href: '/studio/', icon: TvIcon },
-			{ label: 'Overlays', href: '/overlays/manage/', icon: MonitorIcon }
+			// Routes outside the admin layout (RequireAuth + manage-overlays gate) so
+			// overlay_managers can use them directly. Studio is the OBS
+			// browser-source catalog (the LAN_OBS_Browser_Sources pack: POV overlay +
+			// scorebug + leaderboard + postgame, with copy-able URLs).
+			{ label: 'Studio', href: '/studio/', icon: TvIcon }
 		]
 	}
 ];
