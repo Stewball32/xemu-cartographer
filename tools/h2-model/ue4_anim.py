@@ -80,7 +80,10 @@ def _keysize_vec(fmt):
             ACF_Float32NoW:4, ACF_IntervalFixed32NoW:4, ACF_Identity:0}[fmt]
 
 
-def decode(stem, debug=False):
+def decode(stem, debug=False, all_keys=False):
+    """all_keys=True additionally returns every translation/rotation key per
+    track (pos_keys / quat_keys) so callers can sample any frame, not just the
+    settled last one."""
     pkg = Pkg(stem + ".uasset", stem + ".uexp")
     e = [x for x in pkg.exports if pkg.export_class(x) == "AnimSequence"][0]
     p = Props(pkg, pkg.uexp, e["uexp_off"])
@@ -144,8 +147,8 @@ def decode(stem, debug=False):
     for ti in range(ntr):
         to, tk, ro, rk = TO[ti*4:ti*4+4]
         bone = t2s[ti] if ti < len(t2s) else ti
-        # translation: take last key
-        pos = (0.0, 0.0, 0.0)
+        # translation: take last key (collect all when asked)
+        pos = (0.0, 0.0, 0.0); pos_keys = []
         if tk:
             sr = S(stream, to); fmt = ACF_None if tk == 1 else tf
             mins = ran = None
@@ -153,15 +156,20 @@ def decode(stem, debug=False):
                 mins = (sr.f32(), sr.f32(), sr.f32()); ran = (sr.f32(), sr.f32(), sr.f32())
             for k in range(tk):
                 pos = _vec(sr, fmt, mins, ran)
-        # rotation: take last key
+                if all_keys: pos_keys.append(pos)
+        # rotation: take last key (collect all when asked)
         sr = S(stream, ro); fmt = ACF_Float96NoW if rk == 1 else rf
         mins = ran = None
         if rk > 1 and fmt == ACF_IntervalFixed32NoW:
             mins = (sr.f32(), sr.f32(), sr.f32()); ran = (sr.f32(), sr.f32(), sr.f32())
-        quat = (0.0, 0.0, 0.0, 1.0)
+        quat = (0.0, 0.0, 0.0, 1.0); quat_keys = []
         for k in range(rk):
             quat = _quat(sr, fmt, mins, ran)
-        out.append(dict(track=ti, bone=bone, pos=pos, quat=quat))
+            if all_keys: quat_keys.append(quat)
+        t = dict(track=ti, bone=bone, pos=pos, quat=quat)
+        if all_keys:
+            t["pos_keys"] = pos_keys; t["quat_keys"] = quat_keys
+        out.append(t)
 
     # validate: all unit-ish quats
     bad = sum(1 for t in out if abs(t["quat"][0]**2+t["quat"][1]**2+t["quat"][2]**2+t["quat"][3]**2 - 1) > 0.05)

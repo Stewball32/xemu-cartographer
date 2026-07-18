@@ -20,9 +20,12 @@
 
 export const SPARTAN_ASSET_BASE = '/spartan';
 
-// MCC's post-game Spartan customization stance set — the exact 11 poses MCC
-// offers (decoded from the MCC UE4 shell's AnimSequence assets and retargeted
-// onto the H2 Mark VI rig). 'default' is MCC's unlocked-by-default armory idle.
+// MCC's post-game Spartan customization stance set — the COMPLETE set decoded
+// from the MCC UE4 shell's AnimSequence assets and retargeted onto the H2 Mark VI
+// rig: 11 UNARMED stances + 10 ARMED stances that hold a battle rifle prop
+// (the MCC `SM_H2_BattleRifle`, attached to the anim's `weapon` bone). 'default'
+// is MCC's unlocked-by-default armory idle. The `Pose_Finger` asset is excluded
+// (it's a weapon trigger-finger helper, not a selectable stance).
 export const SPARTAN_POSES = [
 	'default',
 	'at_ease',
@@ -34,9 +37,39 @@ export const SPARTAN_POSES = [
 	'look_back',
 	'peace_sign',
 	'meditation',
-	'yoga'
+	'yoga',
+	// armed (battle-rifle) stances
+	'rifle_ready',
+	'rifle_at_side',
+	'rifle_on_shoulder',
+	'rifle_back',
+	'rifle_kneel',
+	'rifle_sit',
+	'rifle_salute',
+	'rifle_hero_pose',
+	'rifle_buff',
+	'rifle_buff_back'
 ] as const;
 export type SpartanPose = (typeof SPARTAN_POSES)[number];
+
+/** The armed subset — these render with the battle-rifle prop. */
+export const SPARTAN_ARMED_POSES = [
+	'rifle_ready',
+	'rifle_at_side',
+	'rifle_on_shoulder',
+	'rifle_back',
+	'rifle_kneel',
+	'rifle_sit',
+	'rifle_salute',
+	'rifle_hero_pose',
+	'rifle_buff',
+	'rifle_buff_back'
+] as const satisfies readonly SpartanPose[];
+
+/** True when the pose holds the battle rifle (armed stance). */
+export function isArmedPose(pose: SpartanPose): boolean {
+	return (SPARTAN_ARMED_POSES as readonly string[]).includes(pose);
+}
 
 /** Human-readable labels for the pose selector (matches MCC's naming). */
 export const SPARTAN_POSE_LABELS: Record<SpartanPose, string> = {
@@ -50,7 +83,17 @@ export const SPARTAN_POSE_LABELS: Record<SpartanPose, string> = {
 	look_back: 'Look Back',
 	peace_sign: 'Peace Sign',
 	meditation: 'Meditation',
-	yoga: 'Yoga'
+	yoga: 'Yoga',
+	rifle_ready: 'Rifle Ready',
+	rifle_at_side: 'Rifle at Side',
+	rifle_on_shoulder: 'Rifle on Shoulder',
+	rifle_back: 'Rifle on Back',
+	rifle_kneel: 'Rifle Kneel',
+	rifle_sit: 'Rifle Sit',
+	rifle_salute: 'Rifle Salute',
+	rifle_hero_pose: 'Rifle Hero',
+	rifle_buff: 'Rifle Flex',
+	rifle_buff_back: 'Rifle Flex (Back)'
 };
 
 function maskTag(id: string, href: string): string {
