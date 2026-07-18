@@ -1,11 +1,27 @@
 // Server-driven splitscreen detection + player mapping for the POV overlay.
 //
-// The overlay browser source is dumb about layout — it reads cartographer's live
-// game/tick feed and derives the splitscreen configuration (1 / 2 / 4 local
-// players) itself, so the streamer never picks a layout in OBS. Splitscreen is a
-// property of the machine's LOCAL players: the engine's per-local viewports
-// (internal/scraper/viewport.go) map 1→full, 2→top/bottom, 3-4→quads, and the
-// number of local players is the split count.
+// HOST-ONLY: cartographer scrapes ONLY the host box — never a player's machine.
+// Everything here is derived from what the host scraper broadcasts over the WS,
+// so the overlay reflects the HOST box's local splitscreen (which is where the
+// split actually is). Nothing assumes per-player-box telemetry — that data does
+// not exist.
+//
+// The exact host-reported wire fields consumed (verified against the real
+// envelope in internal/scraper/manager/wire_split_test.go):
+//   current_state (feed.game):
+//     players[].is_local     — host-local splitscreen player (remotes = false)
+//     players[].local_index  — the host viewport slot (0..3)
+//     config.is_team_game    — team vs FFA (card tint)
+//     players[].{name,team,armor_color,score,kills,deaths,assists,
+//                kill_streak,shots_fired,shots_hit} — card stats
+//   state_update (feed.tick):
+//     locals[].local_index   — the host's per-local viewports (split fallback)
+//     players[].{index,alive,health,shields,has_camo,respawn_in_ticks} — live state
+//
+// The split count is the number of HOST-LOCAL players; a system-link remote
+// (is_local=false / local_index=null) is never a local and never counted. The
+// engine's per-local viewport layout (internal/scraper/viewport.go) is
+// 1→full, 2→top/bottom, 3-4→quads.
 //
 // Pure (no Svelte / no socket), so it's unit-tested against sample payloads and
 // the overlay page just wires it to the reactive feed.
