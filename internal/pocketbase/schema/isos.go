@@ -5,9 +5,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func init() {
-	register(registerISOsCollection)
-}
+// NOTE: registration is coordinated from identity.go (phase 6, LAN-sync chain),
+// NOT a per-file init(): sync_presets relates to `isos`, so isos must register
+// before it, and identity.go is the single point that guarantees that order.
 
 // registerISOsCollection creates the `isos` collection — the admin-managed
 // library of game ISOs available to players when they request an instance.
@@ -22,16 +22,20 @@ func init() {
 // file on the host to bind-mount, and multi-GiB uploads through PB are
 // impractical.
 //
-// Registered via its own init() (no cross-collection relations, no user_roles
-// rule subquery), mirroring containers.go.
-//
 // REST rules are nil (like `containers`): the collection is reachable only
 // through Go routes — admin CRUD at /api/admin/isos/* and the player-scoped
 // listing at /api/play/isos — never the auto-generated REST API. That keeps
 // unavailable entries and the raw library filenames off the public surface.
+//
+// LAN-sync (scaffold): the ISO binary is treated as WRITE-ONCE / immutable —
+// changing which file a row points to (`filename`) after create is blocked by
+// the isos_immutable hook (replace = delete + new row/ID); metadata stays
+// editable. The `extracted_*` fields below track a derived, rebuildable
+// EXTRACTED tree (produced eagerly on create by the isos_extract hook via
+// extract-xiso), keyed to this immutable row so no content hash is needed.
 func registerISOsCollection(app *pocketbase.PocketBase) error {
 	if collectionExists(app, "isos") {
-		return nil
+		return reconcileISOsExtractedFields(app)
 	}
 
 	collection := core.NewBaseCollection("isos")
@@ -70,6 +74,20 @@ func registerISOsCollection(app *pocketbase.PocketBase) error {
 		&core.BoolField{
 			Name: "available",
 		},
+		// Destination folder name under the client's games dir (SPEC dest_dir =
+		// <halo_dir>\<dest_name>, e.g. "\Halo\HaloCE"). Empty → derived from name.
+		&core.TextField{Name: "dest_name", Max: 64},
+		// --- LAN-sync: derived, rebuildable EXTRACTED cache (isos_extract hook) ---
+		// Host path to the unpacked disc tree for this row. Empty until the
+		// extraction hook runs; safe to delete + regenerate (evictable).
+		&core.TextField{Name: "extracted_path", Max: 1024},
+		// Whether the extracted tree is present + complete (served to clients).
+		&core.BoolField{Name: "extracted_ready"},
+		// When the cache was last (re)built. Nil = never / evicted.
+		&core.DateField{Name: "extracted_at"},
+		// FATX cluster-rounded on-disk footprint of the extracted tree (drive-fill
+		// math). Computed by the extraction hook. 0 until extracted.
+		&core.NumberField{Name: "footprint_bytes", OnlyInt: true, Min: f64(0)},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -85,4 +103,26 @@ func registerISOsCollection(app *pocketbase.PocketBase) error {
 	collection.DeleteRule = nil
 
 	return app.Save(collection)
+}
+
+// reconcileISOsExtractedFields adds the LAN-sync extracted-cache columns to an
+// existing `isos` collection (dev dbs are ephemeral, but keep prod upgrade-safe
+// rather than silently skipping the new columns). Idempotent: returns early once
+// the fields are present.
+func reconcileISOsExtractedFields(app *pocketbase.PocketBase) error {
+	existing, err := app.FindCollectionByNameOrId("isos")
+	if err != nil {
+		return err
+	}
+	if existing.Fields.GetByName("extracted_path") != nil {
+		return nil
+	}
+	existing.Fields.Add(
+		&core.TextField{Name: "dest_name", Max: 64},
+		&core.TextField{Name: "extracted_path", Max: 1024},
+		&core.BoolField{Name: "extracted_ready"},
+		&core.DateField{Name: "extracted_at"},
+		&core.NumberField{Name: "footprint_bytes", OnlyInt: true, Min: f64(0)},
+	)
+	return app.Save(existing)
 }

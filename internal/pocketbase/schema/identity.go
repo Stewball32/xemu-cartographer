@@ -78,4 +78,18 @@ func init() {
 	register(registerH2ProfilesCollection)
 	register(registerGametypesCollection)
 	register(registerGameTitlesCollection)
+
+	// 6. LAN-sync provisioning chain (SPEC §4). Order matters:
+	//    - isos (moved here from its own init() so it registers before
+	//      sync_presets, which relates to it) + apps must exist before
+	//      sync_presets (which relates to both isos + apps).
+	//    - lan_events is the check-in SCOPE (NOT game_events — SPEC §4.1 note);
+	//      it must precede checkins + sync_presets, which both relate to it.
+	//    - checkins also relates to gamertags (phase 3). All of these compose
+	//      organizerOrAdmin in their rules, so they must follow phase 1.
+	register(registerISOsCollection)
+	register(registerAppsCollection)
+	register(registerLanEventsCollection)
+	register(registerCheckinsCollection)
+	register(registerSyncPresetsCollection)
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/isos"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/lansaves"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/lansync"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/pod"
@@ -25,6 +26,7 @@ func registerAllGroups(se *core.ServeEvent) {
 	containers.RegisterAll(se)
 	isos.RegisterAll(se)
 	lansaves.RegisterAll(se)
+	lansync.RegisterAll(se)
 	overlays.RegisterAll(se)
 	play.RegisterAll(se)
 	pod.RegisterAll(se)
