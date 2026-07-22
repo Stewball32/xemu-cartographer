@@ -16,31 +16,26 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 
-# --- DEV environment ---------------------------------------------------------
+# --- DEV environment (.env.dev) ----------------------------------------------
+# Tier env lives in ./.env.dev (gitignored) — see .env.dev.example. Same pattern
+# as the beta tier's .env, and the same interface as the site template.
+ENV_FILE="$PWD/.env.dev"
+if [ ! -f "$ENV_FILE" ]; then
+	echo "run-dev.sh: $ENV_FILE not found — copy .env.dev.example to .env.dev and fill it in." >&2
+	exit 1
+fi
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
 
-# NO DISCORD BOT on dev — HARD REQUIREMENT. The dev server restarts constantly
-# (Air rebuilds on every Go edit); each restart re-opens the gateway and
-# re-registers commands, which Discord rate-limits, and would fight prod's bot
-# (one gateway per token). We UNSET it so dev can never inherit a token.
-# OAuth-only (DISCORD_CLIENT_ID/SECRET may be set later for login testing).
+# NO DISCORD BOT on dev — HARD REQUIREMENT, enforced HERE (after sourcing) so it
+# holds no matter what .env.dev or the launching shell contains. The dev server
+# restarts constantly (Air rebuilds on every Go edit); each restart would re-open
+# the gateway and re-register commands, which Discord rate-limits, and would
+# fight prod's bot (one gateway per token). OAuth-only.
 unset DISCORD_BOT_TOKEN
 unset DISCORD_DEV_GUILD_ID
-
-# Containers OFF — dev is for code/UI iteration; don't contend with prod's podman.
-export CONTAINERS_ENABLED=false
-
-# Dev superuser: seeded on start (fresh ephemeral pb_data). The -tags dev seeder
-# also creates a regular IsAdmin user admin@dev.com / admin123 (data.go).
-export PB_SUPERUSER_EMAIL=root@dev.com
-export PB_SUPERUSER_PASSWORD=root@dev.com
-
-# Frontend build-time var (Vite reads it): the dev PB port. api-base.ts only
-# uses it for localhost/LAN access; through dev.norcal.pro the API is proxied
-# same-origin, so this value is irrelevant to the tunnel path.
-export PUBLIC_PB_PORT=19090
-
-# Overlay-token secret (stable so dev-minted tokens survive a restart).
-export OVERLAY_TOKEN_SECRET="dev-only-not-a-real-secret-rotate-if-exposed"
 
 DEV_PBDATA="./tmp-dev/pb_data"
 

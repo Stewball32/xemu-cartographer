@@ -49,7 +49,10 @@ sveltekit/static/game-geometry/
 
 # Environment
 .env
+.env.dev
+.env.beta
 !.env.example
+!.env.dev.example
 
 # Local dev seed overrides — seed.local.json etc. are personal/local; only
 # the committed template (seed.example.json) is tracked.
@@ -84,3 +87,7 @@ Thumbs.db
 # Stray dev-server logs
 dev-server.log
 /inputpoc
+
+# migrate:squash archives the granular migrations here so migrate:verify can
+# rebuild the "before" side to compare against (see docs/MIGRATIONS.md).
+.migrate-archive/

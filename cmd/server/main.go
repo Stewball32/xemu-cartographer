@@ -14,6 +14,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/migrateconf"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
@@ -22,7 +23,6 @@ import (
 	overlaysroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/schema"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
@@ -30,14 +30,16 @@ import (
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
 	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/halo2"      // self-registering Halo 2 GameReader (M20)
+	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
+	_ "github.com/Stewball32/xemu-cartographer/migrations"                  // self-registering DB migrations (schema source of truth)
 )
 
 // configureOverlayTokens wires the M10 overlay-token signer + default lifetime
@@ -82,15 +84,28 @@ func main() {
 	// podman is constructed.
 	var podMgr *podman.Manager
 
+	// Database migrations are the SOURCE OF TRUTH for schema (docs/MIGRATIONS.md).
+	// Pending migrations in migrations/ are applied automatically on boot — BEFORE
+	// OnServe — and tracked in the _migrations table, so routes/hooks/the scraper
+	// can assume the schema exists. Automigrate writes a migration file whenever
+	// the schema changes in the admin UI, but ONLY in dev builds (`-tags dev`);
+	// beta/prod snapshots apply reviewed migrations and never author new ones.
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
+		Dir:          "migrations",
+		Automigrate:  migrateconf.Automigrate,
+		TemplateLang: migratecmd.TemplateLangGo,
+	})
+
 	// Register record lifecycle hooks (callback registration, fires later).
 	hooks.RegisterAll(app)
 
-	// OnServe: register schemas and routes (needs running DB / ServeEvent).
+	// OnServe: register routes (needs running DB / ServeEvent).
+	//
+	// NOTE: collections are created by MIGRATIONS (migrations/), applied on boot
+	// BEFORE this hook — there is no schema-as-code step any more (the retired
+	// internal/pocketbase/schema package). Anything here may assume the schema
+	// exists. See docs/MIGRATIONS.md.
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		if err := schema.RegisterAll(app); err != nil {
-			return err
-		}
-
 		if err := oauth.RegisterAll(app); err != nil {
 			return err
 		}
