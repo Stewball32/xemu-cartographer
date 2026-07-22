@@ -95,26 +95,40 @@ tier_stop() {
   die "$label (pid $pid) did not stop within 15s"
 }
 
-# build_snapshot <run-dir> <port>
-# Builds the static frontend + the production Go binary from the working tree
-# and copies both into the tier's run dir (its own pb_data is untouched).
-build_snapshot() {
-  local run_dir="$1" port="$2"
+# STAGED_BIN is where build_artifacts leaves the binary for install_snapshot.
+STAGED_BIN="/tmp/cart-deploy-server"
+
+# build_artifacts <port>
+# Builds the static frontend + the production Go binary from the working tree.
+# Does NOT touch the running tier — call this BEFORE stopping it, so a failed or
+# interrupted build leaves the tier serving the previous snapshot instead of
+# taking it down (learned the hard way: an interrupted deploy left beta down).
+build_artifacts() {
+  local port="$1"
 
   say "── building frontend (PUBLIC_PB_PORT=${port}) ────────────"
-  (cd sveltekit && PUBLIC_PB_PORT="$port" pnpm build) || die "frontend build failed"
+  (cd sveltekit && PUBLIC_PB_PORT="$port" pnpm build) || die "frontend build failed (tier untouched — still serving)"
 
   say "── building server binary ────────────────────────────────"
   # No `-tags dev`: Automigrate stays OFF on this tier — it only APPLIES the
   # migrations committed in migrations/ (docs/MIGRATIONS.md).
-  CGO_ENABLED=0 go build -o /tmp/cart-deploy-server ./cmd/server || die "go build failed"
+  CGO_ENABLED=0 go build -o "$STAGED_BIN" ./cmd/server \
+    || die "go build failed (tier untouched — still serving)"
+  ok "artifacts built"
+}
 
-  say "── copying snapshot → ${run_dir} ─────────────────────────"
-  cp /tmp/cart-deploy-server "$run_dir/server"
+# install_snapshot <run-dir>
+# Copies the already-built artifacts into the tier's run dir. Fast (a copy), so
+# the tier is only down for this + the restart. pb_data is untouched.
+install_snapshot() {
+  local run_dir="$1"
+  say "── installing snapshot → ${run_dir} ──────────────────────"
+  [ -f "$STAGED_BIN" ] || die "no staged binary — build_artifacts must run first"
+  cp "$STAGED_BIN" "$run_dir/server"
   rm -rf "$run_dir/pb_public"
   cp -r pb_public "$run_dir/pb_public"
-  rm -f /tmp/cart-deploy-server
-  ok "snapshot copied ($(ls "$run_dir/pb_public" | wc -l) frontend entries)"
+  rm -f "$STAGED_BIN"
+  ok "snapshot installed ($(ls "$run_dir/pb_public" | wc -l) frontend entries)"
 }
 
 # backup_pb_data <run-dir>

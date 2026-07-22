@@ -64,8 +64,13 @@ require_clean_tree
 
 [ "${SKIP_BACKUP:-0}" = "1" ] || backup_pb_data "$BETA_DIR"
 
+# BUILD FIRST, then swap. The tier keeps serving the previous snapshot through
+# the (slow) build, so a build failure — or an interrupted deploy — never leaves
+# beta down. Downtime is just the stop → copy → start below.
+build_artifacts "$PORT"
+
 tier_stop "$PORT" "$TIER"
-build_snapshot "$BETA_DIR" "$PORT"
+install_snapshot "$BETA_DIR"
 tier_start "$BETA_DIR" "$RUNNER" "$TIER"
 wait_healthy "$TIER" "$PORT" "$BETA_DIR/beta.log"
 
