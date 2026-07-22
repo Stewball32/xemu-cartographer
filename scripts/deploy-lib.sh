@@ -70,8 +70,11 @@ require_clean_tree() {
 # tier_pid <port> — PID listening on 127.0.0.1:<port>, empty if none.
 # Port lookup (not `pkill -f`): a pattern match can kill the deploying shell
 # itself when the command line contains the same string.
+#
+# The trailing `|| true` matters: with `set -e -o pipefail`, grep exiting 1 on
+# "nothing listening" would otherwise abort the caller mid-deploy.
 tier_pid() {
-  ss -tlnp 2>/dev/null | grep ":$1 " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2
+  ss -tlnp 2>/dev/null | grep ":$1 " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2 || true
 }
 
 # tier_stop <port> <label>
