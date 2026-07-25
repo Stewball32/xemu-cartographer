@@ -42,6 +42,7 @@ func init() {
 			},
 		},
 		Handler: handleCartographer,
+		Group:   "Configuration",
 	})
 }
 

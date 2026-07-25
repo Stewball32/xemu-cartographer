@@ -24,6 +24,7 @@ func init() {
 			},
 		},
 		Handler: handleLeaderboard,
+		Group:   "Stats",
 	})
 	register(Command{
 		Create: discord.SlashCommandCreate{
@@ -35,6 +36,7 @@ func init() {
 			},
 		},
 		Handler: handleRank,
+		Group:   "Stats",
 	})
 }
 

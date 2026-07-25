@@ -20,6 +20,7 @@ func init() {
 			},
 		},
 		Handler: handleRecent,
+		Group:   "Stats",
 	})
 }
 

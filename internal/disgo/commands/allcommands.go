@@ -7,9 +7,14 @@ import (
 )
 
 // Command pairs a slash command definition with its handler.
+//
+// Group is an optional readability label for /help's overview (e.g. "Stats",
+// "Configuration"); it is declared next to the command so it can't drift from a
+// separate list. Empty groups fall under DefaultGroup.
 type Command struct {
 	Create  discord.SlashCommandCreate
 	Handler handler.SlashCommandHandler
+	Group   string
 }
 
 var registry []Command
@@ -54,4 +59,24 @@ func BindComponents(m *handler.Mux) {
 	for _, fn := range componentRegistry {
 		fn(m)
 	}
+}
+
+// AutocompleteRoute pairs a slash-command pattern with an autocomplete handler
+// (e.g. "/help" resolves the `command` option). Registered like commands.
+type AutocompleteRoute struct {
+	Pattern string
+	Handler handler.AutocompleteHandler
+}
+
+var autocompleteRegistry []AutocompleteRoute
+
+// registerAutocomplete adds an autocomplete route. Call from init().
+func registerAutocomplete(r AutocompleteRoute) {
+	autocompleteRegistry = append(autocompleteRegistry, r)
+}
+
+// AllAutocompletes returns all registered autocomplete routes.
+// Called by bot.go to wire option autocomplete onto the mux.
+func AllAutocompletes() []AutocompleteRoute {
+	return autocompleteRegistry
 }

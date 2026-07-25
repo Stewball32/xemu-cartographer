@@ -48,6 +48,7 @@ func init() {
 			},
 		},
 		Handler: handleConfigCommand,
+		Group:   "Configuration",
 	})
 
 	// The /config tags submit is a string multi-select; disgo routes components

@@ -13,6 +13,7 @@ func init() {
 			Description: "Replies with pong",
 		},
 		Handler: handlePing,
+		Group:   "General",
 	})
 }
 

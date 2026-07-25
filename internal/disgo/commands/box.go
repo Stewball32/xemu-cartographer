@@ -59,6 +59,7 @@ func init() {
 			},
 		},
 		Handler: handleBox,
+		Group:   "Xbox",
 	})
 }
 

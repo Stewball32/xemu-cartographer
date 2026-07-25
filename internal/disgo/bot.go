@@ -57,6 +57,10 @@ func NewBot() (*Bot, error) {
 	for _, cmd := range allCmds {
 		mux.SlashCommand("/"+cmd.Create.Name, cmd.Handler)
 	}
+	// Bind option autocomplete routes (e.g. /help's command argument).
+	for _, r := range commands.AllAutocompletes() {
+		mux.Autocomplete(r.Pattern, r.Handler)
+	}
 	// Bind message-component routes (e.g. the /config tags multi-select submit).
 	commands.BindComponents(mux)
 
