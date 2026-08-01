@@ -20,6 +20,10 @@ func init() {
 const collectionName = "isos"
 
 // isoView is the JSON projection of an `isos` record for admin responses.
+//
+// server_iso is the optional link to another catalog entry that is this game's
+// dedicated SERVER/host build (empty = this game has no separate server build).
+// See resolveServerISO + the game/server-ISO model.
 func isoView(r *core.Record) map[string]any {
 	return map[string]any{
 		"id":          r.Id,
@@ -28,9 +32,28 @@ func isoView(r *core.Record) map[string]any {
 		"title_id":    r.GetString("title_id"),
 		"description": r.GetString("description"),
 		"available":   r.GetBool("available"),
+		"server_iso":  r.GetString("server_iso"),
 		"created":     r.GetString("created"),
 		"updated":     r.GetString("updated"),
 	}
+}
+
+// resolveServerISO validates an optional server_iso relation target for the game
+// record identified by selfID. The empty string clears the link. A non-empty
+// value must reference an EXISTING catalog entry and may not be the game itself.
+// Returns the id to store (or "") and a human message when it's rejected (400).
+func resolveServerISO(app core.App, raw, selfID string) (string, string) {
+	id := strings.TrimSpace(raw)
+	if id == "" {
+		return "", "" // clear the link
+	}
+	if id == selfID {
+		return "", "a game cannot be its own server ISO"
+	}
+	if _, err := app.FindRecordById(collectionName, id); err != nil {
+		return "", "server_iso must reference an existing ISO catalog entry"
+	}
+	return id, ""
 }
 
 // validFilename mirrors the containers `game_iso` guard: the catalog may only
@@ -101,12 +124,15 @@ func registerLibrary() {
 }
 
 // createBody is the POST payload. available defaults to true (nil → visible).
+// server_iso is optional — the id of another catalog entry that is this game's
+// dedicated server build (host instances boot it; real Xboxes get this game).
 type createBody struct {
 	Name        string `json:"name"`
 	Filename    string `json:"filename"`
 	TitleID     string `json:"title_id"`
 	Description string `json:"description"`
 	Available   *bool  `json:"available"`
+	ServerISO   string `json:"server_iso"`
 }
 
 // POST /api/admin/isos — register a library file as a pickable ISO.
@@ -143,6 +169,14 @@ func registerCreate() {
 			available = *body.Available
 		}
 		rec.Set("available", available)
+		if strings.TrimSpace(body.ServerISO) != "" {
+			// selfID is "" on create (no id yet) — self-reference is impossible.
+			serverID, msg := resolveServerISO(e.App, body.ServerISO, "")
+			if msg != "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
+			}
+			rec.Set("server_iso", serverID)
+		}
 		if err := e.App.Save(rec); err != nil {
 			// Most likely the unique-filename index — this file is already catalogued.
 			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
@@ -163,12 +197,16 @@ func registerGet() {
 }
 
 // updateBody is the PATCH payload; every field is optional (pointer = provided).
+// A provided server_iso of "" clears the link; a non-empty value re-points it.
+// (server_iso is freely editable — unlike filename, it's a config choice, not a
+// disc-bytes repoint, so it is NOT covered by the write-once immutability hook.)
 type updateBody struct {
 	Name        *string `json:"name"`
 	Filename    *string `json:"filename"`
 	TitleID     *string `json:"title_id"`
 	Description *string `json:"description"`
 	Available   *bool   `json:"available"`
+	ServerISO   *string `json:"server_iso"`
 }
 
 // PATCH /api/admin/isos/{id} — partial update. Only provided fields change.
@@ -207,6 +245,13 @@ func registerUpdate() {
 		}
 		if body.Available != nil {
 			rec.Set("available", *body.Available)
+		}
+		if body.ServerISO != nil {
+			serverID, msg := resolveServerISO(e.App, *body.ServerISO, rec.Id)
+			if msg != "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
+			}
+			rec.Set("server_iso", serverID)
 		}
 		if err := e.App.Save(rec); err != nil {
 			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})

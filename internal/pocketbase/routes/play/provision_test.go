@@ -1,6 +1,11 @@
 package play
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tests"
+)
 
 // TestInstanceName covers the DECOUPLED naming decision for request-instance:
 // non-admins always get a stable per-user container (no pretty display), admins
@@ -44,6 +49,89 @@ func TestInstanceName(t *testing.T) {
 				t.Errorf("display %q exceeds 15 chars", gotDisplay)
 			}
 		})
+	}
+}
+
+// TestChooseBootFilename covers the pure server/game boot decision: a host
+// instance boots the SERVER build when present, else the game's own file.
+func TestChooseBootFilename(t *testing.T) {
+	cases := []struct {
+		name, game, server, want string
+	}{
+		{"no server build → game file", "halo-ce.iso", "", "halo-ce.iso"},
+		{"server build present → server file", "halo-ce.iso", "halo-ce-server.iso", "halo-ce-server.iso"},
+		{"whitespace-only server → game file", "halo-ce.iso", "   ", "halo-ce.iso"},
+	}
+	for _, c := range cases {
+		if got := chooseBootFilename(c.game, c.server); got != c.want {
+			t.Errorf("%s: chooseBootFilename(%q,%q) = %q, want %q", c.name, c.game, c.server, got, c.want)
+		}
+	}
+}
+
+// TestResolveBootFilename proves the end-to-end host-boot resolution against a
+// real catalog: a game with a server_iso boots the SERVER file, a game without
+// one boots its OWN file, and DELETING a linked server build makes the game fall
+// back to its OWN file (PB nullifies the ref on delete, cascadeDelete=false), so
+// removing a server build never bricks the games that referenced it.
+func TestResolveBootFilename(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("NewTestApp: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	// Minimal isos catalog: filename + self-referential server_iso relation,
+	// mirroring the migration shape without importing the migrations package.
+	isos := core.NewBaseCollection("isos")
+	isos.Fields.Add(
+		&core.TextField{Name: "filename"},
+		&core.TextField{Name: "name"},
+	)
+	if err := app.Save(isos); err != nil {
+		t.Fatalf("save isos: %v", err)
+	}
+	isos, _ = app.FindCollectionByNameOrId("isos")
+	isos.Fields.Add(&core.RelationField{Name: "server_iso", CollectionId: isos.Id, MaxSelect: 1})
+	if err := app.Save(isos); err != nil {
+		t.Fatalf("add server_iso: %v", err)
+	}
+
+	newISO := func(name, filename, serverID string) *core.Record {
+		r := core.NewRecord(isos)
+		r.Set("name", name)
+		r.Set("filename", filename)
+		if serverID != "" {
+			r.Set("server_iso", serverID)
+		}
+		if err := app.Save(r); err != nil {
+			t.Fatalf("save iso %q: %v", name, err)
+		}
+		return r
+	}
+
+	server := newISO("Halo CE (server)", "halo-ce-server.iso", "")
+	withServer := newISO("Halo CE", "halo-ce.iso", server.Id)
+	noServer := newISO("Halo 2", "halo-2.iso", "")
+
+	if got := resolveBootFilename(app, withServer); got != "halo-ce-server.iso" {
+		t.Errorf("server build present: got %q, want halo-ce-server.iso", got)
+	}
+	if got := resolveBootFilename(app, noServer); got != "halo-2.iso" {
+		t.Errorf("no server build: got %q, want halo-2.iso", got)
+	}
+
+	// Remove the linked server build; PB nullifies withServer.server_iso, so a
+	// fresh read of the game must fall back to its own file — not brick.
+	if err := app.Delete(server); err != nil {
+		t.Fatalf("delete server iso: %v", err)
+	}
+	reloaded, err := app.FindRecordById("isos", withServer.Id)
+	if err != nil {
+		t.Fatalf("reload game: %v", err)
+	}
+	if got := resolveBootFilename(app, reloaded); got != "halo-ce.iso" {
+		t.Errorf("after server delete: got %q, want fallback halo-ce.iso", got)
 	}
 }
 

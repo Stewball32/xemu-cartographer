@@ -99,6 +99,10 @@ func registerRequest() {
 		if filename == "" {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "library entry has no file"})
 		}
+		// A xemu-cart HOST instance boots the game's dedicated SERVER build when
+		// it has one, else the game's own file. (The companion-app LAN-sync path
+		// serves the game's own build to real Xboxes — see routes/lansync.)
+		bootFilename := resolveBootFilename(e.App, rec)
 
 		// Provisioning subsystem must be wired (CONTAINERS_ENABLED) to go further.
 		if Provisioner == nil {
@@ -116,7 +120,7 @@ func registerRequest() {
 			})
 		}
 
-		res, err := Provisioner.Provision(name, filename, display)
+		res, err := Provisioner.Provision(name, bootFilename, display)
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -128,6 +132,32 @@ func registerRequest() {
 			GameISO:  res.GameISO,
 		})
 	})
+}
+
+// resolveBootFilename picks the library file a fresh HOST instance should boot
+// for the chosen game: the linked SERVER build (server_iso) when it's set and
+// resolvable, else the game's own client build (its filename). A missing or
+// dangling server_iso falls back to the game's own file, so deleting a server
+// build never bricks the games that referenced it. The DB touch is isolated
+// here; the actual choice is the pure chooseBootFilename below (unit-tested).
+func resolveBootFilename(app core.App, game *core.Record) string {
+	serverFilename := ""
+	if id := game.GetString("server_iso"); id != "" {
+		if s, err := app.FindRecordById("isos", id); err == nil {
+			serverFilename = s.GetString("filename")
+		}
+	}
+	return chooseBootFilename(game.GetString("filename"), serverFilename)
+}
+
+// chooseBootFilename is the pure server/game boot decision: boot the SERVER
+// build when the game has one, else the game's own file. (Stewart's model — the
+// neutral-host / host-doesn't-spawn flag is deliberately deferred.)
+func chooseBootFilename(gameFilename, serverFilename string) string {
+	if strings.TrimSpace(serverFilename) != "" {
+		return serverFilename
+	}
+	return gameFilename
 }
 
 // instanceName is the pure DECOUPLED-naming decision for request-instance. It
