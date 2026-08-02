@@ -6,12 +6,15 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 )
 
 func init() {
 	register(registerList)
-	register(registerLibrary)
-	register(registerCreate)
+	register(registerInbox)
+	register(registerIngest)
 	register(registerGet)
 	register(registerUpdate)
 	register(registerDelete)
@@ -21,13 +24,11 @@ const collectionName = "isos"
 
 // isoView is the JSON projection of an `isos` record for admin responses.
 //
-// server_iso is the optional link to another catalog entry that is this game's
-// dedicated SERVER/host build (empty = this game has no separate server build).
-// See resolveServerISO + the game/server-ISO model.
-//
-// The extracted_* / footprint_bytes fields are the derived extract-cache status
-// (produced by the isos_extract hook) — surfaced read-only so the admin UI can
-// show whether a disc's tree is ready to sync to consoles.
+// Under the ingest model the managed disc is <id>.iso; `filename` holds the
+// ORIGINAL inbox filename (provenance only). content_hash is the drift anchor;
+// drift_detected flags a row whose managed bytes no longer match it (forced
+// unavailable). extracted_* / footprint_bytes are the derived cache status.
+// server_iso optionally links another catalog entry as this game's server build.
 func isoView(r *core.Record) map[string]any {
 	return map[string]any{
 		"id":              r.Id,
@@ -37,6 +38,9 @@ func isoView(r *core.Record) map[string]any {
 		"description":     r.GetString("description"),
 		"available":       r.GetBool("available"),
 		"server_iso":      r.GetString("server_iso"),
+		"content_hash":    r.GetString("content_hash"),
+		"drift_detected":  r.GetBool("drift_detected"),
+		"file_size":       r.GetInt("file_size"),
 		"extracted_ready": r.GetBool("extracted_ready"),
 		"extracted_at":    r.GetString("extracted_at"),
 		"footprint_bytes": r.GetInt("footprint_bytes"),
@@ -46,13 +50,13 @@ func isoView(r *core.Record) map[string]any {
 }
 
 // resolveServerISO validates an optional server_iso relation target for the game
-// record identified by selfID. The empty string clears the link. A non-empty
-// value must reference an EXISTING catalog entry and may not be the game itself.
-// Returns the id to store (or "") and a human message when it's rejected (400).
+// record identified by selfID. "" clears the link; a non-empty value must
+// reference an EXISTING catalog entry and may not be the game itself. Returns the
+// id to store (or "") and a human message when it's rejected (400).
 func resolveServerISO(app core.App, raw, selfID string) (string, string) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
-		return "", "" // clear the link
+		return "", ""
 	}
 	if id == selfID {
 		return "", "a game cannot be its own server ISO"
@@ -63,20 +67,7 @@ func resolveServerISO(app core.App, raw, selfID string) (string, string) {
 	return id, ""
 }
 
-// validFilename mirrors the containers `game_iso` guard: the catalog may only
-// reference a bare filename inside the shared ISO library, never an arbitrary
-// host path. Rejects separators, "..", and dotfiles.
-func validFilename(name string) bool {
-	if name == "" {
-		return false
-	}
-	if strings.ContainsAny(name, `/\`) || name == ".." || strings.HasPrefix(name, ".") {
-		return false
-	}
-	return true
-}
-
-// GET /api/admin/isos — list every catalog entry (available or not), by name.
+// GET /api/admin/isos — every catalog entry, by name.
 func registerList() {
 	Group.GET("", func(e *core.RequestEvent) error {
 		records, err := e.App.FindAllRecords(collectionName)
@@ -94,101 +85,28 @@ func registerList() {
 	})
 }
 
-// GET /api/admin/isos/library — the actual disc images present in the shared ISO
-// library dir, each flagged with whether it's already catalogued. Lets the admin
-// see what filenames are registerable. 503 when the podman manager isn't wired
-// (CONTAINERS_ENABLED=false) — there's no host library to scan.
-func registerLibrary() {
-	Group.GET("/library", func(e *core.RequestEvent) error {
-		if Manager == nil {
-			return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "container subsystem not enabled"})
-		}
-		files, err := Manager.ISOLibrary()
+// GET /api/admin/isos/inbox — disc images staged in the ingest drop-zone,
+// pending ingest into the managed library.
+func registerInbox() {
+	Group.GET("/inbox", func(e *core.RequestEvent) error {
+		files, err := isoingest.InboxPending(lansync.Load())
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		// Map filename → catalog record id so the UI can show registered state.
-		registered := map[string]string{}
-		if records, err := e.App.FindAllRecords(collectionName); err == nil {
-			for _, r := range records {
-				registered[r.GetString("filename")] = r.Id
-			}
-		}
-		entries := make([]map[string]any, 0, len(files))
-		for _, f := range files {
-			id, ok := registered[f]
-			entries = append(entries, map[string]any{
-				"filename":   f,
-				"registered": ok,
-				"iso_id":     id,
-			})
-		}
-		return e.JSON(http.StatusOK, map[string]any{
-			"dir":   Manager.ISODir(),
-			"files": entries,
-		})
+		return e.JSON(http.StatusOK, map[string]any{"files": files})
 	})
 }
 
-// createBody is the POST payload. available defaults to true (nil → visible).
-// server_iso is optional — the id of another catalog entry that is this game's
-// dedicated server build (host instances boot it; real Xboxes get this game).
-type createBody struct {
-	Name        string `json:"name"`
-	Filename    string `json:"filename"`
-	TitleID     string `json:"title_id"`
-	Description string `json:"description"`
-	Available   *bool  `json:"available"`
-	ServerISO   string `json:"server_iso"`
-}
-
-// POST /api/admin/isos — register a library file as a pickable ISO.
-func registerCreate() {
-	Group.POST("", func(e *core.RequestEvent) error {
-		var body createBody
-		if err := e.BindBody(&body); err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-		body.Name = strings.TrimSpace(body.Name)
-		body.Filename = strings.TrimSpace(body.Filename)
-		if body.Name == "" {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
-		}
-		if !validFilename(body.Filename) {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": "filename must be a bare filename in the ISO library"})
-		}
-		// If the library is scannable, reject a dead entry up front.
-		if Manager != nil && !Manager.ISOExists(body.Filename) {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": "no such file in the ISO library: " + body.Filename})
-		}
-
-		col, err := e.App.FindCollectionByNameOrId(collectionName)
+// POST /api/admin/isos/ingest — scan the inbox and ingest every pending file:
+// hash → dedupe → create row → atomic move to <id>.iso → freeze → kick extract.
+// Returns per-file ingested / skipped(duplicate) / errors.
+func registerIngest() {
+	Group.POST("/ingest", func(e *core.RequestEvent) error {
+		res, err := isoingest.IngestInbox(e.App, lansync.Load())
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		rec := core.NewRecord(col)
-		rec.Set("name", body.Name)
-		rec.Set("filename", body.Filename)
-		rec.Set("title_id", strings.TrimSpace(body.TitleID))
-		rec.Set("description", body.Description)
-		available := true
-		if body.Available != nil {
-			available = *body.Available
-		}
-		rec.Set("available", available)
-		if strings.TrimSpace(body.ServerISO) != "" {
-			// selfID is "" on create (no id yet) — self-reference is impossible.
-			serverID, msg := resolveServerISO(e.App, body.ServerISO, "")
-			if msg != "" {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
-			}
-			rec.Set("server_iso", serverID)
-		}
-		if err := e.App.Save(rec); err != nil {
-			// Most likely the unique-filename index — this file is already catalogued.
-			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
-		}
-		return e.JSON(http.StatusCreated, isoView(rec))
+		return e.JSON(http.StatusOK, res)
 	})
 }
 
@@ -204,19 +122,18 @@ func registerGet() {
 }
 
 // updateBody is the PATCH payload; every field is optional (pointer = provided).
-// A provided server_iso of "" clears the link; a non-empty value re-points it.
-// (server_iso is freely editable — unlike filename, it's a config choice, not a
-// disc-bytes repoint, so it is NOT covered by the write-once immutability hook.)
+// The managed file is ID-anchored, so the display name (and all metadata) is
+// freely editable — there is no write-once constraint anymore. A provided
+// server_iso of "" clears the link.
 type updateBody struct {
 	Name        *string `json:"name"`
-	Filename    *string `json:"filename"`
 	TitleID     *string `json:"title_id"`
 	Description *string `json:"description"`
 	Available   *bool   `json:"available"`
 	ServerISO   *string `json:"server_iso"`
 }
 
-// PATCH /api/admin/isos/{id} — partial update. Only provided fields change.
+// PATCH /api/admin/isos/{id} — partial metadata update.
 func registerUpdate() {
 	Group.PATCH("/{id}", func(e *core.RequestEvent) error {
 		rec, err := e.App.FindRecordById(collectionName, e.Request.PathValue("id"))
@@ -233,16 +150,6 @@ func registerUpdate() {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
 			}
 			rec.Set("name", name)
-		}
-		if body.Filename != nil {
-			filename := strings.TrimSpace(*body.Filename)
-			if !validFilename(filename) {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "filename must be a bare filename in the ISO library"})
-			}
-			if Manager != nil && !Manager.ISOExists(filename) {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "no such file in the ISO library: " + filename})
-			}
-			rec.Set("filename", filename)
 		}
 		if body.TitleID != nil {
 			rec.Set("title_id", strings.TrimSpace(*body.TitleID))
@@ -267,15 +174,15 @@ func registerUpdate() {
 	})
 }
 
-// DELETE /api/admin/isos/{id} — remove a catalog entry (the library file on disk
-// is untouched).
+// DELETE /api/admin/isos/{id} — remove the catalog entry AND its managed disc +
+// extracted tree (the file is ID-owned now; delete-to-replace is the flow).
 func registerDelete() {
 	Group.DELETE("/{id}", func(e *core.RequestEvent) error {
 		rec, err := e.App.FindRecordById(collectionName, e.Request.PathValue("id"))
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "iso not found"})
 		}
-		if err := e.App.Delete(rec); err != nil {
+		if err := isoingest.DeleteManaged(e.App, lansync.Load(), rec); err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 		return e.NoContent(http.StatusNoContent)

@@ -1,31 +1,29 @@
 <script lang="ts">
-	// Admin ISO library / organizer.
+	// Admin ISO library / ingest organizer.
 	//
-	// The on-disk game-ISO library (podman CONTAINERS_ISO_DIR) surfaced as a
-	// manageable catalog: scan the disc images present on the host, register one
-	// as a catalog entry (name + title_id + availability), give a game an
-	// optional dedicated SERVER build (server_iso → another catalog entry), and
-	// watch each disc's extract-cache status (the tree synced to consoles).
-	//
-	// Write-once immutability: a row's underlying library file can't be changed
-	// (isos_immutable) — metadata + server_iso stay editable; to point at a
-	// different disc, delete the row and register the new file.
+	// Ingest model: drop disc images into the tier-root inbox (inbox/isos/), then
+	// "Ingest" — each becomes a managed <id>.iso (hashed, frozen read-only,
+	// extracted), deduped by content hash. The display name is decoupled from the
+	// file and freely editable. A game may link an optional server build
+	// (server_iso). Managed bytes are re-verified on boot + before boot/sync; a
+	// drifted disc is flagged and forced unavailable.
 	//
 	// /admin/+layout.ts enforces isAdmin; this page assumes it.
 
 	import { onMount } from 'svelte';
 	import {
+		AlertTriangleIcon,
+		CheckCircle2Icon,
+		ClockIcon,
 		DiscIcon,
-		HardDriveIcon,
+		InboxIcon,
 		LoaderIcon,
 		PencilIcon,
-		PlusIcon,
 		RefreshCwIcon,
 		SearchIcon,
 		ServerIcon,
 		Trash2Icon,
-		CheckCircle2Icon,
-		ClockIcon
+		UploadIcon
 	} from '@lucide/svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { confirmToast, describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
@@ -36,70 +34,38 @@
 	import type { SortState } from '$lib/components/ui/data-table';
 	import {
 		listIsos,
-		scanLibrary,
-		createIso,
+		scanInbox,
+		ingestInbox,
 		updateIso,
 		deleteIso,
 		formatBytes,
-		IsoApiError,
+		shortHash,
 		type IsoEntry,
-		type LibraryFile
+		type InboxFile
 	} from '$lib/utils/isos';
 
 	let rows = $state<IsoEntry[]>([]);
-	let libraryFiles = $state<LibraryFile[]>([]);
-	let libraryDir = $state('');
-	let libraryUnavailable = $state(false); // container subsystem off (503)
+	let inbox = $state<InboxFile[]>([]);
 	let loading = $state(true);
+	let ingesting = $state(false);
 	let filter = $state('');
 	let sort = $state<SortState>({ key: 'name', dir: 'asc' });
 	let deleteBusy = $state<Record<string, boolean>>({});
 
-	// name lookup for rendering a server_iso id as its entry name.
 	const byId = $derived(new Map(rows.map((r) => [r.id, r])));
-
-	// ── Register dialog ──────────────────────────────────────────────────────
-	let regOpen = $state(false);
-	let regBusy = $state(false);
-	let reg = $state({
-		filename: '',
-		name: '',
-		title_id: '',
-		description: '',
-		available: true,
-		server_iso: ''
-	});
 
 	// ── Edit dialog ──────────────────────────────────────────────────────────
 	let editOpen = $state(false);
 	let editBusy = $state(false);
 	let editId = $state('');
 	let editFilename = $state('');
-	let edit = $state({
-		name: '',
-		title_id: '',
-		description: '',
-		available: true,
-		server_iso: ''
-	});
-
-	const unregistered = $derived(libraryFiles.filter((f) => !f.registered));
+	let edit = $state({ name: '', title_id: '', description: '', available: true, server_iso: '' });
 
 	async function load() {
 		try {
 			loading = true;
 			rows = await listIsos();
-			try {
-				const lib = await scanLibrary();
-				libraryDir = lib.dir;
-				libraryFiles = lib.files;
-				libraryUnavailable = false;
-			} catch (err) {
-				// 503 = container subsystem disabled; catalog still works.
-				libraryUnavailable = err instanceof IsoApiError && err.status === 503;
-				if (!libraryUnavailable) throw err;
-				libraryFiles = [];
-			}
+			inbox = await scanInbox();
 		} catch (err) {
 			toaster.error({ title: 'Load ISO library failed', description: describeAsyncError(err) });
 		} finally {
@@ -107,46 +73,27 @@
 		}
 	}
 
-	function openRegister(filename = '') {
-		reg = { filename, name: '', title_id: '', description: '', available: true, server_iso: '' };
-		regOpen = true;
-	}
-
-	async function saveRegister() {
-		const name = reg.name.trim();
-		const filename = reg.filename.trim();
-		if (!name) {
-			toaster.error({ title: 'Invalid', description: 'Name is required.' });
-			return;
-		}
-		if (!filename) {
-			toaster.error({ title: 'Invalid', description: 'Pick a disc file to register.' });
-			return;
-		}
+	async function runIngest() {
 		try {
-			regBusy = true;
-			await toastPromise(
-				createIso({
-					name,
-					filename,
-					title_id: reg.title_id.trim(),
-					description: reg.description.trim(),
-					available: reg.available,
-					server_iso: reg.server_iso || undefined
-				}),
-				{
-					loading: { title: 'Registering', description: name },
-					success: { title: 'Registered', description: name },
-					errorTitle: 'Register failed',
-					errorDescription: (err) => (err instanceof Error ? err.message : 'Failed')
-				}
-			);
-			regOpen = false;
+			ingesting = true;
+			const res = await ingestInbox();
+			const parts: string[] = [];
+			if (res.ingested.length) parts.push(`${res.ingested.length} ingested`);
+			if (res.skipped.length) parts.push(`${res.skipped.length} skipped (dupes)`);
+			if (res.errors.length) parts.push(`${res.errors.length} error(s)`);
+			if (res.errors.length) {
+				toaster.error({ title: 'Ingest finished with errors', description: res.errors.join('; ') });
+			} else {
+				toaster.success({
+					title: 'Ingest complete',
+					description: parts.join(', ') || 'nothing to ingest'
+				});
+			}
 			await load();
-		} catch {
-			// toast already shown
+		} catch (err) {
+			toaster.error({ title: 'Ingest failed', description: describeAsyncError(err) });
 		} finally {
-			regBusy = false;
+			ingesting = false;
 		}
 	}
 
@@ -177,7 +124,7 @@
 					title_id: edit.title_id.trim(),
 					description: edit.description.trim(),
 					available: edit.available,
-					server_iso: edit.server_iso // "" clears the link
+					server_iso: edit.server_iso
 				}),
 				{
 					loading: { title: 'Saving', description: name },
@@ -197,8 +144,8 @@
 
 	async function removeEntry(row: IsoEntry) {
 		const ok = await confirmToast({
-			title: 'Delete catalog entry',
-			description: `Remove "${row.name}" (${row.filename}) from the catalog? The disc file on disk is left untouched — this only unregisters it. Any game linking this as its server build will fall back to its own disc.`,
+			title: 'Delete disc',
+			description: `Remove "${row.name}" from the catalog AND delete its managed disc + extracted tree from disk? This is the delete-to-replace flow. Any game linking this as its server build will fall back to its own disc.`,
 			confirmLabel: 'Delete',
 			type: 'warning'
 		});
@@ -255,79 +202,85 @@
 <div class="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6">
 	<PageHeader
 		title="ISO library"
-		description="Register game discs from the on-disk library, give a game an optional dedicated server build, and track extraction status. A game's own disc is the client build synced to real Xboxes; its optional server build boots the xemu-cart host instance."
+		description="Drop disc images into the inbox, then ingest them into the managed library — each is hashed, frozen read-only, and extracted. A game's own disc is the client build synced to real Xboxes; its optional server build boots the xemu-cart host instance."
 	/>
 
-	<!-- On-disk library scan -->
+	<!-- Inbox / ingest -->
 	<Card>
 		<div class="flex items-center gap-2">
-			<HardDriveIcon class="size-4 opacity-70" />
-			<h3 class="h4">On-disk library</h3>
+			<InboxIcon class="size-4 opacity-70" />
+			<h3 class="h4">Inbox</h3>
 		</div>
-		{#if libraryUnavailable}
+		<p class="text-xs opacity-60">
+			Staged in <span class="font-mono">inbox/isos/</span>. Ingest moves each into the managed
+			library as <span class="font-mono">&lt;id&gt;.iso</span>, hashes + freezes it, and extracts.
+			Duplicate content (same hash) is skipped.
+		</p>
+		{#if inbox.length === 0}
 			<p class="text-sm opacity-70">
-				The container subsystem is disabled (<code>CONTAINERS_ENABLED=false</code>), so the host
-				library can't be scanned. You can still edit and delete existing catalog entries, but
-				registering a new disc needs the library scan to confirm the file exists.
+				No pending files. Drop <code>.iso</code> images into the inbox and refresh.
 			</p>
 		{:else}
-			<p class="text-xs opacity-60">
-				{#if libraryDir}<span class="font-mono">{libraryDir}</span>{/if}
-			</p>
-			{#if unregistered.length === 0}
-				<p class="text-sm opacity-70">
-					Every disc on disk is registered. Drop a new <code>.iso</code> into the library dir and refresh
-					to register it.
-				</p>
-			{:else}
-				<ul class="flex flex-col gap-1">
-					{#each unregistered as f (f.filename)}
-						<li
-							class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-200-800"
-						>
-							<span class="flex items-center gap-2 truncate">
-								<DiscIcon class="size-4 shrink-0 opacity-60" />
-								<span class="truncate font-mono text-sm">{f.filename}</span>
-							</span>
-							<button class="btn preset-filled btn-sm" onclick={() => openRegister(f.filename)}>
-								<PlusIcon class="size-4" />
-								<span>Register</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+			<ul class="flex flex-col gap-1">
+				{#each inbox as f (f.filename)}
+					<li
+						class="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-surface-200-800"
+					>
+						<span class="flex items-center gap-2 truncate">
+							<DiscIcon class="size-4 shrink-0 opacity-60" />
+							<span class="truncate font-mono text-sm">{f.filename}</span>
+						</span>
+						<span class="text-xs tabular-nums opacity-60">{formatBytes(f.size)}</span>
+					</li>
+				{/each}
+			</ul>
 		{/if}
+		<div class="flex items-center gap-2">
+			<button class="btn preset-tonal" onclick={() => load()} disabled={loading || ingesting}>
+				{#if loading}<LoaderIcon class="size-4 animate-spin" />{:else}<RefreshCwIcon
+						class="size-4"
+					/>{/if}
+				<span>Refresh</span>
+			</button>
+			<button
+				class="btn preset-filled"
+				onclick={runIngest}
+				disabled={ingesting || inbox.length === 0}
+			>
+				{#if ingesting}<LoaderIcon class="size-4 animate-spin" />{:else}<UploadIcon
+						class="size-4"
+					/>{/if}
+				<span>Ingest {inbox.length || ''} file{inbox.length === 1 ? '' : 's'}</span>
+			</button>
+		</div>
 	</Card>
 
 	<!-- Catalog toolbar -->
-	<div class="flex items-center justify-between gap-2">
-		<div class="input-group flex-1 grid-cols-[auto_1fr]">
-			<div class="ig-cell preset-tonal"><SearchIcon class="size-4" /></div>
-			<input
-				type="search"
-				class="ig-input"
-				placeholder="Filter by name, file, or title id"
-				bind:value={filter}
-			/>
-		</div>
-		<button class="btn preset-tonal" onclick={() => load()} disabled={loading} aria-label="Refresh">
-			{#if loading}<LoaderIcon class="size-4 animate-spin" />{:else}<RefreshCwIcon
-					class="size-4"
-				/>{/if}
-			<span>Refresh</span>
-		</button>
-		<button class="btn preset-filled" onclick={() => openRegister()} disabled={libraryUnavailable}>
-			<PlusIcon class="size-4" />
-			<span>Register disc</span>
-		</button>
+	<div class="input-group grid-cols-[auto_1fr]">
+		<div class="ig-cell preset-tonal"><SearchIcon class="size-4" /></div>
+		<input
+			type="search"
+			class="ig-input"
+			placeholder="Filter by name, file, or title id"
+			bind:value={filter}
+		/>
 	</div>
 
 	<!-- Row cells -->
 	{#snippet nameCell({ row }: { row: IsoEntry })}
 		<div class="flex flex-col">
-			<span class="font-medium">{row.name}</span>
-			<span class="font-mono text-xs opacity-60">{row.filename}</span>
+			<span class="flex items-center gap-1.5 font-medium">
+				{row.name}
+				{#if row.drift_detected}
+					<span
+						class="badge preset-tonal-error"
+						title="Managed bytes no longer match the recorded hash"
+					>
+						<AlertTriangleIcon class="size-3" /> drift
+					</span>
+				{/if}
+			</span>
+			<span class="font-mono text-xs opacity-60">{shortHash(row.content_hash)}</span>
 		</div>
 	{/snippet}
 	{#snippet titleCell({ row }: { row: IsoEntry })}
@@ -396,7 +349,7 @@
 			{loading}
 			keyFor={(c) => c.key}
 			rowKey={(r) => r.id}
-			emptyMessage="no discs registered yet — register one from the on-disk library above"
+			emptyMessage="no discs ingested yet — drop images in the inbox above and ingest"
 			groups={[
 				{
 					columns: [
@@ -413,73 +366,14 @@
 	</Card>
 </div>
 
-<!-- Register dialog -->
-<Dialog open={regOpen} onClose={() => (regOpen = false)} title="Register disc" size="md">
-	<div class="flex flex-col gap-3">
-		<label class="label">
-			<span class="label-text">Disc file</span>
-			{#if reg.filename && libraryFiles.every((f) => f.filename !== reg.filename)}
-				<input class="input font-mono" bind:value={reg.filename} readonly />
-			{:else}
-				<select class="select" bind:value={reg.filename}>
-					<option value="" disabled>— pick a disc on disk —</option>
-					{#each unregistered as f (f.filename)}
-						<option value={f.filename}>{f.filename}</option>
-					{/each}
-				</select>
-			{/if}
-			<span class="text-xs opacity-60"
-				>The library file is fixed after registering (write-once).</span
-			>
-		</label>
-		<label class="label">
-			<span class="label-text">Name</span>
-			<input class="input" bind:value={reg.name} placeholder="e.g. Halo: Combat Evolved" />
-		</label>
-		<label class="label">
-			<span class="label-text">Title ID <span class="opacity-50">(optional)</span></span>
-			<input class="input font-mono" bind:value={reg.title_id} placeholder="e.g. 4d530064" />
-		</label>
-		<label class="label">
-			<span class="label-text">Description <span class="opacity-50">(optional)</span></span>
-			<input class="input" bind:value={reg.description} />
-		</label>
-		<label class="label">
-			<span class="label-text">Server build <span class="opacity-50">(optional)</span></span>
-			<select class="select" bind:value={reg.server_iso}>
-				<option value="">— none (host boots this disc) —</option>
-				{#each rows as r (r.id)}
-					<option value={r.id}>{r.name} <span>({r.filename})</span></option>
-				{/each}
-			</select>
-			<span class="text-xs opacity-60">
-				If set, a xemu-cart host instance boots that build; real Xboxes still get this disc.
-			</span>
-		</label>
-		<label class="flex items-center gap-2">
-			<input type="checkbox" class="checkbox" bind:checked={reg.available} />
-			<span class="text-sm">Available to players (shows in the pick-a-game list)</span>
-		</label>
-	</div>
-	{#snippet footer()}
-		<button class="btn preset-tonal" onclick={() => (regOpen = false)} disabled={regBusy}
-			>Cancel</button
-		>
-		<button class="btn preset-filled" onclick={saveRegister} disabled={regBusy}>
-			{#if regBusy}<LoaderIcon class="size-4 animate-spin" />{/if}
-			<span>Register</span>
-		</button>
-	{/snippet}
-</Dialog>
-
 <!-- Edit dialog -->
-<Dialog open={editOpen} onClose={() => (editOpen = false)} title="Edit catalog entry" size="md">
+<Dialog open={editOpen} onClose={() => (editOpen = false)} title="Edit disc" size="md">
 	<div class="flex flex-col gap-3">
 		<label class="label">
-			<span class="label-text">Disc file <span class="opacity-50">(write-once)</span></span>
+			<span class="label-text">Original file <span class="opacity-50">(provenance)</span></span>
 			<input class="input font-mono" value={editFilename} readonly />
 			<span class="text-xs opacity-60"
-				>To point at a different disc, delete this entry and register the new file.</span
+				>The managed disc is stored by ID; delete this entry to replace the file.</span
 			>
 		</label>
 		<label class="label">
@@ -500,7 +394,7 @@
 				<option value="">— none (host boots this disc) —</option>
 				{#each rows as r (r.id)}
 					{#if r.id !== editId}
-						<option value={r.id}>{r.name} ({r.filename})</option>
+						<option value={r.id}>{r.name}</option>
 					{/if}
 				{/each}
 			</select>

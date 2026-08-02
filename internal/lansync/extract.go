@@ -14,21 +14,17 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
 )
 
-// ExtractISO extracts the XISO named `filename` (resolved under cfg.ISODir) into
+// ExtractISO extracts the managed disc for recordID (<cfg.ISODir>/<id>.iso) into
 // a per-record cache dir (<cfg.ExtractDir>/isos/<recordID>) via extract-xiso,
 // then measures the tree's FATX footprint. Returns the tree dir + footprint.
 //
 // The cache dir is wiped + recreated first, so re-extraction is idempotent
-// (eviction is just removing the dir). The binary the ISO row points at is
-// immutable (isos_immutable), so the tree is a pure function of that binary — no
-// content hashing needed.
-func ExtractISO(cfg Config, filename, recordID string) (treeDir string, footprint uint64, err error) {
-	if strings.ContainsAny(filename, `/\`) || filename == "" || strings.HasPrefix(filename, ".") {
-		return "", 0, fmt.Errorf("invalid iso filename %q", filename)
-	}
-	isoPath := filepath.Join(cfg.ISODir, filename)
+// (eviction is just removing the dir). The managed disc is frozen read-only +
+// hash-anchored at ingest, so the tree is a pure function of those bytes.
+func ExtractISO(cfg Config, recordID string) (treeDir string, footprint uint64, err error) {
+	isoPath := cfg.ManagedISOPath(recordID)
 	if _, statErr := os.Stat(isoPath); statErr != nil {
-		return "", 0, fmt.Errorf("iso not found at %s: %w", isoPath, statErr)
+		return "", 0, fmt.Errorf("managed iso not found at %s: %w", isoPath, statErr)
 	}
 
 	treeDir = filepath.Join(cfg.ExtractDir, "isos", recordID)

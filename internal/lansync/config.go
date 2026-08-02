@@ -18,9 +18,14 @@ import (
 // machinery needs. Loaded once from env by Load(); mirrors the podman ISODir so
 // a single library dir serves both the emulator and the box-provisioning path.
 type Config struct {
-	// ISODir is the shared game-ISO library (bare `isos.filename` resolves
-	// here). Matches podman Config.ISODir so uploads land in one place.
+	// ISODir is the shared, MANAGED game-ISO library. Each catalog row's disc
+	// is stored here as <record-id>.iso (ID-anchored, decoupled from the display
+	// name). Matches podman Config.ISODir so the emulator boots the same files.
 	ISODir string
+	// InboxDir is the ingest drop-zone (tier-root inbox/isos), on the same
+	// filesystem as ISODir so ingest is an atomic rename. Deliberately OUTSIDE
+	// the mounted shared dir so half-written drops are never visible to xemu.
+	InboxDir string
 	// ExtractDir is where extracted disc trees are cached (evictable). Each ISO
 	// gets <ExtractDir>/isos/<recordID>/.
 	ExtractDir string
@@ -39,6 +44,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		ISODir:         envDefault("CONTAINERS_ISO_DIR", "./containers/xemu/shared/isos"),
+		InboxDir:       envDefault("LAN_SYNC_INBOX_DIR", "./inbox/isos"),
 		ExtractDir:     envDefault("LAN_SYNC_EXTRACT_DIR", "./containers/xemu/shared/extracted"),
 		FATXCluster:    envInt("LAN_SAVES_FATX_CLUSTER", diskspace.DefaultFATXCluster),
 		HaloDir:        envDefault("LAN_SYNC_HALO_DIR", `\Halo`),

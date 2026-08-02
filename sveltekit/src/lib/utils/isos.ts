@@ -1,11 +1,12 @@
 // Client for the admin ISO-catalog endpoints (/api/admin/isos/*).
 //
-// The catalog is a set of records over the on-disk ISO library dir on the host
-// (podman Config.ISODir). Each row names a bare filename plus player-facing
-// metadata and, for a game, an optional server_iso link to another catalog
-// entry (its dedicated server build). The library file a row points at is
-// WRITE-ONCE (isos_immutable): metadata + server_iso stay editable, but to
-// point at a different disc you delete the row and register the new file.
+// Ingest model: discs are dropped into the tier-root inbox (inbox/isos/) and
+// ingested into the managed library, where each row's disc lives as <id>.iso —
+// hashed (content_hash, the drift anchor), frozen read-only, then extracted. The
+// display `name` is decoupled from the file and freely editable. A row whose
+// managed bytes stop matching its hash is flagged drift_detected + forced
+// unavailable. server_iso optionally links another catalog entry as the game's
+// server build.
 //
 // All routes are RequireAuth + RequireAdmin; we attach the PocketBase JWT.
 import { auth } from '$lib/stores/auth.svelte';
@@ -15,13 +16,17 @@ import { apiBaseURL } from '$lib/utils/api-base';
 export interface IsoEntry {
 	id: string;
 	name: string;
+	/** original inbox filename — provenance only (managed file is <id>.iso). */
 	filename: string;
 	title_id: string;
 	description: string;
 	available: boolean;
-	/** id of another catalog entry that is this game's server build ("" = none). */
 	server_iso: string;
-	/** derived extract-cache status (isos_extract hook). */
+	/** sha256 of the managed disc (drift anchor). */
+	content_hash: string;
+	/** managed bytes no longer match content_hash → forced unavailable. */
+	drift_detected: boolean;
+	file_size: number;
 	extracted_ready: boolean;
 	extracted_at: string;
 	footprint_bytes: number;
@@ -29,25 +34,28 @@ export interface IsoEntry {
 	updated: string;
 }
 
-/** One disc image present in the shared ISO library dir. */
-export interface LibraryFile {
+/** A disc image staged in the inbox, pending ingest. */
+export interface InboxFile {
 	filename: string;
-	registered: boolean;
-	iso_id: string;
+	size: number;
 }
 
-export interface Library {
-	dir: string;
-	files: LibraryFile[];
-}
-
-export interface IsoCreate {
+export interface IngestedItem {
+	id: string;
 	name: string;
 	filename: string;
-	title_id?: string;
-	description?: string;
-	available?: boolean;
-	server_iso?: string;
+	hash: string;
+	immutable: boolean;
+}
+export interface SkippedItem {
+	filename: string;
+	reason: string;
+	dup_of?: string;
+}
+export interface IngestResult {
+	ingested: IngestedItem[];
+	skipped: SkippedItem[];
+	errors: string[];
 }
 
 /** PATCH body — every field optional; server_iso "" clears the link. */
@@ -95,25 +103,22 @@ export async function listIsos(): Promise<IsoEntry[]> {
 	return (await res.json()) as IsoEntry[];
 }
 
-/**
- * GET /api/admin/isos/library — disc images on disk, flagged registered-or-not.
- * 503 when the container subsystem is disabled (no host library to scan).
- */
-export async function scanLibrary(): Promise<Library> {
-	const res = await fetch(`${apiBaseURL()}/api/admin/isos/library`, { headers: authHeaders() });
+/** GET /api/admin/isos/inbox — disc images staged for ingest. */
+export async function scanInbox(): Promise<InboxFile[]> {
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/inbox`, { headers: authHeaders() });
 	if (!res.ok) throw await errorFrom(res);
-	return (await res.json()) as Library;
+	const body = (await res.json()) as { files: InboxFile[] };
+	return body.files ?? [];
 }
 
-/** POST /api/admin/isos — register a library file as a catalog entry. */
-export async function createIso(body: IsoCreate): Promise<IsoEntry> {
-	const res = await fetch(`${apiBaseURL()}/api/admin/isos`, {
+/** POST /api/admin/isos/ingest — scan the inbox + ingest every pending file. */
+export async function ingestInbox(): Promise<IngestResult> {
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/ingest`, {
 		method: 'POST',
-		headers: authHeaders(true),
-		body: JSON.stringify(body)
+		headers: authHeaders()
 	});
 	if (!res.ok) throw await errorFrom(res);
-	return (await res.json()) as IsoEntry;
+	return (await res.json()) as IngestResult;
 }
 
 /** PATCH /api/admin/isos/{id} — partial metadata/server_iso/available update. */
@@ -127,7 +132,7 @@ export async function updateIso(id: string, body: IsoUpdate): Promise<IsoEntry> 
 	return (await res.json()) as IsoEntry;
 }
 
-/** DELETE /api/admin/isos/{id} — remove the catalog entry (disk file untouched). */
+/** DELETE /api/admin/isos/{id} — remove the entry AND its managed disc + tree. */
 export async function deleteIso(id: string): Promise<void> {
 	const res = await fetch(`${apiBaseURL()}/api/admin/isos/${encodeURIComponent(id)}`, {
 		method: 'DELETE',
@@ -136,7 +141,7 @@ export async function deleteIso(id: string): Promise<void> {
 	if (!res.ok) throw await errorFrom(res);
 }
 
-/** Human-readable size for footprint_bytes (0 → "—"). */
+/** Human-readable size for a byte count (0 → "—"). */
 export function formatBytes(n: number): string {
 	if (!n || n <= 0) return '—';
 	const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -147,4 +152,9 @@ export function formatBytes(n: number): string {
 		u++;
 	}
 	return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
+}
+
+/** First 12 chars of a hash for compact display ("—" when empty). */
+export function shortHash(h: string): string {
+	return h ? h.slice(0, 12) : '—';
 }

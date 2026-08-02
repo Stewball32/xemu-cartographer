@@ -1,6 +1,7 @@
 package play
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/instancename"
+	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
+	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
@@ -95,14 +98,14 @@ func registerRequest() {
 		if !rec.GetBool("available") {
 			return e.JSON(http.StatusForbidden, map[string]string{"error": "that game is not available to play right now"})
 		}
-		filename := rec.GetString("filename")
-		if filename == "" {
-			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "library entry has no file"})
-		}
 		// A xemu-cart HOST instance boots the game's dedicated SERVER build when
-		// it has one, else the game's own file. (The companion-app LAN-sync path
-		// serves the game's own build to real Xboxes — see routes/lansync.)
-		bootFilename := resolveBootFilename(e.App, rec)
+		// it has one, else the game itself — resolved to the managed <id>.iso and
+		// integrity-checked (drift) before boot so bad bytes never run. (The
+		// companion-app LAN-sync path serves the game build to real Xboxes.)
+		bootFilename, err := resolveBootISO(e.App, lansync.Load(), rec)
+		if err != nil {
+			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+		}
 
 		// Provisioning subsystem must be wired (CONTAINERS_ENABLED) to go further.
 		if Provisioner == nil {
@@ -134,30 +137,34 @@ func registerRequest() {
 	})
 }
 
-// resolveBootFilename picks the library file a fresh HOST instance should boot
-// for the chosen game: the linked SERVER build (server_iso) when it's set and
-// resolvable, else the game's own client build (its filename). A missing or
-// dangling server_iso falls back to the game's own file, so deleting a server
-// build never bricks the games that referenced it. The DB touch is isolated
-// here; the actual choice is the pure chooseBootFilename below (unit-tested).
-func resolveBootFilename(app core.App, game *core.Record) string {
-	serverFilename := ""
+// resolveBootISO picks the managed disc a fresh HOST instance should boot for
+// the chosen game — the linked SERVER build (server_iso) when set + resolvable,
+// else the game itself — verifies its bytes against the content-hash anchor
+// (refusing on drift), and returns the managed basename (<id>.iso) podman
+// resolves against the ISO library. A missing/dangling server_iso falls back to
+// the game, so deleting a server build never bricks the games that referenced
+// it. The pure pick is bootRecordID (unit-tested); the DB + drift touch is here.
+func resolveBootISO(app core.App, cfg lansync.Config, game *core.Record) (string, error) {
+	bootRec := game
 	if id := game.GetString("server_iso"); id != "" {
 		if s, err := app.FindRecordById("isos", id); err == nil {
-			serverFilename = s.GetString("filename")
+			bootRec = s
 		}
 	}
-	return chooseBootFilename(game.GetString("filename"), serverFilename)
+	if !isoingest.VerifyAndFlag(app, cfg, bootRec) {
+		return "", fmt.Errorf("disc %q failed its integrity check (drift) — refusing to boot", bootRec.GetString("name"))
+	}
+	return lansync.ManagedISOName(bootRec.Id), nil
 }
 
-// chooseBootFilename is the pure server/game boot decision: boot the SERVER
-// build when the game has one, else the game's own file. (Stewart's model — the
-// neutral-host / host-doesn't-spawn flag is deliberately deferred.)
-func chooseBootFilename(gameFilename, serverFilename string) string {
-	if strings.TrimSpace(serverFilename) != "" {
-		return serverFilename
+// bootRecordID is the pure server/game boot decision: boot the SERVER build's
+// record when the game links one, else the game's own record. (Stewart's model —
+// the neutral-host / host-doesn't-spawn flag is deliberately deferred.)
+func bootRecordID(gameID, serverID string) string {
+	if strings.TrimSpace(serverID) != "" {
+		return serverID
 	}
-	return gameFilename
+	return gameID
 }
 
 // instanceName is the pure DECOUPLED-naming decision for request-instance. It

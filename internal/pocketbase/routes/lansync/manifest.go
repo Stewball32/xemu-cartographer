@@ -212,6 +212,9 @@ func resolveGames(app core.App, isoIDs []string, priority map[string]int, confli
 		if err != nil || rec == nil {
 			continue // dangling ref — skip
 		}
+		if rec.GetBool("drift_detected") {
+			continue // failed integrity check — never serve bad bytes to a console
+		}
 		out = append(out, syncItem{
 			ID:             rec.Id,
 			Category:       "game",

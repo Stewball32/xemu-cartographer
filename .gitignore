@@ -91,3 +91,8 @@ dev-server.log
 # migrate:squash archives the granular migrations here so migrate:verify can
 # rebuild the "before" side to compare against (see docs/MIGRATIONS.md).
 .migrate-archive/
+
+# ISO ingest drop-zone (tier-root inbox). Contents are large disc images
+# staged for ingest into the managed library; never committed. Keep the dir.
+/inbox/*
+!/inbox/.gitkeep

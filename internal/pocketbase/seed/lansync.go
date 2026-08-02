@@ -16,8 +16,9 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
 	"github.com/Stewball32/xemu-cartographer/internal/halosave"
-	hooks "github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
+	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	hooks "github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 )
 
 // lanTestPlayers are the checked-in players for the E2E LAN-sync scenario. Each
@@ -177,14 +178,8 @@ func ensureTestISO(app *pocketbase.PocketBase) (*core.Record, error) {
 		return r, nil
 	}
 
-	if err := os.MkdirAll(cfg.ISODir, 0o755); err != nil {
+	if err := cfg.EnsureDirs(); err != nil {
 		return nil, err
-	}
-	isoPath := filepath.Join(cfg.ISODir, filename)
-	if _, statErr := os.Stat(isoPath); statErr != nil {
-		if err := buildPlaceholderXISO(cfg.ExtractXISOCmd, isoPath); err != nil {
-			return nil, err
-		}
 	}
 
 	col, err := app.FindCollectionByNameOrId("isos")
@@ -193,16 +188,32 @@ func ensureTestISO(app *pocketbase.PocketBase) (*core.Record, error) {
 	}
 	r := core.NewRecord(col)
 	r.Set("name", "Halo: Combat Evolved (test)")
-	r.Set("filename", filename)
+	r.Set("filename", filename) // provenance only — managed file is <id>.iso
 	r.Set("title_id", halosave.TitleIDHaloCE)
 	r.Set("dest_name", "HaloCE")
 	r.Set("available", true)
 	if err := app.Save(r); err != nil {
 		return nil, err
 	}
-	// Extract synchronously so the manifest/download see it ready immediately
-	// (the create hook also fires this async — idempotent).
-	if err := hooks.ExtractISORecord(app, r.Id); err != nil {
+	// Build the placeholder XISO directly at the managed <id>.iso path (the new
+	// ingest model), hash it as the drift anchor, then extract synchronously so
+	// the manifest/download see it ready immediately.
+	managed := cfg.ManagedISOPath(r.Id)
+	if _, statErr := os.Stat(managed); statErr != nil {
+		if err := buildPlaceholderXISO(cfg.ExtractXISOCmd, managed); err != nil {
+			return nil, err
+		}
+	}
+	if h, err := lansync.HashFile(managed); err == nil {
+		size, mtime, _ := lansync.StatSig(managed)
+		r.Set("content_hash", h)
+		r.Set("file_size", size)
+		r.Set("file_mtime", mtime)
+		if err := app.Save(r); err != nil {
+			return nil, err
+		}
+	}
+	if err := isoingest.Extract(app, cfg, r.Id); err != nil {
 		return nil, fmt.Errorf("extract iso: %w", err)
 	}
 	return r, nil
@@ -271,7 +282,7 @@ func buildPlaceholderZip() ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, body := range map[string]string{
-		"default.xbe": "placeholder xbe payload",
+		"default.xbe":      "placeholder xbe payload",
 		"skins/readme.txt": "xemu-cartographer LAN-sync test app\n",
 	} {
 		w, err := zw.Create(name)
