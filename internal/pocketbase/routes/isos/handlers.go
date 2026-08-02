@@ -24,17 +24,24 @@ const collectionName = "isos"
 // server_iso is the optional link to another catalog entry that is this game's
 // dedicated SERVER/host build (empty = this game has no separate server build).
 // See resolveServerISO + the game/server-ISO model.
+//
+// The extracted_* / footprint_bytes fields are the derived extract-cache status
+// (produced by the isos_extract hook) — surfaced read-only so the admin UI can
+// show whether a disc's tree is ready to sync to consoles.
 func isoView(r *core.Record) map[string]any {
 	return map[string]any{
-		"id":          r.Id,
-		"name":        r.GetString("name"),
-		"filename":    r.GetString("filename"),
-		"title_id":    r.GetString("title_id"),
-		"description": r.GetString("description"),
-		"available":   r.GetBool("available"),
-		"server_iso":  r.GetString("server_iso"),
-		"created":     r.GetString("created"),
-		"updated":     r.GetString("updated"),
+		"id":              r.Id,
+		"name":            r.GetString("name"),
+		"filename":        r.GetString("filename"),
+		"title_id":        r.GetString("title_id"),
+		"description":     r.GetString("description"),
+		"available":       r.GetBool("available"),
+		"server_iso":      r.GetString("server_iso"),
+		"extracted_ready": r.GetBool("extracted_ready"),
+		"extracted_at":    r.GetString("extracted_at"),
+		"footprint_bytes": r.GetInt("footprint_bytes"),
+		"created":         r.GetString("created"),
+		"updated":         r.GetString("updated"),
 	}
 }
 
