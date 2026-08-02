@@ -2,6 +2,7 @@ package play
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -35,6 +36,41 @@ func requireHost(e *core.RequestEvent) bool {
 type currentResponse struct {
 	Instance string             `json:"instance"`
 	Status   *hostrunner.Status `json:"status"`
+	// Reap is the idle-out heads-up for THIS instance: present only when the
+	// reaper is currently counting the box down (nobody joined / not being
+	// played). The play UI surfaces it as "your idle box will be released in
+	// Nm" so the host can keep it alive by starting a game.
+	Reap *reapView `json:"reap,omitempty"`
+}
+
+// reapView is the player-facing slice of the reaper's per-instance countdown.
+// SecondsRemaining is server-computed so the UI needn't trust client clock
+// skew; ReapAt is echoed for display.
+type reapView struct {
+	ReapAt           string `json:"reap_at"`
+	SecondsRemaining int    `json:"seconds_remaining"`
+	Warning          bool   `json:"warning"`
+}
+
+// reapViewFor builds the caller-facing reap heads-up for name, or nil when the
+// box isn't currently idle / the reaper isn't wired.
+func reapViewFor(name string) *reapView {
+	if Idle == nil || name == "" {
+		return nil
+	}
+	_, reapAt, warning, ok := Idle.IdleInfo(name)
+	if !ok {
+		return nil
+	}
+	secs := int(time.Until(reapAt).Seconds())
+	if secs < 0 {
+		secs = 0
+	}
+	return &reapView{
+		ReapAt:           reapAt.UTC().Format(time.RFC3339),
+		SecondsRemaining: secs,
+		Warning:          warning,
+	}
 }
 
 // GET /api/play/current — the caller's currently-matched container + host-runner
@@ -51,7 +87,7 @@ func registerCurrent() {
 			return e.JSON(http.StatusOK, currentResponse{Instance: ""})
 		}
 		st := HostRunners.Status(name)
-		return e.JSON(http.StatusOK, currentResponse{Instance: name, Status: &st})
+		return e.JSON(http.StatusOK, currentResponse{Instance: name, Status: &st, Reap: reapViewFor(name)})
 	})
 }
 
