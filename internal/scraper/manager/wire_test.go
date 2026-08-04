@@ -16,7 +16,7 @@ import (
 // or aggregator. Tests prepare the cache directly under r.cacheMu (or
 // via withCache), then call the v2 build/broadcast methods.
 func newTestRunner(name string) *runner {
-	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil)
+	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil, nil)
 }
 
 // decodeClassEnvelope unwraps a marshaled websocket.Message to the inner

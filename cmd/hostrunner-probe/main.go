@@ -121,7 +121,7 @@ func readObservation(sock string) hostrunner.Observation {
 	}
 	defer inst.Close()
 
-	reader := haloce.NewReader(inst, "probe")
+	reader := haloce.NewReader(inst, "probe", haloce.BaselineOffsets())
 	state, tick, err := reader.ReadGameState()
 	if err != nil {
 		log.Fatalf("ReadGameState: %v", err)

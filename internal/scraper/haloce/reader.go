@@ -16,8 +16,12 @@ import (
 // OnStateChange clears them on entry to GameStateMenu — the only path by
 // which a different scenario can be loaded. See reader_cache.go.
 type Reader struct {
-	inst         *xemu.Instance
-	name         string
+	inst *xemu.Instance
+	name string
+	// off is the instance's versioned address layer (baseline for stock CE,
+	// or the offset set the catalog row assigns for a modded build). All
+	// runtime address anchors are read through it; game behavior stays code.
+	off          Offsets
 	tagNameCache map[int16]string
 	tagInstBase  uint32 // cached; 0 = not yet read
 	ohdBase      uint32 // cached; 0 = not yet read
@@ -57,10 +61,11 @@ type Reader struct {
 
 // NewReader creates a Reader for the given instance.
 // inst.Init(AllLowGVAs) must have been called before use.
-func NewReader(inst *xemu.Instance, instanceName string) *Reader {
+func NewReader(inst *xemu.Instance, instanceName string, off Offsets) *Reader {
 	return &Reader{
 		inst:               inst,
 		name:               instanceName,
+		off:                off,
 		tagNameCache:       make(map[int16]string),
 		weaponTagDataCache: make(map[int16]*scraper.StaticWeaponTagData),
 		bipedTagCache:      make(map[int16]*scraper.StaticBipedTagData),
@@ -76,13 +81,13 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	inst := r.inst
 	mem := inst.Mem
 
-	geGlobalsPtr, err := inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
+	geGlobalsPtr, err := inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
 	if err != nil {
 		return scraper.GameStateMenu, 0, err
 	}
 	gameEngineRunning := geGlobalsPtr != 0
 
-	mainMenuHVA, err := inst.LowHVA(AddrMainMenuActive)
+	mainMenuHVA, err := inst.LowHVA(r.off.AddrMainMenuActive)
 	if err != nil {
 		return scraper.GameStateMenu, 0, err
 	}
@@ -91,7 +96,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		return scraper.GameStateMenu, 0, err
 	}
 
-	gtgPtr, err := inst.DerefLowPtr(AddrGameTimeGlobalsPtr)
+	gtgPtr, err := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)
 	if err != nil {
 		return scraper.GameStateMenu, 0, err
 	}
@@ -104,7 +109,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		tick, _ = mem.ReadU32(gtgPtr + OffGTGGameTime)
 	}
 
-	gameCanScoreHVA, err := inst.LowHVA(AddrGameCanScore)
+	gameCanScoreHVA, err := inst.LowHVA(r.off.AddrGameCanScore)
 	if err != nil {
 		return scraper.GameStateMenu, tick, err
 	}
@@ -116,7 +121,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	// without a game-specific coupling. Best-effort: a failed read leaves it 0
 	// (menu), which the runner classifies as ScreenMainMenu, never a false lobby.
 	var gameConnection uint16
-	if hva, e := inst.LowHVA(AddrGameConnection); e == nil {
+	if hva, e := inst.LowHVA(r.off.AddrGameConnection); e == nil {
 		gameConnection, _ = mem.ReadU16At(hva)
 	}
 
@@ -193,7 +198,7 @@ func (r *Reader) composeGameData() scraper.GameData {
 	// host's network_game_server variant settings (NGS+0xC8) — the legacy
 	// AddrIsTeamGame at 0x2F90C4 is only written at match-start and reads 0
 	// in the lobby.
-	if hva, err := r.inst.LowHVA(RefAddrNetworkGameServer); err == nil {
+	if hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer); err == nil {
 		if v, err := r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantTeamPlay)); err == nil {
 			out.IsTeamGame = v != 0
 		}
@@ -303,7 +308,7 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 // The GlobalVariant struct (0x2F90A8) holds the same data only after
 // match-start.
 func (r *Reader) readVariantName() string {
-	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
+	hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer)
 	if err != nil {
 		return ""
 	}
@@ -321,7 +326,7 @@ func (r *Reader) readVariantName() string {
 // lobby-reliable; the legacy read from RefAddrGlobalVariant+OffGVGametype
 // only carries the running gametype once a match has started.
 func (r *Reader) readGametypeID() (uint32, error) {
-	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
+	hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer)
 	if err != nil {
 		return 0, err
 	}
@@ -348,13 +353,13 @@ func (r *Reader) fillPlayerScores(players []scraper.GamePlayer, gametypeID uint3
 	var baseAddr uint32
 	switch gametypeID {
 	case 2:
-		baseAddr = AddrScoreSlayer
+		baseAddr = r.off.AddrScoreSlayer
 	case 3:
-		baseAddr = AddrScoreOddball
+		baseAddr = r.off.AddrScoreOddball
 	case 4:
-		baseAddr = AddrScoreKing
+		baseAddr = r.off.AddrScoreKing
 	case 5:
-		baseAddr = AddrScoreRace
+		baseAddr = r.off.AddrScoreRace
 	default:
 		return
 	}
@@ -382,9 +387,9 @@ func (r *Reader) readScoreLimit(gametypeID uint32) (int32, error) {
 		addr     uint32
 	}
 	addrs := []entry{
-		{1, AddrScoreLimitCTF},
-		{2, AddrScoreLimitSlayer},
-		{3, AddrScoreLimitOddball},
+		{1, r.off.AddrScoreLimitCTF},
+		{2, r.off.AddrScoreLimitSlayer},
+		{3, r.off.AddrScoreLimitOddball},
 	}
 	values := make(map[uint32]int32, len(addrs))
 	for _, a := range addrs {
@@ -419,15 +424,15 @@ func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.T
 	var baseAddr uint32
 	switch gametypeID {
 	case 1:
-		baseAddr = AddrScoreCTF
+		baseAddr = r.off.AddrScoreCTF
 	case 2:
-		baseAddr = AddrScoreSlayer
+		baseAddr = r.off.AddrScoreSlayer
 	case 3:
-		baseAddr = AddrScoreOddball
+		baseAddr = r.off.AddrScoreOddball
 	case 4:
-		baseAddr = AddrScoreKing
+		baseAddr = r.off.AddrScoreKing
 	case 5:
-		baseAddr = AddrScoreRace
+		baseAddr = r.off.AddrScoreRace
 	default:
 		return nil, nil
 	}
@@ -464,7 +469,7 @@ func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.T
 // Kill/death/score fields stay zero — they don't exist pre-match.
 func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +521,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 // Returns nil when no network game is active.
 func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil
 	}
@@ -558,7 +563,7 @@ func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 // dashboard UI strips for display.
 func (r *Reader) LocalMachineName() (string, bool) {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return "", false
 	}
@@ -594,7 +599,7 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 		return
 	}
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return
 	}
@@ -644,7 +649,7 @@ func (r *Reader) readGamePlayers() ([]scraper.GamePlayer, error) {
 	inst := r.inst
 	mem := inst.Mem
 
-	pdaBase, err := inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return nil, err
 	}
@@ -747,7 +752,7 @@ func (r *Reader) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickSt
 	}
 
 	// Read player datum array.
-	pdaBase, err := inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return scraper.TickResult{}, err
 	}
@@ -1204,7 +1209,7 @@ func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 	}()
 
 	var err error
-	scenarioBase, err = inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	scenarioBase, err = inst.DerefLowPtr(r.off.AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
 		gate = "scenarioBase"
 		return nil
@@ -1424,7 +1429,7 @@ func (r *Reader) readTagName(tagIdx int16) (string, error) {
 // Returns "" when the header or any link in the chain isn't reachable yet
 // (early pregame / between scenarios).
 func (r *Reader) readScenarioTagName() string {
-	tagHeader, err := r.inst.DerefLowPtr(AddrTagHeaderPtr)
+	tagHeader, err := r.inst.DerefLowPtr(r.off.AddrTagHeaderPtr)
 	if err != nil || tagHeader < HighGVAThreshold {
 		return ""
 	}
@@ -1451,7 +1456,7 @@ func (r *Reader) readScenarioTagName() string {
 // so a failed read never falsely claims a map is in play. Consumed by
 // resolveMapName as the in-map gate.
 func (r *Reader) readMainMenuActive() uint8 {
-	hva, err := r.inst.LowHVA(AddrMainMenuActive)
+	hva, err := r.inst.LowHVA(r.off.AddrMainMenuActive)
 	if err != nil {
 		return 1
 	}
@@ -1468,7 +1473,7 @@ func (r *Reader) readMainMenuActive() uint8 {
 // lives at the low GVA itself, so it's read via LowHVA, not the high-GVA
 // readHighString path.
 func (r *Reader) readStageName() string {
-	hva, err := r.inst.LowHVA(AddrGlobalStageName)
+	hva, err := r.inst.LowHVA(r.off.AddrGlobalStageName)
 	if err != nil {
 		return ""
 	}
@@ -1506,14 +1511,14 @@ func (r *Reader) readHighString(gva uint32) string {
 
 func (r *Reader) ensureBases() error {
 	if r.tagInstBase == 0 {
-		base, err := r.inst.DerefLowPtr(AddrGlobalTagInstancesPtr)
+		base, err := r.inst.DerefLowPtr(r.off.AddrGlobalTagInstancesPtr)
 		if err != nil {
 			return err
 		}
 		r.tagInstBase = base
 	}
 	if r.ohdBase == 0 {
-		base, err := r.inst.DerefLowPtr(AddrObjectHeaderDatumPtr)
+		base, err := r.inst.DerefLowPtr(r.off.AddrObjectHeaderDatumPtr)
 		if err != nil {
 			return err
 		}

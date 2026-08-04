@@ -136,6 +136,12 @@ type runner struct {
 	sock string
 	inst *xemu.Instance
 
+	// offsetSetFor resolves the instance's assigned offset-set id at reader
+	// bind time (empty = the game's baseline). Injected from the Manager's
+	// resolver so a modded build's catalog assignment picks the right
+	// address layer without any game-specific coupling here. Nil-safe.
+	offsetSetFor func() string
+
 	// hostRoom is the per-instance WebSocket room name ("host:<name>")
 	// scraper broadcasts target. Pre-validated at Manager.Start by the
 	// rooms.RoomForInstance chokepoint and passed in here; the broadcast
@@ -254,15 +260,16 @@ type runner struct {
 	lastEnumAt time.Time
 }
 
-func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {
+func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance, offsetSetFor func() string) *runner {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 	return &runner{
-		name:     name,
-		sock:     sock,
-		hostRoom: hostRoom,
-		agg:      agg,
-		inst:     inst,
+		name:         name,
+		sock:         sock,
+		hostRoom:     hostRoom,
+		agg:          agg,
+		inst:         inst,
+		offsetSetFor: offsetSetFor,
 		ctx:      ctx,
 		cancel:   cancel,
 		done:     make(chan struct{}),

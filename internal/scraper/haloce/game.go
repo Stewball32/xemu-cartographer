@@ -3,6 +3,7 @@ package haloce
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/haloce/events"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -37,12 +38,13 @@ type Game struct {
 	reader *Reader
 }
 
-// New creates a Halo CE GameReader for the given instance.
-func New(inst *xemu.Instance, instanceName string) *Game {
-	return &Game{reader: NewReader(inst, instanceName)}
+// New creates a Halo CE GameReader for the given instance, reading all address
+// anchors through the given versioned offset set binding.
+func New(inst *xemu.Instance, instanceName string, off Offsets) *Game {
+	return &Game{reader: NewReader(inst, instanceName, off)}
 }
 
-func (g *Game) LowGVAs() []uint32 { return AllLowGVAs }
+func (g *Game) LowGVAs() []uint32 { return g.reader.off.AllLowGVAs() }
 
 func (g *Game) ReadGameState() (scraper.GameState, uint32, error) {
 	return g.reader.ReadGameState()
@@ -84,7 +86,11 @@ func (g *Game) NewTickState() *scraper.TickState {
 func (g *Game) Title() string { return "Halo: Combat Evolved" }
 
 func init() {
-	scraper.Register(TitleID, func(inst *xemu.Instance, instanceName string) scraper.GameReader {
-		return New(inst, instanceName)
+	scraper.Register(TitleID, "haloce", func(inst *xemu.Instance, instanceName string, set *offsets.Set) (scraper.GameReader, error) {
+		off, err := OffsetsFromSet(set)
+		if err != nil {
+			return nil, err
+		}
+		return New(inst, instanceName, off), nil
 	})
 }

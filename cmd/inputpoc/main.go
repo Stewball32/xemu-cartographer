@@ -58,7 +58,7 @@ func main() {
 	defer inst.Close()
 	fmt.Printf("== inputpoc: %s (pid=%d, sock=%s) ==\n", inst.Name, inst.PID, *sock)
 
-	reader := haloce.NewReader(inst, inst.Name)
+	reader := haloce.NewReader(inst, inst.Name, haloce.BaselineOffsets())
 
 	// ---- READ: state gate ----
 	state, tick, err := reader.ReadGameState()

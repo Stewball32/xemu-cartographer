@@ -56,6 +56,14 @@ type Manager struct {
 
 	agg *aggregator
 
+	// offsetSetResolver maps an instance name to its assigned offset-set id
+	// ("" = the detected game's baseline). Injected via SetOffsetSetResolver
+	// from main.go, where the instance→ISO-record linkage lives (podman
+	// GameISO basename = the isos record id under the managed ingest model).
+	// Read at reader bind time — a box provisioned from a catalog row with an
+	// explicit offset_set rides that set; everything else rides the baseline.
+	offsetSetResolver func(instance string) string
+
 	// policyMu guards policies. Held separately from mu so the loader
 	// can update the Manager-level snapshot without contending with
 	// Start/Stop on the runners map. reloadMu serialises full reloads
@@ -191,7 +199,12 @@ func (m *Manager) Start(name, sock string) error {
 		return fmt.Errorf("scraper: init xemu instance: %w", err)
 	}
 
-	r := newRunner(name, sock, hostRoom, m.agg, inst)
+	r := newRunner(name, sock, hostRoom, m.agg, inst, func() string {
+		if m.offsetSetResolver == nil {
+			return ""
+		}
+		return m.offsetSetResolver(name)
+	})
 
 	m.mu.Lock()
 	// Re-check under lock — guards against two concurrent Start calls racing.
@@ -441,4 +454,12 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 // without waiting for the next aggregator coalesce tick.
 func (m *Manager) JoinReplayForHostAll() [][]byte {
 	return m.agg.joinReplay()
+}
+
+// SetOffsetSetResolver injects the instance→offset-set-id resolver consulted
+// when a runner binds its GameReader (see Manager.offsetSetResolver). Call
+// before Start; nil (or never calling) means every instance uses its game's
+// baseline offsets.
+func (m *Manager) SetOffsetSetResolver(fn func(instance string) string) {
+	m.offsetSetResolver = fn
 }

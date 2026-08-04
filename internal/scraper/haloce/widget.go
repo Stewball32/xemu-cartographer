@@ -38,13 +38,13 @@ import (
 // cache, reads r.inst) — same discipline as the other GameReader reads.
 func (r *Reader) ReadLobbyCursor() scraper.LobbyCursor {
 	handles := r.lobbyCursorDelaHandles()
-	mapHandle := handles[TagPathMPMapSelectList]
-	gtHandle := handles[TagPathGametypeSelectList]
+	mapHandle := handles[r.off.TagPathMPMapSelectList]
+	gtHandle := handles[r.off.TagPathGametypeSelectList]
 	if mapHandle == 0 && gtHandle == 0 {
 		return scraper.LobbyCursor{}
 	}
 
-	heap, err := r.inst.Mem.ReadBytes(ConstUiWidgetHeapGVALo, int(ConstUiWidgetHeapGVAHi-ConstUiWidgetHeapGVALo))
+	heap, err := r.inst.Mem.ReadBytes(r.off.ConstUiWidgetHeapGVALo, int(r.off.ConstUiWidgetHeapGVAHi-r.off.ConstUiWidgetHeapGVALo))
 	if err != nil {
 		return scraper.LobbyCursor{}
 	}
@@ -84,10 +84,10 @@ func (r *Reader) lobbyCursorDelaHandles() map[string]uint32 {
 	if r.lobbyCursorHandles != nil {
 		return r.lobbyCursorHandles
 	}
-	resolved := r.resolveDelaHandles(TagPathMPMapSelectList, TagPathGametypeSelectList)
+	resolved := r.resolveDelaHandles(r.off.TagPathMPMapSelectList, r.off.TagPathGametypeSelectList)
 	// Only cache once at least one handle resolved — otherwise the tags aren't
 	// loaded yet and we want to retry on the next call (cheap tag-array walk).
-	if resolved[TagPathMPMapSelectList] != 0 || resolved[TagPathGametypeSelectList] != 0 {
+	if resolved[r.off.TagPathMPMapSelectList] != 0 || resolved[r.off.TagPathGametypeSelectList] != 0 {
 		r.lobbyCursorHandles = resolved
 	}
 	return resolved
@@ -104,7 +104,7 @@ func (r *Reader) resolveDelaHandles(paths ...string) map[string]uint32 {
 		out[p] = 0
 	}
 
-	tagHeader, err := r.inst.DerefLowPtr(AddrTagHeaderPtr)
+	tagHeader, err := r.inst.DerefLowPtr(r.off.AddrTagHeaderPtr)
 	if err != nil || tagHeader < HighGVAThreshold {
 		return out
 	}

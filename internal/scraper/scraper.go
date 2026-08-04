@@ -27,8 +27,10 @@ package scraper
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -100,25 +102,35 @@ type GameReader interface {
 
 var (
 	registryMu sync.Mutex
-	registry   = map[uint32]Factory{}
+	registry   = map[uint32]registration{}
 )
 
-// Factory creates a GameReader for a given xemu instance.
-type Factory func(inst *xemu.Instance, instanceName string) GameReader
+// Factory creates a GameReader for a given xemu instance, binding the given
+// versioned offset set (the game's baseline unless the catalog assigns another
+// set). A factory errors when the set can't be bound (missing keys).
+type Factory func(inst *xemu.Instance, instanceName string, set *offsets.Set) (GameReader, error)
 
-// Register associates an Xbox title ID with a GameReader factory. Game packages
-// call this from their init() function.
-func Register(titleID uint32, f Factory) {
+// registration pairs a factory with its game key (the offsets-layer game id,
+// e.g. "haloce" / "halo2") so Detect can resolve the right offset set.
+type registration struct {
+	gameKey string
+	factory Factory
+}
+
+// Register associates an Xbox title ID with a game key + GameReader factory.
+// Game packages call this from their init() function. gameKey is the offsets
+// package game id the title's offset sets are registered under.
+func Register(titleID uint32, gameKey string, f Factory) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	registry[titleID] = f
+	registry[titleID] = registration{gameKey: gameKey, factory: f}
 }
 
 // Lookup returns the factory for a title ID, or nil if unknown.
 func Lookup(titleID uint32) Factory {
 	registryMu.Lock()
 	defer registryMu.Unlock()
-	return registry[titleID]
+	return registry[titleID].factory
 }
 
 // ---------------------------------------------------------------------------
@@ -144,17 +156,45 @@ func DetectionGVAs() []uint32 {
 }
 
 // Detect reads the XBE title ID from the running Xbox game and returns the
-// matching GameReader. Returns an error if the title ID is unrecognised.
-func Detect(inst *xemu.Instance, instanceName string) (GameReader, uint32, error) {
+// matching GameReader, bound to the offset set named by offsetSetID (empty =
+// the game's baseline). An unknown/mismatched explicit id degrades to the
+// baseline with a logged warning — a bad data assignment must not stop a
+// vanilla box; a set that exists but fails to BIND is a hard error (that set
+// is genuinely unusable).
+func Detect(inst *xemu.Instance, instanceName, offsetSetID string) (GameReader, uint32, error) {
 	titleID, err := ReadTitleID(inst)
 	if err != nil {
 		return nil, 0, err
 	}
-	factory := Lookup(titleID)
-	if factory == nil {
-		return nil, titleID, fmt.Errorf("detect: unknown title ID 0x%08X", titleID)
+	reader, err := NewReaderForTitle(titleID, inst, instanceName, offsetSetID)
+	if err != nil {
+		return nil, titleID, err
 	}
-	return factory(inst, instanceName), titleID, nil
+	return reader, titleID, nil
+}
+
+// NewReaderForTitle binds a GameReader for an already-detected title ID,
+// resolving the offset set named by offsetSetID (empty = the game's baseline).
+// An unknown/mismatched explicit id degrades to the baseline with a logged
+// warning; a set that exists but fails to BIND is a hard error.
+func NewReaderForTitle(titleID uint32, inst *xemu.Instance, instanceName, offsetSetID string) (GameReader, error) {
+	registryMu.Lock()
+	reg, ok := registry[titleID]
+	registryMu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("detect: unknown title ID 0x%08X", titleID)
+	}
+	set, warn := offsets.Resolve(reg.gameKey, offsetSetID)
+	if warn != nil {
+		log.Printf("scraper[%s]: offset set: %v", instanceName, warn)
+	} else if offsetSetID != "" {
+		log.Printf("scraper[%s]: using offset set %q for %s", instanceName, set.ID, reg.gameKey)
+	}
+	reader, err := reg.factory(inst, instanceName, set)
+	if err != nil {
+		return nil, fmt.Errorf("bind offset set %q: %w", set.ID, err)
+	}
+	return reader, nil
 }
 
 // ReadTitleID reads the running XBE's title ID via the same XBE header /

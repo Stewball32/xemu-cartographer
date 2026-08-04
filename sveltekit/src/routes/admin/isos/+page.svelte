@@ -36,16 +36,19 @@
 		listIsos,
 		scanInbox,
 		ingestInbox,
+		listOffsetSets,
 		updateIso,
 		deleteIso,
 		formatBytes,
 		shortHash,
 		type IsoEntry,
-		type InboxFile
+		type InboxFile,
+		type OffsetSetInfo
 	} from '$lib/utils/isos';
 
 	let rows = $state<IsoEntry[]>([]);
 	let inbox = $state<InboxFile[]>([]);
+	let offsetSets = $state<OffsetSetInfo[]>([]);
 	let loading = $state(true);
 	let ingesting = $state(false);
 	let filter = $state('');
@@ -59,13 +62,21 @@
 	let editBusy = $state(false);
 	let editId = $state('');
 	let editFilename = $state('');
-	let edit = $state({ name: '', title_id: '', description: '', available: true, server_iso: '' });
+	let edit = $state({
+		name: '',
+		title_id: '',
+		description: '',
+		available: true,
+		server_iso: '',
+		offset_set: ''
+	});
 
 	async function load() {
 		try {
 			loading = true;
 			rows = await listIsos();
 			inbox = await scanInbox();
+			offsetSets = await listOffsetSets();
 		} catch (err) {
 			toaster.error({ title: 'Load ISO library failed', description: describeAsyncError(err) });
 		} finally {
@@ -105,7 +116,8 @@
 			title_id: row.title_id,
 			description: row.description,
 			available: row.available,
-			server_iso: row.server_iso
+			server_iso: row.server_iso,
+			offset_set: row.offset_set
 		};
 		editOpen = true;
 	}
@@ -124,7 +136,8 @@
 					title_id: edit.title_id.trim(),
 					description: edit.description.trim(),
 					available: edit.available,
-					server_iso: edit.server_iso
+					server_iso: edit.server_iso,
+					offset_set: edit.offset_set
 				}),
 				{
 					loading: { title: 'Saving', description: name },
@@ -398,6 +411,19 @@
 					{/if}
 				{/each}
 			</select>
+		</label>
+		<label class="label">
+			<span class="label-text">Memory offsets <span class="opacity-50">(modded builds)</span></span>
+			<select class="select" bind:value={edit.offset_set}>
+				<option value="">— game baseline (stock build) —</option>
+				{#each offsetSets as os (os.id)}
+					<option value={os.id}>{os.id} ({os.game}, {os.count} offsets)</option>
+				{/each}
+			</select>
+			<span class="text-xs opacity-60">
+				Which offset set the scraper binds for this build. Leave on baseline unless this disc is a
+				modded build with a mapped set.
+			</span>
 		</label>
 		<label class="flex items-center gap-2">
 			<input type="checkbox" class="checkbox" bind:checked={edit.available} />

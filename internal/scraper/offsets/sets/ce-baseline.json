@@ -1,0 +1,295 @@
+{
+  "game": "haloce",
+  "id": "ce-baseline",
+  "description": "Baseline for stock Halo: CE (NTSC, ce-h1og-default map) - extracted verbatim from the previously hardcoded constants in internal/scraper/haloce.",
+  "offsets": {
+    "AddrGameCanScore": {
+      "value": "0x2FABF0",
+      "type": "uint32"
+    },
+    "AddrGameClientPtr": {
+      "value": "0x2E362C",
+      "type": "uint32"
+    },
+    "AddrGameConnection": {
+      "value": "0x2E3684",
+      "type": "uint32"
+    },
+    "AddrGameEngineGlobalsPtr": {
+      "value": "0x2F9110",
+      "type": "uint32"
+    },
+    "AddrGameGlobalsPtr": {
+      "value": "0x27629C",
+      "type": "uint32"
+    },
+    "AddrGameServerPtr": {
+      "value": "0x2E3628",
+      "type": "uint32"
+    },
+    "AddrGameTimeGlobalsPtr": {
+      "value": "0x2F8CA0",
+      "type": "uint32"
+    },
+    "AddrGameVariantGlobalPtr": {
+      "value": "0x2FAB60",
+      "type": "uint32"
+    },
+    "AddrGlobalGameGlobalsPtr": {
+      "value": "0x39BE4C",
+      "type": "uint32"
+    },
+    "AddrGlobalScenarioPtr": {
+      "value": "0x39BE5C",
+      "type": "uint32"
+    },
+    "AddrGlobalStageName": {
+      "value": "0x2FAC20",
+      "type": "uint32"
+    },
+    "AddrGlobalTagInstancesPtr": {
+      "value": "0x39CE24",
+      "type": "uint32"
+    },
+    "AddrIsTeamGame": {
+      "value": "0x2F90C4",
+      "type": "uint32"
+    },
+    "AddrMainMenuActive": {
+      "value": "0x2E4068",
+      "type": "uint32"
+    },
+    "AddrObjectHeaderDatumPtr": {
+      "value": "0x2FC6AC",
+      "type": "uint32"
+    },
+    "AddrPlayerDatumArrayPtr": {
+      "value": "0x2FAD28",
+      "type": "uint32"
+    },
+    "AddrPlayersGlobalsPtr": {
+      "value": "0x2FAD20",
+      "type": "uint32"
+    },
+    "AddrScoreCTF": {
+      "value": "0x2762B4",
+      "type": "uint32"
+    },
+    "AddrScoreKing": {
+      "value": "0x2762D8",
+      "type": "uint32"
+    },
+    "AddrScoreLimitCTF": {
+      "value": "0x2762BC",
+      "type": "uint32"
+    },
+    "AddrScoreLimitOddball": {
+      "value": "0x276538",
+      "type": "uint32"
+    },
+    "AddrScoreLimitSlayer": {
+      "value": "0x2F90E8",
+      "type": "uint32"
+    },
+    "AddrScoreOddball": {
+      "value": "0x27653C",
+      "type": "uint32"
+    },
+    "AddrScoreRace": {
+      "value": "0x2766C8",
+      "type": "uint32"
+    },
+    "AddrScoreSlayer": {
+      "value": "0x276710",
+      "type": "uint32"
+    },
+    "AddrTagHeaderPtr": {
+      "value": "0x2DF1C4",
+      "type": "uint32"
+    },
+    "AddrTeamsPtr": {
+      "value": "0x2FAD24",
+      "type": "uint32"
+    },
+    "AddrVariant": {
+      "value": "0x2F90F4",
+      "type": "uint32"
+    },
+    "ConstUiWidgetHeapGVAHi": {
+      "value": "0x82000000",
+      "type": "uint32"
+    },
+    "ConstUiWidgetHeapGVALo": {
+      "value": "0x81E00000",
+      "type": "uint32"
+    },
+    "RefAddrCTFFlag0Ptr": {
+      "value": "0x2762A4",
+      "type": "uint32"
+    },
+    "RefAddrCTFFlag1Ptr": {
+      "value": "0x2762A8",
+      "type": "uint32"
+    },
+    "RefAddrDefaultFramerate": {
+      "value": "0xBB648",
+      "type": "uint32"
+    },
+    "RefAddrFPWeaponPtr": {
+      "value": "0x276B48",
+      "type": "uint32"
+    },
+    "RefAddrFogParams": {
+      "value": "0x2FC8A8",
+      "type": "uint32"
+    },
+    "RefAddrGameStateBasePtr": {
+      "value": "0x2E2D14",
+      "type": "uint32"
+    },
+    "RefAddrGameStateSize": {
+      "value": "0x32E4A",
+      "type": "uint32"
+    },
+    "RefAddrGamepadState": {
+      "value": "0x276A5C",
+      "type": "uint32"
+    },
+    "RefAddrGamepadStateAlt": {
+      "value": "0x276AFC",
+      "type": "uint32"
+    },
+    "RefAddrGlobalRandomSeed": {
+      "value": "0x2E3648",
+      "type": "uint32"
+    },
+    "RefAddrGlobalVariant": {
+      "value": "0x2F90A8",
+      "type": "uint32"
+    },
+    "RefAddrHudMessagesPtr": {
+      "value": "0x276B40",
+      "type": "uint32"
+    },
+    "RefAddrInputAbstractGlbls": {
+      "value": "0x2E45A0",
+      "type": "uint32"
+    },
+    "RefAddrInputAbstractInputState": {
+      "value": "0x2E4600",
+      "type": "uint32"
+    },
+    "RefAddrItemDatumSize": {
+      "value": "0x1FC380",
+      "type": "uint32"
+    },
+    "RefAddrLookPitchRate": {
+      "value": "0x2E4694",
+      "type": "uint32"
+    },
+    "RefAddrLookYawRate": {
+      "value": "0x2E4684",
+      "type": "uint32"
+    },
+    "RefAddrNetworkGameClient": {
+      "value": "0x2FB180",
+      "type": "uint32"
+    },
+    "RefAddrNetworkGameServer": {
+      "value": "0x2FBE40",
+      "type": "uint32"
+    },
+    "RefAddrObjectDatumSize": {
+      "value": "0x1FC0E0",
+      "type": "uint32"
+    },
+    "RefAddrObjectTypeDefArray": {
+      "value": "0x1FCB78",
+      "type": "uint32"
+    },
+    "RefAddrObjectTypeDefRangeHi": {
+      "value": "0x1FCBA4",
+      "type": "uint32"
+    },
+    "RefAddrObserverCameraBase": {
+      "value": "0x271550",
+      "type": "uint32"
+    },
+    "RefAddrPerLocalUIGlobals": {
+      "value": "0x2E40D0",
+      "type": "uint32"
+    },
+    "RefAddrPlayerControlPtr": {
+      "value": "0x276794",
+      "type": "uint32"
+    },
+    "RefAddrRefreshRate": {
+      "value": "0x1F8C98",
+      "type": "uint32"
+    },
+    "RefAddrSoundCacheBasePtr": {
+      "value": "0x2E2D20",
+      "type": "uint32"
+    },
+    "RefAddrSoundCacheSize": {
+      "value": "0x32E8A",
+      "type": "uint32"
+    },
+    "RefAddrTagCacheBasePtr": {
+      "value": "0x2E2D18",
+      "type": "uint32"
+    },
+    "RefAddrTagCacheSize": {
+      "value": "0x32E5D",
+      "type": "uint32"
+    },
+    "RefAddrTextureCacheBasePtr": {
+      "value": "0x2E2D1C",
+      "type": "uint32"
+    },
+    "RefAddrTextureCacheSize": {
+      "value": "0x32E75",
+      "type": "uint32"
+    },
+    "RefAddrUnitDatumSize": {
+      "value": "0x1FC188",
+      "type": "uint32"
+    },
+    "RefAddrUpdateClientPlayerPtr": {
+      "value": "0x2E8870",
+      "type": "uint32"
+    },
+    "RefAddrUpdateQueueAdjacent": {
+      "value": "0x2E8874",
+      "type": "uint32"
+    },
+    "RefAddrUpdateQueueCounterHi": {
+      "value": "0x2E87E8",
+      "type": "uint32"
+    },
+    "RefAddrUpdateQueueCounterLo": {
+      "value": "0x2E87E4",
+      "type": "uint32"
+    },
+    "TagPathGameSettingNames": {
+      "value": "ui\\default_multiplayer_game_setting_names",
+      "type": "string"
+    },
+    "TagPathGametypeSelectList": {
+      "value": "ui\\shell\\main_menu\\gametype_select\\gametype_select_list",
+      "type": "string"
+    },
+    "TagPathMPMapDescriptions": {
+      "value": "ui\\shell\\main_menu\\multiplayer_type_select\\mp_map_select\\map_data",
+      "type": "string"
+    },
+    "TagPathMPMapList": {
+      "value": "ui\\shell\\main_menu\\mp_map_list",
+      "type": "string"
+    },
+    "TagPathMPMapSelectList": {
+      "value": "ui\\shell\\main_menu\\multiplayer_type_select\\mp_map_select\\mp_map_select_list",
+      "type": "string"
+    }
+  }
+}

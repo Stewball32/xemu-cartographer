@@ -64,11 +64,11 @@ const (
 // game isn't at/past the front-end (mid-match), so the caller keeps its last
 // successful enumeration rather than clobbering it with an empty set.
 func (r *Reader) EnumerateLobby() scraper.LobbyOptions {
-	metas := r.findUstrTagData(TagPathMPMapList, TagPathMPMapDescriptions, TagPathGameSettingNames)
+	metas := r.findUstrTagData(r.off.TagPathMPMapList, r.off.TagPathMPMapDescriptions, r.off.TagPathGameSettingNames)
 
-	mapNames := r.parseUnicodeStringList(metas[TagPathMPMapList])
-	mapDescs := r.parseUnicodeStringList(metas[TagPathMPMapDescriptions])
-	gtNames := r.parseUnicodeStringList(metas[TagPathGameSettingNames])
+	mapNames := r.parseUnicodeStringList(metas[r.off.TagPathMPMapList])
+	mapDescs := r.parseUnicodeStringList(metas[r.off.TagPathMPMapDescriptions])
+	gtNames := r.parseUnicodeStringList(metas[r.off.TagPathGameSettingNames])
 
 	maps := buildMapOptions(mapNames, len(mapDescs))
 	gametypes := buildGametypeOptions(gtNames)
@@ -90,7 +90,7 @@ func (r *Reader) findUstrTagData(paths ...string) map[string]uint32 {
 		out[p] = 0
 	}
 
-	tagHeader, err := r.inst.DerefLowPtr(AddrTagHeaderPtr)
+	tagHeader, err := r.inst.DerefLowPtr(r.off.AddrTagHeaderPtr)
 	if err != nil || tagHeader < HighGVAThreshold {
 		return out
 	}

@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,6 +197,26 @@ func main() {
 				return err
 			}
 			podMgr = mgr // host-runner URL resolver reads this to find websockify ports
+
+			// Offset-set selection (offset versioning): map an instance to the
+			// offset-set id its catalog row assigns. Under the managed ingest
+			// model the attached disc is <isos-record-id>.iso, so the podman
+			// GameISO basename IS the record id — no extra linkage. Empty (or
+			// any lookup miss) means the detected game's baseline; boxes whose
+			// GameISO is unknown (e.g. attached before a server restart) also
+			// fall back to the baseline. Fail-soft by design.
+			scrMgr.SetOffsetSetResolver(func(instance string) string {
+				info, ok := mgr.Get(instance)
+				if !ok || info.GameISO == "" {
+					return ""
+				}
+				id := strings.TrimSuffix(filepath.Base(info.GameISO), ".iso")
+				rec, err := app.FindRecordById("isos", id)
+				if err != nil {
+					return ""
+				}
+				return rec.GetString("offset_set")
+			})
 			containers.SetManager(mgr)
 			containers.SetServices(svc)
 			// ISO library: the admin catalog route scans the shared ISO dir +

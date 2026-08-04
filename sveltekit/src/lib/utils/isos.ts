@@ -22,6 +22,8 @@ export interface IsoEntry {
 	description: string;
 	available: boolean;
 	server_iso: string;
+	/** offset-set id the scraper binds for this build ("" = game baseline). */
+	offset_set: string;
 	/** sha256 of the managed disc (drift anchor). */
 	content_hash: string;
 	/** managed bytes no longer match content_hash → forced unavailable. */
@@ -65,6 +67,16 @@ export interface IsoUpdate {
 	description?: string;
 	available?: boolean;
 	server_iso?: string;
+	offset_set?: string;
+}
+
+/** One registered memory-offset set (version-level address layer). */
+export interface OffsetSetInfo {
+	game: string;
+	id: string;
+	description: string;
+	count: number;
+	baseline: boolean;
 }
 
 export class IsoApiError extends Error {
@@ -119,6 +131,13 @@ export async function ingestInbox(): Promise<IngestResult> {
 	});
 	if (!res.ok) throw await errorFrom(res);
 	return (await res.json()) as IngestResult;
+}
+
+/** GET /api/admin/isos/offset-sets — registered offset sets for the picker. */
+export async function listOffsetSets(): Promise<OffsetSetInfo[]> {
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/offset-sets`, { headers: authHeaders() });
+	if (!res.ok) throw await errorFrom(res);
+	return (await res.json()) as OffsetSetInfo[];
 }
 
 /** PATCH /api/admin/isos/{id} — partial metadata/server_iso/available update. */

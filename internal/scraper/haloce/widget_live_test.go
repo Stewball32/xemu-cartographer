@@ -33,7 +33,7 @@ func liveReader(t *testing.T) *Reader {
 		t.Fatalf("instance init: %v", err)
 	}
 	t.Cleanup(inst.Close)
-	return NewReader(inst, "ce-live")
+	return NewReader(inst, "ce-live", BaselineOffsets())
 }
 
 // rawSel reads the raw (sel,count,found) for a named list widget, bypassing the

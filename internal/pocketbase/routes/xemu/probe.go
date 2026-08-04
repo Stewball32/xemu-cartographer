@@ -57,7 +57,7 @@ func init() {
 				BaseHVA: fmt.Sprintf("0x%016x", inst.Mem.Base()),
 			}
 
-			_, titleID, detectErr := scraper.Detect(inst, "probe")
+			_, titleID, detectErr := scraper.Detect(inst, "probe", "")
 			resp.TitleID = fmt.Sprintf("0x%08X", titleID)
 			if detectErr != nil {
 				resp.DetectError = detectErr.Error()

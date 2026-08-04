@@ -134,8 +134,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	// other unrecognised titles still surface xbox_name in the snapshot.
 	r.runSystemSnapshot()
 
-	factory := scraper.Lookup(titleID)
-	if factory == nil {
+	if scraper.Lookup(titleID) == nil {
 		// Unknown title — stay idle and re-poll. The TitleID is already
 		// surfaced in the cache so the debug page can show "phase=idle,
 		// title_id=0x...".
@@ -144,11 +143,24 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		return PhaseIdle
 	}
 
-	// Title recognised — bind a reader. Re-init the xemu instance with the
-	// reader's required low GVAs (xemu.Instance.Init is idempotent for
-	// already-translated addresses, so the detection-only init done at
-	// Start time is preserved).
-	reader := factory(r.inst, r.name)
+	// Title recognised — bind a reader through the version-level offset
+	// layer: the instance's assigned offset set when the catalog names one,
+	// else the game's baseline (identical values to the old hardcoded
+	// constants — see internal/scraper/offsets). Then re-init the xemu
+	// instance with the reader's required low GVAs (xemu.Instance.Init is
+	// idempotent for already-translated addresses, so the detection-only
+	// init done at Start time is preserved).
+	setID := ""
+	if r.offsetSetFor != nil {
+		setID = r.offsetSetFor()
+	}
+	reader, err := scraper.NewReaderForTitle(titleID, r.inst, r.name, setID)
+	if err != nil {
+		log.Printf("scraper[%s]: bind reader: %v — staying idle", r.name, err)
+		r.broadcastPoll(svc)
+		r.sleepOrCancel(idlePollInterval)
+		return PhaseIdle
+	}
 	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
 	if err := r.inst.Init(allGVAs); err != nil {
 		log.Printf("scraper[%s]: bind reader (init low GVAs): %v — staying idle", r.name, err)

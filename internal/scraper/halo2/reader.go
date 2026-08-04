@@ -12,14 +12,17 @@ import (
 type Reader struct {
 	inst *xemu.Instance
 	name string
+	// off is the instance's versioned address layer (baseline for stock H2,
+	// or an assigned offset set for a modded build).
+	off  Offsets
 	tick uint32
 
 	lastInputs scraper.StateInputs
 }
 
 // NewReader constructs a Halo 2 Reader.
-func NewReader(inst *xemu.Instance, instanceName string) *Reader {
-	return &Reader{inst: inst, name: instanceName, lastInputs: scraper.StateInputs{}}
+func NewReader(inst *xemu.Instance, instanceName string, off Offsets) *Reader {
+	return &Reader{inst: inst, name: instanceName, off: off, lastInputs: scraper.StateInputs{}}
 }
 
 // validHigh reports whether p is a plausible high-GVA heap pointer.
@@ -46,15 +49,15 @@ func (r *Reader) readArray(lowPtr uint32) (arrayInfo, error) {
 	if !validHigh(base) {
 		return ai, nil
 	}
-	sigB, err := r.inst.Mem.ReadBytes(base+OffH2DataArraySignature, 4)
+	sigB, err := r.inst.Mem.ReadBytes(base+r.off.OffH2DataArraySignature, 4)
 	if err != nil {
 		return ai, nil
 	}
 	ai.sig = string(sigB)
-	ai.max, _ = r.inst.Mem.ReadU32(base + OffH2DataArrayMax)
-	ai.elemSize, _ = r.inst.Mem.ReadU32(base + OffH2DataArrayElemSize)
-	ai.active, _ = r.inst.Mem.ReadU32(base + OffH2DataArrayActiveCount)
-	ai.block, _ = r.inst.Mem.ReadU32(base + OffH2DataArrayBlockPtr)
+	ai.max, _ = r.inst.Mem.ReadU32(base + r.off.OffH2DataArrayMax)
+	ai.elemSize, _ = r.inst.Mem.ReadU32(base + r.off.OffH2DataArrayElemSize)
+	ai.active, _ = r.inst.Mem.ReadU32(base + r.off.OffH2DataArrayActiveCount)
+	ai.block, _ = r.inst.Mem.ReadU32(base + r.off.OffH2DataArrayBlockPtr)
 	ai.ok = ai.sig == DataArraySignature && validHigh(ai.block)
 	return ai, nil
 }
@@ -70,7 +73,7 @@ func (r *Reader) resolveObject(objs arrayInfo, handle uint32) uint32 {
 		return 0
 	}
 	entry := objs.block + idx*ConstH2ObjElemSize
-	data, err := r.inst.Mem.ReadU32(entry + OffH2ObjEntryDataPtr)
+	data, err := r.inst.Mem.ReadU32(entry + r.off.OffH2ObjEntryDataPtr)
 	if err != nil || !validHigh(data) {
 		return 0
 	}
@@ -98,14 +101,14 @@ func (r *Reader) readRoster(players arrayInfo) []rosterEntry {
 	out := make([]rosterEntry, 0, max)
 	for i := uint32(0); i < max; i++ {
 		rec := players.block + i*ConstH2PlayerRecordSize
-		did, err := r.inst.Mem.ReadU32(rec + OffH2PlrDatumId)
+		did, err := r.inst.Mem.ReadU32(rec + r.off.OffH2PlrDatumId)
 		if err != nil || did == 0 || did == 0xFFFFFFFF {
 			continue
 		}
-		idx, _ := r.inst.Mem.ReadS32(rec + OffH2PlrIndex)
-		team, _ := r.inst.Mem.ReadS32(rec + OffH2PlrTeam)
-		unit, _ := r.inst.Mem.ReadU32(rec + OffH2PlrUnitHandle)
-		nameB, _ := r.inst.Mem.ReadBytes(rec+OffH2PlrName, 32)
+		idx, _ := r.inst.Mem.ReadS32(rec + r.off.OffH2PlrIndex)
+		team, _ := r.inst.Mem.ReadS32(rec + r.off.OffH2PlrTeam)
+		unit, _ := r.inst.Mem.ReadU32(rec + r.off.OffH2PlrUnitHandle)
+		nameB, _ := r.inst.Mem.ReadBytes(rec+r.off.OffH2PlrName, 32)
 		out = append(out, rosterEntry{
 			slot:  int(i),
 			index: idx,
@@ -125,11 +128,11 @@ func (r *Reader) readRoster(players arrayInfo) []rosterEntry {
 // to be valid+active and at least one player's unit handle to resolve to a
 // biped with a plausible health fraction.
 func (r *Reader) ReadGameState() (scraper.GameState, uint32, error) {
-	players, err := r.readArray(AddrH2PlayersArrayPtr)
+	players, err := r.readArray(r.off.AddrH2PlayersArrayPtr)
 	if err != nil {
 		return scraper.GameStateMenu, r.tick, err // genuine read failure
 	}
-	objs, _ := r.readArray(AddrH2ObjectArrayPtr)
+	objs, _ := r.readArray(r.off.AddrH2ObjectArrayPtr)
 
 	inputs := scraper.StateInputs{
 		"players_ptr":    fmt.Sprintf("0x%x", players.base),
@@ -145,7 +148,7 @@ func (r *Reader) ReadGameState() (scraper.GameState, uint32, error) {
 			if od == 0 {
 				continue
 			}
-			if h, err := r.inst.Mem.ReadF32(od + OffH2BipedHealth); err == nil && h >= -0.01 && h <= 2.0 {
+			if h, err := r.inst.Mem.ReadF32(od + r.off.OffH2BipedHealth); err == nil && h >= -0.01 && h <= 2.0 {
 				inGame = true
 				break
 			}
@@ -168,8 +171,8 @@ func (r *Reader) LastStateInputs() scraper.StateInputs { return r.lastInputs }
 // this reports the scenario id so the debug page can key maps until re-derived.
 func (r *Reader) BuildScoreProbe() scraper.ScoreProbe {
 	probe := scraper.ScoreProbe{}
-	if th, err := r.inst.DerefLowPtr(AddrH2TagHeaderPtr); err == nil && validHigh(th) {
-		scen, _ := r.inst.Mem.ReadU32(th + OffH2TagHdrScenarioId)
+	if th, err := r.inst.DerefLowPtr(r.off.AddrH2TagHeaderPtr); err == nil && validHigh(th) {
+		scen, _ := r.inst.Mem.ReadU32(th + r.off.OffH2TagHdrScenarioId)
 		probe["scenario_id"] = fmt.Sprintf("0x%x", scen)
 	}
 	probe["note"] = "gametype/team-score offsets unverified (legacy globals stale) — M20 re-derivation pending"
@@ -180,7 +183,7 @@ func (r *Reader) BuildScoreProbe() scraper.ScoreProbe {
 // gametype and K/D/A are stubbed (legacy stats-block globals do not resolve on
 // this build — M20 known-broken).
 func (r *Reader) ReadGameData() (scraper.GameData, error) {
-	players, err := r.readArray(AddrH2PlayersArrayPtr)
+	players, err := r.readArray(r.off.AddrH2PlayersArrayPtr)
 	if err != nil {
 		return scraper.GameData{}, err
 	}
@@ -211,11 +214,11 @@ func (r *Reader) ReadReadyState() (scraper.GameData, error) { return r.ReadGameD
 
 // ReadTick reads per-tick volatile biped state for every rostered player.
 func (r *Reader) ReadTick(_ []scraper.PowerItemSpawn, _ *scraper.TickState) (scraper.TickResult, error) {
-	players, err := r.readArray(AddrH2PlayersArrayPtr)
+	players, err := r.readArray(r.off.AddrH2PlayersArrayPtr)
 	if err != nil {
 		return scraper.TickResult{}, err
 	}
-	objs, _ := r.readArray(AddrH2ObjectArrayPtr)
+	objs, _ := r.readArray(r.off.AddrH2ObjectArrayPtr)
 	roster := r.readRoster(players)
 
 	var tr scraper.TickResult
@@ -224,22 +227,22 @@ func (r *Reader) ReadTick(_ []scraper.PowerItemSpawn, _ *scraper.TickState) (scr
 		tp := scraper.TickPlayer{Index: int(p.index)}
 		od := r.resolveObject(objs, p.unit)
 		if od != 0 {
-			health, _ := r.inst.Mem.ReadF32(od + OffH2BipedHealth)
-			shield, _ := r.inst.Mem.ReadF32(od + OffH2BipedShield)
-			maxH, _ := r.inst.Mem.ReadF32(od + OffH2BipedMaxHealth)
-			maxS, _ := r.inst.Mem.ReadF32(od + OffH2BipedMaxShield)
-			px, _ := r.inst.Mem.ReadF32(od + OffH2ObjPosition)
-			py, _ := r.inst.Mem.ReadF32(od + OffH2ObjPosition + 4)
-			pz, _ := r.inst.Mem.ReadF32(od + OffH2ObjPosition + 8)
-			ax, _ := r.inst.Mem.ReadF32(od + OffH2ObjAim)
-			ay, _ := r.inst.Mem.ReadF32(od + OffH2ObjAim + 4)
-			az, _ := r.inst.Mem.ReadF32(od + OffH2ObjAim + 8)
-			vx, _ := r.inst.Mem.ReadF32(od + OffH2ObjVelocity)
-			vy, _ := r.inst.Mem.ReadF32(od + OffH2ObjVelocity + 4)
-			vz, _ := r.inst.Mem.ReadF32(od + OffH2ObjVelocity + 8)
-			frags, _ := r.inst.Mem.ReadU8(od + OffH2BipedFragGrenades)
-			plasmas, _ := r.inst.Mem.ReadU8(od + OffH2BipedPlasmaGrenades)
-			slot, _ := r.inst.Mem.ReadU8(od + OffH2BipedCurWeaponSlot)
+			health, _ := r.inst.Mem.ReadF32(od + r.off.OffH2BipedHealth)
+			shield, _ := r.inst.Mem.ReadF32(od + r.off.OffH2BipedShield)
+			maxH, _ := r.inst.Mem.ReadF32(od + r.off.OffH2BipedMaxHealth)
+			maxS, _ := r.inst.Mem.ReadF32(od + r.off.OffH2BipedMaxShield)
+			px, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjPosition)
+			py, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjPosition + 4)
+			pz, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjPosition + 8)
+			ax, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjAim)
+			ay, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjAim + 4)
+			az, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjAim + 8)
+			vx, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjVelocity)
+			vy, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjVelocity + 4)
+			vz, _ := r.inst.Mem.ReadF32(od + r.off.OffH2ObjVelocity + 8)
+			frags, _ := r.inst.Mem.ReadU8(od + r.off.OffH2BipedFragGrenades)
+			plasmas, _ := r.inst.Mem.ReadU8(od + r.off.OffH2BipedPlasmaGrenades)
+			slot, _ := r.inst.Mem.ReadU8(od + r.off.OffH2BipedCurWeaponSlot)
 
 			tp.Alive = health > 0
 			tp.Health, tp.Shields = health, shield
@@ -263,7 +266,7 @@ func (r *Reader) ReadTick(_ []scraper.PowerItemSpawn, _ *scraper.TickState) (scr
 func (r *Reader) readWeapons(objs arrayInfo, biped uint32) []scraper.WeaponInfo {
 	var out []scraper.WeaponInfo
 	for slot := uint32(0); slot < 4; slot++ {
-		h, err := r.inst.Mem.ReadU32(biped + OffH2BipedWeaponSlots + slot*4)
+		h, err := r.inst.Mem.ReadU32(biped + r.off.OffH2BipedWeaponSlots + slot*4)
 		if err != nil || h == 0 || h == 0xFFFFFFFF {
 			continue
 		}
@@ -271,8 +274,8 @@ func (r *Reader) readWeapons(objs arrayInfo, biped uint32) []scraper.WeaponInfo 
 		if wd == 0 {
 			continue
 		}
-		mag, _ := r.inst.Mem.ReadU16(wd + OffH2WepMag)
-		res, _ := r.inst.Mem.ReadU16(wd + OffH2WepReserve)
+		mag, _ := r.inst.Mem.ReadU16(wd + r.off.OffH2WepMag)
+		res, _ := r.inst.Mem.ReadU16(wd + r.off.OffH2WepReserve)
 		magI, resI := int16(mag), int16(res)
 		out = append(out, scraper.WeaponInfo{
 			Slot:     int(slot),
@@ -298,11 +301,11 @@ func (r *Reader) OnStateChange(_ scraper.GameState, _ scraper.GameState) error {
 // scenario id. Full scenario-path string decoding (tag-name pool) is a pending
 // follow-up; until then known ids map to names, else "scnr:0x........".
 func (r *Reader) mapName() string {
-	th, err := r.inst.DerefLowPtr(AddrH2TagHeaderPtr)
+	th, err := r.inst.DerefLowPtr(r.off.AddrH2TagHeaderPtr)
 	if err != nil || !validHigh(th) {
 		return ""
 	}
-	scen, err := r.inst.Mem.ReadU32(th + OffH2TagHdrScenarioId)
+	scen, err := r.inst.Mem.ReadU32(th + r.off.OffH2TagHdrScenarioId)
 	if err != nil {
 		return ""
 	}

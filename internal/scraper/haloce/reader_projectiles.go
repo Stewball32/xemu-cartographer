@@ -24,7 +24,7 @@ func (r *Reader) readProjectiles() []scraper.TickProjectile {
 
 	// Read item-datum size (u16, low GVA) — gives the byte offset within
 	// each object data block where projectile-specific fields start.
-	itemDatumHVA, err := inst.LowHVA(RefAddrItemDatumSize)
+	itemDatumHVA, err := inst.LowHVA(r.off.RefAddrItemDatumSize)
 	if err != nil {
 		return nil
 	}

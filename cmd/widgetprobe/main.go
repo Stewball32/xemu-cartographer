@@ -54,7 +54,7 @@ func main() {
 	defer inst.Close()
 	fmt.Printf("pid=%d base=0x%x  (proc/mem read path OK)\n", inst.PID, inst.Mem.Base())
 
-	r := haloce.NewReader(inst, "probe")
+	r := haloce.NewReader(inst, "probe", haloce.BaselineOffsets())
 	cur, _ := any(r).(scraper.LobbyCursorReader)
 	for i := 0; i < iters; i++ {
 		state, tick, err := r.ReadGameState()
@@ -98,7 +98,7 @@ func navMode() {
 		os.Exit(1)
 	}
 	defer inst.Close()
-	r := haloce.NewReader(inst, "nav")
+	r := haloce.NewReader(inst, "nav", haloce.BaselineOffsets())
 
 	// read the SETTLED cursor for the chosen list (retry past scroll-animation garbage).
 	read := func() (idx, cnt int, ok bool) {
@@ -190,7 +190,7 @@ func enumMode(sock string) {
 		os.Exit(1)
 	}
 	defer inst.Close()
-	r := haloce.NewReader(inst, "enum")
+	r := haloce.NewReader(inst, "enum", haloce.BaselineOffsets())
 	opts := r.EnumerateLobby()
 	cur := r.ReadLobbyCursor()
 	fmt.Printf("enumerate available=%v: maps=%d gametypes=%d\n", opts.Available, len(opts.Maps), len(opts.Gametypes))

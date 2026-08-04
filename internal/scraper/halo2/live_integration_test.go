@@ -32,7 +32,7 @@ func TestLiveH2(t *testing.T) {
 	}
 	defer inst.Close()
 
-	reader, titleID, err := scraper.Detect(inst, "h2-live")
+	reader, titleID, err := scraper.Detect(inst, "h2-live", "")
 	if err != nil {
 		t.Fatalf("Detect: %v (title 0x%08X)", err, titleID)
 	}

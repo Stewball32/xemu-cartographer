@@ -11,7 +11,7 @@ func (r *Reader) readGameGlobals() *scraper.TickGameGlobals {
 	inst := r.inst
 	mem := inst.Mem
 
-	ggPtr, err := inst.DerefLowPtr(AddrGameGlobalsPtr)
+	ggPtr, err := inst.DerefLowPtr(r.off.AddrGameGlobalsPtr)
 	if err != nil || ggPtr < HighGVAThreshold {
 		return nil
 	}
@@ -40,7 +40,7 @@ func (r *Reader) readGameGlobals() *scraper.TickGameGlobals {
 func (r *Reader) readLocalPlayerCount() uint16 {
 	inst := r.inst
 
-	pgPtr, err := inst.DerefLowPtr(AddrPlayersGlobalsPtr)
+	pgPtr, err := inst.DerefLowPtr(r.off.AddrPlayersGlobalsPtr)
 	if err != nil || pgPtr < HighGVAThreshold {
 		return 0
 	}

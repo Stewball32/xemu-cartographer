@@ -9,12 +9,14 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
 )
 
 func init() {
 	register(registerList)
 	register(registerInbox)
 	register(registerIngest)
+	register(registerOffsetSets)
 	register(registerGet)
 	register(registerUpdate)
 	register(registerDelete)
@@ -38,6 +40,7 @@ func isoView(r *core.Record) map[string]any {
 		"description":     r.GetString("description"),
 		"available":       r.GetBool("available"),
 		"server_iso":      r.GetString("server_iso"),
+		"offset_set":      r.GetString("offset_set"),
 		"content_hash":    r.GetString("content_hash"),
 		"drift_detected":  r.GetBool("drift_detected"),
 		"file_size":       r.GetInt("file_size"),
@@ -110,6 +113,27 @@ func registerIngest() {
 	})
 }
 
+// offsetSetExists reports whether an offset-set id is registered (any game —
+// the game an ISO boots isn't knowable from the record alone; a game-mismatched
+// assignment degrades to the baseline at bind time with a logged warning).
+func offsetSetExists(id string) bool {
+	for _, s := range offsets.All() {
+		if s.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// GET /api/admin/isos/offset-sets — the registered offset sets (per game, with
+// the baseline flagged), for the assignment picker. An ISO with offset_set ""
+// rides the detected game's baseline.
+func registerOffsetSets() {
+	Group.GET("/offset-sets", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, offsets.All())
+	})
+}
+
 // GET /api/admin/isos/{id} — one catalog entry.
 func registerGet() {
 	Group.GET("/{id}", func(e *core.RequestEvent) error {
@@ -131,6 +155,7 @@ type updateBody struct {
 	Description *string `json:"description"`
 	Available   *bool   `json:"available"`
 	ServerISO   *string `json:"server_iso"`
+	OffsetSet   *string `json:"offset_set"`
 }
 
 // PATCH /api/admin/isos/{id} — partial metadata update.
@@ -166,6 +191,13 @@ func registerUpdate() {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
 			}
 			rec.Set("server_iso", serverID)
+		}
+		if body.OffsetSet != nil {
+			id := strings.TrimSpace(*body.OffsetSet)
+			if id != "" && !offsetSetExists(id) {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "unknown offset set: " + id})
+			}
+			rec.Set("offset_set", id)
 		}
 		if err := e.App.Save(rec); err != nil {
 			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})

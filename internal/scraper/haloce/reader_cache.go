@@ -87,7 +87,7 @@ func (r *Reader) ensureScenarioStatic() {
 		r.scenarioCache = &scenarioStaticCache{}
 	}
 
-	scenarioBase, err := r.inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	scenarioBase, err := r.inst.DerefLowPtr(r.off.AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
 		return
 	}
@@ -174,7 +174,7 @@ func (r *Reader) fillLocalsStatic(m *matchStaticCache) {
 	m.LookPitchRate = make([]float32, n)
 	for i := 0; i < n; i++ {
 		m.UI[i] = r.readUIGlobals(i)
-		m.LookYawRate[i] = r.readLookRate(RefAddrLookYawRate, i)
-		m.LookPitchRate[i] = r.readLookRate(RefAddrLookPitchRate, i)
+		m.LookYawRate[i] = r.readLookRate(r.off.RefAddrLookYawRate, i)
+		m.LookPitchRate[i] = r.readLookRate(r.off.RefAddrLookPitchRate, i)
 	}
 }
