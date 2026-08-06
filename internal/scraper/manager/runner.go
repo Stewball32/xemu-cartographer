@@ -270,9 +270,9 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 		agg:          agg,
 		inst:         inst,
 		offsetSetFor: offsetSetFor,
-		ctx:      ctx,
-		cancel:   cancel,
-		done:     make(chan struct{}),
+		ctx:          ctx,
+		cancel:       cancel,
+		done:         make(chan struct{}),
 		cache: instanceCache{
 			Phase:     PhaseIdle,
 			StartedAt: now,

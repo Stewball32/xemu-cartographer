@@ -76,7 +76,7 @@ func reapViewFor(name string) *reapView {
 // GET /api/play/current — the caller's currently-matched container + host-runner
 // status (screen, authority, native start counts, selection, ready). Returns 200
 // with instance:"" when the caller's gamertag isn't in any live roster (idle),
-// mirroring /api/me/match's fail-soft shape.
+// fail-soft: resolution misses render as idle, never as an error.
 func registerCurrent() {
 	Group.GET("/current", func(e *core.RequestEvent) error {
 		if !requireHost(e) {

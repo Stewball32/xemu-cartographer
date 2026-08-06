@@ -21,7 +21,6 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
-	isosroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/isos"
 	overlaysroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/overlays"
 	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
@@ -147,9 +146,6 @@ func main() {
 		scrMgr = scrapermgr.New(svc)
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
-		// M09: the /api/me/match resolver (in the top-level routes package)
-		// reads live container rosters to route a player to their kiosk.
-		routes.SetScraper(scrMgr)
 
 		// Player-hosting (ADR-0003): the host-runner Registry owns the per-instance
 		// state-aware runners and fans their observable stream to the admin WS room.
@@ -219,11 +215,8 @@ func main() {
 			})
 			containers.SetManager(mgr)
 			containers.SetServices(svc)
-			// ISO library: the admin catalog route scans the shared ISO dir +
-			// validates filenames against it; the player request-instance flow
-			// provisions a fresh box booting the chosen ISO. Both are additive to
-			// the untouched admin kiosk/VNC path.
-			isosroutes.SetManager(mgr)
+			// Player request-instance flow: provisions a fresh box booting the
+			// chosen catalog ISO. Additive to the untouched admin kiosk/VNC path.
 			playroutes.SetProvisioner(podmanProvisioner{m: mgr})
 
 			// Idle-out reaper (optional, REAPER_ENABLED): reclaim player-hosted

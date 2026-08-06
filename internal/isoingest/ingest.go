@@ -202,6 +202,15 @@ func Extract(app core.App, cfg lansync.Config, id string) error {
 	rec.Set("extracted_ready", true)
 	rec.Set("extracted_at", types.NowDateTime())
 	rec.Set("footprint_bytes", footprint)
+	// Auto-extract the title id from the disc's boot XBE (the tree is already
+	// on disk — this is a header read, not another disc pass). Server-owned:
+	// always refreshed from the disc, never hand-entered. Best-effort — a tree
+	// with no parseable default.xbe just leaves the field as-is.
+	if titleID, terr := TitleIDFromTree(treeDir); terr == nil {
+		rec.Set("title_id", titleID)
+	} else {
+		log.Printf("isoingest: title id for %s: %v", id, terr)
+	}
 	return app.Save(rec)
 }
 

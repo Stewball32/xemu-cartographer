@@ -146,12 +146,12 @@ func registerGet() {
 }
 
 // updateBody is the PATCH payload; every field is optional (pointer = provided).
-// The managed file is ID-anchored, so the display name (and all metadata) is
-// freely editable — there is no write-once constraint anymore. A provided
-// server_iso of "" clears the link.
+// The managed file is ID-anchored, so the display name (and metadata) is freely
+// editable. title_id is deliberately ABSENT — it's server-owned, auto-extracted
+// from the disc's boot XBE at ingest/extract time. A provided server_iso of ""
+// clears the link.
 type updateBody struct {
 	Name        *string `json:"name"`
-	TitleID     *string `json:"title_id"`
 	Description *string `json:"description"`
 	Available   *bool   `json:"available"`
 	ServerISO   *string `json:"server_iso"`
@@ -175,9 +175,6 @@ func registerUpdate() {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
 			}
 			rec.Set("name", name)
-		}
-		if body.TitleID != nil {
-			rec.Set("title_id", strings.TrimSpace(*body.TitleID))
 		}
 		if body.Description != nil {
 			rec.Set("description", *body.Description)

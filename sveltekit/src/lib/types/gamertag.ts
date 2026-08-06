@@ -1,7 +1,7 @@
 // Types for the gamertag identity system — per-user CE + H2 player profiles,
 // the shared organizer-curated gametype library, and the game (XBE) uploads.
 // Mirror the PocketBase collections ce_profiles / h2_profiles / gametypes /
-// game_titles and the saveartifact.Info JSON written by the generate-on-save
+// the saveartifact.Info JSON written by the generate-on-save
 // hooks.
 
 export interface SaveInfoFile {
@@ -103,14 +103,6 @@ export interface GametypeRecord extends RecordBase {
 	settings: GametypeSettings;
 	save_bundle: string;
 	save_info: SaveInfo | null;
-	created_by: string;
-	expand?: { created_by?: UserRef };
-}
-
-export interface GameTitleRecord extends RecordBase {
-	name: string;
-	description: string;
-	file: string;
 	created_by: string;
 	expand?: { created_by?: UserRef };
 }

@@ -60,10 +60,10 @@ export interface IngestResult {
 	errors: string[];
 }
 
-/** PATCH body — every field optional; server_iso "" clears the link. */
+/** PATCH body — every field optional; server_iso "" clears the link.
+ * title_id is server-owned (auto-extracted from the XBE) — not settable. */
 export interface IsoUpdate {
 	name?: string;
-	title_id?: string;
 	description?: string;
 	available?: boolean;
 	server_iso?: string;

@@ -1,21 +1,17 @@
-// Package isos exposes /api/admin/isos/* — the admin-scoped CRUD surface for the
-// game-ISO library players pick from when they request an instance.
+// Package isos exposes /api/admin/isos/* — the ISO/game-catalog management
+// surface (inbox scan + ingest, metadata/server_iso/offset_set edits, delete).
 //
-// The library is a CATALOG over the shared ISO dir on the host (podman
-// Config.ISODir): each `isos` record names a bare filename in that dir plus
-// player-facing metadata. Admins manage the catalog here; the player-scoped
-// picker lives in routes/play (GET /api/play/isos + POST /api/play/request).
+// Access is ORGANIZER-OR-ADMIN: the catalog is managed from the organizer-gated
+// /organizer/games page, matching the isos collection's own PB rules
+// (organizer-or-admin create/delete). The route path keeps its historical
+// /api/admin/ prefix — renaming it would churn every client for no behavioral
+// gain. The player-scoped picker lives in routes/play (GET /api/play/isos +
+// POST /api/play/request); the admin kiosk + VNC path (routes/containers) is
+// untouched.
 //
-// Modeled on routes/containers + routes/scraper: a package-level Group + a
-// SetManager-injected podman Manager, init()-registered handlers. The podman
-// Manager is OPTIONAL — the collection CRUD needs only PocketBase, so this group
-// registers whenever the server boots (even with CONTAINERS_ENABLED=false, so an
-// operator can pre-populate the catalog). The Manager, when wired, powers the
-// library scan (GET /library) and the "does this file actually exist" guard on
-// create/update.
-//
-// The admin kiosk + VNC path (routes/containers) is untouched — this is a new,
-// additive collection + route.
+// Under the ingest model the catalog is not a scan of arbitrary files: each
+// row OWNS a managed <record-id>.iso produced by the inbox→ingest pipeline
+// (internal/isoingest), so no podman manager is needed here at all.
 package isos
 
 import (
@@ -23,34 +19,41 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 // Group is the router group for /api/admin/isos endpoints.
-// All routes inherit RequireAuth + RequireAdmin middleware.
+// All routes inherit RequireAuth + the organizer-or-admin gate below.
 var Group *router.RouterGroup[*core.RequestEvent]
-
-// Manager is the podman manager used for the library scan + filename-existence
-// validation. Injected by SetManager from cmd/server/main.go before RegisterAll.
-// Nil is fine — the collection CRUD works without it; only /library and the
-// on-disk existence guard degrade (503 / skipped).
-var Manager *podman.Manager
 
 var registry []func()
 
 func register(fn func()) { registry = append(registry, fn) }
 
-// SetManager wires the podman manager (optional). Call before RegisterAll.
-func SetManager(m *podman.Manager) { Manager = m }
+// requireOrganizerOrAdmin admits superusers, admins (roles.IsAdminAuth), and
+// holders of the organizer role — the same population the isos collection's PB
+// rules admit for mutations.
+func requireOrganizerOrAdmin() func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		if roles.IsAdminAuth(e.App, e.Auth) {
+			return e.Next()
+		}
+		if ok, err := roles.Has(e.App, e.Auth.Id, "organizer"); err == nil && ok {
+			return e.Next()
+		}
+		return apis.NewForbiddenError("organizer or admin role required", nil)
+	}
+}
 
-// RegisterAll creates the isos group and registers all handlers. Always active
-// (the catalog is a plain PocketBase collection); the Manager only gates the
-// library-scan + existence-check extras.
+// RegisterAll creates the isos group and registers all handlers. Always active —
+// the catalog + ingest pipeline need only PocketBase and the configured dirs.
 func RegisterAll(se *core.ServeEvent) {
 	Group = se.Router.Group("/api/admin/isos")
 	Group.Bind(apis.RequireAuth())
-	Group.BindFunc(middleware.RequireAdmin())
+	Group.BindFunc(requireOrganizerOrAdmin())
 
 	for _, fn := range registry {
 		fn()
