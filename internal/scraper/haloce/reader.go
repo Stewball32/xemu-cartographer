@@ -1,6 +1,7 @@
 package haloce
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"strings"
@@ -81,26 +82,31 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	inst := r.inst
 	mem := inst.Mem
 
-	geGlobalsPtr, err := inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
+	// MENU-CLASSIFICATION fields FIRST. These drive the host-runner's front-end
+	// detection (main_menu + game_connection) and MUST land in lastStateInputs so
+	// the runner can classify the main menu — even when the game-engine state
+	// below isn't present/readable at the front end. main_menu is the CRITICAL
+	// read: if it fails, the translation is unusable (e.g. a stale boot-time
+	// mapping), and we signal the loop to re-translate. A failed game-engine read
+	// (region not resident at the menu) must NOT abort before we get here.
+	mainMenu, mmErr := readLowU8(inst, r.off.AddrMainMenuActive)
+
+	// game_connection (0 menu/SP, 1 system-link, 2 hosting, 3 film) — best-effort;
+	// a failed read leaves it 0 (menu), never a false lobby.
+	var gameConnection uint16
+	if hva, e := inst.LowHVA(r.off.AddrGameConnection); e == nil {
+		gameConnection, _ = mem.ReadU16At(hva)
 	}
+
+	// GAME-ENGINE / GAME-TIME state — BEST-EFFORT. At the front-end menu these
+	// regions may not be resident (the game engine isn't running); a miss here
+	// leaves the field zero, which determineGameState reads as Menu — the correct
+	// result. In a live game these translations are valid, so behavior is
+	// unchanged. Never abort menu detection on one of these.
+	geGlobalsPtr, _ := inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
 	gameEngineRunning := geGlobalsPtr != 0
 
-	mainMenuHVA, err := inst.LowHVA(r.off.AddrMainMenuActive)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
-	}
-	mainMenu, err := mem.ReadU8At(mainMenuHVA)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
-	}
-
-	gtgPtr, err := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
-	}
-
+	gtgPtr, _ := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)
 	var initialized, active, paused uint8
 	if gtgPtr >= HighGVAThreshold {
 		initialized, _ = mem.ReadU8(gtgPtr + OffGTGInitialized)
@@ -109,20 +115,9 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		tick, _ = mem.ReadU32(gtgPtr + OffGTGGameTime)
 	}
 
-	gameCanScoreHVA, err := inst.LowHVA(r.off.AddrGameCanScore)
-	if err != nil {
-		return scraper.GameStateMenu, tick, err
-	}
-	gameCanScore, _ := mem.ReadU32At(gameCanScoreHVA)
-
-	// game_connection (0 menu/SP, 1 system-link, 2 hosting, 3 film) drives the
-	// host-runner's lobby state machine (internal/hostrunner) — surfaced through
-	// LastStateInputs so the integration adapter reads it off the loop goroutine
-	// without a game-specific coupling. Best-effort: a failed read leaves it 0
-	// (menu), which the runner classifies as ScreenMainMenu, never a false lobby.
-	var gameConnection uint16
-	if hva, e := inst.LowHVA(r.off.AddrGameConnection); e == nil {
-		gameConnection, _ = mem.ReadU16At(hva)
+	var gameCanScore uint32
+	if hva, e := inst.LowHVA(r.off.AddrGameCanScore); e == nil {
+		gameCanScore, _ = mem.ReadU32At(hva)
 	}
 
 	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore)
@@ -137,7 +132,25 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"game_engine_globals_ptr": geGlobalsPtr,
 		"game_time_globals_ptr":   gtgPtr,
 	}
+	// A failed main_menu read means the low translation is broken (not merely a
+	// game region absent at the menu) — surface it so the ready loop re-translates.
+	// state_inputs is already populated above, so a later successful read (or a
+	// refresh) recovers menu classification without any special-casing here.
+	if mmErr != nil {
+		return state, tick, fmt.Errorf("main_menu read: %w", mmErr)
+	}
 	return state, tick, nil
+}
+
+// readLowU8 reads a single byte at a low guest VA through the instance's cached
+// translation, folding the LowHVA + ReadU8At two-step into one call so the menu
+// reads at the top of ReadGameState stay terse.
+func readLowU8(inst *xemu.Instance, gva uint32) (uint8, error) {
+	hva, err := inst.LowHVA(gva)
+	if err != nil {
+		return 0, err
+	}
+	return inst.Mem.ReadU8At(hva)
 }
 
 // LastStateInputs returns the raw values from the most recent ReadGameState
