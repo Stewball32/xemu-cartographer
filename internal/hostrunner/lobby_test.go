@@ -304,14 +304,103 @@ func TestSequenceFullFlow(t *testing.T) {
 	}
 }
 
-// TestSequenceBlocksOnWrongScreen: a non-blind step never presses blindly.
+// TestNavDrivesFromMainMenu: the nav phase drives the front-end menu toward
+// System Link instead of blocking. THE fix — before it, the runner stalled
+// forever on the main menu because step 1 (create-game) required
+// game_connection==1 with nothing to bridge the box from the menu.
+func TestNavDrivesFromMainMenu(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	a := s.Step(mainMenu(), time.Unix(1000, 0))
+	if a.Kind != ActionTap || a.Key() != "up" {
+		t.Fatalf("on the main menu the nav phase must drive (tap %q), got %v (%s)", "up", a.Kind, a.Reason)
+	}
+}
+
+// TestSequenceBlocksOnWrongScreen: a step never presses blindly on an
+// unexpected screen. The nav step blocks when the front-end bracket is lost
+// before System Link is reached (a non-menu, non-system-link read).
 func TestSequenceBlocksOnWrongScreen(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-	// On the main menu, create-game (expects system link) must NOT press Y.
-	a := s.Step(mainMenu(), time.Unix(1000, 0))
+	// Fresh but neither the front-end menu (MenuActive=false ⇒ ScreenUnknown)
+	// nor System Link: the nav step can't confirm progress and isn't on its
+	// entry bracket, so it blocks rather than pressing on.
+	wrong := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu}
+	a := s.Step(wrong, time.Unix(1000, 0))
 	if a.Kind != ActionBlocked {
 		t.Fatalf("got %v (%s), want blocked on wrong screen", a.Kind, a.Reason)
 	}
+}
+
+// TestNavPhaseFullChain: the nav macro emits its fixed key sequence one press
+// per NavKeyInterval while at the front-end menu, then re-emits the last key
+// (the SELECT PROFILE confirms) until game_connection flips to 1 — at which
+// point it completes and create-game presses Y. Mirrors the live rig chain
+// main-menu(0) → System Link(1) → hosting(2).
+func TestNavPhaseFullChain(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	t0 := time.Unix(1000, 0)
+	navKeys := []string{"up", "up", "down", "a", "up", "up", "up", "down", "down", "a"}
+
+	// Walk the fixed sequence: each press is gated by NavKeyInterval and, while
+	// still at the front-end menu (game_connection stays 0 across the whole nav),
+	// emits the next key.
+	now := t0
+	for i, want := range navKeys {
+		a := s.Step(mainMenu(), now)
+		if a.Kind != ActionTap || a.Key() != want {
+			t.Fatalf("nav key %d: got %v (%s), want tap %q", i, a.Kind, a.Reason, want)
+		}
+		now = now.Add(DefaultTiming.NavKeyInterval)
+	}
+	// Keys exhausted but still on the menu → re-emit the last key ("a") to walk
+	// the profile join/pick/all-ready confirms.
+	a := s.Step(mainMenu(), now)
+	if a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("post-sequence: want re-emit of last key \"a\", got %v (%s)", a.Kind, a.Reason)
+	}
+	now = now.Add(DefaultTiming.NavKeyInterval)
+
+	// game_connection flips to 1 (System Link browser): nav completes and
+	// create-game fires Y.
+	a = s.Step(systemLink(), now)
+	if a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("on System Link, create-game must press Y, got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestNavPhaseSkippedWhenAlreadySystemLink: a box already on System Link skips
+// the nav phase entirely (catch-up) and goes straight to create-game.
+func TestNavPhaseSkippedWhenAlreadySystemLink(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	a := s.Step(systemLink(), time.Unix(1000, 0))
+	if a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("already on System Link: want create-game Y (nav skipped), got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestNavPhaseBlocksWithoutNetwork: if the box can never reach System Link
+// (e.g. Halo refuses with no active network) the nav step exhausts its retry
+// budget and blocks — surfacing the real precondition instead of pressing A
+// forever.
+func TestNavPhaseBlocksWithoutNetwork(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	blocked := false
+	for i := 0; i < len(mainMenuNavKeys())+navRetryBudget+2; i++ {
+		a := s.Step(mainMenu(), now) // stuck at the menu, game_connection never → 1
+		now = now.Add(DefaultTiming.NavKeyInterval)
+		if a.Kind == ActionBlocked {
+			blocked = true
+			break
+		}
+	}
+	if !blocked {
+		t.Fatal("nav step should block after exhausting its retry budget when System Link is unreachable")
+	}
+}
+
+func mainMenuNavKeys() []string {
+	return []string{"up", "up", "down", "a", "up", "up", "up", "down", "down", "a"}
 }
 
 // TestSequenceRepress: a non-blind step re-presses after RepressAfter if the

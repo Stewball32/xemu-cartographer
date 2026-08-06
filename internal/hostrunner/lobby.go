@@ -41,6 +41,26 @@ type Transition struct {
 	StepsFn            func(Selector) int
 	CursorFn           func(Observation) (index, count int, ok bool)
 
+	// Keys, when non-empty, makes this a MACRO NAV step: a fixed ordered key
+	// sequence driven between two readable checkpoints — On at entry, Done at
+	// exit — for FRONT-END menu navigation (main menu → System Link) where the
+	// intermediate screens (Multiplayer submenu, SELECT PROFILE) expose no
+	// distinguishing memory global, only game_connection==0/menu at both ends.
+	// This is the SAME "blind but bracketed" basis the card steps already use
+	// (§observation.go): timed presses fenced by readable state, never a press
+	// into the void. Two robustness properties:
+	//   - the LAST key is RE-EMITTED on the timer after the fixed sequence until
+	//     Done holds — so a screen needing an unknown number of identical
+	//     confirms (SELECT PROFILE: join → pick profile → "all ready") is
+	//     self-correcting and a dropped press just re-fires;
+	//   - it completes the INSTANT Done holds (game_connection→1) and blocks if
+	//     it leaves the On bracket or exhausts its retry budget, so a desync
+	//     surfaces instead of walking into a wrong screen.
+	// Entry assumption (documented): the box is at the top-level CE main menu
+	// with the standard multiplayer menu layout; a box parked deeper would need
+	// B-normalization first (future hardening).
+	Keys []string
+
 	// PrefixFn returns how many live carousel cards PRECEDE the enumerated list
 	// (i.e. the offset to add to a pick's enumeration index to reach its live
 	// widget index). For SELECT GAMETYPE this is the count of user-saved custom
@@ -58,12 +78,18 @@ type StepTiming struct {
 	// BlindAdvanceAfter advances a Blind step this long after it became active
 	// even without a Done confirmation.
 	BlindAdvanceAfter time.Duration
+	// NavKeyInterval paces the macro-nav step (Transition.Keys): the gap between
+	// front-end menu presses. Larger than BlindAdvanceAfter because the SELECT
+	// PROFILE sub-screens take ~1–1.5s to settle before the next press registers
+	// (measured live on the rig).
+	NavKeyInterval time.Duration
 }
 
 // DefaultTiming is tuned for CE's ~30Hz menus over VNC.
 var DefaultTiming = StepTiming{
 	RepressAfter:      1200 * time.Millisecond,
 	BlindAdvanceAfter: 900 * time.Millisecond,
+	NavKeyInterval:    1200 * time.Millisecond,
 }
 
 func (t StepTiming) orDefault() StepTiming {
@@ -73,8 +99,18 @@ func (t StepTiming) orDefault() StepTiming {
 	if t.BlindAdvanceAfter == 0 {
 		t.BlindAdvanceAfter = DefaultTiming.BlindAdvanceAfter
 	}
+	if t.NavKeyInterval == 0 {
+		t.NavKeyInterval = DefaultTiming.NavKeyInterval
+	}
 	return t
 }
+
+// navRetryBudget caps how many extra times the macro-nav step re-emits its last
+// key (the SELECT PROFILE confirms) while waiting for Done. Enough for the
+// join → pick → all-ready A-presses plus a couple of dropped-press retries;
+// beyond it the step blocks so a genuine "can't reach System Link" (e.g. no
+// active network → Halo refuses) surfaces instead of pressing A forever.
+const navRetryBudget = 8
 
 // Sequence walks an ordered list of gated Transitions. It is the "never blind"
 // core: it advances only on confirmed observations (or a timed fallback for the
@@ -121,7 +157,20 @@ func (s *Sequence) SetSelector(sel Selector) { s.sel = sel }
 // terminal Done requires a readable lobby). Keys use vncinput labels: Y='y', A='a',
 // D-pad Right='Right', Left='Left'.
 func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
+	atFrontEnd := func(o Observation) bool { return Classify(o) == ScreenMainMenu }
 	onSystemLink := func(o Observation) bool { return Classify(o) == ScreenSystemLink }
+	// reachedSystemLink is the nav phase's Done: true once the box is on System
+	// Link OR any later host-flow screen. game_connection==1 is transient (it
+	// becomes 2 the moment create-game fires), so a plain onSystemLink Done can't
+	// be caught-up past once we've advanced — this "at or beyond" test lets the
+	// catch-up loop skip the nav step for a box already in hosting/lobby/in-game.
+	reachedSystemLink := func(o Observation) bool {
+		switch Classify(o) {
+		case ScreenSystemLink, ScreenHosting, ScreenLobby, ScreenInGame, ScreenPostGame:
+			return true
+		}
+		return false
+	}
 	hosting := func(o Observation) bool {
 		s := Classify(o)
 		return s == ScreenHosting || s == ScreenLobby
@@ -129,6 +178,26 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 	inLobby := func(o Observation) bool { return Classify(o) == ScreenLobby }
 
 	seq := NewSequence([]Transition{
+		{
+			// NAV PHASE (2026-08-06): drive the CE main menu → System Link so the
+			// runner no longer assumes it's handed a box already on the System Link
+			// screen (game_connection==1) — the definitive beta stall. Derived by
+			// driving the live H1 Perf box in the testrig:
+			//   main menu --Down→MULTIPLAYER, A--> Multiplayer submenu
+			//   --Down,Down→SYSTEM LINK, A--> SELECT PROFILE
+			//   --A (join P1)--> profile spinner --A (pick 'Default')--> "ready"
+			//   --A (all ready)--> System Link browser (game_connection→1).
+			// The Up presses normalize the highlight to each list's top before the
+			// Down count (CE vertical menus don't wrap), so a drifted highlight
+			// (attract mode / back-out) still lands right. The final "a" re-emits
+			// until Done: it walks the SELECT PROFILE join/pick/all-ready confirms
+			// (an unknown count) and self-corrects a dropped press. On=main menu,
+			// Done=game_connection==1 bracket it; then create-game takes over.
+			Name: "nav-system-link", Intent: "main menu → system link",
+			Keys: []string{"up", "up", "down", "a", "up", "up", "up", "down", "down", "a"},
+			On:   atFrontEnd,
+			Done: reachedSystemLink,
+		},
 		{
 			Name: "create-game", Intent: "create system-link game", Key: "y",
 			On:   onSystemLink,
@@ -225,6 +294,14 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 
 	t := s.steps[s.cursor]
 
+	// (M) macro nav step: a bracketed, timed key sequence for front-end menu
+	// navigation (main menu → System Link). Placed before the single-key
+	// branches because it owns the whole nav segment between two readable
+	// checkpoints. See stepNav + Transition.Keys.
+	if len(t.Keys) > 0 {
+		return s.stepNav(t, obs, now)
+	}
+
 	// (5) key-less sentinel: confirms we're settled on the bracket screen.
 	if t.Key == "" {
 		if t.On != nil && t.On(obs) {
@@ -279,6 +356,44 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 		return wait("pressed " + t.Key + ", awaiting confirm")
 	}
 	return blocked(fmt.Sprintf("expected screen for %q not observed (on %s)", t.Name, screenName(obs)))
+}
+
+// stepNav drives the macro front-end navigation step (main menu → System Link).
+// It emits the fixed key sequence one press per NavKeyInterval while the On
+// bracket (main menu / front-end, game_connection==0) holds, then RE-EMITS the
+// last key until Done (game_connection==1) — the SELECT PROFILE join/pick/ready
+// confirms are an unknown, self-correcting count. It completes the instant Done
+// holds, and blocks if it leaves the On bracket early or burns its retry budget
+// (e.g. no active network → Halo refuses System Link, so game_connection never
+// reaches 1) rather than pressing forever or walking into a wrong screen.
+func (s *Sequence) stepNav(t Transition, obs Observation, now time.Time) Action {
+	// Done wins (also handled by Step's catch-up, but check here so a box already
+	// on System Link completes without emitting a key).
+	if t.Done != nil && t.Done(obs) {
+		s.advance(now)
+		return s.Step(obs, now)
+	}
+	// Must still be in the front-end bracket. game_connection stays 0 across the
+	// whole nav (main menu, Multiplayer submenu, SELECT PROFILE) and only flips to
+	// 1 at the System Link browser — where Done above already fired. So a false On
+	// here means a genuine desync (dropped into a game / unexpected screen).
+	if t.On != nil && !t.On(obs) {
+		return blocked(fmt.Sprintf("nav step %q: front-end bracket lost before system-link (on %s)", t.Name, screenName(obs)))
+	}
+	if s.navDone >= len(t.Keys)+navRetryBudget {
+		return blocked(fmt.Sprintf("nav step %q: exhausted %d presses without reaching system-link (on %s) — active network? (Halo blocks System Link with no link)", t.Name, s.navDone, screenName(obs)))
+	}
+	if s.navDone == 0 || now.Sub(s.lastPress) >= s.timing.NavKeyInterval {
+		idx := s.navDone
+		if idx >= len(t.Keys) {
+			idx = len(t.Keys) - 1 // re-emit the last key (profile confirms) until Done
+		}
+		key := t.Keys[idx]
+		s.navDone++
+		s.lastPress = now
+		return tap(key, t.Intent, fmt.Sprintf("nav %s: %q (%d/%d)", t.Name, key, s.navDone, len(t.Keys)))
+	}
+	return wait(fmt.Sprintf("nav %s: awaiting %s", t.Name, ScreenSystemLink.String()))
 }
 
 // stepCard drives one card-select step (SELECT MAP / SELECT GAMETYPE) cursor-
