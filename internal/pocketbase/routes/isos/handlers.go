@@ -17,6 +17,7 @@ func init() {
 	register(registerInbox)
 	register(registerIngest)
 	register(registerOffsetSets)
+	register(registerMaps)
 	register(registerGet)
 	register(registerUpdate)
 	register(registerDelete)
@@ -131,6 +132,14 @@ func offsetSetExists(id string) bool {
 func registerOffsetSets() {
 	Group.GET("/offset-sets", func(e *core.RequestEvent) error {
 		return e.JSON(http.StatusOK, offsets.All())
+	})
+}
+
+// GET /api/admin/isos/{id}/maps — the build's extracted maps (name / type /
+// thumbnail), multiplayer first. Empty until ingest's map-sync populates them.
+func registerMaps() {
+	Group.GET("/{id}/maps", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, isoingest.MapsForISO(e.App, e.Request.PathValue("id")))
 	})
 }
 

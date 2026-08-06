@@ -211,7 +211,14 @@ func Extract(app core.App, cfg lansync.Config, id string) error {
 	} else {
 		log.Printf("isoingest: title id for %s: %v", id, terr)
 	}
-	return app.Save(rec)
+	if err := app.Save(rec); err != nil {
+		return err
+	}
+	// Map list + async best-effort top-down thumbnails (the map-graphics
+	// feature). Non-fatal to extraction — a missing iso_maps collection or
+	// Python toolchain just means no maps/thumbs, never a failed ingest.
+	SyncMaps(app, cfg, id, treeDir)
+	return nil
 }
 
 // VerifyManaged checks a row's managed bytes against its recorded anchor. Cheap

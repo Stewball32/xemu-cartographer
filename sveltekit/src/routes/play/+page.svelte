@@ -28,6 +28,7 @@
 		type RequestResponse
 	} from '$lib/utils/play-hosting';
 	import PlayCatalog from '$lib/components/play/host/PlayCatalog.svelte';
+	import { listIsoMaps, type IsoMap } from '$lib/utils/maps';
 	import PlayLobby from '$lib/components/play/host/PlayLobby.svelte';
 	import PlayScoreboard from '$lib/components/play/host/PlayScoreboard.svelte';
 
@@ -43,6 +44,7 @@
 	let isosError = $state<string | null>(null);
 	let requestingId = $state<string | null>(null);
 	let requestError = $state<string | null>(null);
+	let mapsByIso = $state<Record<string, IsoMap[]>>({});
 
 	// --- Session state ---
 	let current = $state<CurrentResponse | null>(null);
@@ -168,11 +170,22 @@
 				return;
 			}
 			isos = (await res.json()) as IsoOption[];
+			void loadCatalogMaps();
 		} catch {
 			isosError = 'Network error loading the game library.';
 		} finally {
 			isosLoading = false;
 		}
+	}
+
+	// Load each catalog game's maps (with thumbnails) in parallel so the cards
+	// can surface what a build actually ships. Best-effort — a game with no maps
+	// simply shows none.
+	async function loadCatalogMaps() {
+		const entries = await Promise.all(
+			isos.map(async (iso) => [iso.id, await listIsoMaps(iso.id, 'play')] as const)
+		);
+		mapsByIso = Object.fromEntries(entries);
 	}
 
 	async function refreshCurrent() {
@@ -322,6 +335,7 @@
 	{#if phase === 'catalog'}
 		<PlayCatalog
 			{isos}
+			{mapsByIso}
 			loading={isosLoading}
 			error={isosError}
 			{requestingId}

@@ -20,6 +20,7 @@
 		DiscIcon,
 		InboxIcon,
 		LoaderIcon,
+		MapIcon,
 		PencilIcon,
 		RefreshCwIcon,
 		SearchIcon,
@@ -33,7 +34,9 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import DataTable from '$lib/components/ui/DataTable.svelte';
+	import MapGrid from '$lib/components/maps/MapGrid.svelte';
 	import type { SortState } from '$lib/components/ui/data-table';
+	import { listIsoMaps, type IsoMap } from '$lib/utils/maps';
 	import {
 		listIsos,
 		scanInbox,
@@ -56,6 +59,24 @@
 	let filter = $state('');
 	let sort = $state<SortState>({ key: 'name', dir: 'asc' });
 	let deleteBusy = $state<Record<string, boolean>>({});
+
+	// ── Maps dialog ────────────────────────────────────────────────────────────
+	let mapsOpen = $state(false);
+	let mapsLoading = $state(false);
+	let mapsName = $state('');
+	let maps = $state<IsoMap[]>([]);
+
+	async function openMaps(row: IsoEntry) {
+		mapsName = row.name;
+		maps = [];
+		mapsOpen = true;
+		mapsLoading = true;
+		try {
+			maps = await listIsoMaps(row.id, 'admin');
+		} finally {
+			mapsLoading = false;
+		}
+	}
 
 	const byId = $derived(new Map(rows.map((r) => [r.id, r])));
 
@@ -339,6 +360,9 @@
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
 		>
+			<button class="btn-icon preset-tonal btn-sm" title="Maps" onclick={() => openMaps(row)}>
+				<MapIcon class="size-4" />
+			</button>
 			<button class="btn-icon preset-tonal btn-sm" title="Edit" onclick={() => openEdit(row)}>
 				<PencilIcon class="size-4" />
 			</button>
@@ -379,6 +403,24 @@
 		/>
 	</Card>
 </div>
+
+<!-- Maps dialog -->
+<Dialog open={mapsOpen} onClose={() => (mapsOpen = false)} title={`Maps — ${mapsName}`} size="lg">
+	{#if mapsLoading}
+		<div class="flex items-center gap-2 p-4 text-sm">
+			<LoaderIcon class="size-4 animate-spin" /> Loading maps…
+		</div>
+	{:else}
+		<p class="mb-3 text-xs opacity-60">
+			Maps this build ships (parsed from the disc). Multiplayer maps show a top-down render of the
+			level geometry; thumbnails fill in shortly after ingest.
+		</p>
+		<MapGrid {maps} />
+	{/if}
+	{#snippet footer()}
+		<button class="btn preset-tonal" onclick={() => (mapsOpen = false)}>Close</button>
+	{/snippet}
+</Dialog>
 
 <!-- Edit dialog -->
 <Dialog open={editOpen} onClose={() => (editOpen = false)} title="Edit disc" size="md">

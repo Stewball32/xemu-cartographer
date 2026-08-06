@@ -5,6 +5,7 @@
 	// provisions + boots a box straight into that game.
 	import type { IsoOption } from '$lib/utils/play-hosting';
 	import { GamepadIcon, LoaderIcon, RocketIcon } from '@lucide/svelte';
+	import { mapThumbURL, type IsoMap } from '$lib/utils/maps';
 
 	interface Props {
 		isos: IsoOption[];
@@ -12,10 +13,22 @@
 		error: string | null;
 		/** id of the ISO currently being requested (disables the grid), or null. */
 		requestingId: string | null;
+		/** per-game maps (with thumbnails), keyed by iso id. */
+		mapsByIso?: Record<string, IsoMap[]>;
 		onrequest: (isoId: string) => void;
 	}
 
-	let { isos, loading, error, requestingId, onrequest }: Props = $props();
+	let { isos, loading, error, requestingId, mapsByIso = {}, onrequest }: Props = $props();
+
+	// Up to 6 multiplayer thumbnails per card — the visible payoff for a build.
+	function previewThumbs(id: string): IsoMap[] {
+		return (mapsByIso[id] ?? [])
+			.filter((m) => m.map_type === 'multiplayer' && m.thumb_url)
+			.slice(0, 6);
+	}
+	function mapCount(id: string): number {
+		return (mapsByIso[id] ?? []).filter((m) => m.map_type === 'multiplayer').length;
+	}
 
 	const busy = $derived(requestingId !== null);
 </script>
@@ -66,7 +79,23 @@
 						<p class="line-clamp-3 text-xs text-surface-600-400">{iso.description}</p>
 					{/if}
 					{#if iso.title_id}
-						<span class="mt-auto font-mono text-[0.65rem] text-surface-500">{iso.title_id}</span>
+						<span class="font-mono text-[0.65rem] text-surface-500">{iso.title_id}</span>
+					{/if}
+					{#if previewThumbs(iso.id).length > 0}
+						<div class="mt-auto flex flex-col gap-1 pt-1">
+							<div class="grid grid-cols-3 gap-1">
+								{#each previewThumbs(iso.id) as m (m.id)}
+									<img
+										src={mapThumbURL(m)}
+										alt={m.name}
+										title={m.name}
+										loading="lazy"
+										class="aspect-square w-full rounded bg-surface-300-700 object-contain"
+									/>
+								{/each}
+							</div>
+							<span class="text-[0.6rem] text-surface-500">{mapCount(iso.id)} maps</span>
+						</div>
 					{/if}
 				</button>
 			{/each}

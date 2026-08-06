@@ -16,6 +16,7 @@ import (
 
 func init() {
 	register(registerISOs)
+	register(registerISOMaps)
 	register(registerRequest)
 }
 
@@ -49,6 +50,16 @@ func registerISOs() {
 			})
 		}
 		return e.JSON(http.StatusOK, out)
+	})
+}
+
+// GET /api/play/isos/{id}/maps — the maps (name / type / thumbnail) a chosen
+// game ships, so the catalog can surface what a build actually contains. Read
+// the build's iso row check is skipped here (map rows are harmless to list);
+// RequireAuth (group-bound) is the gate.
+func registerISOMaps() {
+	Group.GET("/isos/{id}/maps", func(e *core.RequestEvent) error {
+		return e.JSON(http.StatusOK, isoingest.MapsForISO(e.App, e.Request.PathValue("id")))
 	})
 }
 

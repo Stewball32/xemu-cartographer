@@ -96,3 +96,7 @@ dev-server.log
 # staged for ingest into the managed library; never committed. Keep the dir.
 /inbox/*
 !/inbox/.gitkeep
+
+# Python bytecode cache
+__pycache__/
+*.pyc
