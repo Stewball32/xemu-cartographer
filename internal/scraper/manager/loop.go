@@ -51,27 +51,58 @@ const liveReadFailureLimit = 30
 // forever. Reset after each refresh attempt so it retries on the next window.
 const readyReadRefreshAt = 3
 
+// readyStaleRefreshAt / readyStaleRefreshMax gate the SILENT-staleness refresh
+// (see lowReadsLookStale). More conservative than the error gate — all-zero low
+// reads are legitimately transient while the guest is still bringing the
+// front-end up — and it BACKS OFF, because unlike the error path this condition
+// can persist indefinitely and each refresh costs one QMP round trip per low
+// GVA (~65 of them). 6 ≈ 3s at the 500ms Ready cadence, backing off to ~60s.
+const (
+	readyStaleRefreshAt  = 6
+	readyStaleRefreshMax = 120
+)
+
 // consecutiveFailureGate counts consecutive failures and reports when a
 // recovery action is due. fail() returns true on the `at`-th consecutive
 // failure and resets the count so the action re-arms for the next run; ok()
 // clears the count on a success. Pure + synchronous — the Ready loop uses it to
 // decide when to re-translate stale low mappings, and it's unit-tested apart
 // from the loop. Zero value never fires; construct with a positive `at`.
+//
+// When built via newBackoffGate, the threshold DOUBLES after each firing up to
+// max, so a condition that never clears degrades to an occasional retry instead
+// of a hot loop; ok() restores the original threshold.
 type consecutiveFailureGate struct {
-	n  int
-	at int
+	n    int
+	at   int
+	base int // 0 = no backoff restore (plain literal construction)
+	max  int // 0 = no backoff
+}
+
+func newBackoffGate(at, max int) consecutiveFailureGate {
+	return consecutiveFailureGate{at: at, base: at, max: max}
 }
 
 func (g *consecutiveFailureGate) fail() bool {
 	g.n++
 	if g.at > 0 && g.n >= g.at {
 		g.n = 0
+		if g.max > 0 && g.at < g.max {
+			if g.at *= 2; g.at > g.max {
+				g.at = g.max
+			}
+		}
 		return true
 	}
 	return false
 }
 
-func (g *consecutiveFailureGate) ok() { g.n = 0 }
+func (g *consecutiveFailureGate) ok() {
+	g.n = 0
+	if g.base > 0 {
+		g.at = g.base
+	}
+}
 
 // loop is the per-runner tick goroutine. Started by Manager.Start, exits when
 // ctx is cancelled (Manager.Stop). Always closes the xemu instance and
@@ -230,6 +261,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 	prevState := scraper.GameState("")
 	titleCheckCount := 0
 	readGate := consecutiveFailureGate{at: readyReadRefreshAt}
+	staleGate := newBackoffGate(readyStaleRefreshAt, readyStaleRefreshMax)
 
 	for {
 		select {
@@ -273,6 +305,20 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			continue
 		}
 		readGate.ok()
+
+		// The read SUCCEEDED — but success isn't proof the translation is
+		// pointing at real memory. If every low global reads back zero, the
+		// cached mappings are stale (see lowReadsLookStale) and no error will
+		// ever surface to trigger the refresh above, so check explicitly.
+		if r.lowReadsLookStale() {
+			if staleGate.fail() {
+				log.Printf("scraper[%s]: all low globals read zero — cached translations look stale", r.name)
+				r.refreshLowTranslations()
+			}
+		} else {
+			staleGate.ok()
+		}
+
 		r.recordIteration(tick)
 		r.publishGameState(gs)
 
@@ -360,6 +406,48 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 // entry's prior value intact and simply retries on the next refresh window —
 // so a partial success never leaves the reader with holes. Best-effort: the
 // count is logged; failures are expected while the guest is still settling.
+// lowStaleKeys are the ReadGameState values that come from LOW guest VAs — the
+// ones resolved through the cached gva2gpa translations. High-GVA reads (heap /
+// menu widgets) don't use that cache and are unaffected.
+var lowStaleKeys = []string{
+	"main_menu", "game_connection",
+	"game_engine_globals_ptr", "game_time_globals_ptr", "game_can_score",
+}
+
+// lowReadsLookStale reports the SILENT failure mode: every low-GVA global reads
+// back as zero while the title is up and high-GVA reads are returning real data.
+//
+// This is what a stale translation actually looks like in practice — not an
+// error. The scraper can attach seconds into container boot, translate the low
+// GVAs before the guest's page tables are settled, and cache host addresses that
+// point at unbacked zero pages. Every later read then SUCCEEDS and returns 0, so
+// the error-driven refresh never fires, main_menu is forever 0, Classify can
+// never reach ScreenMainMenu, and the host runner sits blocked at "unknown".
+//
+// An all-zero set is implausible for a running game: at a real front-end menu
+// main_menu is 1, and in a game the engine pointers are non-nil. It IS legitimate
+// transiently during boot, which is why the caller gates + backs off rather than
+// refreshing on the first sighting. A plugin that doesn't report these keys opts
+// out entirely (no guessing).
+func (r *runner) lowReadsLookStale() bool {
+	if r.reader == nil {
+		return false
+	}
+	si := r.reader.LastStateInputs()
+	if len(si) == 0 {
+		return false
+	}
+	for _, k := range lowStaleKeys {
+		if _, ok := si[k]; !ok {
+			return false
+		}
+		if stateInputInt(si, k) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *runner) refreshLowTranslations() {
 	gvas := r.reader.LowGVAs()
 	refreshed := 0
