@@ -1,11 +1,15 @@
 package xemu
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Instance represents one running xemu process with its memory reader and
@@ -40,14 +44,19 @@ func (inst *Instance) Init(lowGVAs []uint32) error {
 		return fmt.Errorf("%s: gpa2hva base: %w", inst.Name, err)
 	}
 
-	inst.lowHVAs = make(map[uint32]int64, len(lowGVAs))
+	// Translate into a SCRATCH map and commit only once every address resolved.
+	// Assigning inst.lowHVAs up front would let a partial failure (one address
+	// still unmapped mid-boot) destroy the translations already working, leaving
+	// the instance worse off than before the retry.
+	translated := make(map[uint32]int64, len(lowGVAs))
 	for _, gva := range lowGVAs {
 		hva, err := qmp.translateLowGVA(gva)
 		if err != nil {
 			return fmt.Errorf("%s: translate 0x%x: %w", inst.Name, gva, err)
 		}
-		inst.lowHVAs[gva] = hva
+		translated[gva] = hva
 	}
+	inst.lowHVAs = translated
 
 	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/mem", pid), os.O_RDONLY, 0)
 	if err != nil {
@@ -57,6 +66,67 @@ func (inst *Instance) Init(lowGVAs []uint32) error {
 	inst.PID = pid
 	inst.Mem = &Mem{fd: int(f.Fd()), base: base, file: f}
 	return nil
+}
+
+// Attach-when-ready gate. A container's QMP socket appears as soon as xemu
+// starts, which is SECONDS before the guest builds its page tables — the
+// discovery watcher then attaches into a window where every translation answers
+// "Unmapped". Waiting is the correct response to that: not failing (the scraper
+// never attaches at all) and not caching whatever came back (a wrong mapping
+// persists for the life of the runner — which is how the low globals ended up
+// silently reading all zeros).
+const (
+	initWaitBudget     = 3 * time.Minute
+	initWaitFirstDelay = 250 * time.Millisecond
+	initWaitMaxDelay   = 2 * time.Second
+)
+
+// InitWait is Init with an attach-when-ready gate: while the guest reports its
+// memory as not-yet-mapped it retries with bounded backoff, until the guest is
+// ready, ctx is cancelled, or the budget expires. Any OTHER error fails
+// immediately — a missing socket or a dead process is not something waiting fixes.
+//
+// Use this for automatic attach (discovery → Manager.Start). Interactive callers
+// that must answer promptly (the admin probe routes) keep using Init and surface
+// ErrNotMapped as "not ready yet".
+func (inst *Instance) InitWait(ctx context.Context, lowGVAs []uint32) error {
+	ctx, cancel := context.WithTimeout(ctx, initWaitBudget)
+	defer cancel()
+	return retryWhileNotMapped(ctx, func() error { return inst.Init(lowGVAs) })
+}
+
+// retryWhileNotMapped runs attempt until it succeeds, returns a non-ErrNotMapped
+// error, or ctx ends — backing off in between. Split out from InitWait so the
+// gate's termination/backoff logic is unit-testable without a live xemu.
+func retryWhileNotMapped(ctx context.Context, attempt func() error) error {
+	delay := initWaitFirstDelay
+	tries := 0
+	for {
+		tries++
+		err := attempt()
+		if err == nil {
+			if tries > 1 {
+				log.Printf("xemu: guest memory ready after %d attempt(s)", tries)
+			}
+			return nil
+		}
+		if !errors.Is(err, ErrNotMapped) {
+			return err // a real failure — waiting won't help
+		}
+		if tries == 1 {
+			log.Printf("xemu: guest memory not mapped yet — waiting for it to settle")
+		}
+		select {
+		case <-ctx.Done():
+			// Surface the last not-ready error rather than a bare context
+			// error, so the log says WHY we gave up.
+			return fmt.Errorf("guest still not ready after %d attempt(s): %w", tries, err)
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > initWaitMaxDelay {
+			delay = initWaitMaxDelay
+		}
+	}
 }
 
 // Close releases the /proc/<pid>/mem file descriptor. Call before reinitialising

@@ -22,6 +22,7 @@
 package manager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -194,8 +195,12 @@ func (m *Manager) Start(name, sock string) error {
 	}
 	m.mu.Unlock()
 
+	// InitWait, not Init: discovery fires the moment the QMP socket appears,
+	// which is seconds before the guest has page tables. Init would either fail
+	// outright (no scraper for the life of the box) or bind translations against
+	// unsettled memory. The gate waits for the guest instead — see InitWait.
 	inst := &xemu.Instance{Name: name, QMPSock: sock}
-	if err := inst.Init(scraper.DetectionGVAs()); err != nil {
+	if err := inst.InitWait(context.Background(), scraper.DetectionGVAs()); err != nil {
 		return fmt.Errorf("scraper: init xemu instance: %w", err)
 	}
 

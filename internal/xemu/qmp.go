@@ -3,6 +3,7 @@ package xemu
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -71,17 +72,70 @@ func (c *qmpClient) sendKeyRaw(cmd string) error {
 	return nil
 }
 
-// parseHexSuffix extracts the last whitespace-separated token and parses it as a hex uint64.
+// ErrNotMapped reports that the guest has no translation for an address YET —
+// the monitor answered with prose ("Unmapped", "No memory is mapped at …")
+// instead of an address. It is a NOT-READY signal, not a failure: during the
+// first seconds of a container's boot the guest page tables aren't built, so
+// every translation legitimately answers this way. Callers that can wait should
+// retry (see Instance.InitWait); callers that can't should keep whatever
+// mapping they already had rather than caching a bad one.
+//
+// Test with errors.Is(err, ErrNotMapped) — it is wrapped, never returned bare,
+// so the raw monitor text stays in the message for diagnosis.
+var ErrNotMapped = errors.New("guest memory not mapped yet")
+
+// parseHexSuffix extracts the last whitespace-separated token and parses it as a
+// hex uint64.
+//
+// A translate command answers with an address or with prose. Anything
+// non-numeric therefore means "no translation available", which is
+// ErrNotMapped — NOT a parse bug. Reporting it as a raw strconv error is what
+// crashed scraper attach with
+//
+//	translate 0x10000: gva2gpa 0x10000: parse "Unmapped": strconv.ParseUint: …
+//
+// when the scraper auto-attached ~6s into boot. We classify by "did the monitor
+// give us a number" rather than matching known phrases, so a new/reworded qemu
+// message degrades to a retry instead of a hard failure.
 func parseHexSuffix(s string) (uint64, error) {
 	fields := strings.Fields(s)
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("empty response: %q", s)
 	}
+	// Phrase check BEFORE the numeric one: gpa2hva's failure reply is
+	// "No memory is mapped at address 0x10000" — it ENDS IN A VALID NUMBER, so
+	// a trailing-token parse would happily accept the queried address as if it
+	// were a successful translation and then read garbage from it.
+	if isNotMappedResponse(s) {
+		return 0, fmt.Errorf("monitor returned %q: %w", strings.TrimSpace(s), ErrNotMapped)
+	}
 	v, err := strconv.ParseUint(fields[len(fields)-1], 0, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse %q: %w", fields[len(fields)-1], err)
+		// No number at all (e.g. bare "Unmapped"), and no phrase we recognise:
+		// still "the monitor gave us no address", so treat it as not-ready and
+		// let the caller retry rather than crashing on a strconv error.
+		return 0, fmt.Errorf("monitor returned %q: %w", strings.TrimSpace(s), ErrNotMapped)
 	}
 	return v, nil
+}
+
+// isNotMappedResponse matches the monitor's "there is no translation" replies.
+// Kept as an explicit list because these can carry a trailing address that would
+// otherwise parse as a valid result; the numeric fallback in parseHexSuffix
+// covers any wording not listed here.
+func isNotMappedResponse(s string) bool {
+	l := strings.ToLower(s)
+	for _, phrase := range []string{
+		"unmapped",
+		"no memory is mapped",
+		"cannot access",
+		"bad address",
+	} {
+		if strings.Contains(l, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // gpa2hva translates a guest physical address to a host virtual address.
