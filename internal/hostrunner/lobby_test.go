@@ -3,7 +3,46 @@ package hostrunner
 import (
 	"testing"
 	"time"
+
+	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 )
+
+// TestNavKeysAreVncinputLabels guards the ENTIRE host-flow key vocabulary against
+// the shared input layer: every label the runner emits must be a member of
+// vncinput.KEYSYM, or the vncinput pump rejects the press ("unknown key ...") and
+// nothing reaches the box. This is the exact bug that shipped once — planNavKey
+// returned lowercase "down" while vncinput's d-pad label is "Down" — masked
+// because the rig's own /input RFB client was case-lenient. It covers planNavKey
+// across every MenuItem, and the Key/NavKey/NavKeyBack on the default sequence.
+func TestNavKeysAreVncinputLabels(t *testing.T) {
+	valid := map[string]bool{}
+	for _, l := range vncinput.SupportedLabels() {
+		valid[l] = true
+	}
+	check := func(where, key string) {
+		if key == "" {
+			return
+		}
+		if !valid[key] {
+			t.Errorf("%s emits %q, which is NOT a vncinput label — the pump would reject it (SupportedLabels: %v)", where, key, vncinput.SupportedLabels())
+		}
+	}
+	// planNavKey over every classified item (incl. Unknown/off-route).
+	for _, it := range []MenuItem{
+		MenuItemUnknown, MenuItemMainOther, MenuItemMultiplayer,
+		MenuItemSubmenuOther, MenuItemSystemLink, MenuItemProfile,
+	} {
+		check("planNavKey("+it.String()+")", planNavKey(it))
+	}
+	// The stuck-detection recovery key, and the card/select steps' labels.
+	check("stuck-recovery", "b")
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	for _, st := range s.steps {
+		check("step "+st.Name+".Key", st.Key)
+		check("step "+st.Name+".NavKey", st.NavKey)
+		check("step "+st.Name+".NavKeyBack", st.NavKeyBack)
+	}
+}
 
 // obs helpers.
 func systemLink() Observation {
@@ -315,7 +354,7 @@ func obsMI(item MenuItem, focus uint32) Observation {
 func TestNavDrivesFromMainMenu(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	a := s.Step(obsMI(MenuItemMainOther, 0x8000), time.Unix(1000, 0))
-	if a.Kind != ActionTap || a.Key() != "down" {
+	if a.Kind != ActionTap || a.Key() != "Down" {
 		t.Fatalf("main menu, non-Multiplayer item: want Down toward Multiplayer, got %v (%s)", a.Kind, a.Reason)
 	}
 }
@@ -342,9 +381,9 @@ func TestNavRoutesByIdentity(t *testing.T) {
 			t.Fatalf("confirm after %s: want wait (landed), got %v (%s)", item, a.Kind, a.Reason)
 		}
 	}
-	step(MenuItemMainOther, "down")    // main menu, wrong item → toward Multiplayer
+	step(MenuItemMainOther, "Down")    // main menu, wrong item → toward Multiplayer
 	step(MenuItemMultiplayer, "a")     // on MULTIPLAYER → enter submenu
-	step(MenuItemSubmenuOther, "down") // submenu, wrong item → toward System Link
+	step(MenuItemSubmenuOther, "Down") // submenu, wrong item → toward System Link
 	step(MenuItemSystemLink, "a")      // on SYSTEM LINK → enter (game_connection→1)
 	// The A on System Link lands us in the browser (game_connection→1): nav
 	// completes and create-game presses Y.
@@ -383,7 +422,7 @@ func TestNavStuckDetectionForcesBack(t *testing.T) {
 		if a.Kind != ActionTap {
 			t.Fatalf("press %d: want tap, got %v (%s)", i, a.Kind, a.Reason)
 		}
-		wantKey := "down"
+		wantKey := "Down"
 		if i >= navStuckThreshold {
 			wantKey = "b"
 		}
@@ -412,7 +451,7 @@ func TestNavRecoversFromOffRoute(t *testing.T) {
 		t.Fatalf("after B lands: want wait, got %v (%s)", a.Kind, a.Reason)
 	}
 	now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
-	if a := s.Step(obsMI(MenuItemMainOther, 0x8001), now); a.Kind != ActionTap || a.Key() != "down" {
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8001), now); a.Kind != ActionTap || a.Key() != "Down" {
 		t.Fatalf("recovered to main menu: want Down toward Multiplayer, got %v (%s)", a.Kind, a.Reason)
 	}
 }
@@ -434,15 +473,15 @@ func TestSequenceBlocksOnWrongScreen(t *testing.T) {
 func TestNavConfirmsMoveBeforeAdvancing(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
-	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Key() != "down" {
-		t.Fatalf("want first tap down, got %v", a)
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Key() != "Down" {
+		t.Fatalf("want first tap Down, got %v", a)
 	}
 	now = now.Add(100 * time.Millisecond) // focus unchanged, before RepressAfter → wait
 	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Kind != ActionWait {
 		t.Fatalf("dropped press before RepressAfter should wait, got %v (%s)", a.Kind, a.Reason)
 	}
 	now = now.Add(DefaultTiming.RepressAfter) // still unchanged → re-emit down
-	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Kind != ActionTap || a.Key() != "down" {
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Kind != ActionTap || a.Key() != "Down" {
 		t.Fatalf("dropped d-pad press must re-emit down, got %v (%s)", a.Kind, a.Reason)
 	}
 }

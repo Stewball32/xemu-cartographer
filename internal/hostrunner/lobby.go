@@ -405,6 +405,14 @@ const navStuckThreshold = 8
 
 // planNavKey chooses the next press purely from WHICH item is highlighted — the
 // heart of the state-aware navigator. It never counts keys.
+//
+// The returned strings are logical KEY LABELS fed to the shared input path
+// (internal/vncinput). They MUST be members of vncinput.KEYSYM — the d-pad is
+// the CAPITALISED X11 keysym name ("Down", not "down"); the face buttons are
+// lowercase ("a"/"b"/"y"). The rig's own /input RFB client is case-lenient, so a
+// "down" was accepted there but REJECTED by cart's vncinput ("unknown key
+// \"down\"") — every press dropped and the box never moved. Card nav already
+// used "Right"/"Left"; this now matches. TestNavKeysAreVncinputLabels guards it.
 func planNavKey(item MenuItem) string {
 	switch item {
 	case MenuItemMultiplayer: // main menu, on MULTIPLAYER → enter submenu
@@ -419,9 +427,9 @@ func planNavKey(item MenuItem) string {
 		// 2026-08-07). So Back-normalise out of it toward the main menu and re-plan.
 		return "b"
 	case MenuItemMainOther: // main menu, wrong item → step toward MULTIPLAYER
-		return "down"
+		return "Down"
 	case MenuItemSubmenuOther: // submenu, wrong item → step toward SYSTEM LINK
-		return "down"
+		return "Down"
 	default: // MenuItemUnknown / off-route (Settings, Single Player, unreadable)
 		return "b" // Back-normalise toward the main menu, then re-plan
 	}
