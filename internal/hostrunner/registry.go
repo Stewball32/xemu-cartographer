@@ -1,6 +1,11 @@
 package hostrunner
 
-import "sync"
+import (
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+)
 
 // Status is the arbitration + last-activity view returned by the control
 // endpoint (routes/scraper). It's built from the last observable event, so it
@@ -86,12 +91,60 @@ func (reg *Registry) Get(instance string) (*Runner, bool) {
 // Emit is the EventSink: capture the last event, then fan out downstream.
 func (reg *Registry) Emit(ev RunnerEvent) {
 	reg.mu.Lock()
+	prev, had := reg.last[ev.Instance]
 	reg.last[ev.Instance] = ev
 	down := reg.downstream
 	reg.mu.Unlock()
+	// One line per DECISION-CHANGE to the server log, so the runner's behavior on
+	// a live box is visible (it was previously a black box — only the admin WS
+	// room saw these events). On-change only: the runner ticks a few Hz and mostly
+	// repeats "wait", so logging every tick would flood; a line prints when the
+	// screen, action, intent, reason, or authority actually changes. This is the
+	// grep seam ("hostrunner[") for diagnosing a held runner — e.g. a box stuck at
+	// screen=unknown means its menu-state globals aren't being read (stale low-GVA
+	// translations), not that the nav logic is wrong.
+	if !had || decisionChanged(prev, ev) {
+		log.Print(formatDecision(ev))
+	}
 	if down != nil {
 		down.Emit(ev)
 	}
+}
+
+// decisionChanged reports whether the runner's observable decision differs from
+// the previous event in a way worth logging — the fields that describe WHAT it
+// decided and WHY, not the continuously-varying readouts (tick, counts).
+func decisionChanged(a, b RunnerEvent) bool {
+	return a.Screen != b.Screen ||
+		a.Kind != b.Kind ||
+		a.Intent != b.Intent ||
+		a.Reason != b.Reason ||
+		a.Authority != b.Authority ||
+		strings.Join(a.Keys, ",") != strings.Join(b.Keys, ",")
+}
+
+// formatDecision renders a compact one-line summary of a runner decision for the
+// server log, e.g.
+//
+//	hostrunner[beta-play-abc]: screen=main_menu auth=runner tap[nav:system-link] keys=[A] — advancing to System Link
+//	hostrunner[beta-play-abc]: screen=unknown auth=runner wait — main_menu global reads 0 (menu state unreadable)
+func formatDecision(ev RunnerEvent) string {
+	screen := ev.Screen
+	if screen == "" {
+		screen = "unknown"
+	}
+	act := ev.Kind
+	if ev.Intent != "" {
+		act += "[" + ev.Intent + "]"
+	}
+	line := fmt.Sprintf("hostrunner[%s]: screen=%s auth=%s %s", ev.Instance, screen, ev.Authority, act)
+	if len(ev.Keys) > 0 {
+		line += " keys=[" + strings.Join(ev.Keys, ",") + "]"
+	}
+	if ev.Reason != "" {
+		line += " — " + ev.Reason
+	}
+	return line
 }
 
 // Status returns the control view for an instance.

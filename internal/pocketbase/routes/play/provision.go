@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
 	"github.com/Stewball32/xemu-cartographer/internal/instancename"
 	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
@@ -127,6 +128,19 @@ func registerRequest() {
 		display, name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, isAdmin)
 		if name == "" {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "could not determine an instance name"})
+		}
+		// Name the box after its OWNER: when no explicit display name was given
+		// (the normal /play path derives an empty one), stamp the owner's primary
+		// gamertag as the Xbox console nickname so the box is identifiable in the
+		// System Link lobby and the logs instead of the opaque "play-<uid>" slug.
+		// The CONTAINER name stays "<prefix>play-<uid>" — that's the stable
+		// ownership key (one box per user, the reaper + host-drive scoping marker);
+		// only the user-visible console name changes. Falls back to the container
+		// name (unchanged behavior) when the owner has no gamertag.
+		if display == "" {
+			if tags, err := gamertags.SanitizedForUser(e.App, e.Auth.Id); err == nil && len(tags) > 0 {
+				display = instancename.Display(tags[0])
+			}
 		}
 		if Provisioner.Exists(name) {
 			return e.JSON(http.StatusConflict, map[string]string{
