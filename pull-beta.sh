@@ -107,10 +107,17 @@ fi
 # old inode mapped, so the tier keeps serving stale code and the next restart is
 # what actually changes behaviour — exactly the "I restarted and saw no change"
 # confusion this script exists to prevent.
-RUNNING_PID="$(tier_pid "$PORT")"
-if [ -n "$RUNNING_PID" ]; then
-  die "${TIER} is RUNNING (pid ${RUNNING_PID} on :${PORT}). Stop it first, then re-run:
-    kill ${RUNNING_PID}
+#
+# Detect by "is the PORT listening", NOT by tier_pid: the tier runs as root, and
+# `ss -tlnp` only reveals pid= for processes the caller owns, so tier_pid returns
+# EMPTY for a live root-owned server and the guard would silently pass. (Found
+# the hard way — only the kernel's "Text file busy" stopped the overwrite.)
+# `ss -ltn` needs no privileges to see the socket itself.
+if ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
+  RUNNING_PID="$(tier_pid "$PORT")"
+  die "${TIER} is RUNNING on :${PORT}${RUNNING_PID:+ (pid $RUNNING_PID)}. Stop it first, then re-run.
+  Stop it the same way you started it, e.g.:
+    sudo pkill -f 'server serve --http=127.0.0.1:${PORT}'
   (or use ./deploy-beta.sh, which stops, installs, restarts and health-checks.)"
 fi
 ok "tier is stopped — safe to install"
