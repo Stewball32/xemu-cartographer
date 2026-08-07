@@ -53,6 +53,20 @@
 
 	const controllable = $derived(isPlayerControllable(status));
 	const enumerable = $derived(options?.available === true);
+
+	// CE gametype display names are NOT unique (a modded disc can list "Practice
+	// Mode" 3×). The /selection API resolves a pick by NAME (first match), so the
+	// duplicate rows aren't independently selectable — dedupe by name for a clean
+	// picker, keeping the first (lowest-steps) occurrence the backend resolves to.
+	// Maps have unique names, so they're used as-is.
+	const gametypeOptions = $derived.by(() => {
+		const seen = new Set<string>();
+		return (options?.gametypes ?? []).filter((g) => {
+			if (seen.has(g.name)) return false;
+			seen.add(g.name);
+			return true;
+		});
+	});
 	const selected = $derived(status?.selected === true);
 	const ready = $derived(status?.ready === true);
 
@@ -135,7 +149,7 @@
 				{#if enumerable}
 					<select class="select" bind:value={pickMap} disabled={!controllable || busy}>
 						<option value="" disabled>Choose a map…</option>
-						{#each options?.maps ?? [] as m (m.name)}
+						{#each options?.maps ?? [] as m (m.steps)}
 							<option value={m.name}>{m.name}</option>
 						{/each}
 					</select>
@@ -153,9 +167,13 @@
 			<label class="label">
 				<span class="label-text text-xs">Gametype</span>
 				{#if enumerable}
+					<!-- gametypeOptions is deduped by name (see script); key by the unique
+					     carousel index (steps) so a keyed-each duplicate key can never
+					     corrupt this dropdown the way raw duplicate names did (the map
+					     list has unique names, so it rendered fine). -->
 					<select class="select" bind:value={pickGametype} disabled={!controllable || busy}>
 						<option value="" disabled>Choose a gametype…</option>
-						{#each options?.gametypes ?? [] as g (g.name)}
+						{#each gametypeOptions as g (g.steps)}
 							<option value={g.name}>{g.name}</option>
 						{/each}
 					</select>
