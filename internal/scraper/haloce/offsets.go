@@ -117,18 +117,18 @@ const (
 // Active read path — direct value globals (low GVA, value-at-address)
 // ----------------------------------------------------------------------
 const (
-	AddrGameConnection  uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
-	AddrIsTeamGame      uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
-	AddrMainMenuActive  uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
+	AddrGameConnection uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
+	AddrIsTeamGame     uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
+	AddrMainMenuActive uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
 	// AddrUiWidgetFocusPtr — CE front-end menu widget-focus pointer (runbook
 	// AddrUiWidgetFocusPtr). Not in the versioned offset set: its value is a
 	// per-boot/relinking heap ptr used ONLY for change-detection (the host-runner
 	// nav phase confirms a menu press landed when this pointer moves). Fixed low
 	// GVA in the shared CE .data layout, so a package const suffices.
 	AddrUiWidgetFocusPtr uint32 = 0x2F9B38 // u32 ptr — runbook; changes on menu navigation
-	AddrGameCanScore    uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
-	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
-	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
+	AddrGameCanScore     uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
+	AddrGlobalStageName  uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
+	AddrVariant          uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
 )
 
 // ----------------------------------------------------------------------
@@ -550,13 +550,15 @@ const (
 // the map screen, 0 off it. gametype_select_list +0x4C = carousel index INCLUDING
 // user-saved variants (Race=16, right×2 → CTF=18); +0x54==27 on this HDD.
 const (
-	OffUiWidgetBlockHeader   uint32 = 0x00 // u32 heap header = flag|size; validate hit
-	OffUiWidgetAllocSerial   uint32 = 0x04 // u32 per-alloc serial (not stable identity)
-	OffUiWidgetDefTagHandle  uint32 = 0x10 // u32 'DeLa' tag handle = the widget identity
-	OffUiWidgetDefDataPtr    uint32 = 0x14 // u32 def-tag data ptr (0xFFFFFFFF when freed)
-	OffUiWidgetSelectedIndex uint32 = 0x4C // i32 SELECTED item index (0-based, carousel)
-	OffUiWidgetItemListPtr   uint32 = 0x50 // u32 item-list ptr (nonzero only when active)
-	OffUiWidgetItemCount     uint32 = 0x54 // i32 item count (>0 only when list is active)
+	OffUiWidgetBlockHeader    uint32 = 0x00 // u32 heap header = flag|size; validate hit
+	OffUiWidgetAllocSerial    uint32 = 0x04 // u32 per-alloc serial (not stable identity)
+	OffUiWidgetDefTagHandle   uint32 = 0x10 // u32 'DeLa' tag handle = the widget identity
+	OffUiWidgetDefDataPtr     uint32 = 0x14 // u32 def-tag data ptr (0xFFFFFFFF when freed)
+	OffUiWidgetActivationTick uint32 = 0x28 // u32 per-SCREEN activation tick: all widgets of a screen share one value, stamped when that screen is (re)activated. The ACTIVE screen's widgets carry the HIGHEST tick; stale prior-screen blocks keep an older (lower) one. RUNTIME-VERIFIED 2026-08-07 on H1 Perf: on the main menu, main_menu_item_* blocks read 0x14d949 while leftover multiplayer_type_* blocks read 0x14d136 — so max-tick disambiguates the live highlight from a stale one that never cleared its +0x60.
+	OffUiWidgetSelectedIndex  uint32 = 0x4C // i32 SELECTED item index (0-based, carousel)
+	OffUiWidgetItemListPtr    uint32 = 0x50 // u32 item-list ptr (nonzero only when active)
+	OffUiWidgetItemCount      uint32 = 0x54 // i32 item count (>0 only when list is active)
+	OffUiWidgetHighlightFlag  uint32 = 0x60 // u32 == 1 on the currently-HIGHLIGHTED front-end menu item widget (0 otherwise). RUNTIME-VERIFIED 2026-08-07 on H1 Perf: main_menu_item_multiplayer +0x60 flips 1↔0 as the highlight moves; identifies the selected item build-independently (by its DeLa path) instead of a wrap-prone key count.
 
 	ConstUiWidgetHeaderFlag uint32 = 0x80000000 // header allocated-flag; hdr&0xFFFF0000 == this
 	ConstUiWidgetHeaderMask uint32 = 0xFFFF0000 // mask applied before the flag compare

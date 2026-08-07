@@ -52,6 +52,13 @@ type Reader struct {
 	// reload) by OnStateChange; nil until the first successful resolve. See widget.go.
 	lobbyCursorHandles map[string]uint32
 
+	// menuItemHandles caches the FRONT-END menu item widgets' 'DeLa' tag handles
+	// (main_menu items + Multiplayer submenu + SELECT PROFILE), keyed by tag path.
+	// Used by ReadMenuItem to classify the highlighted item for the host-runner's
+	// state-aware nav. Same lifecycle as lobbyCursorHandles (cleared on menu entry).
+	// See menustate.go.
+	menuItemHandles map[string]uint32
+
 	// Diagnostic one-shot flags for the two readers under offset investigation
 	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
 	// empty on Xbox builds). Set true after the first call logs its raw
@@ -110,6 +117,15 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		menuFocus, _ = mem.ReadU32At(hva)
 	}
 
+	// menu_item: WHICH front-end menu item is highlighted (MenuItem* enum), read
+	// from the UI widget heap — the host-runner's state-aware nav routes on it.
+	// Only meaningful at the front-end (mainMenu==1); skip the ~2MB heap read
+	// in-game where it's just noise.
+	menuItem := MenuItemUnknown
+	if mainMenu != 0 {
+		menuItem = r.ReadMenuItem()
+	}
+
 	// GAME-ENGINE / GAME-TIME state — BEST-EFFORT. At the front-end menu these
 	// regions may not be resident (the game engine isn't running); a miss here
 	// leaves the field zero, which determineGameState reads as Menu — the correct
@@ -144,6 +160,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"game_engine_globals_ptr": geGlobalsPtr,
 		"game_time_globals_ptr":   gtgPtr,
 		"menu_focus":              menuFocus,
+		"menu_item":               uint32(menuItem),
 	}
 	// A failed main_menu read means the low translation is broken (not merely a
 	// game region absent at the menu) — surface it so the ready loop re-translates.

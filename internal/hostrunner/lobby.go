@@ -61,6 +61,12 @@ type Transition struct {
 	// B-normalization first (future hardening).
 	Keys []string
 
+	// Planner, when true, makes this a STATE-AWARE navigation step: rather than a
+	// fixed key list it reads Observation.MenuItem each tick and picks the next
+	// press by item IDENTITY, routing to System Link from ANY starting screen and
+	// Back-normalising off-route (see stepPlanNav). Supersedes Keys.
+	Planner bool
+
 	// PrefixFn returns how many live carousel cards PRECEDE the enumerated list
 	// (i.e. the offset to add to a pick's enumeration index to reach its live
 	// widget index). For SELECT GAMETYPE this is the count of user-saved custom
@@ -129,6 +135,9 @@ type Sequence struct {
 	lastNavCursor int       // live cursor value at the last nav press (for confirmed-move debounce)
 	navFocus      uint32    // menu-focus ptr recorded at the macro-nav step's last press (change ⇒ move landed)
 	navPresses    int       // TOTAL macro-nav presses emitted incl. re-presses (drop budget)
+	lastKey       string    // last key the planner emitted (for wait-reason text)
+	navStuckItem  MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
+	navStuckCount int       // consecutive emitted nav presses with an unchanged highlighted item
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -181,32 +190,35 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 
 	seq := NewSequence([]Transition{
 		{
-			// NAV PHASE (2026-08-06, re-tuned CLOSED-LOOP 2026-08-07): drive the CE
-			// main menu → System Link so the runner no longer assumes it's handed a
-			// box already on the System Link screen (game_connection==1) — the
-			// definitive beta stall. Derived + re-verified live on the H1 Perf box:
-			//   main menu --Down→MULTIPLAYER, A--> Multiplayer submenu
-			//   --Down,Down→SYSTEM LINK, A--> SELECT PROFILE
-			//   --A (join P1)--> profile spinner --A (pick 'Default')--> "all ready"
-			//   --A--> System Link browser (game_connection→1).
+			// NAV PHASE — STATE-AWARE navigator (2026-08-06 → generalised 2026-08-07):
+			// drive the CE front-end to System Link FROM ANY starting screen. The
+			// runner no longer assumes it's handed a box already on System Link
+			// (game_connection==1) — the definitive beta stall — nor even at the main
+			// menu: it reads WHICH screen+item the box is on and routes there,
+			// self-correcting.
 			//
-			// CLOSED-LOOP re-tune: the first cut used a blind key COUNT with an
-			// up-normalization that assumed CE menus don't wrap. They DO wrap, and
-			// front-end presses drop intermittently over VNC — so on the real beta
-			// box the pre-A presses dropped and A fired on the default top item
-			// (Single Player → Campaign). Now every D-PAD move is CONFIRMED by the
-			// menu-focus pointer (Observation.MenuFocus, AddrUiWidgetFocusPtr
-			// 0x2F9B38) CHANGING; a dropped press is re-emitted until the highlight
-			// actually moves. Counts start from the cold-boot default (top item:
-			// Single Player / Cooperative), which is where the runner engages. No
-			// up-normalization (it fought the wrap). The final "a" re-emits until
-			// Done. On=ScreenMainMenu and Done=reachedSystemLink bracket it;
-			// launching Campaign (main_menu→0) drops On → the step blocks loudly
-			// instead of proceeding. See stepNav.
-			Name: "nav-system-link", Intent: "main menu → system link",
-			Keys: []string{"down", "a", "down", "down", "a"},
-			On:   atFrontEnd,
-			Done: reachedSystemLink,
+			// It reads Observation.MenuItem (the highlighted front-end item,
+			// classified from the CE UI widget heap — see haloce/menustate.go) and
+			// picks the next press by IDENTITY, not a wrap-prone key count:
+			//   main-menu non-Multiplayer → Down (toward MULTIPLAYER)
+			//   main-menu MULTIPLAYER     → A (enter submenu)
+			//   submenu non-System-Link   → Down (toward SYSTEM LINK / "conn")
+			//   submenu SYSTEM LINK       → A (→ SELECT PROFILE)
+			//   SELECT PROFILE            → A (join / pick / all-ready), until conn→1
+			//   UNKNOWN / off-route       → B (Back-normalise toward the main menu)
+			// The UNKNOWN→B branch is the recovery: from Settings, a Single-Player
+			// screen, or any submenu we don't recognise, B backs out until a known
+			// item reappears, then routing resumes. Every press is CONFIRMED by the
+			// menu-focus pointer (Observation.MenuFocus) changing; a dropped press is
+			// re-emitted until it lands — so drops can't mis-land. See stepPlanNav.
+			//
+			// On=atFrontEnd(recognised item) and Done=reachedSystemLink bracket it;
+			// a select that mis-fired into a map/campaign (MenuActive→0) blocks
+			// loudly instead of proceeding.
+			Name: "nav-system-link", Intent: "→ system link (state-aware)",
+			Planner: true,
+			On:      atFrontEnd,
+			Done:    reachedSystemLink,
 		},
 		{
 			Name: "create-game", Intent: "create system-link game", Key: "y",
@@ -263,6 +275,9 @@ func (s *Sequence) Reset(now time.Time) {
 	s.lastNavCursor = 0
 	s.navFocus = 0
 	s.navPresses = 0
+	s.lastKey = ""
+	s.navStuckItem = MenuItemUnknown
+	s.navStuckCount = 0
 	s.lastPress = time.Time{}
 }
 
@@ -274,6 +289,9 @@ func (s *Sequence) advance(now time.Time) {
 	s.lastNavCursor = 0
 	s.navFocus = 0
 	s.navPresses = 0
+	s.lastKey = ""
+	s.navStuckItem = MenuItemUnknown
+	s.navStuckCount = 0
 	s.lastPress = time.Time{}
 }
 
@@ -308,12 +326,10 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 
 	t := s.steps[s.cursor]
 
-	// (M) macro nav step: a bracketed, timed key sequence for front-end menu
-	// navigation (main menu → System Link). Placed before the single-key
-	// branches because it owns the whole nav segment between two readable
-	// checkpoints. See stepNav + Transition.Keys.
-	if len(t.Keys) > 0 {
-		return s.stepNav(t, obs, now)
+	// (M) state-aware planner nav step (front-end → System Link, from anywhere).
+	// Owns the whole front-end nav segment; routes by reading Observation.MenuItem.
+	if t.Planner {
+		return s.stepPlanNav(t, obs, now)
 	}
 
 	// (5) key-less sentinel: confirms we're settled on the bracket screen.
@@ -372,81 +388,106 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 	return blocked(fmt.Sprintf("expected screen for %q not observed (on %s)", t.Name, screenName(obs)))
 }
 
-// isDpad reports whether a nav key moves the menu highlight (as opposed to a
-// select/confirm press). Only D-pad moves are confirmed via the menu-focus
-// pointer; A/confirm presses fire once and settle on the timer (re-pressing a
-// select could enter the WRONG sub-screen if the confirm false-negatives).
-func isDpad(key string) bool {
-	switch key {
-	case "up", "down", "left", "right", "Up", "Down", "Left", "Right":
-		return true
+// navMaxPresses bounds the whole state-aware nav (route + recovery + dropped-
+// press re-emits) before it blocks — generous for a route from an arbitrary
+// screen (Back-normalise + main-menu + submenu + profile), but finite so a box
+// that never navigates (no active network → Halo refuses System Link; or presses
+// not reaching the guest) surfaces instead of looping forever.
+const navMaxPresses = 48
+
+// navStuckThreshold is how many consecutive emitted nav presses may leave the
+// highlighted item UNCHANGED before the planner forces a Back to escape. It
+// catches an off-route screen the classifier reads as a routable enum (so the
+// planned key keeps firing without progress). It is well above the ~4–6 A-presses
+// System Link legitimately takes to flip game_connection (Done short-circuits the
+// nav before then), so a working confirm is never mistaken for stuck.
+const navStuckThreshold = 8
+
+// planNavKey chooses the next press purely from WHICH item is highlighted — the
+// heart of the state-aware navigator. It never counts keys.
+func planNavKey(item MenuItem) string {
+	switch item {
+	case MenuItemMultiplayer: // main menu, on MULTIPLAYER → enter submenu
+		return "a"
+	case MenuItemSystemLink: // submenu, on SYSTEM LINK → enter (conn→1)
+		return "a"
+	case MenuItemProfile: // a profile screen — OFF the host-creation route.
+		// Live on H1 Perf, choosing System Link reaches game_connection==1 with NO
+		// profile-confirm step, and the only way you land on a profile widget is a
+		// side path (Settings › Player Setup, Single Player › pick profile). Pressing
+		// A there dives DEEPER and never progresses (an infinite-A trap observed
+		// 2026-08-07). So Back-normalise out of it toward the main menu and re-plan.
+		return "b"
+	case MenuItemMainOther: // main menu, wrong item → step toward MULTIPLAYER
+		return "down"
+	case MenuItemSubmenuOther: // submenu, wrong item → step toward SYSTEM LINK
+		return "down"
+	default: // MenuItemUnknown / off-route (Settings, Single Player, unreadable)
+		return "b" // Back-normalise toward the main menu, then re-plan
 	}
-	return false
 }
 
-// stepNav drives the macro front-end navigation step (main menu → System Link),
-// CLOSED-LOOP on the menu-focus pointer. Each D-pad move is confirmed to have
-// LANDED — Observation.MenuFocus changed — before the sequence advances; a
-// dropped press (focus unchanged past RepressAfter) is re-emitted. Select (A)
-// presses fire once and settle on the timer. After the fixed sequence the last
-// key (A) re-emits until Done — the SELECT PROFILE join/pick/all-ready confirms
-// are an unknown, self-correcting count. It completes the instant Done holds,
-// and blocks if it leaves the On bracket (e.g. an A that landed on Single Player
-// launched Campaign → main_menu→0 → On false) or burns its retry budget
-// (System Link unreachable — no active network) rather than pressing forever.
-func (s *Sequence) stepNav(t Transition, obs Observation, now time.Time) Action {
+// stepPlanNav is the STATE-AWARE front-end navigator. Every tick it reads which
+// menu item is highlighted (Observation.MenuItem) and presses toward System Link
+// by IDENTITY — Down toward MULTIPLAYER / SYSTEM LINK, A to enter / confirm, B to
+// back out of an off-route screen — never a wrap-prone key count. Each press is
+// confirmed by the menu-focus pointer (Observation.MenuFocus) changing; a dropped
+// press is re-emitted until it lands. It completes the instant Done holds
+// (game_connection≥1), blocks if a select mis-fired into a map/campaign
+// (MenuActive→0), and blocks once navMaxPresses is spent (box not navigating).
+func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Action {
 	if t.Done != nil && t.Done(obs) { // reached System Link / hosting / lobby
 		s.advance(now)
 		return s.Step(obs, now)
 	}
-	if t.On != nil && !t.On(obs) {
-		return blocked(fmt.Sprintf("nav step %q: front-end bracket lost before system-link (on %s) — a select likely mis-fired (Campaign?)", t.Name, screenName(obs)))
+	// A select that mis-fired into a loaded map/campaign leaves the front-end:
+	// MenuActive==0 while game_connection is still menu. Surface it, don't press on.
+	if !obs.MenuActive && obs.Connection == ConnMenu {
+		return blocked(fmt.Sprintf("nav step %q: left the front-end into a map/campaign (a select mis-fired) — MenuActive=0", t.Name))
 	}
-	if s.navPresses >= 2*len(t.Keys)+navRetryBudget {
-		return blocked(fmt.Sprintf("nav step %q: %d presses without reaching system-link (on %s, focus stuck at 0x%08X) — box not navigating? active network? (Halo blocks System Link with no link)", t.Name, s.navPresses, screenName(obs), obs.MenuFocus))
+	if s.navPresses >= navMaxPresses {
+		return blocked(fmt.Sprintf("nav step %q: %d presses without reaching system-link (highlighted=%s, focus 0x%08X) — box not navigating? active network? (Halo blocks System Link with no link)", t.Name, s.navPresses, obs.MenuItem, obs.MenuFocus))
 	}
 
-	idx := s.navDone
-	if idx >= len(t.Keys) {
-		idx = len(t.Keys) - 1 // tail: re-emit the last key (A) until Done
-	}
-	key := t.Keys[idx]
+	key := planNavKey(obs.MenuItem)
 
-	// (a) awaiting confirmation of the key we already emitted this step.
+	// (a) awaiting confirmation of the key we already emitted.
 	if s.pressed {
-		moved := obs.MenuFocus != s.navFocus // the highlight/screen changed
-		if isDpad(key) {
-			if moved { // move landed → commit and advance
-				s.navDone++
-				s.pressed = false
-				return wait(fmt.Sprintf("nav %s: %q landed", t.Name, key))
-			}
-			if now.Sub(s.lastPress) >= s.timing.RepressAfter { // dropped → re-emit
-				s.pressed = false
-				return s.stepNav(t, obs, now)
-			}
-			return wait(fmt.Sprintf("nav %s: awaiting %q to land", t.Name, key))
-		}
-		// select/confirm: advance on a focus change OR a settle timeout (single
-		// press — never re-press, to avoid entering a wrong sub-screen).
-		if moved || now.Sub(s.lastPress) >= s.timing.NavKeyInterval {
+		if obs.MenuFocus != s.navFocus { // the highlight / screen changed → landed
 			s.navDone++
 			s.pressed = false
-			return wait(fmt.Sprintf("nav %s: %q settled", t.Name, key))
+			return wait(fmt.Sprintf("nav %s: %q landed (now %s)", t.Name, s.lastKey, obs.MenuItem))
 		}
-		return wait(fmt.Sprintf("nav %s: awaiting %q", t.Name, key))
+		if now.Sub(s.lastPress) >= s.timing.RepressAfter { // dropped → re-emit
+			s.pressed = false
+			return s.stepPlanNav(t, obs, now)
+		}
+		return wait(fmt.Sprintf("nav %s: awaiting %q to land (on %s)", t.Name, s.lastKey, obs.MenuItem))
 	}
 
-	// (b) emit the next key, paced by NavKeyInterval, recording the focus we
-	// expect to change.
+	// (b) emit the planned key, paced by NavKeyInterval.
 	if !s.lastPress.IsZero() && now.Sub(s.lastPress) < s.timing.NavKeyInterval {
 		return wait(fmt.Sprintf("nav %s: pacing before %q", t.Name, key))
 	}
+	// stuck-detection: if the highlighted item hasn't changed for navStuckThreshold
+	// consecutive emitted presses, the planned key isn't progressing on this screen
+	// → force Back to escape toward the main menu, then re-plan from wherever we land.
+	if obs.MenuItem == s.navStuckItem {
+		s.navStuckCount++
+	} else {
+		s.navStuckItem = obs.MenuItem
+		s.navStuckCount = 0
+	}
+	if s.navStuckCount >= navStuckThreshold {
+		key = "b"
+		s.navStuckCount = 0 // give the back-out a chance to change the screen
+	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
+	s.lastKey = key
 	s.lastPress = now
 	s.navPresses++
-	return tap(key, t.Intent, fmt.Sprintf("nav %s: %q (step %d, press %d)", t.Name, key, s.navDone+1, s.navPresses))
+	return tap(key, t.Intent, fmt.Sprintf("nav %s: %q — highlighted=%s (press %d)", t.Name, key, obs.MenuItem, s.navPresses))
 }
 
 // stepCard drives one card-select step (SELECT MAP / SELECT GAMETYPE) cursor-

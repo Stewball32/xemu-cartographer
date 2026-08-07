@@ -86,6 +86,15 @@ type Observation struct {
 	// press can't leave the runner firing A on the wrong item.
 	MenuFocus uint32
 
+	// MenuItem is WHICH front-end menu item is currently highlighted, read from
+	// the CE UI widget heap (the +0x60 highlight flag → the item's DeLa tag path,
+	// classified). It lets the nav route by item IDENTITY (navigate until
+	// MULTIPLAYER is highlighted, then A) instead of a wrap-prone key count, and
+	// self-correct from any starting screen. The int values MIRROR
+	// haloce.MenuItem* (kept in sync deliberately; the adapter passes the raw int
+	// to avoid a scraper→hostrunner import cycle).
+	MenuItem MenuItem
+
 	// LIVE create-game carousel cursors (the highlighted-card index + list length
 	// read directly from the CE menu widget system). *Valid is true only when the
 	// corresponding SELECT MAP / SELECT GAMETYPE list widget is active this read.
@@ -108,6 +117,43 @@ type Observation struct {
 	// Maps have no such prefix (widget index == ustr index), so no map equivalent.
 	GametypeListLen int
 }
+
+// MenuItem is which front-end menu item is highlighted, read from the CE UI
+// widget heap. The values MIRROR internal/scraper/haloce's MenuItem* constants
+// (the adapter passes the raw int across the package boundary — keep in sync).
+type MenuItem int
+
+const (
+	MenuItemUnknown      MenuItem = 0 // no recognised front-end item highlighted / off-route
+	MenuItemMainOther    MenuItem = 1 // main menu, a non-Multiplayer item
+	MenuItemMultiplayer  MenuItem = 2 // main menu, MULTIPLAYER highlighted
+	MenuItemSubmenuOther MenuItem = 3 // Multiplayer submenu, a non-System-Link item
+	MenuItemSystemLink   MenuItem = 4 // Multiplayer submenu, SYSTEM LINK (conn) highlighted
+	MenuItemProfile      MenuItem = 5 // SELECT PROFILE screen
+)
+
+func (m MenuItem) String() string {
+	switch m {
+	case MenuItemMainOther:
+		return "main_menu_other"
+	case MenuItemMultiplayer:
+		return "main_menu_multiplayer"
+	case MenuItemSubmenuOther:
+		return "mp_submenu_other"
+	case MenuItemSystemLink:
+		return "mp_submenu_system_link"
+	case MenuItemProfile:
+		return "select_profile"
+	default:
+		return "unknown"
+	}
+}
+
+// onFrontEndMenu reports whether the box is on a recognised front-end menu screen
+// the state-aware nav knows how to route from (main menu or Multiplayer submenu
+// or SELECT PROFILE). MenuItemUnknown ⇒ off-route (Settings / a campaign screen /
+// a screen we can't read) → the nav Back-normalises toward the main menu.
+func (m MenuItem) onFrontEndMenu() bool { return m != MenuItemUnknown }
 
 // Screen is the classified host-flow screen. The map/gametype select screens
 // collapse into ScreenHosting because no memory global distinguishes them (the

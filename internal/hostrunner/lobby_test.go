@@ -304,102 +304,151 @@ func TestSequenceFullFlow(t *testing.T) {
 	}
 }
 
-// TestNavDrivesFromMainMenu: the nav phase drives the front-end menu toward
-// System Link instead of blocking. THE fix — before it, the runner stalled
-// forever on the main menu because step 1 (create-game) required
-// game_connection==1 with nothing to bridge the box from the menu.
+// obsMI builds a front-end observation with a given highlighted MenuItem and
+// menu-focus pointer — the inputs the state-aware planner routes on.
+func obsMI(item MenuItem, focus uint32) Observation {
+	return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu, MenuItem: item, MenuFocus: focus}
+}
+
+// TestNavDrivesFromMainMenu: on the main menu with a non-Multiplayer item
+// highlighted, the state-aware planner steps toward MULTIPLAYER (Down) — THE fix.
 func TestNavDrivesFromMainMenu(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-	a := s.Step(mainMenu(), time.Unix(1000, 0))
+	a := s.Step(obsMI(MenuItemMainOther, 0x8000), time.Unix(1000, 0))
 	if a.Kind != ActionTap || a.Key() != "down" {
-		t.Fatalf("on the main menu the nav phase must drive (tap %q), got %v (%s)", "down", a.Kind, a.Reason)
+		t.Fatalf("main menu, non-Multiplayer item: want Down toward Multiplayer, got %v (%s)", a.Kind, a.Reason)
 	}
 }
 
-// menuFocus returns a main-menu observation carrying a given menu-focus pointer,
-// used to simulate the closed-loop "the highlight moved" confirmation.
-func menuFocus(f uint32) Observation {
-	o := mainMenu()
-	o.MenuFocus = f
-	return o
-}
-
-// TestSequenceBlocksOnWrongScreen: a step never presses blindly on an
-// unexpected screen. The nav step blocks when the front-end bracket is lost
-// before System Link is reached (a non-menu, non-system-link read).
-func TestSequenceBlocksOnWrongScreen(t *testing.T) {
-	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-	// Fresh but neither the front-end menu (MenuActive=false ⇒ ScreenUnknown)
-	// nor System Link: the nav step can't confirm progress and isn't on its
-	// entry bracket, so it blocks rather than pressing on.
-	wrong := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu}
-	a := s.Step(wrong, time.Unix(1000, 0))
-	if a.Kind != ActionBlocked {
-		t.Fatalf("got %v (%s), want blocked on wrong screen", a.Kind, a.Reason)
-	}
-}
-
-// TestNavPhaseFullChain: the nav macro drives the fixed key sequence CLOSED-LOOP
-// — each D-pad move is confirmed by MenuFocus changing before advancing, A
-// presses settle — then re-emits the last A until game_connection flips to 1,
-// where create-game presses Y. Mirrors the live rig chain main-menu(0) → System
-// Link(1) → hosting(2).
-func TestNavPhaseFullChain(t *testing.T) {
+// TestNavRoutesByIdentity: the planner routes to System Link by ITEM IDENTITY,
+// choosing each press from the highlighted MenuItem (not a key count), each
+// confirmed by MenuFocus changing: MainOther→Down, Multiplayer→A, SubmenuOther→
+// Down, SystemLink→A, then game_connection→1 and create-game→Y. (Live on H1 Perf
+// there is NO profile-confirm on this path — choosing System Link flips
+// game_connection directly; the profile enum is handled by TestNavRecovers*.)
+func TestNavRoutesByIdentity(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
 	var focus uint32 = 0x8000
-	adv := func() { now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond) }
-
-	for i, want := range []string{"down", "a", "down", "down", "a"} {
-		adv()
-		a := s.Step(menuFocus(focus), now) // emit
-		if a.Kind != ActionTap || a.Key() != want {
-			t.Fatalf("key %d: got %v (%s), want tap %q", i, a.Kind, a.Reason, want)
+	step := func(item MenuItem, wantKey string) {
+		now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
+		a := s.Step(obsMI(item, focus), now) // emit the planned key
+		if a.Kind != ActionTap || a.Key() != wantKey {
+			t.Fatalf("highlighted=%s: want tap %q, got %v (%s)", item, wantKey, a.Kind, a.Reason)
 		}
-		// the highlight/screen changed → the press landed; the next tick confirms.
-		focus++
+		focus++ // press landed (highlight/screen changed)
 		now = now.Add(10 * time.Millisecond)
-		if a := s.Step(menuFocus(focus), now); a.Kind != ActionWait {
-			t.Fatalf("key %d confirm: got %v (%s), want wait (landed)", i, a.Kind, a.Reason)
+		if a := s.Step(obsMI(item, focus), now); a.Kind != ActionWait {
+			t.Fatalf("confirm after %s: want wait (landed), got %v (%s)", item, a.Kind, a.Reason)
 		}
 	}
-	// Fixed sequence done, still on the menu → re-emit the last key ("a") for the
-	// SELECT PROFILE confirms.
-	adv()
-	if a := s.Step(menuFocus(focus), now); a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("tail: want re-emit of \"a\", got %v (%s)", a.Kind, a.Reason)
-	}
-	// game_connection flips to 1: nav completes and create-game fires Y.
-	now = now.Add(10 * time.Millisecond)
+	step(MenuItemMainOther, "down")    // main menu, wrong item → toward Multiplayer
+	step(MenuItemMultiplayer, "a")     // on MULTIPLAYER → enter submenu
+	step(MenuItemSubmenuOther, "down") // submenu, wrong item → toward System Link
+	step(MenuItemSystemLink, "a")      // on SYSTEM LINK → enter (game_connection→1)
+	// The A on System Link lands us in the browser (game_connection→1): nav
+	// completes and create-game presses Y.
+	now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
 	if a := s.Step(systemLink(), now); a.Kind != ActionTap || a.Key() != "y" {
 		t.Fatalf("on System Link, create-game must press Y, got %v (%s)", a.Kind, a.Reason)
 	}
 }
 
-// TestNavConfirmsMoveBeforeAdvancing: a DROPPED d-pad press (MenuFocus unchanged)
-// is re-emitted rather than advancing — the fix for the mis-land where a dropped
-// press left A firing on Single Player.
+// TestNavRecoversFromProfile: a profile screen is OFF the host-creation route
+// (reached only via Settings › Player Setup or Single Player › pick profile);
+// pressing A there dives deeper forever, so the planner must Back out of it.
+func TestNavRecoversFromProfile(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	if a := s.Step(obsMI(MenuItemProfile, 0x8000), now); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("on a profile screen: want Back (b) to escape, got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestNavStuckDetectionForcesBack: if the highlighted item never changes for
+// navStuckThreshold consecutive emitted presses (an off-route screen the
+// classifier reads as a routable enum, so the planned key keeps firing without
+// progress), the planner forces a Back to escape. Modelled with MainOther, whose
+// planned key is Down: after navStuckThreshold identical presses it flips to B.
+func TestNavStuckDetectionForcesBack(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	var focus uint32 = 0x8000
+	// Feed the SAME item every emit, advancing focus so each press "lands" (so the
+	// stall is item-not-changing, not a dropped press). Down for the first
+	// navStuckThreshold, then B.
+	for i := 0; i < navStuckThreshold+1; i++ {
+		now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
+		a := s.Step(obsMI(MenuItemMainOther, focus), now)
+		if a.Kind != ActionTap {
+			t.Fatalf("press %d: want tap, got %v (%s)", i, a.Kind, a.Reason)
+		}
+		wantKey := "down"
+		if i >= navStuckThreshold {
+			wantKey = "b"
+		}
+		if a.Key() != wantKey {
+			t.Fatalf("press %d: want %q (stuck→%d), got %q", i, wantKey, s.navStuckCount, a.Key())
+		}
+		focus++ // press landed; item stays MainOther → stuck accrues
+		now = now.Add(10 * time.Millisecond)
+		s.Step(obsMI(MenuItemMainOther, focus), now) // confirm landed
+	}
+}
+
+// TestNavRecoversFromOffRoute: from an unrecognised screen (MenuItemUnknown —
+// Settings / Single Player / an unreadable screen) the planner presses B to
+// Back-normalise, and resumes routing once a known item reappears.
+func TestNavRecoversFromOffRoute(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	// Off-route: Unknown → B.
+	if a := s.Step(obsMI(MenuItemUnknown, 0x8000), now); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("off-route: want Back (b) to normalise, got %v (%s)", a.Kind, a.Reason)
+	}
+	// B landed (focus changed); a main-menu item now shows → confirm, then route.
+	now = now.Add(10 * time.Millisecond)
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8001), now); a.Kind != ActionWait {
+		t.Fatalf("after B lands: want wait, got %v (%s)", a.Kind, a.Reason)
+	}
+	now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8001), now); a.Kind != ActionTap || a.Key() != "down" {
+		t.Fatalf("recovered to main menu: want Down toward Multiplayer, got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestSequenceBlocksOnWrongScreen: a select that mis-fired into a map/campaign
+// (MenuActive==0 while game_connection is still menu) blocks rather than pressing
+// on.
+func TestSequenceBlocksOnWrongScreen(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	wrong := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu}
+	a := s.Step(wrong, time.Unix(1000, 0))
+	if a.Kind != ActionBlocked {
+		t.Fatalf("got %v (%s), want blocked (left front-end into a map)", a.Kind, a.Reason)
+	}
+}
+
+// TestNavConfirmsMoveBeforeAdvancing: a DROPPED press (MenuFocus unchanged) is
+// re-emitted rather than advancing.
 func TestNavConfirmsMoveBeforeAdvancing(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
-	// First press: "down".
-	if a := s.Step(menuFocus(0x8000), now); a.Key() != "down" {
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Key() != "down" {
 		t.Fatalf("want first tap down, got %v", a)
 	}
-	// Focus DID NOT change (press dropped) — before RepressAfter we just wait.
-	now = now.Add(100 * time.Millisecond)
-	if a := s.Step(menuFocus(0x8000), now); a.Kind != ActionWait {
+	now = now.Add(100 * time.Millisecond) // focus unchanged, before RepressAfter → wait
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Kind != ActionWait {
 		t.Fatalf("dropped press before RepressAfter should wait, got %v (%s)", a.Kind, a.Reason)
 	}
-	// After RepressAfter, still unchanged → re-emit the SAME "down" (not advance).
-	now = now.Add(DefaultTiming.RepressAfter)
-	if a := s.Step(menuFocus(0x8000), now); a.Kind != ActionTap || a.Key() != "down" {
+	now = now.Add(DefaultTiming.RepressAfter) // still unchanged → re-emit down
+	if a := s.Step(obsMI(MenuItemMainOther, 0x8000), now); a.Kind != ActionTap || a.Key() != "down" {
 		t.Fatalf("dropped d-pad press must re-emit down, got %v (%s)", a.Kind, a.Reason)
 	}
 }
 
 // TestNavPhaseSkippedWhenAlreadySystemLink: a box already on System Link skips
-// the nav phase entirely (catch-up) and goes straight to create-game.
+// the nav phase (catch-up) and goes straight to create-game.
 func TestNavPhaseSkippedWhenAlreadySystemLink(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	a := s.Step(systemLink(), time.Unix(1000, 0))
@@ -409,15 +458,13 @@ func TestNavPhaseSkippedWhenAlreadySystemLink(t *testing.T) {
 }
 
 // TestNavPhaseBlocksWhenStuck: if the box never navigates (MenuFocus never
-// changes — e.g. presses aren't reaching it, or Halo refuses System Link with no
-// active network) the nav step burns its press budget and blocks, surfacing the
-// real cause instead of pressing forever.
+// changes) the planner burns its press budget and blocks, surfacing the cause.
 func TestNavPhaseBlocksWhenStuck(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
 	blocked := false
-	for i := 0; i < 100; i++ { // stuck: focus never changes, game_connection never → 1
-		a := s.Step(menuFocus(0x8000), now)
+	for i := 0; i < 200; i++ {
+		a := s.Step(obsMI(MenuItemMainOther, 0x8000), now) // stuck: focus never changes
 		now = now.Add(DefaultTiming.RepressAfter + time.Millisecond)
 		if a.Kind == ActionBlocked {
 			blocked = true

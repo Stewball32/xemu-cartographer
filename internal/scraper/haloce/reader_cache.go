@@ -66,8 +66,10 @@ func (r *Reader) OnStateChange(prev, next scraper.GameState) error {
 		r.weaponTagDataCache = make(map[int16]*scraper.StaticWeaponTagData)
 		r.bipedTagCache = make(map[int16]*scraper.StaticBipedTagData)
 		// The UI cache reloads on entry to the front-end, so the SELECT MAP /
-		// SELECT GAMETYPE widget-def handles must be re-resolved (see widget.go).
+		// SELECT GAMETYPE widget-def handles must be re-resolved (see widget.go),
+		// as must the front-end menu-item handles (see menustate.go).
 		r.lobbyCursorHandles = nil
+		r.menuItemHandles = nil
 	}
 	return nil
 }

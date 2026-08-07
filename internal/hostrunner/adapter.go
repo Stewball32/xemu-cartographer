@@ -38,6 +38,12 @@ type ScraperReadout struct {
 	// change as a "the menu press landed" confirmation (see lobby.go stepNav).
 	MenuFocus uint32
 
+	// MenuItem ← menu_item: WHICH front-end menu item is highlighted, as a
+	// haloce.MenuItem* enum surfaced as an int (0=unknown/off-route,
+	// 2=main-menu Multiplayer, 4=submenu System Link, 5=SELECT PROFILE, …). The
+	// state-aware nav routes on it. 0 when off-route / not at the front-end.
+	MenuItem int
+
 	// LIVE create-game carousel cursors (CE widget +0x4C/+0x54), filled only while
 	// hosting the setup screens. *Valid is false when the widget isn't readable —
 	// the runner then holds rather than navigating on a stale index. See the
@@ -80,6 +86,7 @@ func (s ScraperReadout) Observation() Observation {
 		CountdownPaused:     s.CountdownPaused,
 		CardText:            s.CardText,
 		MenuFocus:           s.MenuFocus,
+		MenuItem:            MenuItem(s.MenuItem),
 		MapCursor:           s.MapCursor,
 		MapCursorCount:      s.MapCursorCount,
 		MapCursorValid:      s.MapCursorValid,

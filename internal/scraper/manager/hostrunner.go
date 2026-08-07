@@ -98,6 +98,7 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 		ro.MenuActive = stateInputInt(si, "main_menu") != 0
 		ro.GameConnection = stateInputInt(si, "game_connection")
 		ro.MenuFocus = uint32(stateInputInt(si, "menu_focus"))
+		ro.MenuItem = stateInputInt(si, "menu_item")
 	}
 	ro.Map = r.gameData.Map
 	ro.Gametype = r.gameData.Gametype
