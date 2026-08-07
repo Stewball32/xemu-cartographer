@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"log"
 	"time"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
@@ -45,10 +46,21 @@ func (r *runner) enumerateLobby() {
 	}
 	maps := toMapOptions(opts.Maps)
 	gametypes := toMapOptions(opts.Gametypes)
+	changed := false
 	r.withCache(func(c *instanceCache) {
+		changed = len(c.AvailableMaps) != len(maps) || len(c.AvailableGametypes) != len(gametypes)
 		c.AvailableMaps = maps
 		c.AvailableGametypes = gametypes
 	})
+	// Log on count-change so beta.log carries the ground truth for the /play
+	// picker (grep: "lobby enumerated"). Crucially surfaces the split case — real
+	// maps but empty gametypes (e.g. a build whose gametype-names tag differs) —
+	// which otherwise looks like a silent frontend bug. On-change only: the lists
+	// are stable per disc, so this is one line per box per change, not per 3s tick.
+	if changed {
+		log.Printf("scraper[%s]: lobby enumerated: %d maps, %d gametypes (available=%v)",
+			r.name, len(maps), len(gametypes), opts.Available)
+	}
 }
 
 // toMapOptions maps the game-agnostic scraper.LobbyOption slice onto the

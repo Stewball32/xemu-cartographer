@@ -6,18 +6,23 @@ import "sync"
 // endpoint (routes/scraper). It's built from the last observable event, so it
 // needs no extra locking on the single-goroutine runner state.
 type Status struct {
-	Instance        string   `json:"instance"`
-	Present         bool     `json:"present"`
-	Authority       string   `json:"authority"`
-	Screen          string   `json:"screen,omitempty"`
-	LastKind        string   `json:"last_kind,omitempty"`
-	LastIntent      string   `json:"last_intent,omitempty"`
-	LastKeys        []string `json:"last_keys,omitempty"`
-	Tick            uint32   `json:"tick"`
-	MachineCount    int      `json:"machine_count"`
-	TeamCount       int      `json:"team_count"`
-	CountdownActive bool     `json:"countdown_active"`
-	ReadyToStart    bool     `json:"ready_to_start"`
+	Instance   string   `json:"instance"`
+	Present    bool     `json:"present"`
+	Authority  string   `json:"authority"`
+	Screen     string   `json:"screen,omitempty"`
+	LastKind   string   `json:"last_kind,omitempty"`
+	LastIntent string   `json:"last_intent,omitempty"`
+	LastKeys   []string `json:"last_keys,omitempty"`
+	// LastReason is the runner's short gating explanation for its last decision —
+	// e.g. "parked at map-select — awaiting player map/gametype pick" or "card
+	// select-map: awaiting live cursor read". Surfaced so /api/play/current shows
+	// WHY the runner is holding (a wait/blocked with no reason is undiagnosable).
+	LastReason      string `json:"last_reason,omitempty"`
+	Tick            uint32 `json:"tick"`
+	MachineCount    int    `json:"machine_count"`
+	TeamCount       int    `json:"team_count"`
+	CountdownActive bool   `json:"countdown_active"`
+	ReadyToStart    bool   `json:"ready_to_start"`
 
 	// Map / Gametype are the READ (currently-loaded) values from the last
 	// observation; SelectedMap / SelectedGametype are the player's picked intent
@@ -110,6 +115,7 @@ func (reg *Registry) Status(instance string) Status {
 		st.LastKind = ev.Kind
 		st.LastIntent = ev.Intent
 		st.LastKeys = ev.Keys
+		st.LastReason = ev.Reason
 		st.Tick = ev.Tick
 		st.Map = ev.Map
 		st.Gametype = ev.Gametype
