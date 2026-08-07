@@ -33,6 +33,11 @@ type ScraperReadout struct {
 	CountdownPaused bool
 	CardText        string
 
+	// MenuFocus ← menu_focus (AddrUiWidgetFocusPtr 0x2F9B38): the CE front-end
+	// menu widget-focus pointer. Only its CHANGES matter — the nav phase uses a
+	// change as a "the menu press landed" confirmation (see lobby.go stepNav).
+	MenuFocus uint32
+
 	// LIVE create-game carousel cursors (CE widget +0x4C/+0x54), filled only while
 	// hosting the setup screens. *Valid is false when the widget isn't readable —
 	// the runner then holds rather than navigating on a stale index. See the
@@ -74,6 +79,7 @@ func (s ScraperReadout) Observation() Observation {
 		CountdownActive:     s.CountdownActive,
 		CountdownPaused:     s.CountdownPaused,
 		CardText:            s.CardText,
+		MenuFocus:           s.MenuFocus,
 		MapCursor:           s.MapCursor,
 		MapCursorCount:      s.MapCursorCount,
 		MapCursorValid:      s.MapCursorValid,

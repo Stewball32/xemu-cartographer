@@ -98,6 +98,18 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		gameConnection, _ = mem.ReadU16At(hva)
 	}
 
+	// menu_focus (AddrUiWidgetFocusPtr 0x2F9B38) — the CE front-end menu's live
+	// widget-focus pointer. Its VALUE (a heap ptr) is not a stable index (CE
+	// relinks the widget list), but it reliably CHANGES when the highlighted
+	// menu item moves and stays put when a press dropped. The host-runner's nav
+	// phase uses that change as a per-press "the move landed" confirmation so a
+	// dropped d-pad press can't leave it on the wrong item (e.g. firing A on
+	// Single Player → Campaign). Best-effort: a failed read leaves it 0.
+	var menuFocus uint32
+	if hva, e := inst.LowHVA(AddrUiWidgetFocusPtr); e == nil {
+		menuFocus, _ = mem.ReadU32At(hva)
+	}
+
 	// GAME-ENGINE / GAME-TIME state — BEST-EFFORT. At the front-end menu these
 	// regions may not be resident (the game engine isn't running); a miss here
 	// leaves the field zero, which determineGameState reads as Menu — the correct
@@ -131,6 +143,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"game_can_score":          gameCanScore,
 		"game_engine_globals_ptr": geGlobalsPtr,
 		"game_time_globals_ptr":   gtgPtr,
+		"menu_focus":              menuFocus,
 	}
 	// A failed main_menu read means the low translation is broken (not merely a
 	// game region absent at the menu) — surface it so the ready loop re-translates.

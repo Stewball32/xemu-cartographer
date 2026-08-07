@@ -127,6 +127,8 @@ type Sequence struct {
 	pressed       bool      // has the current step's confirm key (A) been pressed
 	navDone       int       // D-pad nav presses emitted for the current card step
 	lastNavCursor int       // live cursor value at the last nav press (for confirmed-move debounce)
+	navFocus      uint32    // menu-focus ptr recorded at the macro-nav step's last press (change ⇒ move landed)
+	navPresses    int       // TOTAL macro-nav presses emitted incl. re-presses (drop budget)
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -166,7 +168,7 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 	// catch-up loop skip the nav step for a box already in hosting/lobby/in-game.
 	reachedSystemLink := func(o Observation) bool {
 		switch Classify(o) {
-		case ScreenSystemLink, ScreenHosting, ScreenLobby, ScreenInGame, ScreenPostGame:
+		case ScreenSystemLink, ScreenHosting, ScreenLobby:
 			return true
 		}
 		return false
@@ -179,22 +181,30 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 
 	seq := NewSequence([]Transition{
 		{
-			// NAV PHASE (2026-08-06): drive the CE main menu → System Link so the
-			// runner no longer assumes it's handed a box already on the System Link
-			// screen (game_connection==1) — the definitive beta stall. Derived by
-			// driving the live H1 Perf box in the testrig:
+			// NAV PHASE (2026-08-06, re-tuned CLOSED-LOOP 2026-08-07): drive the CE
+			// main menu → System Link so the runner no longer assumes it's handed a
+			// box already on the System Link screen (game_connection==1) — the
+			// definitive beta stall. Derived + re-verified live on the H1 Perf box:
 			//   main menu --Down→MULTIPLAYER, A--> Multiplayer submenu
 			//   --Down,Down→SYSTEM LINK, A--> SELECT PROFILE
-			//   --A (join P1)--> profile spinner --A (pick 'Default')--> "ready"
-			//   --A (all ready)--> System Link browser (game_connection→1).
-			// The Up presses normalize the highlight to each list's top before the
-			// Down count (CE vertical menus don't wrap), so a drifted highlight
-			// (attract mode / back-out) still lands right. The final "a" re-emits
-			// until Done: it walks the SELECT PROFILE join/pick/all-ready confirms
-			// (an unknown count) and self-corrects a dropped press. On=main menu,
-			// Done=game_connection==1 bracket it; then create-game takes over.
+			//   --A (join P1)--> profile spinner --A (pick 'Default')--> "all ready"
+			//   --A--> System Link browser (game_connection→1).
+			//
+			// CLOSED-LOOP re-tune: the first cut used a blind key COUNT with an
+			// up-normalization that assumed CE menus don't wrap. They DO wrap, and
+			// front-end presses drop intermittently over VNC — so on the real beta
+			// box the pre-A presses dropped and A fired on the default top item
+			// (Single Player → Campaign). Now every D-PAD move is CONFIRMED by the
+			// menu-focus pointer (Observation.MenuFocus, AddrUiWidgetFocusPtr
+			// 0x2F9B38) CHANGING; a dropped press is re-emitted until the highlight
+			// actually moves. Counts start from the cold-boot default (top item:
+			// Single Player / Cooperative), which is where the runner engages. No
+			// up-normalization (it fought the wrap). The final "a" re-emits until
+			// Done. On=ScreenMainMenu and Done=reachedSystemLink bracket it;
+			// launching Campaign (main_menu→0) drops On → the step blocks loudly
+			// instead of proceeding. See stepNav.
 			Name: "nav-system-link", Intent: "main menu → system link",
-			Keys: []string{"up", "up", "down", "a", "up", "up", "up", "down", "down", "a"},
+			Keys: []string{"down", "a", "down", "down", "a"},
 			On:   atFrontEnd,
 			Done: reachedSystemLink,
 		},
@@ -251,6 +261,8 @@ func (s *Sequence) Reset(now time.Time) {
 	s.pressed = false
 	s.navDone = 0
 	s.lastNavCursor = 0
+	s.navFocus = 0
+	s.navPresses = 0
 	s.lastPress = time.Time{}
 }
 
@@ -260,6 +272,8 @@ func (s *Sequence) advance(now time.Time) {
 	s.pressed = false
 	s.navDone = 0
 	s.lastNavCursor = 0
+	s.navFocus = 0
+	s.navPresses = 0
 	s.lastPress = time.Time{}
 }
 
@@ -358,42 +372,81 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 	return blocked(fmt.Sprintf("expected screen for %q not observed (on %s)", t.Name, screenName(obs)))
 }
 
-// stepNav drives the macro front-end navigation step (main menu → System Link).
-// It emits the fixed key sequence one press per NavKeyInterval while the On
-// bracket (main menu / front-end, game_connection==0) holds, then RE-EMITS the
-// last key until Done (game_connection==1) — the SELECT PROFILE join/pick/ready
-// confirms are an unknown, self-correcting count. It completes the instant Done
-// holds, and blocks if it leaves the On bracket early or burns its retry budget
-// (e.g. no active network → Halo refuses System Link, so game_connection never
-// reaches 1) rather than pressing forever or walking into a wrong screen.
+// isDpad reports whether a nav key moves the menu highlight (as opposed to a
+// select/confirm press). Only D-pad moves are confirmed via the menu-focus
+// pointer; A/confirm presses fire once and settle on the timer (re-pressing a
+// select could enter the WRONG sub-screen if the confirm false-negatives).
+func isDpad(key string) bool {
+	switch key {
+	case "up", "down", "left", "right", "Up", "Down", "Left", "Right":
+		return true
+	}
+	return false
+}
+
+// stepNav drives the macro front-end navigation step (main menu → System Link),
+// CLOSED-LOOP on the menu-focus pointer. Each D-pad move is confirmed to have
+// LANDED — Observation.MenuFocus changed — before the sequence advances; a
+// dropped press (focus unchanged past RepressAfter) is re-emitted. Select (A)
+// presses fire once and settle on the timer. After the fixed sequence the last
+// key (A) re-emits until Done — the SELECT PROFILE join/pick/all-ready confirms
+// are an unknown, self-correcting count. It completes the instant Done holds,
+// and blocks if it leaves the On bracket (e.g. an A that landed on Single Player
+// launched Campaign → main_menu→0 → On false) or burns its retry budget
+// (System Link unreachable — no active network) rather than pressing forever.
 func (s *Sequence) stepNav(t Transition, obs Observation, now time.Time) Action {
-	// Done wins (also handled by Step's catch-up, but check here so a box already
-	// on System Link completes without emitting a key).
-	if t.Done != nil && t.Done(obs) {
+	if t.Done != nil && t.Done(obs) { // reached System Link / hosting / lobby
 		s.advance(now)
 		return s.Step(obs, now)
 	}
-	// Must still be in the front-end bracket. game_connection stays 0 across the
-	// whole nav (main menu, Multiplayer submenu, SELECT PROFILE) and only flips to
-	// 1 at the System Link browser — where Done above already fired. So a false On
-	// here means a genuine desync (dropped into a game / unexpected screen).
 	if t.On != nil && !t.On(obs) {
-		return blocked(fmt.Sprintf("nav step %q: front-end bracket lost before system-link (on %s)", t.Name, screenName(obs)))
+		return blocked(fmt.Sprintf("nav step %q: front-end bracket lost before system-link (on %s) — a select likely mis-fired (Campaign?)", t.Name, screenName(obs)))
 	}
-	if s.navDone >= len(t.Keys)+navRetryBudget {
-		return blocked(fmt.Sprintf("nav step %q: exhausted %d presses without reaching system-link (on %s) — active network? (Halo blocks System Link with no link)", t.Name, s.navDone, screenName(obs)))
+	if s.navPresses >= 2*len(t.Keys)+navRetryBudget {
+		return blocked(fmt.Sprintf("nav step %q: %d presses without reaching system-link (on %s, focus stuck at 0x%08X) — box not navigating? active network? (Halo blocks System Link with no link)", t.Name, s.navPresses, screenName(obs), obs.MenuFocus))
 	}
-	if s.navDone == 0 || now.Sub(s.lastPress) >= s.timing.NavKeyInterval {
-		idx := s.navDone
-		if idx >= len(t.Keys) {
-			idx = len(t.Keys) - 1 // re-emit the last key (profile confirms) until Done
+
+	idx := s.navDone
+	if idx >= len(t.Keys) {
+		idx = len(t.Keys) - 1 // tail: re-emit the last key (A) until Done
+	}
+	key := t.Keys[idx]
+
+	// (a) awaiting confirmation of the key we already emitted this step.
+	if s.pressed {
+		moved := obs.MenuFocus != s.navFocus // the highlight/screen changed
+		if isDpad(key) {
+			if moved { // move landed → commit and advance
+				s.navDone++
+				s.pressed = false
+				return wait(fmt.Sprintf("nav %s: %q landed", t.Name, key))
+			}
+			if now.Sub(s.lastPress) >= s.timing.RepressAfter { // dropped → re-emit
+				s.pressed = false
+				return s.stepNav(t, obs, now)
+			}
+			return wait(fmt.Sprintf("nav %s: awaiting %q to land", t.Name, key))
 		}
-		key := t.Keys[idx]
-		s.navDone++
-		s.lastPress = now
-		return tap(key, t.Intent, fmt.Sprintf("nav %s: %q (%d/%d)", t.Name, key, s.navDone, len(t.Keys)))
+		// select/confirm: advance on a focus change OR a settle timeout (single
+		// press — never re-press, to avoid entering a wrong sub-screen).
+		if moved || now.Sub(s.lastPress) >= s.timing.NavKeyInterval {
+			s.navDone++
+			s.pressed = false
+			return wait(fmt.Sprintf("nav %s: %q settled", t.Name, key))
+		}
+		return wait(fmt.Sprintf("nav %s: awaiting %q", t.Name, key))
 	}
-	return wait(fmt.Sprintf("nav %s: awaiting %s", t.Name, ScreenSystemLink.String()))
+
+	// (b) emit the next key, paced by NavKeyInterval, recording the focus we
+	// expect to change.
+	if !s.lastPress.IsZero() && now.Sub(s.lastPress) < s.timing.NavKeyInterval {
+		return wait(fmt.Sprintf("nav %s: pacing before %q", t.Name, key))
+	}
+	s.pressed = true
+	s.navFocus = obs.MenuFocus
+	s.lastPress = now
+	s.navPresses++
+	return tap(key, t.Intent, fmt.Sprintf("nav %s: %q (step %d, press %d)", t.Name, key, s.navDone+1, s.navPresses))
 }
 
 // stepCard drives one card-select step (SELECT MAP / SELECT GAMETYPE) cursor-

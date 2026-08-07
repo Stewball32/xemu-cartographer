@@ -78,6 +78,14 @@ type Observation struct {
 	// when unavailable; when a reader provides it, Classify prefers it.
 	CardText string
 
+	// MenuFocus is the CE front-end menu widget-focus pointer (menu_focus,
+	// AddrUiWidgetFocusPtr 0x2F9B38). Its value is a relinking heap pointer — NOT
+	// a stable index — but it reliably changes when the highlighted menu item
+	// moves and stays put when a press dropped. The nav phase uses that change as
+	// a per-press "the move landed" confirmation (stepNav), so a dropped d-pad
+	// press can't leave the runner firing A on the wrong item.
+	MenuFocus uint32
+
 	// LIVE create-game carousel cursors (the highlighted-card index + list length
 	// read directly from the CE menu widget system). *Valid is true only when the
 	// corresponding SELECT MAP / SELECT GAMETYPE list widget is active this read.

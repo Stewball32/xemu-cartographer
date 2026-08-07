@@ -120,6 +120,12 @@ const (
 	AddrGameConnection  uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
 	AddrIsTeamGame      uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
 	AddrMainMenuActive  uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
+	// AddrUiWidgetFocusPtr — CE front-end menu widget-focus pointer (runbook
+	// AddrUiWidgetFocusPtr). Not in the versioned offset set: its value is a
+	// per-boot/relinking heap ptr used ONLY for change-detection (the host-runner
+	// nav phase confirms a menu press landed when this pointer moves). Fixed low
+	// GVA in the shared CE .data layout, so a package const suffices.
+	AddrUiWidgetFocusPtr uint32 = 0x2F9B38 // u32 ptr — runbook; changes on menu navigation
 	AddrGameCanScore    uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
 	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
 	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
