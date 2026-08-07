@@ -85,6 +85,11 @@ type Manager struct {
 	hostReg     *hostrunner.Registry
 	hostURL     func(name string) (wsURL string, ok bool)
 	hostEnabled bool
+	// hostDrive is the host/client scoping gate: it decides whether a freshly
+	// attached runner AUTO-DRIVES its box (AuthRunner) or attaches observe-only
+	// (AuthDisabled). nil drives every box (pre-scoping behavior). Read-only
+	// after boot (set via SetHostDrivePolicy before any Start), so no lock.
+	hostDrive func(name string) bool
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -162,6 +167,24 @@ func (m *Manager) SetHostRunner(reg *hostrunner.Registry, urlForInstance func(na
 	m.hostReg = reg
 	m.hostURL = urlForInstance
 	m.hostEnabled = enabled
+}
+
+// SetHostDrivePolicy installs the host/client scoping predicate. drive(name)
+// reports whether a box should be AUTO-DRIVEN by its runner: true → the runner
+// attaches AuthRunner and navigates the host create-game sequence (today's
+// every-box behavior); false → it attaches observe-only (AuthDisabled), so it
+// still ticks, enumerates its lobby for /api/play/options, and emits state to
+// the admin stream, but CanEmit()==false and it presses NOTHING.
+//
+// This is the fix for the pod-hijack: without it, every discovered box with a
+// detected game gets driven, so an admin-created client pod meant to JOIN a
+// System Link lobby is yanked into hosting its own create-game flow. With a
+// policy that drives only player-provisioned "play-<uid>" boxes, client/admin
+// boxes are left alone until an admin promotes one via the host control
+// endpoint (Registry.SetAuthority). nil (the default) drives every box.
+// Read-only after boot — call once before any Start.
+func (m *Manager) SetHostDrivePolicy(drive func(name string) bool) {
+	m.hostDrive = drive
 }
 
 // Start spins up a runner for the named instance. It opens the xemu instance
@@ -270,6 +293,16 @@ func (m *Manager) attachHostRunner(r *runner) {
 		// (refinement 1); it never auto-hosts a default map.
 		Selector: hostrunner.NewAtomicSelector(),
 	}, input, m.hostReg)
+	// Host/client scoping (pod-hijack fix). Only a DESIGNATED host box is
+	// auto-driven. A non-designated box — e.g. an admin-created client pod that
+	// will JOIN the host's System Link lobby — attaches observe-only: its arbiter
+	// starts AuthDisabled so CanEmit()==false and the runner never presses a key,
+	// yet it still ticks, enumerates its lobby (for /api/play/options), and emits
+	// state. An admin can promote it at runtime via the host control endpoint
+	// (Registry.SetAuthority). nil policy = drive every box (pre-scoping default).
+	if m.hostDrive != nil && !m.hostDrive(r.name) {
+		hr.Arbiter().Set(hostrunner.AuthDisabled)
+	}
 	r.host = hr
 	m.hostReg.Register(r.name, hr)
 }

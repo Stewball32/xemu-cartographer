@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"strings"
 	"testing"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
@@ -31,6 +32,43 @@ func TestManagerAvailableMaps(t *testing.T) {
 	}
 	if len(l.Gametypes) != 1 || l.Gametypes[0].Name != "slayer" {
 		t.Fatalf("enumerated gametypes should surface, got %+v", l.Gametypes)
+	}
+}
+
+// Host/client scoping: with a drive policy installed, only boxes the policy
+// approves (here the "play-" player-box marker) attach AuthRunner; every other
+// box attaches observe-only (AuthDisabled) so its runner never presses a key —
+// the pod-hijack fix. A nil policy preserves the drive-every-box default.
+func TestAttachHostRunnerScoping(t *testing.T) {
+	newMgr := func(policy func(string) bool) *Manager {
+		return &Manager{
+			runners:     map[string]*runner{},
+			hostReg:     hostrunner.NewRegistry(nil),
+			hostEnabled: true, // hostURL nil → no input pump, ctx untouched
+			hostDrive:   policy,
+		}
+	}
+	authOf := func(m *Manager, name string) hostrunner.Authority {
+		r := &runner{name: name}
+		m.attachHostRunner(r)
+		if r.host == nil {
+			t.Fatalf("%s: expected a runner attached", name)
+		}
+		return r.host.Arbiter().Authority()
+	}
+
+	drivePlay := func(name string) bool { return strings.Contains(name, "play-") }
+	m := newMgr(drivePlay)
+	if got := authOf(m, "beta-play-abc123"); got != hostrunner.AuthRunner {
+		t.Errorf("player box must auto-drive (AuthRunner), got %v", got)
+	}
+	if got := authOf(m, "beta-client"); got != hostrunner.AuthDisabled {
+		t.Errorf("non-player (client/admin) box must attach observe-only (AuthDisabled), got %v", got)
+	}
+
+	// nil policy → drive every box (pre-scoping default preserved).
+	if got := authOf(newMgr(nil), "any-box"); got != hostrunner.AuthRunner {
+		t.Errorf("nil policy must drive every box (AuthRunner), got %v", got)
 	}
 }
 

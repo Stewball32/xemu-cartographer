@@ -166,6 +166,17 @@ func main() {
 			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),
 			envBool("HOSTRUNNER_ENABLED", false),
 		)
+		// Host/client scoping (pod-hijack fix): AUTO-DRIVE only player-hosted
+		// boxes — the ones /api/play/request provisions as "<prefix>play-<uid>"
+		// (the same "play-" marker the reaper scopes idle-out to). Every other
+		// box (admin/manual — e.g. a client pod created to JOIN a System Link
+		// lobby) attaches observe-only and is never driven until an admin
+		// promotes it via the host control endpoint. Marker is env-tunable for
+		// non-standard deployments.
+		driveMarker := envStr("HOSTRUNNER_DRIVE_MARKER", "play-")
+		scrMgr.SetHostDrivePolicy(func(name string) bool {
+			return strings.Contains(name, driveMarker)
+		})
 
 		// Capture-policy loader: read the persisted (instance, class) rows
 		// now so runners started immediately after this (auto-start via the
