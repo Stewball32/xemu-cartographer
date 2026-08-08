@@ -40,6 +40,10 @@ type Transition struct {
 	ParkUntilSelection bool
 	StepsFn            func(Selector) int
 	CursorFn           func(Observation) (index, count int, ok bool)
+	// TargetName resolves the chosen pick's display NAME (for the decision log), so
+	// the runner's carousel drive shows WHICH map/gametype it's honoring — the
+	// visible proof a Set-game pick took, not just a target index.
+	TargetName func(Selector) string
 
 	// Keys, when non-empty, makes this a MACRO NAV step: a fixed ordered key
 	// sequence driven between two readable checkpoints — On at entry, Done at
@@ -228,7 +232,8 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 		{
 			Name: "select-map", Intent: "select map", Key: "a",
 			NavKey: "Right", NavKeyBack: "Left", ParkUntilSelection: true,
-			StepsFn:  func(s Selector) int { return s.MapPick().Steps },
+			StepsFn:    func(s Selector) int { return s.MapPick().Steps },
+			TargetName: func(s Selector) string { return s.MapPick().Name },
 			CursorFn: func(o Observation) (int, int, bool) { return o.MapCursor, o.MapCursorCount, o.MapCursorValid },
 			On:       hosting,
 			Done:     inLobby, // only truly confirmable once the lobby is readable
@@ -237,7 +242,8 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 		{
 			Name: "select-gametype", Intent: "select gametype", Key: "a",
 			NavKey: "Right", NavKeyBack: "Left",
-			StepsFn: func(s Selector) int { return s.GametypePick().Steps },
+			StepsFn:    func(s Selector) int { return s.GametypePick().Steps },
+			TargetName: func(s Selector) string { return s.GametypePick().Name },
 			CursorFn: func(o Observation) (int, int, bool) {
 				return o.GametypeCursor, o.GametypeCursorCount, o.GametypeCursorValid
 			},
@@ -528,8 +534,14 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 	}
 
 	target := 0
-	if t.StepsFn != nil && s.sel != nil {
-		target = t.StepsFn(s.sel)
+	name := ""
+	if s.sel != nil {
+		if t.StepsFn != nil {
+			target = t.StepsFn(s.sel)
+		}
+		if t.TargetName != nil {
+			name = t.TargetName(s.sel)
+		}
 	}
 	// The pick's index is in the ENUMERATION space; shift it into the live WIDGET
 	// space by the custom-variant prefix (0 for maps; the prepended-custom count
@@ -553,7 +565,7 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 			if !right && t.NavKeyBack != "" {
 				key = t.NavKeyBack
 			}
-			return tap(key, t.Intent, fmt.Sprintf("nav %s: cursor %d→%d (%d left)", t.Name, cursor, target, remaining))
+			return tap(key, t.Intent, fmt.Sprintf("nav %s → %q: cursor %d→%d (%d left)", t.Name, name, cursor, target, remaining))
 		}
 		return wait(fmt.Sprintf("card %s: nav pressed, awaiting cursor move (%d→%d)", t.Name, cursor, target))
 	}
@@ -562,7 +574,7 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 	if !s.pressed {
 		s.pressed = true
 		s.lastPress = now
-		return tap(t.Key, t.Intent, fmt.Sprintf("cursor on target %d, pressing %s", target, t.Key))
+		return tap(t.Key, t.Intent, fmt.Sprintf("cursor on target %d (%q), committing %s", target, name, t.Key))
 	}
 	if now.Sub(s.lastPress) >= s.timing.BlindAdvanceAfter {
 		s.advance(now)
