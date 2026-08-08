@@ -142,6 +142,11 @@ type Sequence struct {
 	lastKey       string    // last key the planner emitted (for wait-reason text)
 	navStuckItem  MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
 	navStuckCount int       // consecutive emitted nav presses with an unchanged highlighted item
+	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
+	// item. The very next unmapped front-end screen (MenuItem=Unknown, MenuActive)
+	// is then the System Link GAMES BROWSER, where A = JOIN an existing lobby — so
+	// the host box must press Y (CREATE its own), never A. See stepPlanNav.
+	sysLinkEntered bool
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -285,6 +290,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.navStuckItem = MenuItemUnknown
 	s.navStuckCount = 0
 	s.lastPress = time.Time{}
+	s.sysLinkEntered = false
 }
 
 func (s *Sequence) advance(now time.Time) {
@@ -495,6 +501,19 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 	if s.navStuckCount >= navStuckThreshold {
 		key = "b"
 		s.navStuckCount = 0 // give the back-out a chance to change the screen
+	}
+	// SYSTEM LINK GAMES BROWSER — the host must CREATE, never JOIN. Right after
+	// entering System Link (A on the submenu item) we land on an unmapped front-end
+	// screen (MenuItem=Unknown, MenuActive) that is the games list. There, A JOINS
+	// an existing lobby (fine on an empty LAN, WRONG on a populated one) and only Y
+	// CREATES a new one. So force Y here — overriding any planned A (or a stuck-out
+	// B) — until the create lands us in hosting (Done then advances the step).
+	if s.sysLinkEntered && obs.MenuActive && obs.MenuItem == MenuItemUnknown {
+		key = "y"
+	}
+	// Remember we entered System Link, so the next unmapped screen (above) creates.
+	if key == "a" && obs.MenuItem == MenuItemSystemLink {
+		s.sysLinkEntered = true
 	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
