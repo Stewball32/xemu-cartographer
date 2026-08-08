@@ -441,8 +441,17 @@ const navStuckThreshold = 8
 // normal "highlight changed = landed, else re-press" confirm would hammer A every
 // RepressAfter and abort/restart the connect (the definitive "stuck on
 // multiplayer_type_conn_item" bug). We wait for the screen/conn to actually move
-// instead, and only re-press once this generous window elapses (true dropped press).
-const sysLinkConnectTimeout = 20 * time.Second
+// instead, and only re-press once this window elapses (a genuinely dropped press).
+//
+// 8s, not 20s: Stewart's beta.log (c0b80a3) showed the FIRST A after attach was
+// LOST (the Selkies canvas focus not yet settled), so the planner held the FULL
+// timeout on multiplayer_type_conn_item before re-pressing — ~20s of dead time on
+// every entry. A registered A reaches the server_list browser fast (~1s in that
+// log; ~6s worst-case observed), well under 8s, so the highlight-moved advance
+// (stepPlanNav) fires long before this — the window only bounds recovery of a lost
+// press. 8s cuts the wasted wait by ~12s while staying clear of the connect time,
+// and it re-presses ONCE per window (never the old per-tick hammer that aborted it).
+const sysLinkConnectTimeout = 8 * time.Second
 
 // planNavKey chooses the next press purely from WHICH item is highlighted — the
 // heart of the state-aware navigator. It never counts keys.
