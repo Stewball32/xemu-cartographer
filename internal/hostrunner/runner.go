@@ -156,16 +156,21 @@ func (r *Runner) Tick(obs Observation, now time.Time) Action {
 	return act
 }
 
-// decide is the pure decision (no I/O) — the auto-host loop + gated sequence +
-// arm/start. Split out so tests can assert decisions without a fake Input.
+// decide is the pure decision (no I/O) — the auto-host loop + gated sequence.
+// Split out so tests can assert decisions without a fake Input.
+//
+// The runner's job ENDS at a created System Link lobby with the player's map +
+// gametype selected. It does NOT start the match: the PLAYERS press start
+// themselves. There is no "ready" gate and no native 2-player/2-team start gate —
+// both were removed (Stewart 2026-08); the runner never presses A to start.
 func (r *Runner) decide(obs Observation, now time.Time) Action {
 	switch Classify(obs) {
 	case ScreenInGame:
-		r.armed, r.started = false, false
+		r.armed = false
 		return wait("match live")
 	case ScreenPostGame:
-		// Auto-host loop: clear the post-game / carnage screen so we can re-host.
-		r.armed, r.started = false, false
+		// Clear the post-game / carnage screen so a fresh lobby can be set up.
+		r.armed = false
 		return tap("a", "clear carnage", "post-game screen — tapping A to clear")
 	}
 
@@ -173,7 +178,7 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 	if (r.lastPhase == PhaseInGame || r.lastPhase == PhasePostGame) &&
 		(obs.Phase == PhaseMenu || obs.Phase == PhasePreGame) {
 		r.seq.Reset(now)
-		r.armed, r.started = false, false
+		r.armed = false
 	}
 
 	act := r.seq.Step(obs, now)
@@ -181,24 +186,11 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 		return act
 	}
 
-	// Sequence complete = settled in the lobby with the gametype selected (armed).
+	// DONE — lobby created, map + gametype selected. The runner stops here and just
+	// observes (it keeps ticking + emitting state so /play still reflects the live
+	// lobby, incl. the scraped current map/gametype). Players start the match.
 	r.armed = true
-	// arm+start when the policy says so OR a player has hit "ready" in the play
-	// tab — the native predicates below still gate the actual start press.
-	if r.cfg.Start.Mode != ArmAndStart && !r.ready.Load() {
-		return wait("armed; arm-only — awaiting operator/admin/player start")
-	}
-	if ok, why := r.cfg.Start.Evaluate(obs); !ok {
-		return wait("armed; holding start: " + why)
-	}
-	if obs.CountdownActive {
-		return wait("countdown running")
-	}
-	if r.started && now.Sub(r.startAt) < r.cfg.Timing.RepressAfter {
-		return wait("start pressed; awaiting countdown")
-	}
-	r.started, r.startAt = true, now
-	return tap("a", "start countdown", "native ready + arm+start — tapping A to start")
+	return wait("lobby ready — map + gametype selected; players start the match")
 }
 
 // WalkBack is an operator/admin command: press B to back out one screen, or

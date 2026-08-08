@@ -52,23 +52,24 @@ func TestRunnerArmOnlyFlow(t *testing.T) {
 	}
 }
 
-func TestRunnerArmAndStart(t *testing.T) {
+// The runner drives the create-game sequence to a lobby (map + gametype selected)
+// and then STOPS — it never presses start (Stewart 2026-08). Players start.
+func TestRunnerReachesLobbyThenStops(t *testing.T) {
 	in := &fakeInput{}
-	cfg := Config{Instance: "pod1", Start: StartPolicy{Predicates: []StartPredicate{NativeReadyPredicate()}, Mode: ArmAndStart}}
-	r := New(cfg, in, nil)
+	r := New(Config{Instance: "pod1"}, in, nil)
 	t0 := time.Unix(1000, 0)
 
 	r.Tick(systemLink(), t0)
 	r.Tick(hosting(), t0.Add(1*time.Second))
 	r.Tick(hosting(), t0.Add(1*time.Second+DefaultTiming.BlindAdvanceAfter))
-	last := r.Tick(lobby(), t0.Add(3*time.Second)) // done → ready → tap a (start)
+	last := r.Tick(lobby(), t0.Add(3*time.Second)) // sequence done → stop (no start)
 
-	if last.Kind != ActionTap || last.Key() != "a" || last.Intent != "start countdown" {
-		t.Fatalf("arm+start at ready lobby should tap A to start, got %v (%s)", last.Kind, last.Reason)
+	if last.Kind != ActionWait || last.Intent == "start countdown" {
+		t.Fatalf("runner should stop (wait) at the lobby, never start; got %v (%s)", last.Kind, last.Reason)
 	}
-	// y, a(map), a(gametype), a(start)
-	if len(in.taps) != 4 || in.taps[3] != "a" {
-		t.Fatalf("expected 4 taps ending in start-a, got %v", in.taps)
+	// It DID drive the create-game sequence (pressed keys) — just never a start-A.
+	if len(in.taps) == 0 {
+		t.Fatal("runner should have driven the create-game sequence")
 	}
 }
 

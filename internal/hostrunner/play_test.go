@@ -5,34 +5,25 @@ import (
 	"time"
 )
 
-// A player hitting "ready" (SetReady true) flips the default arm-only runner into
-// arm+start: it presses A to start once native conditions pass.
-func TestRunnerPlayerReadyStarts(t *testing.T) {
+// The runner's job ENDS at a created lobby with map + gametype selected — it never
+// presses start (players start the match themselves). There is no ready gate and
+// no 2-player/2-team start gate (Stewart 2026-08): even at a "ready" lobby, and
+// even after a (now-vestigial) SetReady, the decision is a wait, never a start tap.
+func TestRunnerStopsAtLobbyNeverStarts(t *testing.T) {
 	in := &fakeInput{}
-	// Default config = arm-only. Give it a mutable selector so SetSelection works.
 	r := New(Config{Instance: "pod1", Selector: NewAtomicSelector()}, in, nil)
 	t0 := time.Unix(1000, 0)
 
-	// Walk to a ready lobby (2 boxes, 2 teams) while NOT ready → holds (arm-only).
-	// Feeding lobby() directly makes the sequence catch up to done (past the park).
-	last := r.Tick(lobby(), t0)
-	if last.Kind != ActionWait {
-		t.Fatalf("arm-only should hold at lobby, got %v (%s)", last.Kind, last.Reason)
-	}
-	for _, k := range in.taps {
-		if k == "a" && last.Intent == "start countdown" {
-			t.Fatal("must not start before player readies")
-		}
+	last := r.Tick(lobby(), t0) // reach a ready lobby (2 boxes, 2 teams)
+	if last.Kind != ActionWait || last.Intent == "start countdown" {
+		t.Fatalf("runner should wait at the lobby (never start), got %v (%s)", last.Kind, last.Reason)
 	}
 
-	// Player readies → next tick presses start.
+	// SetReady must NOT cause a start — the ready gate is gone.
 	r.SetReady(true)
-	if !r.Ready() {
-		t.Fatal("Ready() should report true after SetReady(true)")
-	}
 	last = r.Tick(lobby(), t0.Add(time.Second))
-	if last.Kind != ActionTap || last.Key() != "a" || last.Intent != "start countdown" {
-		t.Fatalf("ready player should start (tap A), got %v (%s)", last.Kind, last.Reason)
+	if last.Kind != ActionWait || last.Intent == "start countdown" {
+		t.Fatalf("runner must never press start (players start), got %v (%s)", last.Kind, last.Reason)
 	}
 }
 

@@ -209,10 +209,20 @@
 			</button>
 			{#if selected && status?.selected_map}
 				<span class="text-xs text-surface-600-400">
-					Current: <b>{status.selected_map}</b> · <b>{status.selected_gametype}</b>
+					Selected: <b>{status.selected_map}</b> · <b>{status.selected_gametype}</b>
 				</span>
 			{/if}
 		</div>
+
+		<!-- Live readback: what the SCRAPER reads as the box's currently-loaded map /
+		     gametype (distinct from the picked intent above) — the double-check that
+		     the runner's selection actually took on the box. Blank until the box
+		     settles in the lobby with a map/gametype loaded. -->
+		{#if status?.map || status?.gametype}
+			<span class="text-xs text-surface-500">
+				On the box now: <b>{status.map || '—'}</b> · <b>{status.gametype || '—'}</b>
+			</span>
+		{/if}
 	</div>
 
 	<!-- Ready + start readiness -->
