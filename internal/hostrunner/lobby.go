@@ -131,17 +131,18 @@ type Sequence struct {
 	timing StepTiming
 	sel    Selector // selection source for park gate + card navigation (may be nil)
 
-	cursor        int
-	enteredAt     time.Time // when the current step became active
-	lastPress     time.Time // last time the current step's key was emitted
-	pressed       bool      // has the current step's confirm key (A) been pressed
-	navDone       int       // D-pad nav presses emitted for the current card step
-	lastNavCursor int       // live cursor value at the last nav press (for confirmed-move debounce)
-	navFocus      uint32    // menu-focus ptr recorded at the macro-nav step's last press (change ⇒ move landed)
-	navPresses    int       // TOTAL macro-nav presses emitted incl. re-presses (drop budget)
-	lastKey       string    // last key the planner emitted (for wait-reason text)
-	navStuckItem  MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
-	navStuckCount int       // consecutive emitted nav presses with an unchanged highlighted item
+	cursor          int
+	enteredAt       time.Time // when the current step became active
+	lastPress       time.Time // last time the current step's key was emitted
+	pressed         bool      // has the current step's confirm key (A) been pressed
+	navDone         int       // D-pad nav presses emitted for the current card step
+	lastNavCursor   int       // live cursor value at the last nav press (for confirmed-move debounce)
+	lastValidCursor int       // last VALID carousel index read (held across transient mid-scroll invalids)
+	navFocus        uint32    // menu-focus ptr recorded at the macro-nav step's last press (change ⇒ move landed)
+	navPresses      int       // TOTAL macro-nav presses emitted incl. re-presses (drop budget)
+	lastKey         string    // last key the planner emitted (for wait-reason text)
+	navStuckItem    MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
+	navStuckCount   int       // consecutive emitted nav presses with an unchanged highlighted item
 	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
 	// item (multiplayer_type_conn_item). It then A-advances the Select Profile entry
 	// flow (game_connection==0, MenuItem Unknown/Profile) until conn→1 reaches the
@@ -245,10 +246,10 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 			NavKey: "Right", NavKeyBack: "Left", ParkUntilSelection: true,
 			StepsFn:    func(s Selector) int { return s.MapPick().Steps },
 			TargetName: func(s Selector) string { return s.MapPick().Name },
-			CursorFn: func(o Observation) (int, int, bool) { return o.MapCursor, o.MapCursorCount, o.MapCursorValid },
-			On:       hosting,
-			Done:     inLobby, // only truly confirmable once the lobby is readable
-			Blind:    true,
+			CursorFn:   func(o Observation) (int, int, bool) { return o.MapCursor, o.MapCursorCount, o.MapCursorValid },
+			On:         hosting,
+			Done:       inLobby, // only truly confirmable once the lobby is readable
+			Blind:      true,
 		},
 		{
 			Name: "select-gametype", Intent: "select gametype", Key: "a",
@@ -290,6 +291,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.pressed = false
 	s.navDone = 0
 	s.lastNavCursor = 0
+	s.lastValidCursor = 0
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -306,6 +308,7 @@ func (s *Sequence) advance(now time.Time) {
 	s.pressed = false
 	s.navDone = 0
 	s.lastNavCursor = 0
+	s.lastValidCursor = 0
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -642,30 +645,39 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 	if t.CursorFn != nil {
 		cursor, count, ok = t.CursorFn(obs)
 	}
+
+	// (A) TRANSIENT INVALID CURSOR. The list is still UP (count>0) but the carousel
+	// index reads out-of-range for a tick during the SCROLL ANIMATION — the widget's
+	// +0x4C briefly holds an intermediate value (Stewart: "the map cursor shows
+	// invalid for a second, that messes up a bot"). HOLD on the last VALID index:
+	// never press, advance, re-time, or re-count on an invalid read, or the carousel
+	// miscounts. The next tick settles and we resume driving from the true index.
+	if !ok && count > 0 {
+		return wait(fmt.Sprintf("card %s: cursor invalid mid-scroll — holding at index %d", t.Name, s.lastValidCursor))
+	}
+
+	// (B) LIST GONE (count 0): we're not on this card. Advance PAST it only when the
+	// finalized pick is resident (the settled lobby, or a box handed to us mid-flow) —
+	// this is what lets the catch-up complete for an already-settled box. Gating on
+	// count<=0 (not merely !valid) is what stops (A)'s mid-scroll tick from advancing
+	// select-map → select-gametype → reach-lobby after ONE press (the f8513e6 bug):
+	// while the carousel is live (count>0) Done is ONLY target-reached + A, never the
+	// sentinel/lobbyReadable/finalized-resident state.
 	if !ok || count <= 0 {
-		// "Past this card" — advance rather than hold — ONLY when the list widget is
-		// truly GONE (count 0) AND the finalized pick is resident: the settled lobby,
-		// or a box handed to us mid-flow. This is what lets the catch-up complete for
-		// an already-settled box (the catch-up loop no longer skips card steps).
-		//
-		// CRITICAL: gate on count<=0. While the list is still UP (count>0) the index
-		// only reads out-of-range for a tick during a SCROLL ANIMATION — we are STILL
-		// on this card and mid-drive. The lobby's DEFAULT Map+Gametype are already
-		// resident (Y-create runs before the pick), so without the count<=0 gate this
-		// shortcut fired on the first post-Right scroll tick and advanced select-map →
-		// select-gametype → reach-lobby after ONE press (Stewart's f8513e6 log: "cursor
-		// 0→7 (7 left)" then immediately "awaiting reach-lobby"). Done is target-reached
-		// + A, never the sentinel/lobbyReadable/finalized-resident state, while a live
-		// carousel (count>0) is present.
-		if count <= 0 && obs.Map != "" && obs.Gametype != "" {
+		if obs.Map != "" && obs.Gametype != "" {
 			s.advance(now)
 			return s.Step(obs, now)
 		}
-		// Otherwise HOLD (never navigate blind, never advance): a live list with the
-		// index mid-scroll settles within a tick and we resume driving; the create→card
-		// transition holds until the carousel comes up.
+		// Hold for the create→card transition until the carousel comes up.
 		return wait(fmt.Sprintf("card %s: awaiting live cursor read", t.Name))
 	}
+
+	// (C) VALID read. The source of truth is the carousel INDEX (the list widget's
+	// +0x4C), NOT the left/center/right visual slot: those mp_map_{left,center,right}_
+	// item widgets only say WHERE the highlight sits on screen and are never used for
+	// targeting — "Temple" is the same index regardless of which slot it occupies. All
+	// nav + target-reached logic below is index-relative.
+	s.lastValidCursor = cursor
 
 	target := 0
 	name := ""

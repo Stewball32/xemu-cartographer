@@ -48,6 +48,8 @@
 		gametype: string;
 		selected_map: string;
 		selected_gametype: string;
+		highlighted_map: string;
+		highlighted_gametype: string;
 		enumerated_maps: string[] | null;
 		enumerated_gametypes: string[] | null;
 	};
@@ -418,30 +420,40 @@
 						</span>
 					</div>
 					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">map cursor</span>
-						<span class="flex items-center gap-1 font-mono">
-							{diag.map_cursor.index}/{diag.map_cursor.count}
+						<span class="text-surface-600-400">map cursor (selecting)</span>
+						<span class="flex flex-wrap items-center gap-1 font-mono">
+							{diag.highlighted_map || '—'}
+							<span class="text-surface-600-400">@{diag.map_cursor.index}/{diag.map_cursor.count}</span>
 							<span class="badge {diag.map_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
 								{diag.map_cursor.valid ? 'valid' : 'invalid'}
 							</span>
 						</span>
 					</div>
 					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">gametype cursor</span>
-						<span class="flex items-center gap-1 font-mono">
-							{diag.gametype_cursor.index}/{diag.gametype_cursor.count}
+						<span class="text-surface-600-400">gametype cursor (selecting)</span>
+						<span class="flex flex-wrap items-center gap-1 font-mono">
+							{diag.highlighted_gametype || '—'}
+							<span class="text-surface-600-400">@{diag.gametype_cursor.index}/{diag.gametype_cursor.count}</span>
 							<span class="badge {diag.gametype_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
 								{diag.gametype_cursor.valid ? 'valid' : 'invalid'}
 							</span>
 						</span>
 					</div>
 					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">map · read → picked</span>
-						<span class="font-mono">{diag.map || '—'} → {diag.selected_map || '—'}</span>
+						<span class="text-surface-600-400">map · pick → loaded</span>
+						<span class="font-mono">
+							{diag.selected_map || '—'}
+							<span class="text-surface-600-400">→ loaded</span>
+							{diag.map || '—'}
+						</span>
 					</div>
 					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">gametype · read → picked</span>
-						<span class="font-mono">{diag.gametype || '—'} → {diag.selected_gametype || '—'}</span>
+						<span class="text-surface-600-400">gametype · pick → loaded</span>
+						<span class="font-mono">
+							{diag.selected_gametype || '—'}
+							<span class="text-surface-600-400">→ loaded</span>
+							{diag.gametype || '—'}
+						</span>
 					</div>
 				</div>
 
