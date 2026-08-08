@@ -30,6 +30,8 @@
 // contained and the scraper reader free to evolve.
 package hostrunner
 
+import "strings"
+
 // Phase mirrors the scraper's GameState string values so the integration adapter
 // is a trivial cast. It is the coarse engine lifecycle the auto-host loop reacts
 // to.
@@ -214,6 +216,16 @@ func Classify(obs Observation) Screen {
 		return ScreenInGame
 	case PhasePostGame:
 		return ScreenPostGame
+	}
+	// PREGAME LOBBY override. The pregame lobby (SELECT TEAMS) lingers the System Link
+	// server_list widgets, which would otherwise re-detect as the CREATE screen
+	// (menu_item=SystemLinkGames) and re-press Y — RUNTIME-OBSERVED on a box that
+	// BOOTED INTO a persisted pregame lobby (Stewart: dela=…\connected\pregame\…,
+	// menu_item=6, serverlist=true, conn=2 → runner looped "create system-link game").
+	// The highlighted widget under \connected\pregame is a definitive "this IS the
+	// lobby" signal that overrides the sticky server_list, so classify it as the lobby.
+	if strings.Contains(obs.Dela, `\connected\pregame`) {
+		return ScreenLobby
 	}
 	// HIGH-GVA screen signals FIRST — read from the UI widget heap via the stable
 	// physical 0x80000000-window, immune to the low-GVA cached-translation drift

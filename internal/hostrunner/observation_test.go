@@ -38,3 +38,31 @@ func TestReadyToStart(t *testing.T) {
 		t.Error("1 team should not be ready")
 	}
 }
+
+// A box that BOOTED INTO a persisted pregame lobby lingers the System Link
+// server_list (menu_item=SystemLinkGames), but its highlighted widget is under
+// \connected\pregame — it must classify as the LOBBY, never system_link (which
+// would loop "create system-link game"/Y). Runtime-observed on Stewart's box.
+func TestPregameLobbyOverridesStickySystemLink(t *testing.T) {
+	base := Observation{
+		Fresh:    true,
+		MenuItem: MenuItemSystemLinkGames, // server_list lingering
+		Dela:     `ui\shell\main_menu\multiplayer_type_select\connected\pregame\xbox_graphic`,
+	}
+	for _, phase := range []Phase{PhasePreGame, PhaseMenu} {
+		for _, conn := range []Connection{ConnHosting, ConnMenu} {
+			o := base
+			o.Phase, o.Connection = phase, conn
+			if got := Classify(o); got != ScreenLobby {
+				t.Fatalf("pregame dela phase=%v conn=%v: got %v, want ScreenLobby (not system_link)", phase, conn, got)
+			}
+		}
+	}
+	// Sanity: the ACTUAL System Link games browser (no \connected\pregame) still
+	// classifies as system_link so Y-create still fires.
+	browser := Observation{Fresh: true, Connection: ConnMenu, MenuItem: MenuItemSystemLinkGames,
+		Dela: `ui\shell\main_menu\multiplayer_type_select\connected\server_list\server_list_item0`}
+	if got := Classify(browser); got != ScreenSystemLink {
+		t.Fatalf("System Link games browser must stay ScreenSystemLink, got %v", got)
+	}
+}

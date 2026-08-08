@@ -19,11 +19,12 @@ type Diagnostics struct {
 	Present         bool   `json:"present"`
 	Tick            uint32 `json:"tick"`
 	Screen          string `json:"screen"`
-	Dela            string `json:"dela"`          // highlighted-widget DeLa path (navfp dela=)
-	MenuItem        int    `json:"menu_item"`     // resolved MenuItem enum
+	Dela            string `json:"dela"`      // highlighted-widget DeLa path (navfp dela=)
+	MenuItem        int    `json:"menu_item"` // resolved MenuItem enum
 	MenuItemName    string `json:"menu_item_name"`
-	GameConnection  int    `json:"game_connection"` // conn: 0 menu, 1 system-link, 2 hosting, 3 film
+	GameConnection  int    `json:"game_connection"`  // conn: 0 menu, 1 system-link, 2 hosting, 3 film
 	PregameSentinel bool   `json:"pregame_sentinel"` // game_globals+0x10 == 0xDEADBEEF
+	MenuFocus       uint32 `json:"menu_focus"`       // 0x2F9B38 focused-widget ptr — 0 on a cold un-woken menu
 
 	MapCursor      CursorView `json:"map_cursor"`
 	GametypeCursor CursorView `json:"gametype_cursor"`
@@ -59,6 +60,7 @@ func (reg *Registry) Diagnostics(instance string) Diagnostics {
 		d.MenuItemName = MenuItem(ev.MenuItem).String()
 		d.GameConnection = ev.GameConnection
 		d.PregameSentinel = ev.PregameSentinel
+		d.MenuFocus = ev.MenuFocus
 		d.MapCursor = CursorView{Index: ev.MapCursor, Count: ev.MapCursorCount, Valid: ev.MapCursorValid}
 		d.GametypeCursor = CursorView{Index: ev.GametypeCursor, Count: ev.GametypeCursorCount, Valid: ev.GametypeCursorValid}
 		d.Map = ev.Map

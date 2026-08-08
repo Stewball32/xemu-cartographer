@@ -42,6 +42,7 @@
 		menu_item_name: string;
 		game_connection: number;
 		pregame_sentinel: boolean;
+		menu_focus: number;
 		map_cursor: Cursor;
 		gametype_cursor: Cursor;
 		map: string;
@@ -417,6 +418,15 @@
 						<span class="text-surface-600-400">pregame sentinel</span>
 						<span class="badge w-fit {diag.pregame_sentinel ? 'preset-tonal-warning' : 'preset-tonal-surface'}">
 							{diag.pregame_sentinel ? '0xDEADBEEF' : 'absent'}
+						</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">menu_focus (woken?)</span>
+						<span class="flex items-center gap-1 font-mono">
+							0x{(diag.menu_focus >>> 0).toString(16)}
+							<span class="badge {diag.menu_focus ? 'preset-tonal-success' : 'preset-tonal-error'}">
+								{diag.menu_focus ? 'woken' : 'cold/0'}
+							</span>
 						</span>
 					</div>
 					<div class="flex flex-col gap-0.5">

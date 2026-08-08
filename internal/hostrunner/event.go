@@ -35,10 +35,15 @@ type RunnerEvent struct {
 	// diagnostics panel so an operator can watch the box AND its live scraper reads
 	// side-by-side. NOT part of the decision-change log gate (see decisionChanged),
 	// so they update every tick without flooding the server log.
-	Dela                string `json:"dela,omitempty"`
-	MenuItem            int    `json:"menu_item"`
-	GameConnection      int    `json:"game_connection"`
-	PregameSentinel     bool   `json:"pregame_sentinel"`
+	Dela            string `json:"dela,omitempty"`
+	MenuItem        int    `json:"menu_item"`
+	GameConnection  int    `json:"game_connection"`
+	PregameSentinel bool   `json:"pregame_sentinel"`
+	// MenuFocus ← menu_focus (0x2F9B38): the CE front-end focused-widget pointer.
+	// Candidate "menu woken / widget tree built?" signal — non-zero once the tree is
+	// instantiated, expected 0 on a COLD un-interacted main menu (the state where dela
+	// is blank). Surfaced so Stewart can verify what populates cold.
+	MenuFocus           uint32 `json:"menu_focus"`
 	MapCursor           int    `json:"map_cursor"`
 	MapCursorCount      int    `json:"map_cursor_count"`
 	MapCursorValid      bool   `json:"map_cursor_valid"`
@@ -81,6 +86,7 @@ func buildEvent(instance string, obs Observation, auth Authority, kind string, a
 		MenuItem:            int(obs.MenuItem),
 		GameConnection:      int(obs.Connection),
 		PregameSentinel:     obs.PregameSentinel,
+		MenuFocus:           obs.MenuFocus,
 		MapCursor:           obs.MapCursor,
 		MapCursorCount:      obs.MapCursorCount,
 		MapCursorValid:      obs.MapCursorValid,
