@@ -393,31 +393,33 @@ func TestNavRoutesByIdentity(t *testing.T) {
 	}
 }
 
-// After entering System Link (A on the submenu item) the runner lands on the games
-// BROWSER — an unmapped front-end screen (MenuItem=Unknown, MenuActive, and
-// game_connection NOT yet 1). There A = JOIN an existing lobby (fine on an empty
-// LAN, wrong on a populated one); only Y CREATES a new one. The host box must
-// always create its own, so the planner presses Y there, never A.
-func TestNavCreatesWithYOnSystemLinkBrowser(t *testing.T) {
+// The real System Link flow (RE'd from a networked box): enter System Link (A on
+// the conn item) → SELECT PROFILE at game_connection==0 (join/select/confirm = A
+// presses, screen unmapped: MenuItem Unknown or Profile) → the server_list games
+// browser at conn==1, where create-game presses Y (CREATE). The host must never
+// press A on the games browser (that JOINS) — Y is keyed strictly to conn==1, and
+// A advances only the conn==0 entry screens.
+func TestNavSystemLinkFlow(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
 	var focus uint32 = 0x8000
-	press := func(item MenuItem) Action {
+	step := func(item MenuItem, wantKey string) {
 		now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
-		a := s.Step(obsMI(item, focus), now) // emit
-		focus++                              // press landed
+		a := s.Step(obsMI(item, focus), now)
+		if a.Kind != ActionTap || a.Key() != wantKey {
+			t.Fatalf("%s: want tap %q, got %v key=%q (%s)", item, wantKey, a.Kind, a.Key(), a.Reason)
+		}
+		focus++
 		now = now.Add(10 * time.Millisecond)
 		s.Step(obsMI(item, focus), now) // confirm landed
-		return a
 	}
-	if a := press(MenuItemSystemLink); a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("entering System Link should press A, got %v (%s)", a.Kind, a.Reason)
-	}
-	// Games browser (Unknown, conn still menu) → CREATE with Y, not A.
+	step(MenuItemSystemLink, "a") // enter System Link
+	step(MenuItemUnknown, "a")    // SELECT PROFILE (unmapped, conn=0) → advance with A
+	step(MenuItemProfile, "a")    // SELECT PROFILE (profile widget, conn=0) → advance with A
+	// conn==1 (server_list games browser) → create-game CREATES with Y, never A.
 	now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
-	a := s.Step(obsMI(MenuItemUnknown, focus), now)
-	if a.Kind != ActionTap || a.Key() != "y" {
-		t.Fatalf("System Link games browser: host must CREATE with Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	if a := s.Step(systemLink(), now); a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("System Link games browser (conn==1): must CREATE with Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
 	}
 }
 

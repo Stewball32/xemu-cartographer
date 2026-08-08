@@ -143,9 +143,10 @@ type Sequence struct {
 	navStuckItem  MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
 	navStuckCount int       // consecutive emitted nav presses with an unchanged highlighted item
 	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
-	// item. The very next unmapped front-end screen (MenuItem=Unknown, MenuActive)
-	// is then the System Link GAMES BROWSER, where A = JOIN an existing lobby — so
-	// the host box must press Y (CREATE its own), never A. See stepPlanNav.
+	// item (multiplayer_type_conn_item). It then A-advances the Select Profile entry
+	// flow (game_connection==0, MenuItem Unknown/Profile) until conn→1 reaches the
+	// server_list games browser, where create-game presses Y (CREATE). See
+	// stepPlanNav — this is what stops the host from Back-ing out of Select Profile.
 	sysLinkEntered bool
 }
 
@@ -502,16 +503,25 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		key = "b"
 		s.navStuckCount = 0 // give the back-out a chance to change the screen
 	}
-	// SYSTEM LINK GAMES BROWSER — the host must CREATE, never JOIN. Right after
-	// entering System Link (A on the submenu item) we land on an unmapped front-end
-	// screen (MenuItem=Unknown, MenuActive) that is the games list. There, A JOINS
-	// an existing lobby (fine on an empty LAN, WRONG on a populated one) and only Y
-	// CREATES a new one. So force Y here — overriding any planned A (or a stuck-out
-	// B) — until the create lands us in hosting (Done then advances the step).
-	if s.sysLinkEntered && obs.MenuActive && obs.MenuItem == MenuItemUnknown {
-		key = "y"
+	// SELECT PROFILE — the System Link entry flow (RE'd from Stewart's networked
+	// box, 2026-08). After A on the SYSTEM LINK item (multiplayer_type_conn_item)
+	// we pass through Select Profile at game_connection==0: join → select profile →
+	// confirm, all A presses, until conn→1 lands us on the System Link games browser
+	// (dela …\connected\server_list\…). Select Profile exposes no forward-routing
+	// item (MenuItem=Unknown, or the profile widgets → MenuItemProfile), so the
+	// planner would Back out of it. Instead ADVANCE with A — repeated until conn→1
+	// (the profile sub-states don't need enumerating: each is one A, the screen
+	// advances, and conn→1 is the terminator). Gated on sysLinkEntered so a
+	// SIDE-PATH profile (Settings › Player Setup) still Backs out (no infinite-A).
+	// The CREATE press itself is NOT here: it's create-game (Key "y"), which fires
+	// once conn==1 (Classify → ScreenSystemLink) — so Y is keyed strictly to the
+	// server_list browser and A is never pressed there (reachedSystemLink advances
+	// the nav step the instant conn==1, before this planner can press).
+	if s.sysLinkEntered && obs.Connection == ConnMenu &&
+		(obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
+		key = "a"
 	}
-	// Remember we entered System Link, so the next unmapped screen (above) creates.
+	// Remember we entered System Link, so the Select-Profile advance above kicks in.
 	if key == "a" && obs.MenuItem == MenuItemSystemLink {
 		s.sysLinkEntered = true
 	}
