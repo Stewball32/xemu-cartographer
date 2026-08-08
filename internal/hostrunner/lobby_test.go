@@ -403,23 +403,56 @@ func TestNavSystemLinkFlow(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	now := time.Unix(1000, 0)
 	var focus uint32 = 0x8000
-	step := func(item MenuItem, wantKey string) {
+	tick := func(o Observation) Action {
 		now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
-		a := s.Step(obsMI(item, focus), now)
-		if a.Kind != ActionTap || a.Key() != wantKey {
-			t.Fatalf("%s: want tap %q, got %v key=%q (%s)", item, wantKey, a.Kind, a.Key(), a.Reason)
-		}
-		focus++
-		now = now.Add(10 * time.Millisecond)
-		s.Step(obsMI(item, focus), now) // confirm landed
+		return s.Step(o, now)
 	}
-	step(MenuItemSystemLink, "a") // enter System Link
-	step(MenuItemUnknown, "a")    // SELECT PROFILE (unmapped, conn=0) → advance with A
-	step(MenuItemProfile, "a")    // SELECT PROFILE (profile widget, conn=0) → advance with A
-	// conn==1 (server_list games browser) → create-game CREATES with Y, never A.
+	// 1. On the System Link item → press A ONCE (starts the connect-hold).
+	if a := tick(obsMI(MenuItemSystemLink, focus)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("System Link item → A once, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// 2. While connecting (same item, conn still menu, highlight unchanged) the
+	//    planner HOLDS — no re-press — across many ticks (the ~6s link-up).
+	for i := 0; i < 5; i++ {
+		if a := tick(obsMI(MenuItemSystemLink, focus)); a.Kind == ActionTap {
+			t.Fatalf("must NOT re-press while System Link connects (tick %d), got tap %q", i, a.Key())
+		}
+	}
+	// 3. Screen moves to SELECT PROFILE (conn=0, unmapped): connect-hold clears
+	//    (a wait), then the profile flow A-advances.
+	focus++
+	if a := tick(obsMI(MenuItemUnknown, focus)); a.Kind == ActionTap {
+		t.Fatalf("first tick on the moved screen clears connecting (wait), got tap %q", a.Key())
+	}
+	if a := tick(obsMI(MenuItemUnknown, focus)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("Select Profile → advance with A, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// 4. conn==1 (server_list games browser) → create-game CREATES with Y, never A.
+	if a := tick(systemLink()); a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("server_list (conn==1) → CREATE with Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+}
+
+// The System Link connect-hold re-presses ONCE if the single A genuinely dropped —
+// after the generous window elapses with no screen/conn movement (not every tick).
+func TestNavSystemLinkConnectRepressAfterTimeout(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	var focus uint32 = 0x8000
+	// Press A on the System Link item.
 	now = now.Add(DefaultTiming.NavKeyInterval + time.Millisecond)
-	if a := s.Step(systemLink(), now); a.Kind != ActionTap || a.Key() != "y" {
-		t.Fatalf("System Link games browser (conn==1): must CREATE with Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	if a := s.Step(obsMI(MenuItemSystemLink, focus), now); a.Key() != "a" {
+		t.Fatalf("System Link item → A, got %q", a.Key())
+	}
+	// Holds (no re-press) up to the timeout.
+	now = now.Add(sysLinkConnectTimeout - time.Second)
+	if a := s.Step(obsMI(MenuItemSystemLink, focus), now); a.Kind == ActionTap {
+		t.Fatalf("must still hold before the connect timeout, got tap %q", a.Key())
+	}
+	// Past the timeout with no movement → re-press once.
+	now = now.Add(2 * time.Second)
+	if a := s.Step(obsMI(MenuItemSystemLink, focus), now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("after the connect timeout a dropped press should re-fire A once, got %v key=%q", a.Kind, a.Key())
 	}
 }
 

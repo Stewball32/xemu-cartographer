@@ -148,6 +148,11 @@ type Sequence struct {
 	// server_list games browser, where create-game presses Y (CREATE). See
 	// stepPlanNav — this is what stops the host from Back-ing out of Select Profile.
 	sysLinkEntered bool
+	// sysLinkConnectAt is when the single A was pressed on the SYSTEM LINK item; the
+	// planner then HOLDS (no re-press) until the screen/conn moves or
+	// sysLinkConnectTimeout elapses, so it doesn't hammer A through the ~6s connect.
+	// Zero when not connecting. See stepPlanNav.
+	sysLinkConnectAt time.Time
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -292,6 +297,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.navStuckCount = 0
 	s.lastPress = time.Time{}
 	s.sysLinkEntered = false
+	s.sysLinkConnectAt = time.Time{}
 }
 
 func (s *Sequence) advance(now time.Time) {
@@ -416,6 +422,16 @@ const navMaxPresses = 48
 // nav before then), so a working confirm is never mistaken for stuck.
 const navStuckThreshold = 8
 
+// sysLinkConnectTimeout is how long the planner HOLDS after the single A on the
+// SYSTEM LINK item while the connection establishes, without re-pressing. Selecting
+// System Link Play flips game_connection 0→1 over several seconds (RUNTIME-OBSERVED
+// ~6s on a networked box), during which the highlight does NOT change — so the
+// normal "highlight changed = landed, else re-press" confirm would hammer A every
+// RepressAfter and abort/restart the connect (the definitive "stuck on
+// multiplayer_type_conn_item" bug). We wait for the screen/conn to actually move
+// instead, and only re-press once this generous window elapses (true dropped press).
+const sysLinkConnectTimeout = 10 * time.Second
+
 // planNavKey chooses the next press purely from WHICH item is highlighted — the
 // heart of the state-aware navigator. It never counts keys.
 //
@@ -474,6 +490,27 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 
 	// (a) awaiting confirmation of the key we already emitted.
 	if s.pressed {
+		// SYSTEM LINK CONNECT window: after the single A on multiplayer_type_conn_item
+		// the link takes ~6s to establish, and the highlight stays put the whole time.
+		// So DON'T use focus-change here and DON'T re-press (a re-press aborts the
+		// connect — the "28 A-presses, highlight never changes" bug). Land only when
+		// the screen/conn actually moves; re-press once only if the generous window
+		// elapses (the single A genuinely dropped). Done (reachedSystemLink) at the top
+		// short-circuits this the instant conn→1.
+		if !s.sysLinkConnectAt.IsZero() {
+			if obs.MenuItem != MenuItemSystemLink || obs.Connection != ConnMenu {
+				s.sysLinkConnectAt = time.Time{}
+				s.pressed = false
+				s.navDone++
+				return wait(fmt.Sprintf("nav %s: System Link connected — advancing (now %s)", t.Name, obs.MenuItem))
+			}
+			if now.Sub(s.sysLinkConnectAt) >= sysLinkConnectTimeout {
+				s.sysLinkConnectAt = time.Time{}
+				s.pressed = false
+				return s.stepPlanNav(t, obs, now) // window elapsed → the A dropped, re-press once
+			}
+			return wait(fmt.Sprintf("nav %s: System Link connecting — holding, no re-press (%.0fs)", t.Name, now.Sub(s.sysLinkConnectAt).Seconds()))
+		}
 		if obs.MenuFocus != s.navFocus { // the highlight / screen changed → landed
 			s.navDone++
 			s.pressed = false
@@ -521,9 +558,11 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		(obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
 		key = "a"
 	}
-	// Remember we entered System Link, so the Select-Profile advance above kicks in.
+	// Remember we entered System Link, so the Select-Profile advance above kicks in,
+	// and start the connect-hold window so we don't hammer A through the ~6s link-up.
 	if key == "a" && obs.MenuItem == MenuItemSystemLink {
 		s.sysLinkEntered = true
+		s.sysLinkConnectAt = now
 	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
