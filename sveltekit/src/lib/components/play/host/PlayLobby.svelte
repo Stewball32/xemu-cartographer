@@ -1,9 +1,9 @@
 <script lang="ts">
 	// Phase: lobby. The box is up and parked in the menus. The player picks the
-	// map + gametype (read LIVE off the disc), readies up, and watches boxes /
-	// players join over System Link. The host-runner drives the actual menu
-	// navigation + presses start once the native preconditions pass (2+ boxes,
-	// 2+ teams) — the player never touches noVNC here.
+	// map + gametype (read LIVE off the disc) and watches boxes / players join over
+	// System Link. The host-runner drives the menu navigation and STOPS at the
+	// created lobby — PLAYERS start the match on the box (the old "ready up" gate is
+	// gone), so this view shows what the runner is doing rather than a start button.
 	import {
 		formatCountdown,
 		isPlayerControllable,
@@ -31,12 +31,10 @@
 		reap: ReapView | null;
 		busy: boolean;
 		onselect: (map: string, gametype: string) => void;
-		onready: (ready: boolean) => void;
 		onteardown: () => void;
 	}
 
-	let { instance, status, options, game, reap, busy, onselect, onready, onteardown }: Props =
-		$props();
+	let { instance, status, options, game, reap, busy, onselect, onteardown }: Props = $props();
 
 	// Seed the pickers once from the confirmed selection; the parent re-keys this
 	// component on `instance` so a new box resets the local state.
@@ -73,7 +71,26 @@
 		});
 	});
 	const selected = $derived(status?.selected === true);
-	const ready = $derived(status?.ready === true);
+
+	// LOADED-map readback. The scraper reports the box's currently-loaded SCENARIO;
+	// at the front-end menus that's CE's own menu shell, literally named "ui" — which
+	// surfaced as "On the box now: UI" instead of a map (the reported bug). Treat the
+	// menu shell as "no map loaded" so the readback only ever shows a real map.
+	const MENU_SCENARIOS = new Set(['ui', 'ui.map', 'levels\\ui\\ui']);
+	const isMenuScenario = (n: string) => MENU_SCENARIOS.has(n.trim().toLowerCase());
+	const loadedMap = $derived(!status?.map || isMenuScenario(status.map) ? '' : status.map);
+	const loadedGametype = $derived(status?.gametype ?? '');
+
+	// What the box is DOING right now — the runner's own live decision reason, so
+	// the host can see progress ("driving to Temple", "parked awaiting a pick")
+	// instead of guessing from a silent screen.
+	const activity = $derived.by(() => {
+		if (!status?.present) return 'Box is starting up…';
+		if (status.authority === 'admin') return 'An admin is driving this box.';
+		if (status.authority === 'disabled') return 'Auto-hosting is off for this box.';
+		return status.last_reason || 'Working…';
+	});
+	const screenLabel = $derived((status?.screen ?? '').replace(/_/g, ' '));
 
 	// Roster view off the live game feed (scores muted in the lobby).
 	const roster = $derived(buildScoreboard(game, null));
@@ -91,10 +108,6 @@
 		onselect(pickMap.trim(), pickGametype.trim());
 	}
 
-	// Native-start readiness (the runner needs a 2nd box + 2 teams before it can
-	// press start). Surfaced so the host knows what they're waiting on.
-	const needBox = $derived((status?.machine_count ?? 0) < 2);
-	const needTeams = $derived((status?.team_count ?? 0) < 2);
 </script>
 
 <div class="flex flex-col gap-4">
@@ -218,59 +231,43 @@
 		     gametype (distinct from the picked intent above) — the double-check that
 		     the runner's selection actually took on the box. Blank until the box
 		     settles in the lobby with a map/gametype loaded. -->
-		{#if status?.map || status?.gametype}
+		{#if loadedMap || loadedGametype}
 			<span class="text-xs text-surface-500">
-				On the box now: <b>{status.map || '—'}</b> · <b>{status.gametype || '—'}</b>
+				On the box now: <b>{loadedMap || '—'}</b> · <b>{loadedGametype || '—'}</b>
 			</span>
 		{/if}
 	</div>
 
-	<!-- Ready + start readiness -->
-	<div class="flex flex-col gap-3 card preset-tonal p-4">
-		<div class="flex flex-wrap items-center gap-3">
-			<h3 class="text-sm font-semibold tracking-wide uppercase">Start</h3>
-			{#if ready}
-				<button
-					type="button"
-					class="ml-auto btn preset-tonal-error btn-sm"
-					disabled={!controllable || busy}
-					onclick={() => onready(false)}
-				>
-					Cancel ready
-				</button>
-			{:else}
-				<button
-					type="button"
-					class="ml-auto btn preset-filled-success-500 btn-sm"
-					disabled={!controllable || busy || !selected}
-					onclick={() => onready(true)}
-				>
-					{#if busy}<LoaderIcon class="size-4 animate-spin" />{/if}
-					Ready up
-				</button>
+	<!-- What the box is DOING. Replaces the old "Ready up" gate (removed 2026-08 —
+	     the runner never presses start; PLAYERS start the match on the box). This
+	     shows the runner's own live decision reason so the host can see progress
+	     instead of watching a silent screen. -->
+	<div class="flex flex-col gap-2 card preset-tonal p-4">
+		<div class="flex flex-wrap items-center gap-2">
+			<h3 class="text-sm font-semibold tracking-wide uppercase">Box status</h3>
+			{#if screenLabel}
+				<span class="badge preset-tonal-surface text-xs">{screenLabel}</span>
+			{/if}
+			{#if status?.countdown_active}
+				<span class="preset-tonal-success-500 ml-auto badge text-xs">Match starting…</span>
 			{/if}
 		</div>
 
-		{#if !selected}
-			<p class="text-sm text-surface-600-400">Pick a map and gametype above first.</p>
-		{:else if status?.countdown_active}
-			<p class="flex items-center gap-2 text-sm">
-				<LoaderIcon class="size-4 animate-spin" /> Match starting…
+		<p class="flex items-start gap-2 text-sm text-surface-600-400">
+			{#if status?.countdown_active}
+				<LoaderIcon class="mt-0.5 size-4 shrink-0 animate-spin" />
+			{:else}
+				<CheckCircle2Icon class="mt-0.5 size-4 shrink-0 opacity-60" />
+			{/if}
+			<span>{activity}</span>
+		</p>
+
+		{#if selected}
+			<p class="text-xs text-surface-500">
+				When everyone's in, <b>start the match on the box</b> — players press start, not the site.
 			</p>
-		{:else if ready}
-			<div class="flex flex-col gap-1 text-sm">
-				<p class="flex items-center gap-2 text-success-600-400">
-					<CheckCircle2Icon class="size-4" /> You're ready — the match starts automatically when:
-				</p>
-				<ul class="ml-6 list-disc text-xs text-surface-600-400">
-					<li class:line-through={!needBox}>a second box joins over System Link</li>
-					<li class:line-through={!needTeams}>players are split across at least two teams</li>
-				</ul>
-			</div>
 		{:else}
-			<p class="text-sm text-surface-600-400">
-				Press <b>Ready up</b> when your friends are ready to go.
-			</p>
+			<p class="text-xs text-surface-500">Pick a map and gametype above to set the game up.</p>
 		{/if}
 	</div>
 

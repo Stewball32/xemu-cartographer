@@ -105,7 +105,20 @@ func (r *runner) ensureCustomVariants() {
 			if len(names) == 0 {
 				return
 			}
-			r.withCache(func(c *instanceCache) { c.CustomGametypes = names })
+			r.withCache(func(c *instanceCache) {
+				c.CustomGametypes = names
+				// Merge into the SERVED list right now, in the same critical section —
+				// don't wait for the next enumerateLobby tick. CustomLoadDone (the
+				// gametypes_pending signal) flips the moment this goroutine returns, so
+				// if the merge lagged a tick the play API would report "list complete"
+				// while AvailableGametypes was still built-ins-only; the frontend then
+				// stopped re-polling and cached built-ins until a HARD REFRESH (the
+				// reported bug). AvailableGametypes is built-ins-only here (customs were
+				// empty until this assignment) so this prepend can't double-apply.
+				if len(c.AvailableGametypes) > 0 {
+					c.AvailableGametypes = prependCustomGametypes(names, c.AvailableGametypes)
+				}
+			})
 			log.Printf("scraper[%s]: %d custom gametype variants loaded from disk", name, len(names))
 		}()
 	})

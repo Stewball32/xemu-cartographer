@@ -29,6 +29,9 @@ export interface PlayStatus {
 	team_count: number;
 	countdown_active: boolean;
 	ready_to_start: boolean;
+	/** The runner's short gating explanation for its last decision — what the box
+	 *  is actually doing / waiting on right now. */
+	last_reason?: string;
 	map?: string;
 	gametype?: string;
 	selected_map?: string;

@@ -275,7 +275,6 @@
 	}
 
 	const selectGame = (map: string, gametype: string) => postAction('selection', { map, gametype });
-	const setReady = (ready: boolean) => postAction(ready ? 'ready' : 'unready');
 	const teardown = () => postAction('teardown');
 
 	function onFocus() {
@@ -390,7 +389,6 @@
 				reap={current?.reap ?? null}
 				busy={actionBusy}
 				onselect={selectGame}
-				onready={setReady}
 				onteardown={teardown}
 			/>
 		{/key}

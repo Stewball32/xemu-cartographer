@@ -433,7 +433,11 @@
 						<span class="text-surface-600-400">map cursor (selecting)</span>
 						<span class="flex flex-wrap items-center gap-1 font-mono">
 							{diag.highlighted_map || '—'}
-							<span class="text-surface-600-400">@{diag.map_cursor.index}/{diag.map_cursor.count}</span>
+							<!-- 1-BASED for humans: the widget index is 0-based, so a raw
+							     index/count read one below the total (35/36 at the last card). -->
+							<span class="text-surface-600-400">
+								@{diag.map_cursor.count ? diag.map_cursor.index + 1 : 0}/{diag.map_cursor.count}
+							</span>
 							<span class="badge {diag.map_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
 								{diag.map_cursor.valid ? 'valid' : 'invalid'}
 							</span>
@@ -443,7 +447,10 @@
 						<span class="text-surface-600-400">gametype cursor (selecting)</span>
 						<span class="flex flex-wrap items-center gap-1 font-mono">
 							{diag.highlighted_gametype || '—'}
-							<span class="text-surface-600-400">@{diag.gametype_cursor.index}/{diag.gametype_cursor.count}</span>
+							<span class="text-surface-600-400">
+								@{diag.gametype_cursor.count ? diag.gametype_cursor.index + 1 : 0}/{diag
+									.gametype_cursor.count}
+							</span>
 							<span class="badge {diag.gametype_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
 								{diag.gametype_cursor.valid ? 'valid' : 'invalid'}
 							</span>

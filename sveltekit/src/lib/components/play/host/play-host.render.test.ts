@@ -175,7 +175,6 @@ describe('PlayLobby (lobby phase)', () => {
 			reap: null as ReapView | null,
 			busy: false,
 			onselect: vi.fn(),
-			onready: vi.fn(),
 			onteardown: vi.fn(),
 			...over
 		};
@@ -212,9 +211,26 @@ describe('PlayLobby (lobby phase)', () => {
 		expect(getByText(/admin is currently controlling/i)).toBeInTheDocument();
 	});
 
-	it('Ready up is disabled until a game is selected', () => {
-		const { getByRole } = renderC(PlayLobby, base({ status: mockStatus({ selected: false }) }));
-		expect(getByRole('button', { name: /Ready up/i })).toBeDisabled();
+	// The "Ready up" gate was REMOVED (2026-08): the runner never presses start —
+	// players start the match on the box. The lobby now shows what the box is DOING.
+	it('has no Ready up gate', () => {
+		const { queryByRole } = renderC(PlayLobby, base({ status: mockStatus({ selected: false }) }));
+		expect(queryByRole('button', { name: /Ready up/i })).toBeNull();
+	});
+
+	it("surfaces the runner's live activity as the box status", () => {
+		const { getByText } = renderC(
+			PlayLobby,
+			base({ status: mockStatus({ last_reason: 'parked at map-select — awaiting player pick' }) })
+		);
+		expect(getByText(/parked at map-select/i)).toBeInTheDocument();
+	});
+
+	// The scraper reports CE's menu shell scenario ("ui") as the loaded map at the
+	// front end; the readback must not show it as a map.
+	it('does not show the UI menu scenario as the loaded map', () => {
+		const { queryByText } = renderC(PlayLobby, base({ status: mockStatus({ map: 'ui' }) }));
+		expect(queryByText(/On the box now/i)).toBeNull();
 	});
 });
 
