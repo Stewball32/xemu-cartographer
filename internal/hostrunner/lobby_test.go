@@ -341,33 +341,58 @@ func TestSelectMapKeepsDrivingMidScroll(t *testing.T) {
 	}
 }
 
-// TestColdMainMenuWakesWithDown reproduces the cold-boot main-menu hang: main_menu=1
-// but the CE highlight widget is un-woken (dela empty, menu_item Unknown), so
-// planNavKey would loop on "b" — which does NOTHING on the main menu. The planner
-// must press Down to WAKE the menu instead. A genuinely off-route Unknown (dela
-// populated) must still Back-normalise.
-func TestColdMainMenuWakesWithDown(t *testing.T) {
+// TestColdMainMenuPrime reproduces the cold-boot main-menu hang and asserts the
+// A→(wait tree)→B prime: main_menu=1 but the CE widget tree isn't built (dela empty,
+// menu_focus 0). A direction press doesn't build it (looped on Down/b); pressing A
+// into a reversible submenu does. The planner primes with A, waits for the tree, then
+// B, then resumes normal nav. A genuinely off-route Unknown (dela populated) still Backs.
+func TestColdMainMenuPrime(t *testing.T) {
 	t0 := time.Unix(1000, 0)
-
-	// Cold main menu: front-end active, NO readable highlight (dela empty).
-	cold := Observation{
-		Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: "",
-	}
+	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "Down" {
-		t.Fatalf("cold main menu: got %v key=%q, want tap Down (wake, not B loop)", a.Kind, a.Key())
+
+	// 1. Cold blank main menu → press A to open a submenu (build the tree), NOT Down/B.
+	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("cold menu: got %v key=%q, want tap a (prime open submenu)", a.Kind, a.Key())
+	}
+	// 2. A landed → on a submenu now (dela populated / menu_focus set) → press B to
+	//    return (after the NavKeyInterval pacing window).
+	sub := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\load_game_menu\foo`, MenuFocus: 0x80046578}
+	s.Step(sub, t0.Add(300*time.Millisecond)) // confirm A landed (focus changed 0→set)
+	if a := s.Step(sub, t0.Add(1400*time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("tree built on submenu → got %v key=%q (%s), want tap b (prime return)", a.Kind, a.Key(), a.Reason)
+	}
+	// 3. B landed → back on the main menu with the tree built (dela reads an item) →
+	//    NORMAL nav resumes (MULTIPLAYER highlighted → A).
+	built := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemMultiplayer, Dela: `ui\shell\main_menu\main_menu_item_multiplayer`, MenuFocus: 0x80046600}
+	s.Step(built, t0.Add(1700*time.Millisecond)) // confirm B landed
+	if a := s.Step(built, t0.Add(2900*time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("back on built menu (MULTIPLAYER) → got %v key=%q (%s), want tap a (enter MP)", a.Kind, a.Key(), a.Reason)
 	}
 
-	// Off-route Unknown (e.g. Settings): the highlighted widget IS populated (dela
-	// non-empty) → Back-normalise, NOT Down.
-	off := Observation{
-		Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\settings_select\player_setup\foo`,
-	}
+	// Off-route Unknown with a POPULATED highlight (dela set, menu_focus set) must NOT
+	// prime — it Back-normalises.
+	off := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\settings_select\player_setup\foo`, MenuFocus: 0x80046700}
 	s2 := DefaultHostSequence(DefaultTiming, proceedSelector())
 	if a := s2.Step(off, t0); a.Kind != ActionTap || a.Key() != "b" {
-		t.Fatalf("off-route Unknown: got %v key=%q, want tap b (Back-normalise)", a.Kind, a.Key())
+		t.Fatalf("off-route Unknown: got %v key=%q, want tap b (Back-normalise, no prime)", a.Kind, a.Key())
+	}
+}
+
+// The prime must NEVER fire outside the cold main menu — not on SELECT MAP (a live
+// lobby screen) even with a blank-ish read.
+func TestPrimeNeverFiresOffMainMenu(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	// Hosting (ConnHosting) with no readable highlight is NOT the cold main menu.
+	o := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnHosting,
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
+	a := s.Step(o, time.Unix(1000, 0))
+	if a.Kind == ActionTap && a.Key() == "a" {
+		t.Fatalf("prime must not fire off the main menu (ConnHosting), got tap a")
 	}
 }
 

@@ -115,6 +115,15 @@ func (t StepTiming) orDefault() StepTiming {
 	return t
 }
 
+// Cold-main-menu prime states. On a freshly-booted main menu the CE widget tree
+// isn't built (dela blank, menu_focus 0); a direction press doesn't build it — only
+// ENTERING a reversible submenu does. The planner primes it with A (open submenu) →
+// B (return), after which the normal nav reads the now-built menu.
+const (
+	primeIdle          = iota // not priming
+	primeOpenedSubmenu        // pressed A to open a submenu; waiting for the tree to build, then B
+)
+
 // navRetryBudget caps how many extra times the macro-nav step re-emits its last
 // key (the SELECT PROFILE confirms) while waiting for Done. Enough for the
 // join → pick → all-ready A-presses plus a couple of dropped-press retries;
@@ -143,6 +152,7 @@ type Sequence struct {
 	lastKey         string    // last key the planner emitted (for wait-reason text)
 	navStuckItem    MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
 	navStuckCount   int       // consecutive emitted nav presses with an unchanged highlighted item
+	primeState      int       // cold-main-menu prime state (primeIdle / primeOpenedSubmenu)
 	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
 	// item (multiplayer_type_conn_item). It then A-advances the Select Profile entry
 	// flow (game_connection==0, MenuItem Unknown/Profile) until conn→1 reaches the
@@ -362,6 +372,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.navDone = 0
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
+	s.primeState = primeIdle
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -379,6 +390,7 @@ func (s *Sequence) advance(now time.Time) {
 	s.navDone = 0
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
+	s.primeState = primeIdle
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -667,22 +679,39 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		s.sysLinkEntered = true
 		s.sysLinkConnectAt = now
 	}
-	// COLD MAIN MENU WAKE (final override). On a freshly-booted main menu the CE UI
-	// highlight widget is UN-WOKEN until the first direction input — the highlighted
-	// DeLa path reads empty, menu_item is Unknown, and the activation tick never
-	// advances (RUNTIME-OBSERVED cold boot 2026-08-08: main_menu=1 yet dela="" every
-	// tick). planNavKey / the stuck-detection would send "b" (Back-normalise), but B
-	// does NOTHING on the main menu — there's nothing to back out of — so it loops on
-	// "b" forever and never wakes the menu. Press DOWN instead: a direction input
-	// populates the highlight, then the normal state-aware nav routes on the now-
-	// readable item. Gate on an EMPTY highlight (dela=="") so a genuinely off-route
-	// Unknown (Settings / Single Player, whose highlighted widget IS populated → dela
-	// non-empty) still Backs out. MenuActive == main_menu!=0 keeps this at the front
-	// end (never in a game); !sysLinkEntered keeps it out of the System Link entry
-	// flow, where an empty-highlight Unknown is SELECT PROFILE (advanced with A above),
-	// not a cold main menu.
-	if !s.sysLinkEntered && obs.MenuActive && obs.MenuItem == MenuItemUnknown && obs.Dela == "" {
-		key = "Down"
+	// COLD MAIN MENU PRIME (final override). On a freshly-booted main menu the CE
+	// widget TREE isn't built until you ENTER a submenu — the highlighted DeLa path
+	// reads empty, menu_item is Unknown, menu_focus is 0 (RUNTIME cold boot: main_menu=1
+	// yet dela="" every tick). A DIRECTION press does NOT build it (the old Down-wake
+	// looped forever); only entering a reversible submenu does — Stewart woke it by
+	// pressing A into Profiles then backing out. So prime it: press A to open the
+	// default item's submenu (which BUILDS the tree), then once the tree is up (dela
+	// populated / menu_focus non-zero → we're on the submenu) press B to return — after
+	// which the normal state-aware nav reads the now-built menu and routes to
+	// Multiplayer. The focus warmup (pump) makes A LAND; the prime makes it WAKE the
+	// tree — together they replicate the manual fix.
+	//
+	// Gated STRICTLY on the cold MAIN MENU: MenuActive (main_menu!=0) + Connection
+	// ConnMenu + a blank highlight (dela=="" && menu_focus==0 && menu_item Unknown), and
+	// !sysLinkEntered. So A/B can NEVER fire on a submenu (dela non-empty), a live lobby
+	// (ConnHosting / dela set), or SELECT MAP (dela set; the B-on-map-select interlock
+	// is a further hard backstop). The pressed/confirm block paces the A re-press if it
+	// dropped — no A spam.
+	coldBlankMenu := !s.sysLinkEntered && obs.MenuActive && obs.Connection == ConnMenu &&
+		obs.MenuItem == MenuItemUnknown && obs.Dela == "" && obs.MenuFocus == 0
+	switch s.primeState {
+	case primeOpenedSubmenu:
+		if obs.Dela != "" || obs.MenuFocus != 0 {
+			key = "b" // tree built (on the submenu) → return to the main menu, then normal nav
+			s.primeState = primeIdle
+		} else {
+			key = "a" // A hasn't landed/built the tree yet → re-press (paced by the confirm block)
+		}
+	default:
+		if coldBlankMenu {
+			key = "a" // open the default submenu to BUILD the widget tree
+			s.primeState = primeOpenedSubmenu
+		}
 	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
