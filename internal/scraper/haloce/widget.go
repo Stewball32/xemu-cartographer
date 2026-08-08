@@ -49,15 +49,28 @@ func (r *Reader) ReadLobbyCursor() scraper.LobbyCursor {
 		return scraper.LobbyCursor{}
 	}
 
+	// Two signals per list: Count>0 means the list widget is UP (we're ON the SELECT
+	// MAP / SELECT GAMETYPE screen) — stable across a scroll animation and the
+	// reliable "which screen" signal for Classify. Valid additionally requires the
+	// selected index to be settled in range (liveIndex): only then is the cursor
+	// safe to navigate on. During a scroll the +0x4C index is briefly out of range,
+	// so Valid drops for a tick while Count stays put — the runner holds that tick
+	// (re-reads) but never mistakes the card screen for the settled lobby.
 	var cur scraper.LobbyCursor
 	if mapHandle != 0 {
-		if sel, count, ok := findWidgetSelection(heap, mapHandle); ok && liveIndex(sel, count) {
-			cur.MapIndex, cur.MapCount, cur.MapValid = sel, count, true
+		if sel, count, ok := findWidgetSelection(heap, mapHandle); ok && count > 0 {
+			cur.MapCount = count
+			if liveIndex(sel, count) {
+				cur.MapIndex, cur.MapValid = sel, true
+			}
 		}
 	}
 	if gtHandle != 0 {
-		if sel, count, ok := findWidgetSelection(heap, gtHandle); ok && liveIndex(sel, count) {
-			cur.GametypeIndex, cur.GametypeCount, cur.GametypeValid = sel, count, true
+		if sel, count, ok := findWidgetSelection(heap, gtHandle); ok && count > 0 {
+			cur.GametypeCount = count
+			if liveIndex(sel, count) {
+				cur.GametypeIndex, cur.GametypeValid = sel, true
+			}
 		}
 	}
 	return cur

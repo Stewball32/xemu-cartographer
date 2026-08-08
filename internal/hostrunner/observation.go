@@ -218,19 +218,21 @@ func Classify(obs Observation) Screen {
 	// This also makes reachedSystemLink true the moment SELECT MAP loads, so the
 	// nav completes without depending on a fresh game_connection==1 read.
 	//
-	// A LIVE selection carousel means we're actively on the SELECT MAP / SELECT
-	// GAMETYPE card screen — NOT the settled team lobby, so return ScreenHosting
-	// (never ScreenLobby) even though lobbyReadable() is true here. The host creates
-	// the lobby with Y BEFORE picking a map (front-loaded design), so the pregame
-	// sentinel is set the whole time you're on the card screens — RUNTIME-OBSERVED
-	// 2026-08-08 on the live rig: on the Select Map screen game_globals+0x10 reads
-	// 0xDEADBEEF (Phase==PreGame → lobbyReadable) WHILE the map carousel is live. The
-	// old `lobbyReadable → ScreenLobby` branch therefore returned ScreenLobby ON the
-	// card screen, and the Sequence catch-up loop skipped select-map/select-gametype
-	// (Done==inLobby) without ever driving them → the picked map/gametype had "no
-	// effect". The settled Select Teams lobby has NO live carousel (cursor count 0)
-	// and still classifies as ScreenLobby via the fallback below.
-	if obs.MapCursorValid || obs.GametypeCursorValid {
+	// The SELECT MAP / SELECT GAMETYPE list widget being UP (cursor Count>0) means
+	// we're actively on that card screen — NOT the settled team lobby, so return
+	// ScreenHosting (never ScreenLobby) even though lobbyReadable() is true here. The
+	// host creates the lobby with Y BEFORE picking a map (front-loaded design), so
+	// the pregame sentinel is set the whole time you're on the card screens —
+	// RUNTIME-OBSERVED 2026-08-08 on the live rig and CONFIRMED by Stewart's beta.log
+	// (c0b80a3): on the Select Map screen game_globals+0x10 reads 0xDEADBEEF
+	// (Phase==PreGame → lobbyReadable) while the map list is up, so the old
+	// `lobbyReadable → ScreenLobby` branch returned ScreenLobby ON the card screen and
+	// the runner declared "lobby ready — players start" the instant it landed on
+	// Select Map, never driving the carousels → the pick had "no effect". Keying on
+	// Count>0 (not Valid) keeps this true through a scroll animation, when the settled
+	// index briefly reads out-of-range. The settled Select Teams lobby has NO list up
+	// (Count 0) and still classifies as ScreenLobby via the fallback below.
+	if obs.MapCursorCount > 0 || obs.GametypeCursorCount > 0 {
 		return ScreenHosting
 	}
 	// System Link games browser, recognised by its high-GVA widget path
