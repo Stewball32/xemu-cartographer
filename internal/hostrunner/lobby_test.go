@@ -301,6 +301,46 @@ func TestCarouselNav(t *testing.T) {
 	}
 }
 
+// TestSelectMapKeepsDrivingMidScroll reproduces Stewart's f8513e6 "one Right press
+// then hangs" bug: after the first NavKey press the carousel scrolls, so for a tick
+// the list is still UP (MapCursorCount>0) but the index reads out-of-range
+// (MapCursorValid=false). The created lobby's DEFAULT map/gametype are already
+// resident (Y-create runs before the pick). The select-map step must KEEP DRIVING
+// toward the target — never treat the mid-scroll tick + resident defaults as "past
+// this card" and advance to reach-lobby.
+func TestSelectMapKeepsDrivingMidScroll(t *testing.T) {
+	sel := FixedSelector{Map: Pick{Name: "Temple", Steps: 7}, Gametype: Pick{Name: "Slayer", Steps: 3}}
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	s.Step(systemLink(), t0)                           // → create-game presses Y
+	a := s.Step(hostingCur(0, 0), t0.Add(time.Second)) // → select-map drives toward 7
+	if a.Kind != ActionTap || (a.Key() != "Right" && a.Key() != "Left") {
+		t.Fatalf("expected a nav drive toward target 7, got %v key=%q", a.Kind, a.Key())
+	}
+
+	// Mid-scroll: list still up (count>0), index out of range (Valid=false), and the
+	// lobby's default map/gametype are resident. Must HOLD, not advance.
+	scrolling := Observation{
+		Fresh: true, Phase: PhaseMenu, Connection: ConnHosting,
+		MapCursorCount: 13, MapCursorValid: false,
+		Map: "bloodgulch", Gametype: "slayer",
+	}
+	a = s.Step(scrolling, t0.Add(1200*time.Millisecond))
+	if a.Kind == ActionDone {
+		t.Fatalf("select-map completed mid-scroll — must keep driving (done: %s)", a.Reason)
+	}
+	if cur, _ := s.Current(); cur.Name != "select-map" {
+		t.Fatalf("sequence left select-map mid-scroll (now %q) — the one-press bug", cur.Name)
+	}
+
+	// Scroll settles at the target: cursor==7 → commit with A.
+	a = s.Step(hostingCur(7, 0), t0.Add(1500*time.Millisecond))
+	if a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("expected A to commit at target, got %v key=%q", a.Kind, a.Key())
+	}
+}
+
 // TestSequenceFullFlow walks the host flow end-to-end with a controlled clock,
 // asserting each gated press fires on the right screen and confirms before the
 // next.

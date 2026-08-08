@@ -626,19 +626,27 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 		cursor, count, ok = t.CursorFn(obs)
 	}
 	if !ok || count <= 0 {
-		// No live cursor. If the finalized selection is already resident (Map AND
-		// Gametype readable), we're PAST this card — settled in the lobby (or handed a
-		// box mid-flow) — so advance rather than hold. This is what lets the catch-up
-		// complete for an already-settled box now that the catch-up loop no longer
-		// skips card steps by inLobby (which held on the card screens themselves).
-		if obs.Map != "" && obs.Gametype != "" {
+		// "Past this card" — advance rather than hold — ONLY when the list widget is
+		// truly GONE (count 0) AND the finalized pick is resident: the settled lobby,
+		// or a box handed to us mid-flow. This is what lets the catch-up complete for
+		// an already-settled box (the catch-up loop no longer skips card steps).
+		//
+		// CRITICAL: gate on count<=0. While the list is still UP (count>0) the index
+		// only reads out-of-range for a tick during a SCROLL ANIMATION — we are STILL
+		// on this card and mid-drive. The lobby's DEFAULT Map+Gametype are already
+		// resident (Y-create runs before the pick), so without the count<=0 gate this
+		// shortcut fired on the first post-Right scroll tick and advanced select-map →
+		// select-gametype → reach-lobby after ONE press (Stewart's f8513e6 log: "cursor
+		// 0→7 (7 left)" then immediately "awaiting reach-lobby"). Done is target-reached
+		// + A, never the sentinel/lobbyReadable/finalized-resident state, while a live
+		// carousel (count>0) is present.
+		if count <= 0 && obs.Map != "" && obs.Gametype != "" {
 			s.advance(now)
 			return s.Step(obs, now)
 		}
-		// Otherwise HOLD rather than navigate to a possibly-wrong card (replaces the
-		// old blind default). On a card screen the carousel goes live within a tick;
-		// during the create→card transition the pick isn't applied yet, so a hold —
-		// not a skip — is correct (this is what stopped the "no effect" skip).
+		// Otherwise HOLD (never navigate blind, never advance): a live list with the
+		// index mid-scroll settles within a tick and we resume driving; the create→card
+		// transition holds until the carousel comes up.
 		return wait(fmt.Sprintf("card %s: awaiting live cursor read", t.Name))
 	}
 
