@@ -237,17 +237,19 @@ func Classify(obs Observation) Screen {
 	if obs.MenuItem.onFrontEndMenu() {
 		return ScreenMainMenu
 	}
-	// LOW-GVA fallback — the system-link browser has no high-GVA proxy yet, and a
-	// fresh game_connection read still classifies it. main_menu here is belt-and-
-	// suspenders behind the high-GVA menu-item check above.
+	// LOW-GVA fallback. The system-link browser is NOT classified from
+	// game_connection anymore — that low global flickers/reads stale in the runner's
+	// fast loop and was poisoning the whole entry→create path (falsely "reaching"
+	// system-link / creating on the wrong screen). System-link is now determined
+	// SOLELY by the high-GVA server_list widget (MenuItemSystemLinkGames, above).
+	// Only the post-create hosting fallback remains (and cursor-validity above is the
+	// primary hosting signal); main_menu is belt-and-suspenders behind MenuItem.
 	switch obs.Connection {
 	case ConnMenu:
 		if obs.MenuActive {
 			return ScreenMainMenu
 		}
 		return ScreenUnknown
-	case ConnSystemLink:
-		return ScreenSystemLink
 	case ConnHosting:
 		if lobbyReadable(obs) {
 			return ScreenLobby

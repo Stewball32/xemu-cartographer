@@ -45,8 +45,13 @@ func TestNavKeysAreVncinputLabels(t *testing.T) {
 }
 
 // obs helpers.
+// systemLink is the System Link GAMES BROWSER — now identified by its high-GVA
+// widget (MenuItemSystemLinkGames), NOT game_connection (which reads stale here).
+// Connection is left ConnMenu (stale-0) on purpose, so the tests prove the runner
+// creates off the widget regardless of the flaky conn read.
 func systemLink() Observation {
-	return Observation{Fresh: true, Phase: PhaseMenu, Connection: ConnSystemLink}
+	return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true,
+		Connection: ConnMenu, MenuItem: MenuItemSystemLinkGames}
 }
 
 // hosting reports the create-game screens with a LIVE cursor parked at index 0 of

@@ -69,12 +69,15 @@ func TestParseAuthority(t *testing.T) {
 func TestScraperReadoutObservation(t *testing.T) {
 	ro := ScraperReadout{
 		Fresh: true, Tick: 42, GameState: "menu", MenuActive: true, GameConnection: 1,
-		Map: "bloodgulch", Gametype: "slayer", MachineCount: 2, TeamCount: 2, CountdownActive: true,
+		MenuItem: int(MenuItemSystemLinkGames), // system-link is classified off the widget now
+		Map:      "bloodgulch", Gametype: "slayer", MachineCount: 2, TeamCount: 2, CountdownActive: true,
 	}
 	obs := ro.Observation()
 	if !obs.Fresh || obs.Phase != PhaseMenu || obs.Connection != ConnSystemLink {
 		t.Fatalf("bad projection: %+v", obs)
 	}
+	// Classified system-link off the high-GVA server_list widget (MenuItem), not the
+	// game_connection projection (which the runner no longer trusts here).
 	if Classify(obs) != ScreenSystemLink {
 		t.Errorf("classify = %v, want system_link", Classify(obs))
 	}

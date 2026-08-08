@@ -430,7 +430,7 @@ const navStuckThreshold = 8
 // RepressAfter and abort/restart the connect (the definitive "stuck on
 // multiplayer_type_conn_item" bug). We wait for the screen/conn to actually move
 // instead, and only re-press once this generous window elapses (true dropped press).
-const sysLinkConnectTimeout = 10 * time.Second
+const sysLinkConnectTimeout = 20 * time.Second
 
 // planNavKey chooses the next press purely from WHICH item is highlighted — the
 // heart of the state-aware navigator. It never counts keys.
@@ -498,11 +498,16 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		// elapses (the single A genuinely dropped). Done (reachedSystemLink) at the top
 		// short-circuits this the instant conn→1.
 		if !s.sysLinkConnectAt.IsZero() {
-			if obs.MenuItem != MenuItemSystemLink || obs.Connection != ConnMenu {
+			// Advance ONLY when the reliable high-GVA HIGHLIGHT leaves the conn item
+			// (onto a Select Profile widget, the server_list browser, or any other
+			// screen). Do NOT consult game_connection — it flickers/reads stale here
+			// and was falsely firing "connected — advancing" while the highlight never
+			// moved, which then re-pressed A in a loop.
+			if obs.MenuItem != MenuItemSystemLink {
 				s.sysLinkConnectAt = time.Time{}
 				s.pressed = false
 				s.navDone++
-				return wait(fmt.Sprintf("nav %s: System Link connected — advancing (now %s)", t.Name, obs.MenuItem))
+				return wait(fmt.Sprintf("nav %s: System Link highlight moved — advancing (now %s)", t.Name, obs.MenuItem))
 			}
 			if now.Sub(s.sysLinkConnectAt) >= sysLinkConnectTimeout {
 				s.sysLinkConnectAt = time.Time{}
