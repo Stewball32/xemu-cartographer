@@ -64,6 +64,13 @@ type Reader struct {
 	// See menustate.go.
 	menuItemHandles map[string]uint32
 
+	// sysLinkGamesHandles caches the 'DeLa' tag handles of the System Link games-
+	// browser widgets (every tag path containing \connected\server_list — the list
+	// container + its per-server items). Used to detect that screen by PRESENCE of
+	// its list widget in the UI heap (robust vs the stale highlighted-item read).
+	// nil until resolved; cleared on menu entry with the other handle caches.
+	sysLinkGamesHandles map[uint32]bool
+
 	// Diagnostic one-shot flags for the two readers under offset investigation
 	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
 	// empty on Xbox builds). Set true after the first call logs its raw

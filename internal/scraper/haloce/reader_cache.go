@@ -70,6 +70,7 @@ func (r *Reader) OnStateChange(prev, next scraper.GameState) error {
 		// as must the front-end menu-item handles (see menustate.go).
 		r.lobbyCursorHandles = nil
 		r.menuItemHandles = nil
+		r.sysLinkGamesHandles = nil
 	}
 	return nil
 }

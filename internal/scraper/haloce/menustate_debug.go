@@ -24,9 +24,18 @@ func (r *Reader) logNavFingerprint(conn uint16, mainMenu uint8, menuItem int, fo
 	// \connected\server_list (→ menu_item=6, fixed) or still a stale entry item
 	// (→ the scan itself is stale, needs a deeper fix). menu_item is what ReadMenuItem
 	// classified this same fresh scan to.
-	path, tick := r.menuFingerprint()
-	log.Printf("navfp[%s]: dela=%q menu_item=%d conn=%d main_menu=%d focus=0x%08X tick=0x%X",
-		r.name, path, menuItem, conn, mainMenu, focus, tick)
+	heap, err := r.inst.Mem.ReadBytes(r.off.ConstUiWidgetHeapGVALo,
+		int(r.off.ConstUiWidgetHeapGVAHi-r.off.ConstUiWidgetHeapGVALo))
+	if err != nil {
+		log.Printf("navfp[%s]: heap read err: %v", r.name, err)
+		return
+	}
+	path, tick := r.rawHighlightPathFromHeap(heap)
+	// serverlist=true means the games-list widget is PRESENT (we're on System Link
+	// Games) — this is what drives menu_item=6 even when dela (the highlighted item)
+	// still reads the stale entry item. That contrast is the proof the fix works.
+	log.Printf("navfp[%s]: dela=%q menu_item=%d serverlist=%v conn=%d main_menu=%d focus=0x%08X tick=0x%X",
+		r.name, path, menuItem, r.systemLinkGamesActive(heap), conn, mainMenu, focus, tick)
 }
 
 // menuFingerprint returns the DeLa tag PATH of the highest-activation-tick

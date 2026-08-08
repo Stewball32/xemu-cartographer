@@ -98,8 +98,102 @@ func (r *Reader) ReadMenuItem() int {
 	if err != nil {
 		return MenuItemUnknown
 	}
+	// System Link Games FIRST — detect by PRESENCE of its games-list widget in the
+	// heap (the screen with the "SYSTEM LINK GAMES" title + the list of hosted
+	// games), NOT by which item is (stale-)highlighted. The list widget is live the
+	// whole time you're on the screen even while a leftover mp_submenu_system_link
+	// block keeps the +0x60 highlight flag — which is what made the runner read the
+	// games browser as the entry item and press A forever. Presence → CREATE (Y).
+	if r.systemLinkGamesActive(heap) {
+		return MenuItemSystemLinkGames
+	}
+	// Otherwise classify the live highlighted item (global max activation tick).
 	path, _ := r.rawHighlightPathFromHeap(heap)
 	return classifyMenuItemPath(path)
+}
+
+// systemLinkGamesActive reports whether a System Link games-browser widget is PRESENT
+// (a valid, non-freed widget block for one of the \connected\server_list DeLa handles)
+// in the UI heap — i.e. we're on that screen. Presence, not highlight: robust against
+// the lagging highlighted-item read. False before entering System Link (the list
+// widgets aren't instantiated on the submenu), and post-create the hosting cursor
+// signal outranks it in Classify, so a lingering block can't misroute the map screen.
+func (r *Reader) systemLinkGamesActive(heap []byte) bool {
+	handles := r.systemLinkGamesHandles()
+	if len(handles) == 0 {
+		return false
+	}
+	for h := range handles {
+		var hb [4]byte
+		binary.LittleEndian.PutUint32(hb[:], h)
+		for o := 0; ; {
+			i := bytes.Index(heap[o:], hb[:])
+			if i < 0 {
+				break
+			}
+			off := o + i
+			o = off + 1
+			nb := off - int(OffUiWidgetDefTagHandle)
+			if nb < 0 || nb+int(OffUiWidgetDefDataPtr)+4 > len(heap) {
+				continue
+			}
+			if leU32Int(heap, nb)&ConstUiWidgetHeaderMask != ConstUiWidgetHeaderFlag {
+				continue
+			}
+			if leU32Int(heap, nb+int(OffUiWidgetDefDataPtr)) == 0xFFFFFFFF {
+				continue // freed block retaining a stale handle
+			}
+			return true // a live games-list widget block is present → on the screen
+		}
+	}
+	return false
+}
+
+// systemLinkGamesHandles resolves + caches the 'DeLa' handles of every widget whose
+// tag path contains \connected\server_list (the games-list container + its per-server
+// items). Resolved by SUBSTRING (one tag-array walk), so it survives the item-index
+// variance (server_list_item0/1/…) — we don't need to know which slot is highlighted,
+// only that the list widget exists. Cached per UI session (cleared on menu entry).
+func (r *Reader) systemLinkGamesHandles() map[uint32]bool {
+	if r.sysLinkGamesHandles != nil {
+		return r.sysLinkGamesHandles
+	}
+	out := map[uint32]bool{}
+	th, err := r.inst.DerefLowPtr(r.off.AddrTagHeaderPtr)
+	if err != nil || th < HighGVAThreshold {
+		return out
+	}
+	mem := r.inst.Mem
+	tagArray, err := mem.ReadU32(th + OffTagHeaderTagArray)
+	if err != nil || tagArray < HighGVAThreshold {
+		return out
+	}
+	count, err := mem.ReadU32(th + OffTagHeaderTagCount)
+	if err != nil || count == 0 || count > 65535 {
+		return out
+	}
+	blob, err := mem.ReadBytes(tagArray, int(count*ConstTagEntrySize))
+	if err != nil {
+		return out
+	}
+	for i := uint32(0); i < count; i++ {
+		base := i * ConstTagEntrySize
+		grp := []byte{blob[base+3], blob[base+2], blob[base+1], blob[base+0]}
+		if string(grp) != tagGroupDela {
+			continue
+		}
+		namePtr := leU32(blob, base+OffTagNamePtr)
+		if namePtr < HighGVAThreshold {
+			continue
+		}
+		if strings.Contains(r.readHighString(namePtr), sysLinkGamesPathMark) {
+			out[leU32(blob, base+OffTagHandle)] = true
+		}
+	}
+	if len(out) > 0 {
+		r.sysLinkGamesHandles = out // cache only once at least one resolved
+	}
+	return out
 }
 
 // classifyMenuItemPath maps a highlighted widget's DeLa PATH to a MenuItem enum: an
