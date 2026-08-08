@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 
@@ -134,10 +135,15 @@ func (m *Manager) AvailableMaps(name string) scraperiface.MapList {
 		return scraperiface.MapList{}
 	}
 	c := r.readCache()
+	available := len(c.AvailableMaps) > 0 || len(c.AvailableGametypes) > 0
 	return scraperiface.MapList{
-		Available: len(c.AvailableMaps) > 0 || len(c.AvailableGametypes) > 0,
+		Available: available,
 		Maps:      c.AvailableMaps,
 		Gametypes: c.AvailableGametypes,
+		// Pending only while the custom-variant feature is active (overlay resolver
+		// wired) and its one-time read hasn't finished — so a box without the
+		// feature never gets stuck "reading gametypes…".
+		GametypesPending: available && m.overlayResolver != nil && !c.CustomLoadDone,
 	}
 }
 
@@ -305,12 +311,23 @@ func (m *Manager) attachHostRunner(r *runner) {
 			input = pump // *vncinput.Pump satisfies hostrunner.Input
 		}
 	}
-	hr := hostrunner.New(hostrunner.Config{
+	cfg := hostrunner.Config{
 		Instance: r.name,
 		// Empty selector → the runner parks at map-select until a player picks
 		// (refinement 1); it never auto-hosts a default map.
 		Selector: hostrunner.NewAtomicSelector(),
-	}, input, m.hostReg)
+	}
+	// Solo-testing: HOSTRUNNER_SOLO_START lets a single tester drive a box end-to-
+	// end (carousel → arm → start) WITHOUT a second player — it relaxes the native
+	// "2+ boxes, 2+ teams" START gate to 1 box and flips to arm+start. Default off
+	// (prod keeps the 2-player gate + arm-only). NB: the carousel-drive (select map
+	// + gametype) is NOT gated by player count — it un-parks on the pick and runs
+	// before this gate — so this only affects the final start press, not whether a
+	// solo pick drives the box.
+	if v := os.Getenv("HOSTRUNNER_SOLO_START"); v == "1" || v == "true" {
+		cfg.Start = hostrunner.SoloStartPolicy()
+	}
+	hr := hostrunner.New(cfg, input, m.hostReg)
 	// Host/client scoping (pod-hijack fix). Only a DESIGNATED host box is
 	// auto-driven. A non-designated box — e.g. an admin-created client pod that
 	// will JOIN the host's System Link lobby — attaches observe-only: its arbiter

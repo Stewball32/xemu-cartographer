@@ -97,6 +97,7 @@ func registerCurrent() {
 type optionsResponse struct {
 	Instance         string                   `json:"instance"`
 	Available        bool                     `json:"available"`
+	GametypesPending bool                     `json:"gametypes_pending"`
 	Maps             []scraperiface.MapOption `json:"maps"`
 	Gametypes        []scraperiface.MapOption `json:"gametypes"`
 	SelectedMap      string                   `json:"selected_map"`
@@ -118,6 +119,7 @@ func registerOptions() {
 			resp.Instance = name
 			list := liveMaps(name)
 			resp.Available = list.Available
+			resp.GametypesPending = list.GametypesPending
 			if len(list.Maps) > 0 {
 				resp.Maps = list.Maps
 			}

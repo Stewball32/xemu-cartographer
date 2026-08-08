@@ -53,6 +53,11 @@
 
 	const controllable = $derived(isPlayerControllable(status));
 	const enumerable = $derived(options?.available === true);
+	// The gametype list is only "ready" once the async host-side custom-variant
+	// read has finished — until then it's the built-ins-only intermediate, which we
+	// hide behind a "reading gametypes…" waiting state (the page re-polls options
+	// live, so this clears on its own without a refresh).
+	const gametypesReady = $derived(enumerable && options?.gametypes_pending !== true);
 
 	// CE gametype display names are NOT unique (a modded disc can list "Practice
 	// Mode" 3×). The /selection API resolves a pick by NAME (first match), so the
@@ -169,12 +174,14 @@
 				     carousel index (steps) so a keyed-each duplicate key can never
 				     corrupt this dropdown the way raw duplicate names did (the map
 				     list has unique names, so it rendered fine). -->
-				<select class="select" bind:value={pickGametype} disabled={!enumerable || !controllable || busy}>
-					{#if enumerable}
+				<select class="select" bind:value={pickGametype} disabled={!gametypesReady || !controllable || busy}>
+					{#if gametypesReady}
 						<option value="" disabled>Choose a gametype…</option>
 						{#each gametypeOptions as g (g.steps)}
 							<option value={g.name}>{g.name}</option>
 						{/each}
+					{:else if enumerable}
+						<option value="" disabled>Reading gametypes…</option>
 					{:else}
 						<option value="" disabled>Gametype list not readable yet</option>
 					{/if}

@@ -117,6 +117,11 @@ type instanceCache struct {
 	// enumerateLobby PREPENDS these ahead of the built-in gametypes so the served
 	// list == the live SELECT GAMETYPE carousel 1:1.
 	CustomGametypes []string
+	// CustomLoadDone is set true once the one-time async custom-variant read has
+	// FINISHED (success, empty, or error) — so the play API can show "reading
+	// gametypes…" until the list is complete rather than the built-ins-only
+	// intermediate. Set under cacheMu by the load goroutine.
+	CustomLoadDone bool
 }
 
 // previousGame is the just-ended match captured on Live→Ready. Serialised as

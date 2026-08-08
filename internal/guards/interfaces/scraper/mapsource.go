@@ -20,6 +20,11 @@ type MapList struct {
 	Available bool        `json:"available"`
 	Maps      []MapOption `json:"maps"`
 	Gametypes []MapOption `json:"gametypes"`
+	// GametypesPending is true while the box is enumerable (built-ins readable) but
+	// the async host-side custom-variant read hasn't finished — i.e. the gametype
+	// list is still incomplete. The picker shows a "reading gametypes…" waiting
+	// state instead of the built-ins-only intermediate until this clears.
+	GametypesPending bool `json:"gametypes_pending"`
 }
 
 // IndexOf returns the Steps for a named map/gametype option (case-insensitive on

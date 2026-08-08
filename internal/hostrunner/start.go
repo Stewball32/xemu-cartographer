@@ -34,6 +34,27 @@ func NativeReadyPredicate() StartPredicate {
 	}
 }
 
+// SoloReadyPredicate is the SOLO-TESTING relaxation of NativeReadyPredicate: it
+// drops the "2+ boxes, 2+ teams" requirement so a single tester can drive a box
+// end-to-end (carousel → arm → start) without a second player. NOT for prod —
+// Halo's own countdown still needs real players; this only lets the runner PRESS
+// start. Wired behind HOSTRUNNER_SOLO_START (default off).
+func SoloReadyPredicate() StartPredicate {
+	return StartPredicate{
+		Name: "solo-testing (start allowed with 1 box)",
+		OK:   func(o Observation) bool { return o.MachineCount >= 1 },
+	}
+}
+
+// SoloStartPolicy is arm+start with the solo predicate — the runner drives the
+// selection AND presses start itself, for single-tester verification.
+func SoloStartPolicy() StartPolicy {
+	return StartPolicy{
+		Predicates: []StartPredicate{SoloReadyPredicate()},
+		Mode:       ArmAndStart,
+	}
+}
+
 // ReadyGatePredicate is the optional ready-gate (default OFF). v1 has no reliable
 // per-player "ready" read, so the supplied readyFn is the seam; wire it to a
 // lobby-ready count when the reader exposes one. Disabled policies omit it.

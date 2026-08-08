@@ -291,8 +291,14 @@
 		pollTimer = setInterval(() => {
 			if (document.visibilityState !== 'visible') return;
 			void refreshCurrent();
-			// Keep trying to read the disc's map list until it's enumerable.
-			if (resolvedInstance && !options?.available) void loadOptions();
+			// Keep re-polling the disc's map/gametype list until it's not just
+			// enumerable but COMPLETE — i.e. available AND the async custom-variant
+			// read has finished (gametypes_pending false). This is what makes the
+			// picker pick up the real (built-ins + custom variants) list live,
+			// WITHOUT a hard refresh, instead of freezing on the first partial read.
+			if (resolvedInstance && (!options?.available || options?.gametypes_pending)) {
+				void loadOptions();
+			}
 		}, 4000);
 	});
 

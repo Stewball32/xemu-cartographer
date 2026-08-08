@@ -64,6 +64,10 @@ export interface OptionsResponse {
 	 * stock list (modded discs make any hardcoded set wrong); fall back to
 	 * free-form entry. */
 	available: boolean;
+	/** true while enumerable but the async host-side custom-variant read hasn't
+	 * finished — the gametype list is still incomplete, so show a waiting state
+	 * instead of the built-ins-only intermediate. */
+	gametypes_pending?: boolean;
 	maps: MapOption[];
 	gametypes: MapOption[];
 	selected_map: string;

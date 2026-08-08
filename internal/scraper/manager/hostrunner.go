@@ -88,6 +88,9 @@ func (r *runner) ensureCustomVariants() {
 		name := r.name
 		title := fmt.Sprintf("%08x", r.cachedTitleID())
 		go func() {
+			// Mark the load DONE on every exit (success, empty, or error) so the
+			// play API stops showing "reading gametypes…" and reveals the list.
+			defer r.withCache(func(c *instanceCache) { c.CustomLoadDone = true })
 			path, ok := r.overlayFor(name)
 			if !ok {
 				return
