@@ -44,6 +44,11 @@ type Reader struct {
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
 
+	// lastNavFP is the last raw front-end DeLa fingerprint logged by the
+	// HOSTRUNNER_NAV_DEBUG diagnostic — so it logs one line per screen (on change),
+	// not per tick. See menustate_debug.go.
+	lastNavFP string
+
 	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
 	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
 	// a loaded UI cache (front-end session) but the heap block's absolute address
@@ -139,6 +144,13 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	menuItem := MenuItemUnknown
 	if !gameEngineRunning {
 		menuItem = r.ReadMenuItem()
+		// PHASE-1 nav diagnostic (HOSTRUNNER_NAV_DEBUG): dump the RAW highlighted
+		// DeLa path per screen so an operator can capture the fingerprint of the
+		// System Link screens (Select Profile vs System Link Games) live on a
+		// networked box, where the classifier otherwise collapses both to Unknown.
+		if navDebug {
+			r.logNavFingerprint(gameConnection, mainMenu, menuItem, menuFocus)
+		}
 	}
 
 	gtgPtr, _ := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)

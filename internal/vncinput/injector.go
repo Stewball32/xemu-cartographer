@@ -22,6 +22,9 @@ type Injector struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	buf    []byte // leftover RFB bytes spanning WebSocket frames
+	// Framebuffer size from ServerInit, so the focus click lands in the CENTER of
+	// the guest render area — clear of xemu's top menu bar (see FocusClick).
+	fbWidth, fbHeight uint16
 }
 
 // Dial connects to a container's websockify endpoint (e.g.
@@ -113,6 +116,8 @@ func (i *Injector) handshake() error {
 	if err != nil {
 		return fmt.Errorf("read server-init: %w", err)
 	}
+	i.fbWidth = binary.BigEndian.Uint16(head[0:2])
+	i.fbHeight = binary.BigEndian.Uint16(head[2:4])
 	nameLen := binary.BigEndian.Uint32(head[20:24])
 	if nameLen > 0 {
 		if _, err := i.readFull(int(nameLen)); err != nil {
@@ -192,17 +197,32 @@ func (i *Injector) SendPointer(x, y uint16, buttonMask uint8) error {
 	return i.write(pointerEvent(buttonMask, x, y))
 }
 
-// FocusClick taps the left mouse button at a benign top-left coordinate to give
-// the container's Selkies canvas DOM focus so subsequent KeyEvents register.
-// Best-effort: coordinate (4,4) is the empty screen corner in CE menus, so the
-// click can't activate a centered menu control. Called once by the input pump on
-// (re)connect (see pump.go).
+// focusPoint is where FocusClick taps: the CENTER of the guest render area. The
+// old top-left (4,4) landed on xemu's ImGui MENU BAR ("Machine" menu), so the
+// focus click was opening the emulator overlay — which stole input and derailed
+// nav (the guest reads MenuActive=0 / an unknown screen). The guest is an Xbox
+// with no mouse, so it ignores a pointer event in the render area; only xemu's own
+// top menu bar reacts to clicks, and the center is well clear of it. Falls back to
+// a safe below-the-bar point if ServerInit didn't give a size.
+func (i *Injector) focusPoint() (uint16, uint16) {
+	if i.fbWidth == 0 || i.fbHeight == 0 {
+		return 320, 240 // below any ~20px menu bar, valid for any real framebuffer
+	}
+	return i.fbWidth / 2, i.fbHeight / 2
+}
+
+// FocusClick taps the left mouse button at the render-area CENTER (focusPoint) to
+// give the container's Selkies canvas DOM focus so subsequent KeyEvents register.
+// The center clears xemu's top menu bar (the old (4,4) opened the "Machine" menu),
+// and the mouse-less Xbox guest ignores the click, so it activates nothing. Called
+// once by the input pump on (re)connect (see pump.go).
 func (i *Injector) FocusClick() error {
-	if err := i.SendPointer(4, 4, 0x01); err != nil { // button 1 down
+	x, y := i.focusPoint()
+	if err := i.SendPointer(x, y, 0x01); err != nil { // button 1 down
 		return err
 	}
 	time.Sleep(20 * time.Millisecond)
-	return i.SendPointer(4, 4, 0x00) // release
+	return i.SendPointer(x, y, 0x00) // release
 }
 
 // Close releases all held keys best-effort, then closes the connection.
