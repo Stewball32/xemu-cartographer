@@ -46,19 +46,18 @@ const (
 // Gulch nor the last-committed map; the start is non-deterministic / remembers the
 // last-used). See docs/ce-mapselect-2026-07-10.md.
 //
-// The live cursor read differs per carousel:
-//   - GAMETYPE: readable via the card-render pool (0x2FAF84) — walk-until-target
-//     (halo-offset-mapper scripts/runtime/ce_menu.py goto) navigates correctly from
-//     any start (RUNTIME-VERIFIED 2026-07-10). This path also surfaces user-SAVED
-//     custom variants (which prepend to the built-ins and are NOT in the ustr tag).
-//   - MAP: NO memory-readable cursor and NO navigation feedback exist (the card pool
-//     never updates for maps; the widget focus is a relinked heap ring with no clean
-//     index; render buffers are unanchored). Cursor-relative map navigation from an
-//     arbitrary start is therefore NOT achievable from memory — an open blocker.
-//
-// So this method delivers the LIST (the player-picker's real per-instance options);
-// wiring the cursor-relative navigation is the remaining work (gametype: card-pool
-// walk; map: blocked on the CE menu-cursor wall).
+// The live cursor for BOTH carousels is read the same way — the SELECT MAP /
+// SELECT GAMETYPE list-widget +0x4C (selected index) / +0x54 (item count) in the
+// UI heap, via ReadLobbyCursor (widget.go). RUNTIME-VERIFIED 2026-08-07 on H1
+// Perf (bench-1, split-screen create path): both cursors read the correct index +
+// count, track every d-pad press 1:1, and closed-loop goto converges to an
+// arbitrary target by the shorter ring direction (map 36 cards, gametype 49) —
+// e.g. map sel matched the on-screen highlight (sel 7 = "Temple"), gametype wraps
+// (Left from 0 → count-1). The OLD claim that SELECT MAP exposes no readable
+// cursor was wrong (it predated the widget-handle read); map navigation is
+// closed-loop, same as gametype. The gametype widget count INCLUDES the user-SAVED
+// custom variants prepended ahead of the built-ins (its count exceeds the ustr
+// built-in count by the custom prefix — see GametypeListLen / gametypeCustomPrefix).
 //
 // Returns Available=false (empty lists) when the tags aren't loaded — i.e. the
 // game isn't at/past the front-end (mid-match), so the caller keeps its last

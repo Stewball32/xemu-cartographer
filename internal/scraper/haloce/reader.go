@@ -117,22 +117,29 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		menuFocus, _ = mem.ReadU32At(hva)
 	}
 
-	// menu_item: WHICH front-end menu item is highlighted (MenuItem* enum), read
-	// from the UI widget heap — the host-runner's state-aware nav routes on it.
-	// Only meaningful at the front-end (mainMenu==1); skip the ~2MB heap read
-	// in-game where it's just noise.
-	menuItem := MenuItemUnknown
-	if mainMenu != 0 {
-		menuItem = r.ReadMenuItem()
-	}
-
 	// GAME-ENGINE / GAME-TIME state — BEST-EFFORT. At the front-end menu these
 	// regions may not be resident (the game engine isn't running); a miss here
 	// leaves the field zero, which determineGameState reads as Menu — the correct
 	// result. In a live game these translations are valid, so behavior is
-	// unchanged. Never abort menu detection on one of these.
+	// unchanged. Never abort menu detection on one of these. Read BEFORE menu_item
+	// so the heap-read gate keys off the engine-running signal rather than the
+	// stale-prone low main_menu global.
 	geGlobalsPtr, _ := inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
 	gameEngineRunning := geGlobalsPtr != 0
+
+	// menu_item: WHICH front-end menu item is highlighted (MenuItem* enum), read
+	// from the UI widget heap — the host-runner routes its state-aware nav on it
+	// AND (stall-fix) derives "at the front-end menu" from it. This is a HIGH-GVA
+	// read (physical 0x80000000-window, stable across screen transitions), so gate
+	// it on the ENGINE not running — i.e. any menu/front-end screen — NOT on the
+	// low main_menu global. main_menu can read stale-zero (a drifted low-GVA cached
+	// translation); gating this reliable heap read behind it is exactly what let a
+	// stale main_menu blank the runner's "where am I" and stall it at "unknown".
+	// Off the front-end (engine running) we skip the ~2MB heap read as before.
+	menuItem := MenuItemUnknown
+	if !gameEngineRunning {
+		menuItem = r.ReadMenuItem()
+	}
 
 	gtgPtr, _ := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)
 	var initialized, active, paused uint8

@@ -202,6 +202,29 @@ func Classify(obs Observation) Screen {
 	case PhasePostGame:
 		return ScreenPostGame
 	}
+	// HIGH-GVA screen signals FIRST — read from the UI widget heap via the stable
+	// physical 0x80000000-window, immune to the low-GVA cached-translation drift
+	// that makes game_connection / main_menu read stale-zero and blank the runner
+	// (the stall). These win over the low globals.
+	//
+	// Hosting: the SELECT MAP / SELECT GAMETYPE list widgets are live this read.
+	// This also makes reachedSystemLink true the moment SELECT MAP loads, so the
+	// nav completes without depending on a fresh game_connection==1 read.
+	if obs.MapCursorValid || obs.GametypeCursorValid {
+		if lobbyReadable(obs) {
+			return ScreenLobby
+		}
+		return ScreenHosting
+	}
+	// Front-end menu: a recognised highlighted front-end item (main menu / MP
+	// submenu / SELECT PROFILE) means we're on the front-end regardless of the
+	// possibly-stale low main_menu global.
+	if obs.MenuItem.onFrontEndMenu() {
+		return ScreenMainMenu
+	}
+	// LOW-GVA fallback — the system-link browser has no high-GVA proxy yet, and a
+	// fresh game_connection read still classifies it. main_menu here is belt-and-
+	// suspenders behind the high-GVA menu-item check above.
 	switch obs.Connection {
 	case ConnMenu:
 		if obs.MenuActive {
@@ -211,15 +234,19 @@ func Classify(obs Observation) Screen {
 	case ConnSystemLink:
 		return ScreenSystemLink
 	case ConnHosting:
-		// A lobby is distinguishable from the blind card screens once the
-		// pregame lobby's fields are readable: a finalized map/gametype, a
-		// connected-machine roster, or the engine sitting in pregame.
-		if obs.Phase == PhasePreGame || obs.MachineCount > 0 || (obs.Map != "" && obs.Gametype != "") {
+		if lobbyReadable(obs) {
 			return ScreenLobby
 		}
 		return ScreenHosting
 	}
 	return ScreenUnknown
+}
+
+// lobbyReadable reports whether the pregame lobby's fields are resident — a
+// finalized map/gametype, a connected-machine roster, or the engine sitting in
+// pregame — which distinguishes ScreenLobby from the blind card screens.
+func lobbyReadable(obs Observation) bool {
+	return obs.Phase == PhasePreGame || obs.MachineCount > 0 || (obs.Map != "" && obs.Gametype != "")
 }
 
 // ReadyToStart reports whether Halo's NATIVE countdown preconditions are met:

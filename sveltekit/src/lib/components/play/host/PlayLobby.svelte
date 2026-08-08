@@ -144,54 +144,49 @@
 		<h3 class="text-sm font-semibold tracking-wide uppercase">Game setup</h3>
 
 		<div class="grid gap-3 sm:grid-cols-2">
+			<!-- Dropdowns ONLY — populated from the live enumeration. There is no
+			     type-in fallback: a free-text name the runner can't match to a live
+			     carousel card never drives selection, so when the list isn't readable
+			     we show a disabled, clearly-labelled empty state instead of a dead
+			     text box. -->
 			<label class="label">
 				<span class="label-text text-xs">Map</span>
-				{#if enumerable}
-					<select class="select" bind:value={pickMap} disabled={!controllable || busy}>
+				<select class="select" bind:value={pickMap} disabled={!enumerable || !controllable || busy}>
+					{#if enumerable}
 						<option value="" disabled>Choose a map…</option>
 						{#each options?.maps ?? [] as m (m.steps)}
 							<option value={m.name}>{m.name}</option>
 						{/each}
-					</select>
-				{:else}
-					<input
-						class="input"
-						type="text"
-						placeholder="Map name"
-						bind:value={pickMap}
-						disabled={!controllable || busy}
-					/>
-				{/if}
+					{:else}
+						<option value="" disabled>Map list not readable yet</option>
+					{/if}
+				</select>
 			</label>
 
 			<label class="label">
 				<span class="label-text text-xs">Gametype</span>
-				{#if enumerable}
-					<!-- gametypeOptions is deduped by name (see script); key by the unique
-					     carousel index (steps) so a keyed-each duplicate key can never
-					     corrupt this dropdown the way raw duplicate names did (the map
-					     list has unique names, so it rendered fine). -->
-					<select class="select" bind:value={pickGametype} disabled={!controllable || busy}>
+				<!-- gametypeOptions is deduped by name (see script); key by the unique
+				     carousel index (steps) so a keyed-each duplicate key can never
+				     corrupt this dropdown the way raw duplicate names did (the map
+				     list has unique names, so it rendered fine). -->
+				<select class="select" bind:value={pickGametype} disabled={!enumerable || !controllable || busy}>
+					{#if enumerable}
 						<option value="" disabled>Choose a gametype…</option>
 						{#each gametypeOptions as g (g.steps)}
 							<option value={g.name}>{g.name}</option>
 						{/each}
-					</select>
-				{:else}
-					<input
-						class="input"
-						type="text"
-						placeholder="Gametype name"
-						bind:value={pickGametype}
-						disabled={!controllable || busy}
-					/>
-				{/if}
+					{:else}
+						<option value="" disabled>Gametype list not readable yet</option>
+					{/if}
+				</select>
 			</label>
 		</div>
 
 		{#if !enumerable}
 			<p class="text-xs text-surface-500">
-				This box's map list isn't readable yet — type the names as they appear on the disc.
+				This box's map / gametype lists aren't readable yet (the create-game
+				carousels load once the box reaches the front-end). The pickers enable
+				automatically as soon as they're readable.
 			</p>
 		{/if}
 
