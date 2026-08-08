@@ -42,25 +42,25 @@ const dialBackoff = 2 * time.Second
 // scraper loop.
 const pumpQueueCap = 16
 
-// Focus-settle timing (package vars so tests can zero them). Right after a
-// (re)connect the browser hasn't propagated DOM focus to the Selkies canvas yet, so
-// KeyEvents sent immediately are DROPPED before the canvas is focused — the root
-// cause of BOTH the cold-boot Down-loop (empty highlight → wake presses lost →
-// dela stays empty → loop) and the System Link lost-first-A (the ~20s entry stall).
-// So on connect we click, WAIT for the browser to focus the canvas, then RE-ASSERT
-// before the first key; and we re-assert if focus goes stale between commands.
+// Focus-settle timing (package vars so tests can zero them). A KeyEvent sent before
+// the browser has moved DOM focus onto the Selkies canvas is DROPPED — the root cause
+// of BOTH the cold-boot Down-loop (wake presses lost → dela stays empty → loop) and
+// the System Link lost-first-A. CRUCIALLY, on a COLD boot Xvnc accepts our RFB
+// connection (dial succeeds) BEFORE the viewer's Firefox/Selkies canvas is up to
+// forward keys — so a one-time settle on connect isn't enough; the canvas may come up
+// seconds later. So we (re)grab + SETTLE focus before EVERY key during a warmup
+// window, and whenever focus goes stale after it — and always WAIT after the click
+// before the key, so as soon as the canvas is live a press lands.
 var (
-	// focusSettleDelay is how long to wait after the initial focus click for the
-	// browser to move DOM focus onto the Selkies canvas, before re-asserting + the
-	// first key. The old code waited only FocusClick's internal 20ms and then
-	// immediately sent the key — far too soon.
+	// focusSettleDelay: wait after a focus click for the browser to focus the canvas
+	// BEFORE sending the key. (The old code sent the key ~20ms after the click.)
 	focusSettleDelay = 300 * time.Millisecond
-	// focusReassertDelay is a short settle after the re-assert click.
-	focusReassertDelay = 60 * time.Millisecond
-	// refocusInterval re-asserts focus before a command when this long has passed
-	// since the last focus click — recovers a focus that dropped or never settled
-	// (keys silently dropping) WITHOUT a click before every key. Larger than the
-	// runner's press cadence so normal back-to-back nav doesn't re-click each time.
+	// focusWarmup: after (re)connect, re-grab + settle focus before EVERY key for this
+	// long — the cold-boot window where the viewer canvas may still be coming up.
+	// Generous because a freshly-booted box's Firefox/Selkies can lag well behind Xvnc.
+	focusWarmup = 30 * time.Second
+	// refocusInterval: after warmup, re-grab focus before a key only when this long has
+	// passed since the last click — recovers a dropped focus without clicking every key.
 	refocusInterval = 2 * time.Second
 )
 
@@ -157,6 +157,7 @@ func (p *Pump) run() {
 	var conn Driver
 	var lastFail time.Time
 	var lastFocus time.Time
+	var connectedAt time.Time
 	closeConn := func() {
 		if conn != nil {
 			_ = conn.Close()
@@ -185,19 +186,28 @@ func (p *Pump) run() {
 					continue
 				}
 				conn = c
+				connectedAt = time.Now()
+				lastFocus = time.Time{} // force a focus+settle before the first key
 				lastFail = time.Time{}
 				p.setConnected(true)
-				if p.focus {
-					p.settleFocus(conn) // click → WAIT → re-assert, so the first key lands
-					lastFocus = time.Now()
-				}
 			}
-			// Re-assert focus if it's gone stale since the last click — recovers a
-			// focus that dropped or never settled (keys silently dropping) without a
-			// click before every key.
-			if p.focus && !lastFocus.IsZero() && time.Since(lastFocus) > refocusInterval {
+			// Grab the Selkies canvas + SETTLE before the key when needed: the first key
+			// after connect; EVERY key during the cold-boot warmup (Xvnc accepted our RFB
+			// connection but the viewer's Firefox/Selkies canvas may still be coming up,
+			// so earlier clicks/keys land nowhere); or when focus has gone stale. The
+			// WAIT after the click is what makes the key land — so as soon as the canvas
+			// is live a press registers, dela populates, and the runner (which won't
+			// advance until it observes that state change) proceeds. b008fc8 settled only
+			// on the initial connect; the recovery path (periodic re-focus) still sent the
+			// key ~20ms after the click and dropped it on a not-yet-ready viewer.
+			if p.focus && (lastFocus.IsZero() ||
+				time.Since(connectedAt) < focusWarmup ||
+				time.Since(lastFocus) > refocusInterval) {
 				if err := conn.FocusClick(); err != nil {
-					log.Printf("vncinput pump: refocus %s: %v", p.url, err)
+					log.Printf("vncinput pump: focus %s: %v", p.url, err)
+				}
+				if focusSettleDelay > 0 {
+					time.Sleep(focusSettleDelay)
 				}
 				lastFocus = time.Now()
 			}
@@ -207,27 +217,6 @@ func (p *Pump) run() {
 				lastFail = time.Now()
 			}
 		}
-	}
-}
-
-// settleFocus grabs the Selkies canvas DOM focus and lets it SETTLE before the
-// caller sends the first key. Right after (re)connect the browser hasn't moved DOM
-// focus onto the canvas, so an immediate key is dropped; we click, wait for the
-// browser to focus the canvas, then re-assert. Runs on the pump goroutine, so the
-// sleeps never block the scraper loop (the runner's re-emits just queue).
-func (p *Pump) settleFocus(conn Driver) {
-	click := func() {
-		if err := conn.FocusClick(); err != nil {
-			log.Printf("vncinput pump: focus %s: %v", p.url, err)
-		}
-	}
-	click()
-	if focusSettleDelay > 0 {
-		time.Sleep(focusSettleDelay)
-	}
-	click() // re-assert once the browser has had time to focus the canvas
-	if focusReassertDelay > 0 {
-		time.Sleep(focusReassertDelay)
 	}
 }
 

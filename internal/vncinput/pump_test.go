@@ -8,11 +8,12 @@ import (
 	"time"
 )
 
-// Zero the focus-settle sleeps and disable the stale-refocus timer so the pump
-// tests run fast and deterministically (no surprise re-focus between commands).
+// Zero the focus-settle sleep + warmup and disable the stale-refocus timer so the
+// pump tests run fast and deterministically (one focus on connect, none between
+// commands).
 func init() {
 	focusSettleDelay = 0
-	focusReassertDelay = 0
+	focusWarmup = 0
 	refocusInterval = time.Hour
 }
 
@@ -94,18 +95,49 @@ func TestPumpDialsFocusesThenTaps(t *testing.T) {
 	if err := p.Tap("y"); err != nil {
 		t.Fatalf("Tap: %v", err)
 	}
-	// settleFocus double-clicks (grab + re-assert) before the first key lands.
+	// focus (grab + settle) precedes the first key so it lands on a focused canvas.
 	if got := recv(t, events); got != "focus" {
 		t.Fatalf("first call should be focus, got %q", got)
 	}
-	if got := recv(t, events); got != "focus" {
-		t.Fatalf("second call should be the focus re-assert, got %q", got)
-	}
 	if got := recv(t, events); got != "tap:y" {
-		t.Fatalf("third call should be tap:y, got %q", got)
+		t.Fatalf("second call should be tap:y, got %q", got)
 	}
 	if dials != 1 {
 		t.Fatalf("expected 1 dial, got %d", dials)
+	}
+}
+
+// During the COLD-BOOT WARMUP window the pump re-grabs focus before EVERY key (the
+// viewer/Selkies canvas may still be coming up even though Xvnc accepted the RFB
+// connection), so a press lands as soon as the canvas is live.
+func TestPumpWarmupRefocusesEachKey(t *testing.T) {
+	saved := focusWarmup
+	focusWarmup = time.Hour // stay in warmup for the whole test
+	defer func() { focusWarmup = saved }()
+
+	events := make(chan string, 8)
+	dial := func(ctx context.Context, url string) (Driver, error) { return newFakeDriver(events), nil }
+	p := newPump(context.Background(), "ws://x/websockify", dial, true)
+	defer p.Close()
+
+	if err := p.Tap("down"); err != nil {
+		t.Fatalf("Tap: %v", err)
+	}
+	if got := recv(t, events); got != "focus" {
+		t.Fatalf("1: want focus, got %q", got)
+	}
+	if got := recv(t, events); got != "tap:down" {
+		t.Fatalf("2: want tap:down, got %q", got)
+	}
+	// Second key during warmup RE-FOCUSES first (recovers a still-booting viewer).
+	if err := p.Tap("down"); err != nil {
+		t.Fatalf("Tap: %v", err)
+	}
+	if got := recv(t, events); got != "focus" {
+		t.Fatalf("3: warmup should re-focus before the next key, got %q", got)
+	}
+	if got := recv(t, events); got != "tap:down" {
+		t.Fatalf("4: want tap:down, got %q", got)
 	}
 }
 
