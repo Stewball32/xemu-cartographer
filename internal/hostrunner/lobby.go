@@ -554,7 +554,11 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 	// once conn==1 (Classify → ScreenSystemLink) — so Y is keyed strictly to the
 	// server_list browser and A is never pressed there (reachedSystemLink advances
 	// the nav step the instant conn==1, before this planner can press).
-	if s.sysLinkEntered && obs.Connection == ConnMenu &&
+	// Gate purely on the reliable high-GVA MenuItem, NOT game_connection — a stale
+	// conn read must not misroute here. The System Link games browser is its own
+	// MenuItemSystemLinkGames (reachedSystemLink advances the step to create-game's Y
+	// before this runs), so it never matches Unknown/Profile → we never A (JOIN) it.
+	if s.sysLinkEntered &&
 		(obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
 		key = "a"
 	}

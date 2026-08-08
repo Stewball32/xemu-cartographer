@@ -427,9 +427,23 @@ func TestNavSystemLinkFlow(t *testing.T) {
 	if a := tick(obsMI(MenuItemUnknown, focus)); a.Kind != ActionTap || a.Key() != "a" {
 		t.Fatalf("Select Profile → advance with A, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
 	}
-	// 4. conn==1 (server_list games browser) → create-game CREATES with Y, never A.
-	if a := tick(systemLink()); a.Kind != ActionTap || a.Key() != "y" {
-		t.Fatalf("server_list (conn==1) → CREATE with Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	// 4. server_list games browser via the HIGH-GVA widget (MenuItemSystemLinkGames),
+	//    with game_connection STALE-0 (obsMI sets Connection:ConnMenu) — the runner
+	//    must still CREATE with Y off the widget, never A (JOIN). This is the exact
+	//    conn-staleness bug: the old "Y at conn==1" would have pressed A here.
+	if a := tick(obsMI(MenuItemSystemLinkGames, focus)); a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("server_list widget (conn stale-0) → CREATE with Y off the widget, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+}
+
+// The System Link games browser is recognised off its high-GVA widget path, so the
+// host CREATES with Y even when the stale-prone game_connection low global reads 0
+// (ConnMenu) — never A (which would JOIN). Direct Classify/decision assertion.
+func TestSystemLinkGamesCreatesOffWidgetDespiteStaleConn(t *testing.T) {
+	obs := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true,
+		Connection: ConnMenu, MenuItem: MenuItemSystemLinkGames} // conn STALE-0
+	if got := Classify(obs); got != ScreenSystemLink {
+		t.Fatalf("server_list widget must classify ScreenSystemLink off the widget (conn stale-0), got %s", got)
 	}
 }
 

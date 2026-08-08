@@ -130,6 +130,11 @@ const (
 	MenuItemSubmenuOther MenuItem = 3 // Multiplayer submenu, a non-System-Link item
 	MenuItemSystemLink   MenuItem = 4 // Multiplayer submenu, SYSTEM LINK (conn) highlighted
 	MenuItemProfile      MenuItem = 5 // SELECT PROFILE screen
+	// MenuItemSystemLinkGames: the System Link games browser (…\connected\server_list),
+	// read from the reliable high-GVA widget heap — the screen where the host presses
+	// Y to CREATE. Recognising it by widget lets Classify return ScreenSystemLink
+	// WITHOUT the stale-prone game_connection low global (which reads 0 here).
+	MenuItemSystemLinkGames MenuItem = 6
 )
 
 func (m MenuItem) String() string {
@@ -144,6 +149,8 @@ func (m MenuItem) String() string {
 		return "mp_submenu_system_link"
 	case MenuItemProfile:
 		return "select_profile"
+	case MenuItemSystemLinkGames:
+		return "system_link_games"
 	default:
 		return "unknown"
 	}
@@ -215,6 +222,14 @@ func Classify(obs Observation) Screen {
 			return ScreenLobby
 		}
 		return ScreenHosting
+	}
+	// System Link games browser, recognised by its high-GVA widget path
+	// (…\connected\server_list). This is the CREATE screen — return ScreenSystemLink
+	// off the RELIABLE widget, NOT game_connection, which reads stale-0 here in the
+	// runner's fast loop (the same low-global drift as the original stall). Without
+	// this, create-game's "Y at conn==1" never fired and the runner pressed A (JOIN).
+	if obs.MenuItem == MenuItemSystemLinkGames {
+		return ScreenSystemLink
 	}
 	// Front-end menu: a recognised highlighted front-end item (main menu / MP
 	// submenu / SELECT PROFILE) means we're on the front-end regardless of the

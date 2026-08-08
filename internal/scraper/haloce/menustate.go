@@ -3,6 +3,7 @@ package haloce
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 )
 
 // Menu-item classification for the host-runner's STATE-AWARE front-end
@@ -35,7 +36,19 @@ const (
 	MenuItemSubmenuOther = 3 // Multiplayer submenu, a non-System-Link item (Coop / Split / Gametypes)
 	MenuItemSystemLink   = 4 // Multiplayer submenu, SYSTEM LINK (conn) highlighted
 	MenuItemProfile      = 5 // SELECT PROFILE screen (join / pick / all-ready)
+	// MenuItemSystemLinkGames is the System Link GAMES BROWSER — the screen where
+	// the host presses Y to CREATE. Its highlighted widget is a per-server list item
+	// (…\connected\server_list\server_list_itemN, RE'd from a networked box), so it's
+	// matched by PATH SUBSTRING, not the fixed menuItemPaths. Recognising it from the
+	// RELIABLE high-GVA widget heap lets the runner create off the widget instead of
+	// the stale-prone game_connection low global (which reads 0 here in the fast loop).
+	MenuItemSystemLinkGames = 6
 )
+
+// sysLinkGamesPathMark identifies the System Link games-browser screen by a stable
+// substring of its highlighted widget's DeLa path. The trailing item index varies
+// (server_list_item0/1/…), so we match the parent path, not an exact tag.
+const sysLinkGamesPathMark = `\connected\server_list`
 
 // menuItemPaths maps the front-end item DeLa tag paths to their enum. These are
 // the standard CE `ui\shell\main_menu` widget tags (verified present on H1 Perf);
@@ -94,6 +107,16 @@ func (r *Reader) ReadMenuItem() int {
 			haveBest = true
 			bestTick = tick
 			best = menuItemPaths[path]
+		}
+	}
+	// None of the FIXED front-end items is highlighted — but this may be the System
+	// Link games browser, whose highlighted widget (…\connected\server_list\…) isn't
+	// in menuItemPaths. Reuse the heap we already read to grab the raw highlighted
+	// path and recognise it, so the runner can CREATE (Y) off this reliable high-GVA
+	// widget rather than the stale-prone game_connection low global.
+	if best == MenuItemUnknown {
+		if path, _ := r.rawHighlightPathFromHeap(heap); strings.Contains(path, sysLinkGamesPathMark) {
+			return MenuItemSystemLinkGames
 		}
 	}
 	return best

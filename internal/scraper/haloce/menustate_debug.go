@@ -39,6 +39,14 @@ func (r *Reader) menuFingerprint() (string, uint32) {
 	if err != nil {
 		return "", 0
 	}
+	return r.rawHighlightPathFromHeap(heap)
+}
+
+// rawHighlightPathFromHeap returns the DeLa PATH + activation tick of the highest-
+// tick HIGHLIGHTED widget in an already-read UI heap. Split from menuFingerprint so
+// ReadMenuItem can reuse its heap (no second 2 MiB read) to recognise screens the
+// fixed menuItemPaths don't cover — the System Link games browser in particular.
+func (r *Reader) rawHighlightPathFromHeap(heap []byte) (string, uint32) {
 	// One linear pass: the max activation tick per HIGHLIGHTED (+0x60==1), non-freed
 	// (+0x14!=0xFFFFFFFF), valid-header (&0xFFFF0000==0x80000000) widget block, keyed
 	// by its +0x10 DeLa tag handle.
