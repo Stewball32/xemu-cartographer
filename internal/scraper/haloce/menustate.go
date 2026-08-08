@@ -83,43 +83,39 @@ func menuItemPathList() []string {
 // non-menu state, or a mod that renamed the tags). Cheap-ish: one bulk heap read
 // + a cached tag-handle map.
 func (r *Reader) ReadMenuItem() int {
-	handles := r.menuItemDelaHandles()
-	if len(handles) == 0 {
-		return MenuItemUnknown
-	}
+	// FRESH every tick — no cached widget handle/block/path carried between ticks.
+	// Read the heap and take the GLOBAL max-activation-tick HIGHLIGHTED widget (the
+	// LIVE screen's item) and classify its DeLa path — NOT a scan limited to the
+	// fixed menuItemPaths handles. That limited scan was the bug: CE never clears a
+	// prior screen's +0x60 highlight, so at System Link Games the stale, still-
+	// highlighted mp_submenu_system_link (a KNOWN item) won the known-scan and the
+	// live \connected\server_list item (not a known item) was never even considered —
+	// the runner mis-read the games browser as the entry item and pressed A forever.
+	// The activation tick disambiguates: the live screen's widgets carry the HIGHEST
+	// tick, so the global-max scan picks server_list over the stale entry block.
 	heap, err := r.inst.Mem.ReadBytes(r.off.ConstUiWidgetHeapGVALo,
 		int(r.off.ConstUiWidgetHeapGVAHi-r.off.ConstUiWidgetHeapGVALo))
 	if err != nil {
 		return MenuItemUnknown
 	}
-	best := MenuItemUnknown
-	var bestTick uint32
-	haveBest := false
-	for path, handle := range handles {
-		if handle == 0 {
-			continue
-		}
-		tick, ok := widgetHighlightTick(heap, handle)
-		if !ok {
-			continue
-		}
-		if !haveBest || tick > bestTick {
-			haveBest = true
-			bestTick = tick
-			best = menuItemPaths[path]
-		}
+	path, _ := r.rawHighlightPathFromHeap(heap)
+	return classifyMenuItemPath(path)
+}
+
+// classifyMenuItemPath maps a highlighted widget's DeLa PATH to a MenuItem enum: an
+// exact front-end item (menuItemPaths), the System Link games browser
+// (…\connected\server_list\…), or Unknown.
+func classifyMenuItemPath(path string) int {
+	if path == "" {
+		return MenuItemUnknown
 	}
-	// None of the FIXED front-end items is highlighted — but this may be the System
-	// Link games browser, whose highlighted widget (…\connected\server_list\…) isn't
-	// in menuItemPaths. Reuse the heap we already read to grab the raw highlighted
-	// path and recognise it, so the runner can CREATE (Y) off this reliable high-GVA
-	// widget rather than the stale-prone game_connection low global.
-	if best == MenuItemUnknown {
-		if path, _ := r.rawHighlightPathFromHeap(heap); strings.Contains(path, sysLinkGamesPathMark) {
-			return MenuItemSystemLinkGames
-		}
+	if v, ok := menuItemPaths[path]; ok {
+		return v
 	}
-	return best
+	if strings.Contains(path, sysLinkGamesPathMark) {
+		return MenuItemSystemLinkGames
+	}
+	return MenuItemUnknown
 }
 
 // menuItemDelaHandles resolves + caches the front-end item DeLa tag handles. The

@@ -18,13 +18,13 @@ var navDebug = func() bool {
 // logNavFingerprint dumps the raw front-end screen identity when it changes. Called
 // from ReadGameState only while at a menu, and only when navDebug is on.
 func (r *Reader) logNavFingerprint(conn uint16, mainMenu uint8, menuItem int, focus uint32) {
+	// EVERY tick (not on-change): the raw FRESH-scan highlighted widget path + the
+	// resolved MenuItem, so one capture while the box is HELD on System Link Games
+	// shows exactly what the fresh scan returns there — confirming it now reads
+	// \connected\server_list (→ menu_item=6, fixed) or still a stale entry item
+	// (→ the scan itself is stale, needs a deeper fix). menu_item is what ReadMenuItem
+	// classified this same fresh scan to.
 	path, tick := r.menuFingerprint()
-	// On-change of the raw path (the screen identity) so it's one line per screen,
-	// not per tick — exactly the per-screen fingerprint we need, without flooding.
-	if path == r.lastNavFP {
-		return
-	}
-	r.lastNavFP = path
 	log.Printf("navfp[%s]: dela=%q menu_item=%d conn=%d main_menu=%d focus=0x%08X tick=0x%X",
 		r.name, path, menuItem, conn, mainMenu, focus, tick)
 }
