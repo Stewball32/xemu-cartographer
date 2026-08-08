@@ -274,6 +274,76 @@ func DefaultHostSequence(timing StepTiming, sel Selector) *Sequence {
 	return seq
 }
 
+// onGametypeSelect / onMapSelect identify the two hosting card screens by which list
+// widget is UP (count>0). They're distinct: on SELECT MAP the map list is up
+// (MapCursorCount>0, gametype down); on SELECT GAMETYPE the gametype list is up
+// (GametypeCursorCount>0, map down). Used by the re-select back-out to press B on the
+// SAFE screens only and STOP the instant SELECT MAP appears — B on SELECT MAP would
+// END the live lobby (the runner's hard interlock, execute(), also refuses it).
+func onMapSelect(o Observation) bool      { return o.MapCursorCount > 0 }
+func onGametypeSelect(o Observation) bool { return o.GametypeCursorCount > 0 && o.MapCursorCount == 0 }
+
+// ReselectSequence CHANGES the map/gametype on an ALREADY-CREATED pregame lobby, for
+// a fresh /play pick while parked. SAFETY: the lobby is live from SELECT MAP onward
+// (players may have joined), and pressing B WHILE ON SELECT MAP ends it and drops
+// everyone. So it backs out with exactly TWO B's on the SAFE screens — pregame lobby →
+// SELECT GAMETYPE → SELECT MAP — then re-drives FORWARD only (index-step + A, twice),
+// exactly like the initial select. The back-out steps stop pressing the instant the
+// next screen appears, and the runner's execute() interlock hard-refuses any B on
+// SELECT MAP as a backstop.
+func ReselectSequence(timing StepTiming, sel Selector) *Sequence {
+	hosting := func(o Observation) bool {
+		s := Classify(o)
+		return s == ScreenHosting || s == ScreenLobby
+	}
+	inLobby := func(o Observation) bool { return Classify(o) == ScreenLobby }
+
+	seq := NewSequence([]Transition{
+		{
+			// SAFE back-out #1: pregame lobby → SELECT GAMETYPE (B on the lobby is safe).
+			Name: "reselect-backout-gametype", Intent: "back out to gametype select", Key: "b",
+			On:   inLobby,
+			Done: onGametypeSelect,
+		},
+		{
+			// SAFE back-out #2: SELECT GAMETYPE → SELECT MAP (B on gametype-select is safe).
+			// Done the instant SELECT MAP is up → we STOP; never a third B.
+			Name: "reselect-backout-map", Intent: "back out to map select", Key: "b",
+			On:   onGametypeSelect,
+			Done: onMapSelect,
+		},
+		{
+			// Re-drive FORWARD — identical index-stepping to the initial select-map.
+			Name: "reselect-map", Intent: "re-select map", Key: "a",
+			NavKey: "Right", NavKeyBack: "Left",
+			StepsFn:    func(s Selector) int { return s.MapPick().Steps },
+			TargetName: func(s Selector) string { return s.MapPick().Name },
+			CursorFn:   func(o Observation) (int, int, bool) { return o.MapCursor, o.MapCursorCount, o.MapCursorValid },
+			On:         hosting,
+			Done:       inLobby,
+		},
+		{
+			Name: "reselect-gametype", Intent: "re-select gametype", Key: "a",
+			NavKey: "Right", NavKeyBack: "Left",
+			StepsFn:    func(s Selector) int { return s.GametypePick().Steps },
+			TargetName: func(s Selector) string { return s.GametypePick().Name },
+			CursorFn: func(o Observation) (int, int, bool) {
+				return o.GametypeCursor, o.GametypeCursorCount, o.GametypeCursorValid
+			},
+			PrefixFn: gametypeCustomPrefix,
+			On:       hosting,
+			Done:     inLobby,
+		},
+		{
+			Name: "reselect-reach-lobby", Intent: "reach lobby", Key: "",
+			On:   inLobby,
+			Done: inLobby,
+		},
+	}, timing)
+	seq.sel = sel
+	return seq
+}
+
 // Cursor / Current expose progress for events + tests.
 func (s *Sequence) Cursor() int { return s.cursor }
 func (s *Sequence) Done() bool  { return s.cursor >= len(s.steps) }

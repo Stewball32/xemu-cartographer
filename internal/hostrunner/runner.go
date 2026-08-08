@@ -49,6 +49,18 @@ type Runner struct {
 	startAt   time.Time
 	lastPhase Phase
 
+	// lastObs is the most recent observation, stored so execute() can enforce the
+	// SAFETY interlock (never send B on SELECT MAP — it ends the live lobby) at the
+	// single key-emission choke point, regardless of which path produced the action.
+	lastObs Observation
+
+	// Re-select state: lobbyApplied flips true once the sequence first reaches the
+	// created lobby; appliedGen is the selector generation that lobby reflects. A
+	// later pick (Generation() != appliedGen) triggers a re-select to CHANGE the live
+	// lobby's map/gametype (ReselectSequence).
+	lobbyApplied bool
+	appliedGen   uint64
+
 	// ready is the player-scoped start request (requirement 6 made live): the
 	// /api/play/ready route flips it so the runner presses start once the native
 	// preconditions pass, even under the default arm-only policy. Atomic because
@@ -138,6 +150,7 @@ func (r *Runner) Selection() (mapPick, gametypePick Pick) {
 // observation. Returns the Action it took for the caller / tests.
 func (r *Runner) Tick(obs Observation, now time.Time) Action {
 	defer func() { r.lastPhase = obs.Phase }()
+	r.lastObs = obs // for the execute() SAFETY interlock
 
 	if !r.arb.CanEmit() {
 		act := wait("runner suspended (" + r.arb.Authority().String() + ")")
@@ -150,7 +163,7 @@ func (r *Runner) Tick(obs Observation, now time.Time) Action {
 		return act
 	}
 
-	act := r.decide(obs, now)
+	act := guardDestructiveBack(r.decide(obs, now), obs) // SAFETY: never B on SELECT MAP
 	err := r.execute(act)
 	r.emit(obs, act.Kind.String(), act, err)
 	return act
@@ -174,11 +187,16 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 		return tap("a", "clear carnage", "post-game screen — tapping A to clear")
 	}
 
-	// Just returned from a game to a hostable menu → re-host from the top.
+	// Just returned from a game to a hostable menu → re-host from the top. Rebuild the
+	// DEFAULT sequence (r.seq may currently be a ReselectSequence) and clear the
+	// re-select bookkeeping so the next lobby starts fresh.
 	if (r.lastPhase == PhaseInGame || r.lastPhase == PhasePostGame) &&
 		(obs.Phase == PhaseMenu || obs.Phase == PhasePreGame) {
+		r.seq = DefaultHostSequence(r.cfg.Timing, r.cfg.Selector)
 		r.seq.Reset(now)
 		r.armed = false
+		r.lobbyApplied = false
+		r.appliedGen = 0
 	}
 
 	act := r.seq.Step(obs, now)
@@ -188,20 +206,41 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 
 	// DONE — lobby created, map + gametype selected. The runner stops here and just
 	// observes (it keeps ticking + emitting state so /play still reflects the live
-	// lobby, incl. the scraped current map/gametype). Players start the match.
+	// lobby). Players start the match.
 	r.armed = true
+
+	// RE-SELECT: if the player picked a NEW map/gametype after this lobby was created,
+	// CHANGE the live lobby's selection — SAFELY: back out to SELECT GAMETYPE then
+	// SELECT MAP (both safe), re-drive forward, return. Never B on SELECT MAP (the
+	// interlock). Detected via the selector's monotonic generation.
+	if sel, ok := r.cfg.Selector.(*AtomicSelector); ok {
+		gen := sel.Generation()
+		switch {
+		case !r.lobbyApplied:
+			// First created lobby — record the generation it reflects; do NOT re-select.
+			r.lobbyApplied = true
+			r.appliedGen = gen
+		case gen != r.appliedGen:
+			// A newer pick than this lobby reflects → drive the re-select from here.
+			r.appliedGen = gen
+			r.seq = ReselectSequence(r.cfg.Timing, r.cfg.Selector)
+			r.seq.Reset(now)
+			return r.seq.Step(obs, now)
+		}
+	}
 	return wait("lobby ready — map + gametype selected; players start the match")
 }
 
 // WalkBack is an operator/admin command: press B to back out one screen, or
 // cancel a running countdown. Gated only on a fresh read.
 func (r *Runner) WalkBack(obs Observation, now time.Time) Action {
+	r.lastObs = obs // for the execute() SAFETY interlock
 	if !r.arb.CanEmit() {
 		act := wait("runner suspended (" + r.arb.Authority().String() + ")")
 		r.emit(obs, "suspended", act, nil)
 		return act
 	}
-	act := r.seq.WalkBack(obs, now)
+	act := guardDestructiveBack(r.seq.WalkBack(obs, now), obs) // SAFETY: never B on SELECT MAP
 	r.armed, r.started = false, false
 	err := r.execute(act)
 	r.emit(obs, act.Kind.String(), act, err)
@@ -243,7 +282,18 @@ func GatedPress(obs Observation, expect Screen, key string) Action {
 func (r *Runner) execute(act Action) error {
 	switch act.Kind {
 	case ActionTap:
-		if k := act.Key(); k != "" {
+		k := act.Key()
+		// SAFETY INTERLOCK (hard backstop, single key-emission choke point): B on the
+		// SELECT MAP screen ENDS a live lobby and disconnects ALL joined players (the
+		// lobby is created the moment SELECT MAP is reached). Refuse to send it here no
+		// matter which path produced it — unknown/off-route recovery, stuck-detection,
+		// WalkBack, a mis-timed re-select back-out. The map list being up
+		// (MapCursorCount>0) means we're on SELECT MAP. The only legitimate B's are on
+		// the pregame lobby and SELECT GAMETYPE (map list down); those pass.
+		if k == "b" && r.lastObs.MapCursorCount > 0 {
+			return nil // never sent — the game must not be killed by a stray Back
+		}
+		if k != "" {
 			return r.input.Tap(k)
 		}
 	case ActionChord:
@@ -252,6 +302,16 @@ func (r *Runner) execute(act Action) error {
 		}
 	}
 	return nil
+}
+
+// guardDestructiveBack converts a would-be B on SELECT MAP into a visible blocked
+// Action, so the decision log/stream shows the refusal (the execute() interlock is
+// the hard backstop that also silently drops it). SELECT MAP = the map list is up.
+func guardDestructiveBack(act Action, obs Observation) Action {
+	if act.Kind == ActionTap && act.Key() == "b" && obs.MapCursorCount > 0 {
+		return blocked("SAFETY: refusing B on SELECT MAP — it would end the live lobby and drop all joined players")
+	}
+	return act
 }
 
 func (r *Runner) emit(obs Observation, kind string, act Action, err error) {

@@ -59,6 +59,10 @@ type AtomicSelector struct {
 	m   Pick
 	g   Pick
 	set bool
+	// gen increments on every Set — a monotonic "the pick changed" signal the runner
+	// uses to detect a NEW /play pick on an already-created lobby and re-select
+	// (back out to map/gametype select, re-drive, return). 0 = never set.
+	gen uint64
 }
 
 // NewAtomicSelector returns an EMPTY selector (unselected → the runner parks).
@@ -83,11 +87,21 @@ func (s *AtomicSelector) HasSelection() bool {
 	return s.set
 }
 
-// Set replaces both picks and marks the selector selected.
+// Set replaces both picks, marks the selector selected, and bumps the generation
+// so the runner can tell a NEW pick from the one it already drove.
 func (s *AtomicSelector) Set(mapPick, gametypePick Pick) {
 	s.mu.Lock()
 	s.m, s.g, s.set = mapPick, gametypePick, true
+	s.gen++
 	s.mu.Unlock()
+}
+
+// Generation returns the monotonic pick-change counter (0 = never set). Compared
+// against the runner's last-applied generation to trigger a re-select.
+func (s *AtomicSelector) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.gen
 }
 
 // Clear resets to unselected (the runner re-parks at map-select). Used to reset a
