@@ -30,6 +30,21 @@ type RunnerEvent struct {
 	PlayerCount     int  `json:"player_count"`
 	CountdownActive bool `json:"countdown_active"`
 	ReadyToStart    bool `json:"ready_to_start"`
+
+	// Raw diagnostic reads behind the classified Screen — surfaced for the admin
+	// diagnostics panel so an operator can watch the box AND its live scraper reads
+	// side-by-side. NOT part of the decision-change log gate (see decisionChanged),
+	// so they update every tick without flooding the server log.
+	Dela                string `json:"dela,omitempty"`
+	MenuItem            int    `json:"menu_item"`
+	GameConnection      int    `json:"game_connection"`
+	PregameSentinel     bool   `json:"pregame_sentinel"`
+	MapCursor           int    `json:"map_cursor"`
+	MapCursorCount      int    `json:"map_cursor_count"`
+	MapCursorValid      bool   `json:"map_cursor_valid"`
+	GametypeCursor      int    `json:"gametype_cursor"`
+	GametypeCursorCount int    `json:"gametype_cursor_count"`
+	GametypeCursorValid bool   `json:"gametype_cursor_valid"`
 }
 
 // EventSink receives the observable stream. The prod adapter serialises to JSON
@@ -61,5 +76,16 @@ func buildEvent(instance string, obs Observation, auth Authority, kind string, a
 		PlayerCount:     obs.PlayerCount,
 		CountdownActive: obs.CountdownActive,
 		ReadyToStart:    obs.ReadyToStart(),
+
+		Dela:                obs.Dela,
+		MenuItem:            int(obs.MenuItem),
+		GameConnection:      int(obs.Connection),
+		PregameSentinel:     obs.PregameSentinel,
+		MapCursor:           obs.MapCursor,
+		MapCursorCount:      obs.MapCursorCount,
+		MapCursorValid:      obs.MapCursorValid,
+		GametypeCursor:      obs.GametypeCursor,
+		GametypeCursorCount: obs.GametypeCursorCount,
+		GametypeCursorValid: obs.GametypeCursorValid,
 	}
 }

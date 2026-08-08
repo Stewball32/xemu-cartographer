@@ -55,6 +55,12 @@ type ScraperReadout struct {
 	GametypeCursorCount int
 	GametypeCursorValid bool
 	GametypeListLen     int
+
+	// Raw diagnostic reads for the admin panel (not used by the runner logic):
+	// Dela is the highlighted-widget DeLa path (navfp `dela=`); PregameSentinel is
+	// game_globals+0x10 == 0xDEADBEEF (pregame active).
+	Dela            string
+	PregameSentinel bool
 }
 
 // Observation projects a ScraperReadout into the runner's Observation. Unknown
@@ -94,5 +100,7 @@ func (s ScraperReadout) Observation() Observation {
 		GametypeCursorCount: s.GametypeCursorCount,
 		GametypeCursorValid: s.GametypeCursorValid,
 		GametypeListLen:     s.GametypeListLen,
+		Dela:                s.Dela,
+		PregameSentinel:     s.PregameSentinel,
 	}
 }

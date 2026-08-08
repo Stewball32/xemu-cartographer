@@ -116,6 +116,12 @@ type Observation struct {
 	// prefix the runner adds to a pick's ustr index to hit the right widget card.
 	// Maps have no such prefix (widget index == ustr index), so no map equivalent.
 	GametypeListLen int
+
+	// Raw diagnostic reads surfaced to the admin panel (NOT consumed by Classify or
+	// the runner logic): Dela is the highlighted-widget DeLa path (navfp `dela=`);
+	// PregameSentinel is game_globals+0x10 == 0xDEADBEEF (pregame active).
+	Dela            string
+	PregameSentinel bool
 }
 
 // MenuItem is which front-end menu item is highlighted, read from the CE UI

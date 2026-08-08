@@ -49,6 +49,11 @@ type Reader struct {
 	// not per tick. See menustate_debug.go.
 	lastNavFP string
 
+	// lastMenuDela is the raw highlighted-widget DeLa path from the most recent
+	// ReadMenuItem (the navfp `dela=`), surfaced via LastStateInputs["menu_dela"] for
+	// the admin diagnostics panel. "" off the front-end / on a read failure.
+	lastMenuDela string
+
 	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
 	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
 	// a loaded UI cache (front-end session) but the heap block's absolute address
@@ -149,8 +154,12 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	// stale main_menu blank the runner's "where am I" and stall it at "unknown".
 	// Off the front-end (engine running) we skip the ~2MB heap read as before.
 	menuItem := MenuItemUnknown
+	menuDela := ""
+	pregameSentinel := false
 	if !gameEngineRunning {
 		menuItem = r.ReadMenuItem()
+		menuDela = r.lastMenuDela             // raw highlighted DeLa path (navfp dela=)
+		pregameSentinel = r.readPregameSentinel() // game_globals+0x10 == 0xDEADBEEF
 		// PHASE-1 nav diagnostic (HOSTRUNNER_NAV_DEBUG): dump the RAW highlighted
 		// DeLa path per screen so an operator can capture the fingerprint of the
 		// System Link screens (Select Profile vs System Link Games) live on a
@@ -187,6 +196,8 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"game_time_globals_ptr":   gtgPtr,
 		"menu_focus":              menuFocus,
 		"menu_item":               uint32(menuItem),
+		"menu_dela":               menuDela,        // admin diagnostics: raw navfp dela=
+		"pregame_sentinel":        pregameSentinel, // admin diagnostics: 0xDEADBEEF present?
 	}
 	// A failed main_menu read means the low translation is broken (not merely a
 	// game region absent at the menu) — surface it so the ready loop re-translates.

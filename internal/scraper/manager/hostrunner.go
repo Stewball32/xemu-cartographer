@@ -181,6 +181,9 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 		ro.GameConnection = stateInputInt(si, "game_connection")
 		ro.MenuFocus = uint32(stateInputInt(si, "menu_focus"))
 		ro.MenuItem = stateInputInt(si, "menu_item")
+		// Raw diagnostic reads for the admin panel (string/bool, not integers).
+		ro.Dela, _ = si["menu_dela"].(string)
+		ro.PregameSentinel, _ = si["pregame_sentinel"].(bool)
 	}
 	ro.Map = r.gameData.Map
 	ro.Gametype = r.gameData.Gametype

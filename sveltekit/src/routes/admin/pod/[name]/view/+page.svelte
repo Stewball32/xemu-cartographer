@@ -30,6 +30,66 @@
 
 	const isRunning = $derived(status === 'running');
 
+	// --- Live scraper-read diagnostics panel -------------------------------------
+	type Cursor = { index: number; count: number; valid: boolean };
+	type Diagnostics = {
+		instance: string;
+		present: boolean;
+		tick: number;
+		screen: string;
+		dela: string;
+		menu_item: number;
+		menu_item_name: string;
+		game_connection: number;
+		pregame_sentinel: boolean;
+		map_cursor: Cursor;
+		gametype_cursor: Cursor;
+		map: string;
+		gametype: string;
+		selected_map: string;
+		selected_gametype: string;
+		enumerated_maps: string[] | null;
+		enumerated_gametypes: string[] | null;
+	};
+	let diag = $state<Diagnostics | null>(null);
+	let diagError = $state<string | null>(null);
+	let diagTimer: ReturnType<typeof setInterval> | null = null;
+
+	const CONN_NAMES = ['menu', 'system-link', 'hosting', 'film'];
+	function connName(c: number): string {
+		return `${c}${CONN_NAMES[c] ? ` (${CONN_NAMES[c]})` : ''}`;
+	}
+
+	async function loadDiag() {
+		if (!isRunning) {
+			diag = null;
+			return;
+		}
+		try {
+			diag = await adminGet<Diagnostics>(`scraper/${encodeURIComponent(name)}/diagnostics`);
+			diagError = null;
+		} catch (err) {
+			diag = null;
+			// 503 = host-runner subsystem off; 404 = no runner attached. Show a hint,
+			// don't spam the console.
+			diagError = err instanceof AdminFetchError ? err.message : 'diagnostics unavailable';
+		}
+	}
+
+	function startDiagPolling() {
+		stopDiagPolling();
+		diagTimer = setInterval(() => {
+			if (document.visibilityState !== 'visible') return;
+			loadDiag();
+		}, 1000);
+	}
+	function stopDiagPolling() {
+		if (diagTimer !== null) {
+			clearInterval(diagTimer);
+			diagTimer = null;
+		}
+	}
+
 	function statusBadgeClass(s: RowStatus): string {
 		switch (s) {
 			case 'running':
@@ -210,10 +270,13 @@
 	onMount(async () => {
 		await loadDetail();
 		startPolling();
+		loadDiag();
+		startDiagPolling();
 	});
 
 	onDestroy(() => {
 		stopPolling();
+		stopDiagPolling();
 		vnc?.disconnect();
 		vnc = null;
 	});
@@ -316,5 +379,82 @@
 				/>
 			</div>
 		</div>
+
+		<!-- Live scraper-read diagnostics: watch the box AND what the scraper sees. -->
+		<section class="card preset-tonal flex flex-col gap-2 p-3">
+			<header class="flex flex-wrap items-center gap-2 text-xs">
+				<span class="font-medium">Live scraper reads</span>
+				{#if diag}
+					<span class="badge preset-tonal-surface">tick {diag.tick}</span>
+				{/if}
+				<span class="ms-auto text-surface-600-400">polling 1s</span>
+			</header>
+
+			{#if !isRunning}
+				<p class="text-xs text-surface-600-400">Box not running.</p>
+			{:else if !diag}
+				<p class="text-xs text-warning-500">{diagError ?? 'awaiting scraper…'}</p>
+			{:else}
+				<div class="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-4">
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">screen</span>
+						<span class="badge preset-filled-primary-500 w-fit">{diag.screen || 'unknown'}</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">menu_item</span>
+						<span class="font-mono">
+							{diag.menu_item_name}
+							<span class="text-surface-600-400">({diag.menu_item})</span>
+						</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">game_connection</span>
+						<span class="font-mono">{connName(diag.game_connection)}</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">pregame sentinel</span>
+						<span class="badge w-fit {diag.pregame_sentinel ? 'preset-tonal-warning' : 'preset-tonal-surface'}">
+							{diag.pregame_sentinel ? '0xDEADBEEF' : 'absent'}
+						</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">map cursor</span>
+						<span class="flex items-center gap-1 font-mono">
+							{diag.map_cursor.index}/{diag.map_cursor.count}
+							<span class="badge {diag.map_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
+								{diag.map_cursor.valid ? 'valid' : 'invalid'}
+							</span>
+						</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">gametype cursor</span>
+						<span class="flex items-center gap-1 font-mono">
+							{diag.gametype_cursor.index}/{diag.gametype_cursor.count}
+							<span class="badge {diag.gametype_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
+								{diag.gametype_cursor.valid ? 'valid' : 'invalid'}
+							</span>
+						</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">map · read → picked</span>
+						<span class="font-mono">{diag.map || '—'} → {diag.selected_map || '—'}</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-surface-600-400">gametype · read → picked</span>
+						<span class="font-mono">{diag.gametype || '—'} → {diag.selected_gametype || '—'}</span>
+					</div>
+				</div>
+
+				<div class="flex flex-col gap-0.5 text-xs">
+					<span class="text-surface-600-400">dela · highlighted-widget path</span>
+					<code class="bg-surface-200-800 break-all rounded p-1 font-mono">{diag.dela || '—'}</code>
+				</div>
+
+				<p class="text-xs text-surface-600-400">
+					enumerated: {diag.enumerated_maps?.length ?? 0} maps · {diag.enumerated_gametypes
+						?.length ?? 0} gametypes
+				</p>
+			{/if}
+		</section>
 	{/if}
 </div>

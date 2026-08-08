@@ -15,6 +15,9 @@ import (
 type HostControl interface {
 	Status(instance string) hostrunner.Status
 	SetAuthority(instance string, auth hostrunner.Authority) bool
+	// Diagnostics returns the live per-tick scraper-read snapshot (the raw reads
+	// behind the classified screen) for the admin diagnostics panel.
+	Diagnostics(instance string) hostrunner.Diagnostics
 }
 
 // HostRunners is the injected control surface (nil until wired — endpoints then

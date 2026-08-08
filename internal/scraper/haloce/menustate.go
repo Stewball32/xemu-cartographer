@@ -96,19 +96,24 @@ func (r *Reader) ReadMenuItem() int {
 	heap, err := r.inst.Mem.ReadBytes(r.off.ConstUiWidgetHeapGVALo,
 		int(r.off.ConstUiWidgetHeapGVAHi-r.off.ConstUiWidgetHeapGVALo))
 	if err != nil {
+		r.lastMenuDela = ""
 		return MenuItemUnknown
 	}
-	// System Link Games FIRST — detect by PRESENCE of its games-list widget in the
-	// heap (the screen with the "SYSTEM LINK GAMES" title + the list of hosted
-	// games), NOT by which item is (stale-)highlighted. The list widget is live the
-	// whole time you're on the screen even while a leftover mp_submenu_system_link
-	// block keeps the +0x60 highlight flag — which is what made the runner read the
-	// games browser as the entry item and press A forever. Presence → CREATE (Y).
+	// Resolve the highlighted DeLa path FIRST (cheap over the already-read heap) and
+	// stash it for the admin diagnostics panel — so the raw navfp `dela=` fingerprint
+	// is available on EVERY screen, including System Link Games where the presence
+	// detection below short-circuits the classification.
+	path, _ := r.rawHighlightPathFromHeap(heap)
+	r.lastMenuDela = path
+	// System Link Games — detect by PRESENCE of its games-list widget in the heap
+	// (the screen with the "SYSTEM LINK GAMES" title + the list of hosted games), NOT
+	// by which item is (stale-)highlighted. The list widget is live the whole time
+	// you're on the screen even while a leftover mp_submenu_system_link block keeps
+	// the +0x60 highlight flag — which is what made the runner read the games browser
+	// as the entry item and press A forever. Presence → CREATE (Y).
 	if r.systemLinkGamesActive(heap) {
 		return MenuItemSystemLinkGames
 	}
-	// Otherwise classify the live highlighted item (global max activation tick).
-	path, _ := r.rawHighlightPathFromHeap(heap)
 	return classifyMenuItemPath(path)
 }
 
