@@ -29,6 +29,18 @@ func (m *Manager) overlayPath(name string) string {
 	return filepath.Join(m.hddsDir(), name+".qcow2")
 }
 
+// OverlayPath is the exported accessor for a per-instance overlay qcow2 path,
+// so the scraper can read a box's guest HDD host-side (custom gametype variant
+// enumeration). Returns the path and true when it exists on disk; false when the
+// instance has no overlay (not provisioned here) so the caller skips the read.
+func (m *Manager) OverlayPath(name string) (string, bool) {
+	p := m.overlayPath(name)
+	if _, err := os.Stat(p); err != nil {
+		return "", false
+	}
+	return p, true
+}
+
 // qemuImgCmd returns the configured qemu-img binary (default "qemu-img").
 func (m *Manager) qemuImgCmd() string {
 	if m.cfg.QemuImgCmd != "" {

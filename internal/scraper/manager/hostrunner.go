@@ -1,12 +1,15 @@
 package manager
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"time"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/customvariants"
 )
 
 // hostTickMinInterval bounds how often the host runner is ticked, decoupling it
@@ -45,22 +48,86 @@ func (r *runner) enumerateLobby() {
 		return
 	}
 	maps := toMapOptions(opts.Maps)
-	gametypes := toMapOptions(opts.Gametypes)
+	builtinGametypes := toMapOptions(opts.Gametypes)
+	// Kick the one-time host-side read of the box's saved custom variants (part C);
+	// no-op after the first call. Results land in cache.CustomGametypes and get
+	// PREPENDED below on subsequent ticks, so the served list == the live carousel.
+	r.ensureCustomVariants()
 	changed := false
+	var gtCount int
 	r.withCache(func(c *instanceCache) {
+		gametypes := prependCustomGametypes(c.CustomGametypes, builtinGametypes)
 		changed = len(c.AvailableMaps) != len(maps) || len(c.AvailableGametypes) != len(gametypes)
 		c.AvailableMaps = maps
 		c.AvailableGametypes = gametypes
+		gtCount = len(gametypes)
 	})
 	// Log on count-change so beta.log carries the ground truth for the /play
 	// picker (grep: "lobby enumerated"). Crucially surfaces the split case — real
 	// maps but empty gametypes (e.g. a build whose gametype-names tag differs) —
 	// which otherwise looks like a silent frontend bug. On-change only: the lists
 	// are stable per disc, so this is one line per box per change, not per 3s tick.
+	// The gametype count includes any prepended custom variants once they load.
 	if changed {
 		log.Printf("scraper[%s]: lobby enumerated: %d maps, %d gametypes (available=%v)",
-			r.name, len(maps), len(gametypes), opts.Available)
+			r.name, len(maps), gtCount, opts.Available)
 	}
+}
+
+// ensureCustomVariants fires the one-time, async host-side read of this box's
+// saved custom gametype variants (customvariants → the overlay's UDATA), off the
+// hot loop. No-op when the overlay resolver isn't wired, and self-limiting via
+// customOnce so a failed / empty read isn't retried every tick. Loop-goroutine
+// only (customOnce.Do), but the read itself runs on its own goroutine and stores
+// into cache.CustomGametypes under cacheMu.
+func (r *runner) ensureCustomVariants() {
+	if r.overlayFor == nil {
+		return
+	}
+	r.customOnce.Do(func() {
+		name := r.name
+		title := fmt.Sprintf("%08x", r.cachedTitleID())
+		go func() {
+			path, ok := r.overlayFor(name)
+			if !ok {
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.ctx, 45*time.Second)
+			defer cancel()
+			names, err := customvariants.Names(ctx, path, title)
+			if err != nil {
+				log.Printf("scraper[%s]: custom gametype variants unavailable (built-ins only): %v", name, err)
+				return
+			}
+			if len(names) == 0 {
+				return
+			}
+			r.withCache(func(c *instanceCache) { c.CustomGametypes = names })
+			log.Printf("scraper[%s]: %d custom gametype variants loaded from disk", name, len(names))
+		}()
+	})
+}
+
+// prependCustomGametypes puts the box's user-saved custom variants (already in
+// carousel order) AHEAD of the built-in gametypes and reassigns every option's
+// Steps to its ABSOLUTE carousel index. This makes the served list == the live
+// SELECT GAMETYPE carousel 1:1, and a pick's Steps is its widget card index
+// directly: the runner's gametypeCustomPrefix then computes 0 (live count ==
+// enumerated count), so both custom and built-in picks navigate to the right
+// card. Empty customs → built-ins pass through unchanged (Steps already 0..n-1).
+func prependCustomGametypes(customNames []string, builtins []scraperiface.MapOption) []scraperiface.MapOption {
+	if len(customNames) == 0 {
+		return builtins
+	}
+	out := make([]scraperiface.MapOption, 0, len(customNames)+len(builtins))
+	for _, nm := range customNames {
+		out = append(out, scraperiface.MapOption{Name: nm})
+	}
+	out = append(out, builtins...)
+	for i := range out {
+		out[i].Steps = i
+	}
+	return out
 }
 
 // toMapOptions maps the game-agnostic scraper.LobbyOption slice onto the

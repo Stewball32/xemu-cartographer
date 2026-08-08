@@ -177,6 +177,16 @@ func main() {
 		scrMgr.SetHostDrivePolicy(func(name string) bool {
 			return strings.Contains(name, driveMarker)
 		})
+		// Host-side custom gametype variant enumeration (part C): resolve a box's
+		// overlay qcow2 so the runner can read its saved variants off disk (the
+		// SELECT GAMETYPE carousel keeps only rendered cards resident). nil-safe —
+		// no podman manager (CONTAINERS_ENABLED off) → built-in gametypes only.
+		scrMgr.SetOverlayResolver(func(name string) (string, bool) {
+			if podMgr == nil {
+				return "", false
+			}
+			return podMgr.OverlayPath(name)
+		})
 
 		// Capture-policy loader: read the persisted (instance, class) rows
 		// now so runners started immediately after this (auto-start via the

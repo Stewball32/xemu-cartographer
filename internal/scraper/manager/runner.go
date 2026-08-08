@@ -110,6 +110,13 @@ type instanceCache struct {
 	// and the play API returns available:false rather than a fixed set.
 	AvailableMaps      []scraperiface.MapOption
 	AvailableGametypes []scraperiface.MapOption
+
+	// CustomGametypes are the box's user-saved custom variant DISPLAY names, read
+	// host-side off its overlay (customvariants), in live-carousel order. Loaded
+	// once, async; empty until then (and if the read fails → built-ins only).
+	// enumerateLobby PREPENDS these ahead of the built-in gametypes so the served
+	// list == the live SELECT GAMETYPE carousel 1:1.
+	CustomGametypes []string
 }
 
 // previousGame is the just-ended match captured on Live→Ready. Serialised as
@@ -258,6 +265,14 @@ type runner struct {
 	// (enumerateLobby in hostrunner.go), decoupling it from the Ready poll cadence.
 	// Loop-goroutine only.
 	lastEnumAt time.Time
+
+	// Custom gametype variant loading (part C). overlayFor resolves this box's
+	// overlay qcow2 path (host-side) so customvariants can read its saved variant
+	// names; nil disables the feature. customOnce fires the one-time async read
+	// (kicked from enumerateLobby, off the hot path); results land in
+	// cache.CustomGametypes under cacheMu.
+	overlayFor func(string) (string, bool)
+	customOnce sync.Once
 }
 
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance, offsetSetFor func() string) *runner {

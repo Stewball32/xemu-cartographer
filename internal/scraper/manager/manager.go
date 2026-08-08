@@ -90,6 +90,11 @@ type Manager struct {
 	// (AuthDisabled). nil drives every box (pre-scoping behavior). Read-only
 	// after boot (set via SetHostDrivePolicy before any Start), so no lock.
 	hostDrive func(name string) bool
+
+	// overlayResolver maps an instance name to its overlay qcow2 path (host-side),
+	// so a runner can read the box's saved custom gametype variants off disk. nil
+	// disables custom-variant enumeration (built-ins only). Read-only after boot.
+	overlayResolver func(name string) (string, bool)
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -187,6 +192,15 @@ func (m *Manager) SetHostDrivePolicy(drive func(name string) bool) {
 	m.hostDrive = drive
 }
 
+// SetOverlayResolver wires the host-side overlay-path lookup used to read a box's
+// saved custom gametype variants (customvariants). resolver(name) returns the
+// overlay qcow2 path + true when readable. nil (the default) disables custom-
+// variant enumeration — the play list then carries built-in gametypes only. Call
+// once before any Start; read-only afterward.
+func (m *Manager) SetOverlayResolver(resolver func(name string) (string, bool)) {
+	m.overlayResolver = resolver
+}
+
 // Start spins up a runner for the named instance. It opens the xemu instance
 // at sock and launches the phase-driven goroutine. The runner enters Idle
 // and self-detects the running XBE; no upfront scraper.Detect call is made.
@@ -257,6 +271,10 @@ func (m *Manager) Start(name, sock string) error {
 		Instance: name,
 		Snapshot: &hostSummary{Instance: name, Phase: PhaseIdle},
 	})
+
+	// Overlay resolver for host-side custom gametype variant reads (part C).
+	// Visible to the loop goroutine before it starts (happens-before via go).
+	r.overlayFor = m.overlayResolver
 
 	// Attach the player-hosting runner (ADR-0003). Created before the loop
 	// goroutine starts so r.host / r.hostPump are visible to it without a race

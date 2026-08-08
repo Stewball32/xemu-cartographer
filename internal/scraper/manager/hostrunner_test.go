@@ -72,6 +72,43 @@ func TestAttachHostRunnerScoping(t *testing.T) {
 	}
 }
 
+// prependCustomGametypes must produce a list == the live carousel 1:1: customs
+// first in carousel order, then built-ins, with every Steps == its ABSOLUTE
+// carousel index. That makes gametypeCustomPrefix (liveCount − listLen) compute 0
+// and a pick's Steps land on the right widget card for BOTH custom and built-in.
+func TestPrependCustomGametypes(t *testing.T) {
+	builtins := []scraperiface.MapOption{
+		{Name: "Team Slayer", Steps: 0}, {Name: "CTF", Steps: 1}, {Name: "Oddball", Steps: 2},
+	}
+	// empty customs → built-ins pass through unchanged
+	if got := prependCustomGametypes(nil, builtins); len(got) != 3 || got[0].Name != "Team Slayer" || got[0].Steps != 0 {
+		t.Fatalf("empty customs must pass built-ins through unchanged, got %+v", got)
+	}
+	// customs prepended + absolute Steps
+	customs := []string{"BALL 5M 10S", "CTF WIZARD"}
+	got := prependCustomGametypes(customs, builtins)
+	want := []struct {
+		name  string
+		steps int
+	}{
+		{"BALL 5M 10S", 0}, {"CTF WIZARD", 1},
+		{"Team Slayer", 2}, {"CTF", 3}, {"Oddball", 4},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("want %d entries, got %d", len(want), len(got))
+	}
+	for i, w := range want {
+		if got[i].Name != w.name || got[i].Steps != w.steps {
+			t.Errorf("[%d] = {%q,%d}, want {%q,%d}", i, got[i].Name, got[i].Steps, w.name, w.steps)
+		}
+	}
+	// prefix reconciliation: with customs enumerated, listLen == liveCount ⇒ prefix 0
+	liveCount := 5 // 2 custom + 3 built-in on the live widget
+	if prefix := liveCount - len(got); prefix != 0 {
+		t.Errorf("gametypeCustomPrefix should reconcile to 0, got %d", prefix)
+	}
+}
+
 func TestStateInputInt(t *testing.T) {
 	si := scraper.StateInputs{
 		"main_menu":       uint8(1),
