@@ -328,11 +328,23 @@ func (s *Sequence) Step(obs Observation, now time.Time) Action {
 	if !obs.Fresh {
 		return wait("no fresh read")
 	}
-	// (1) catch up: advance past steps whose Done already holds. Blind card
-	// steps use Done==inLobby, so reaching the readable lobby retroactively
-	// satisfies all of them at once (handles presses landing faster than timed).
+	// (1) catch up: advance past steps whose Done already holds (a box handed to us
+	// mid-flow, or presses landing faster than timed).
+	//
+	// EXCEPT a selection card step (NavKey drive): its pick is applied by stepCard's
+	// closed-loop drive-then-A, and it advances ITSELF once the card is committed —
+	// never by a Done that merely reflects the lobby being readable. The host creates
+	// the lobby with Y BEFORE picking a map, so the pregame sentinel makes inLobby
+	// hold the whole time you're on the SELECT MAP / SELECT GAMETYPE screens; catch-
+	// up-skipping there dropped the pick entirely ("no effect", diagnosed live
+	// 2026-08-08). Stopping at the first card step lets stepCard drive it; a box that
+	// is genuinely PAST selection holds on the "awaiting live cursor" wait (count 0
+	// once the carousel deactivates) rather than silently applying a default.
 	for !s.Done() {
 		t := s.steps[s.cursor]
+		if t.NavKey != "" {
+			break
+		}
 		if t.Done != nil && t.Done(obs) {
 			s.advance(now)
 			continue
@@ -605,8 +617,19 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 		cursor, count, ok = t.CursorFn(obs)
 	}
 	if !ok || count <= 0 {
-		// No live cursor → we can't confirm which card is highlighted. HOLD rather
-		// than navigate to a possibly-wrong card (replaces the old blind default).
+		// No live cursor. If the finalized selection is already resident (Map AND
+		// Gametype readable), we're PAST this card — settled in the lobby (or handed a
+		// box mid-flow) — so advance rather than hold. This is what lets the catch-up
+		// complete for an already-settled box now that the catch-up loop no longer
+		// skips card steps by inLobby (which held on the card screens themselves).
+		if obs.Map != "" && obs.Gametype != "" {
+			s.advance(now)
+			return s.Step(obs, now)
+		}
+		// Otherwise HOLD rather than navigate to a possibly-wrong card (replaces the
+		// old blind default). On a card screen the carousel goes live within a tick;
+		// during the create→card transition the pick isn't applied yet, so a hold —
+		// not a skip — is correct (this is what stopped the "no effect" skip).
 		return wait(fmt.Sprintf("card %s: awaiting live cursor read", t.Name))
 	}
 
