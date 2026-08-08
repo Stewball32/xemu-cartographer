@@ -42,6 +42,28 @@ const dialBackoff = 2 * time.Second
 // scraper loop.
 const pumpQueueCap = 16
 
+// Focus-settle timing (package vars so tests can zero them). Right after a
+// (re)connect the browser hasn't propagated DOM focus to the Selkies canvas yet, so
+// KeyEvents sent immediately are DROPPED before the canvas is focused — the root
+// cause of BOTH the cold-boot Down-loop (empty highlight → wake presses lost →
+// dela stays empty → loop) and the System Link lost-first-A (the ~20s entry stall).
+// So on connect we click, WAIT for the browser to focus the canvas, then RE-ASSERT
+// before the first key; and we re-assert if focus goes stale between commands.
+var (
+	// focusSettleDelay is how long to wait after the initial focus click for the
+	// browser to move DOM focus onto the Selkies canvas, before re-asserting + the
+	// first key. The old code waited only FocusClick's internal 20ms and then
+	// immediately sent the key — far too soon.
+	focusSettleDelay = 300 * time.Millisecond
+	// focusReassertDelay is a short settle after the re-assert click.
+	focusReassertDelay = 60 * time.Millisecond
+	// refocusInterval re-asserts focus before a command when this long has passed
+	// since the last focus click — recovers a focus that dropped or never settled
+	// (keys silently dropping) WITHOUT a click before every key. Larger than the
+	// runner's press cadence so normal back-to-back nav doesn't re-click each time.
+	refocusInterval = 2 * time.Second
+)
+
 // Pump is the async write side that connects the state-aware runner (which ticks
 // on the scraper loop goroutine and must never block on network I/O) to a
 // container's Xvnc. It owns one Injector on its own goroutine, dialing lazily and
@@ -134,11 +156,13 @@ func (p *Pump) run() {
 
 	var conn Driver
 	var lastFail time.Time
+	var lastFocus time.Time
 	closeConn := func() {
 		if conn != nil {
 			_ = conn.Close()
 			conn = nil
 			p.setConnected(false)
+			lastFocus = time.Time{}
 		}
 	}
 	defer closeConn()
@@ -164,10 +188,18 @@ func (p *Pump) run() {
 				lastFail = time.Time{}
 				p.setConnected(true)
 				if p.focus {
-					if err := conn.FocusClick(); err != nil {
-						log.Printf("vncinput pump: focus %s: %v", p.url, err)
-					}
+					p.settleFocus(conn) // click → WAIT → re-assert, so the first key lands
+					lastFocus = time.Now()
 				}
+			}
+			// Re-assert focus if it's gone stale since the last click — recovers a
+			// focus that dropped or never settled (keys silently dropping) without a
+			// click before every key.
+			if p.focus && !lastFocus.IsZero() && time.Since(lastFocus) > refocusInterval {
+				if err := conn.FocusClick(); err != nil {
+					log.Printf("vncinput pump: refocus %s: %v", p.url, err)
+				}
+				lastFocus = time.Now()
 			}
 			if err := p.exec(conn, cmd); err != nil {
 				log.Printf("vncinput pump: exec %s: %v", p.url, err)
@@ -175,6 +207,27 @@ func (p *Pump) run() {
 				lastFail = time.Now()
 			}
 		}
+	}
+}
+
+// settleFocus grabs the Selkies canvas DOM focus and lets it SETTLE before the
+// caller sends the first key. Right after (re)connect the browser hasn't moved DOM
+// focus onto the canvas, so an immediate key is dropped; we click, wait for the
+// browser to focus the canvas, then re-assert. Runs on the pump goroutine, so the
+// sleeps never block the scraper loop (the runner's re-emits just queue).
+func (p *Pump) settleFocus(conn Driver) {
+	click := func() {
+		if err := conn.FocusClick(); err != nil {
+			log.Printf("vncinput pump: focus %s: %v", p.url, err)
+		}
+	}
+	click()
+	if focusSettleDelay > 0 {
+		time.Sleep(focusSettleDelay)
+	}
+	click() // re-assert once the browser has had time to focus the canvas
+	if focusReassertDelay > 0 {
+		time.Sleep(focusReassertDelay)
 	}
 }
 

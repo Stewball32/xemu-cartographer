@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// Zero the focus-settle sleeps and disable the stale-refocus timer so the pump
+// tests run fast and deterministically (no surprise re-focus between commands).
+func init() {
+	focusSettleDelay = 0
+	focusReassertDelay = 0
+	refocusInterval = time.Hour
+}
+
 // fakeDriver records the calls the pump makes and can be told to fail the next
 // Tap so reconnect behaviour is exercisable.
 type fakeDriver struct {
@@ -72,7 +80,7 @@ func recv(t *testing.T, ch chan string) string {
 	}
 }
 
-// A tap dials, focus-clicks, then taps — in that order.
+// A tap dials, focus-clicks + RE-ASSERTS (settle), then taps — in that order.
 func TestPumpDialsFocusesThenTaps(t *testing.T) {
 	events := make(chan string, 8)
 	var dials int
@@ -86,11 +94,15 @@ func TestPumpDialsFocusesThenTaps(t *testing.T) {
 	if err := p.Tap("y"); err != nil {
 		t.Fatalf("Tap: %v", err)
 	}
+	// settleFocus double-clicks (grab + re-assert) before the first key lands.
 	if got := recv(t, events); got != "focus" {
 		t.Fatalf("first call should be focus, got %q", got)
 	}
+	if got := recv(t, events); got != "focus" {
+		t.Fatalf("second call should be the focus re-assert, got %q", got)
+	}
 	if got := recv(t, events); got != "tap:y" {
-		t.Fatalf("second call should be tap:y, got %q", got)
+		t.Fatalf("third call should be tap:y, got %q", got)
 	}
 	if dials != 1 {
 		t.Fatalf("expected 1 dial, got %d", dials)
