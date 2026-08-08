@@ -341,6 +341,36 @@ func TestSelectMapKeepsDrivingMidScroll(t *testing.T) {
 	}
 }
 
+// TestColdMainMenuWakesWithDown reproduces the cold-boot main-menu hang: main_menu=1
+// but the CE highlight widget is un-woken (dela empty, menu_item Unknown), so
+// planNavKey would loop on "b" — which does NOTHING on the main menu. The planner
+// must press Down to WAKE the menu instead. A genuinely off-route Unknown (dela
+// populated) must still Back-normalise.
+func TestColdMainMenuWakesWithDown(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+
+	// Cold main menu: front-end active, NO readable highlight (dela empty).
+	cold := Observation{
+		Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: "",
+	}
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "Down" {
+		t.Fatalf("cold main menu: got %v key=%q, want tap Down (wake, not B loop)", a.Kind, a.Key())
+	}
+
+	// Off-route Unknown (e.g. Settings): the highlighted widget IS populated (dela
+	// non-empty) → Back-normalise, NOT Down.
+	off := Observation{
+		Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\settings_select\player_setup\foo`,
+	}
+	s2 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s2.Step(off, t0); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("off-route Unknown: got %v key=%q, want tap b (Back-normalise)", a.Kind, a.Key())
+	}
+}
+
 // TestSequenceFullFlow walks the host flow end-to-end with a controlled clock,
 // asserting each gated press fires on the right screen and confirms before the
 // next.
@@ -391,7 +421,11 @@ func TestSequenceFullFlow(t *testing.T) {
 // obsMI builds a front-end observation with a given highlighted MenuItem and
 // menu-focus pointer — the inputs the state-aware planner routes on.
 func obsMI(item MenuItem, focus uint32) Observation {
-	return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu, MenuItem: item, MenuFocus: focus}
+	// Dela non-empty: a screen with a READABLE menu state has a populated highlight
+	// widget (mapped or, off-route, unmapped-but-present) — only a cold un-woken main
+	// menu reads dela empty (that case is constructed explicitly in
+	// TestColdMainMenuWakesWithDown, not via this helper).
+	return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu, MenuItem: item, MenuFocus: focus, Dela: `ui\shell\main_menu\_hl`}
 }
 
 // TestNavDrivesFromMainMenu: on the main menu with a non-Multiplayer item

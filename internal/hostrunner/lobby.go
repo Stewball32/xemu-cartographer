@@ -594,6 +594,23 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		s.sysLinkEntered = true
 		s.sysLinkConnectAt = now
 	}
+	// COLD MAIN MENU WAKE (final override). On a freshly-booted main menu the CE UI
+	// highlight widget is UN-WOKEN until the first direction input — the highlighted
+	// DeLa path reads empty, menu_item is Unknown, and the activation tick never
+	// advances (RUNTIME-OBSERVED cold boot 2026-08-08: main_menu=1 yet dela="" every
+	// tick). planNavKey / the stuck-detection would send "b" (Back-normalise), but B
+	// does NOTHING on the main menu — there's nothing to back out of — so it loops on
+	// "b" forever and never wakes the menu. Press DOWN instead: a direction input
+	// populates the highlight, then the normal state-aware nav routes on the now-
+	// readable item. Gate on an EMPTY highlight (dela=="") so a genuinely off-route
+	// Unknown (Settings / Single Player, whose highlighted widget IS populated → dela
+	// non-empty) still Backs out. MenuActive == main_menu!=0 keeps this at the front
+	// end (never in a game); !sysLinkEntered keeps it out of the System Link entry
+	// flow, where an empty-highlight Unknown is SELECT PROFILE (advanced with A above),
+	// not a cold main menu.
+	if !s.sysLinkEntered && obs.MenuActive && obs.MenuItem == MenuItemUnknown && obs.Dela == "" {
+		key = "Down"
+	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
 	s.lastKey = key
