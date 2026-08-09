@@ -35,6 +35,18 @@ type Diagnostics struct {
 	Gametype         string `json:"gametype"`
 	SelectedMap      string `json:"selected_map"`
 	SelectedGametype string `json:"selected_gametype"`
+
+	// What the runner just DID + the live roster counts — so the panel shows the
+	// decision alongside the reads that drove it.
+	LastKind        string   `json:"last_kind"`
+	LastIntent      string   `json:"last_intent"`
+	LastKeys        []string `json:"last_keys"`
+	LastReason      string   `json:"last_reason"`
+	MachineCount    int      `json:"machine_count"`
+	PlayerCount     int      `json:"player_count"`
+	TeamCount       int      `json:"team_count"`
+	CountdownActive bool     `json:"countdown_active"`
+	Authority       string   `json:"authority"`
 }
 
 // Diagnostics returns the live scraper-read snapshot for an instance, built from
@@ -65,6 +77,15 @@ func (reg *Registry) Diagnostics(instance string) Diagnostics {
 		d.GametypeCursor = CursorView{Index: ev.GametypeCursor, Count: ev.GametypeCursorCount, Valid: ev.GametypeCursorValid}
 		d.Map = ev.Map
 		d.Gametype = ev.Gametype
+		d.LastKind = ev.Kind
+		d.LastIntent = ev.Intent
+		d.LastKeys = ev.Keys
+		d.LastReason = ev.Reason
+		d.MachineCount = ev.MachineCount
+		d.PlayerCount = ev.PlayerCount
+		d.TeamCount = ev.TeamCount
+		d.CountdownActive = ev.CountdownActive
+		d.Authority = ev.Authority
 	}
 	return d
 }

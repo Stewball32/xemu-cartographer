@@ -53,10 +53,83 @@
 		highlighted_gametype: string;
 		enumerated_maps: string[] | null;
 		enumerated_gametypes: string[] | null;
+		last_kind: string;
+		last_intent: string;
+		last_keys: string[] | null;
+		last_reason: string;
+		machine_count: number;
+		player_count: number;
+		team_count: number;
+		countdown_active: boolean;
+		authority: string;
 	};
+
+	// CHANGE TRACKING. The whole point of this panel is answering "which signal
+	// actually updates on THIS screen?" — e.g. on SELECT PROFILE the dela does NOT
+	// move, so the runner can't confirm on it. We remember each signal's previous
+	// value and when it last changed, and mark the ones that just moved. Sit on a
+	// screen, navigate, and the rows that light up are the usable confirm signals.
+	type Sig = { label: string; value: string; group: string };
+	let lastSeen = $state<Record<string, { value: string; at: number }>>({});
+	function noteChanges(sigs: Sig[]) {
+		const now = Date.now();
+		const next = { ...lastSeen };
+		for (const s of sigs) {
+			const prev = next[s.label];
+			if (!prev) next[s.label] = { value: s.value, at: 0 };
+			else if (prev.value !== s.value) next[s.label] = { value: s.value, at: now };
+		}
+		lastSeen = next;
+	}
+	/** ms since this signal last changed, or null if never seen changing. */
+	function changedAgo(label: string): number | null {
+		const e = lastSeen[label];
+		if (!e || e.at === 0) return null;
+		return Date.now() - e.at;
+	}
 	let diag = $state<Diagnostics | null>(null);
 	let diagError = $state<string | null>(null);
 	let diagTimer: ReturnType<typeof setInterval> | null = null;
+
+	const cur = (c: { index: number; count: number; valid: boolean }) =>
+		`${c.count ? c.index + 1 : 0}/${c.count}${c.valid ? '' : ' (invalid)'}`;
+
+	// Every live read, grouped. Order = most useful first for nav debugging.
+	const signals = $derived.by<Sig[]>(() => {
+		const d = diag;
+		if (!d) return [];
+		return [
+			{ group: 'screen', label: 'screen', value: d.screen || 'unknown' },
+			{ group: 'screen', label: 'menu_item', value: `${d.menu_item_name} (${d.menu_item})` },
+			{ group: 'screen', label: 'dela', value: d.dela || '—' },
+			{ group: 'screen', label: 'menu_focus', value: `0x${(d.menu_focus >>> 0).toString(16)}` },
+			{ group: 'screen', label: 'game_connection', value: connName(d.game_connection) },
+			{ group: 'screen', label: 'pregame_sentinel', value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent' },
+			{ group: 'screen', label: 'tick', value: String(d.tick) },
+			{ group: 'select', label: 'map cursor', value: cur(d.map_cursor) },
+			{ group: 'select', label: 'map highlighted', value: d.highlighted_map || '—' },
+			{ group: 'select', label: 'gametype cursor', value: cur(d.gametype_cursor) },
+			{ group: 'select', label: 'gametype highlighted', value: d.highlighted_gametype || '—' },
+			{ group: 'select', label: 'map picked → loaded', value: `${d.selected_map || '—'} → ${d.map || '—'}` },
+			{ group: 'select', label: 'gametype picked → loaded', value: `${d.selected_gametype || '—'} → ${d.gametype || '—'}` },
+			{ group: 'runner', label: 'authority', value: d.authority || '—' },
+			{ group: 'runner', label: 'last action', value: `${d.last_kind}${d.last_intent ? ` [${d.last_intent}]` : ''}` },
+			{ group: 'runner', label: 'last keys', value: (d.last_keys ?? []).join(',') || '—' },
+			{ group: 'runner', label: 'last reason', value: d.last_reason || '—' },
+			{ group: 'lobby', label: 'machines', value: String(d.machine_count) },
+			{ group: 'lobby', label: 'players', value: String(d.player_count) },
+			{ group: 'lobby', label: 'teams', value: String(d.team_count) },
+			{ group: 'lobby', label: 'countdown', value: d.countdown_active ? 'active' : 'no' },
+			{ group: 'lobby', label: 'enumerated', value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes` }
+		];
+	});
+	$effect(() => { if (signals.length) noteChanges(signals); });
+	const GROUPS = [
+		{ key: 'screen', title: 'Screen / nav signals' },
+		{ key: 'select', title: 'Map + gametype select' },
+		{ key: 'runner', title: 'Runner decision' },
+		{ key: 'lobby', title: 'Lobby' }
+	];
 
 	const CONN_NAMES = ['menu', 'system-link', 'hosting', 'film'];
 	function connName(c: number): string {
@@ -398,91 +471,34 @@
 			{:else if !diag}
 				<p class="text-xs text-warning-500">{diagError ?? 'awaiting scraper…'}</p>
 			{:else}
-				<div class="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3 lg:grid-cols-4">
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">screen</span>
-						<span class="badge preset-filled-primary-500 w-fit">{diag.screen || 'unknown'}</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">menu_item</span>
-						<span class="font-mono">
-							{diag.menu_item_name}
-							<span class="text-surface-600-400">({diag.menu_item})</span>
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">game_connection</span>
-						<span class="font-mono">{connName(diag.game_connection)}</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">pregame sentinel</span>
-						<span class="badge w-fit {diag.pregame_sentinel ? 'preset-tonal-warning' : 'preset-tonal-surface'}">
-							{diag.pregame_sentinel ? '0xDEADBEEF' : 'absent'}
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">menu_focus (woken?)</span>
-						<span class="flex items-center gap-1 font-mono">
-							0x{(diag.menu_focus >>> 0).toString(16)}
-							<span class="badge {diag.menu_focus ? 'preset-tonal-success' : 'preset-tonal-error'}">
-								{diag.menu_focus ? 'woken' : 'cold/0'}
-							</span>
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">map cursor (selecting)</span>
-						<span class="flex flex-wrap items-center gap-1 font-mono">
-							{diag.highlighted_map || '—'}
-							<!-- 1-BASED for humans: the widget index is 0-based, so a raw
-							     index/count read one below the total (35/36 at the last card). -->
-							<span class="text-surface-600-400">
-								@{diag.map_cursor.count ? diag.map_cursor.index + 1 : 0}/{diag.map_cursor.count}
-							</span>
-							<span class="badge {diag.map_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
-								{diag.map_cursor.valid ? 'valid' : 'invalid'}
-							</span>
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">gametype cursor (selecting)</span>
-						<span class="flex flex-wrap items-center gap-1 font-mono">
-							{diag.highlighted_gametype || '—'}
-							<span class="text-surface-600-400">
-								@{diag.gametype_cursor.count ? diag.gametype_cursor.index + 1 : 0}/{diag
-									.gametype_cursor.count}
-							</span>
-							<span class="badge {diag.gametype_cursor.valid ? 'preset-tonal-success' : 'preset-tonal-error'}">
-								{diag.gametype_cursor.valid ? 'valid' : 'invalid'}
-							</span>
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">map · pick → loaded</span>
-						<span class="font-mono">
-							{diag.selected_map || '—'}
-							<span class="text-surface-600-400">→ loaded</span>
-							{diag.map || '—'}
-						</span>
-					</div>
-					<div class="flex flex-col gap-0.5">
-						<span class="text-surface-600-400">gametype · pick → loaded</span>
-						<span class="font-mono">
-							{diag.selected_gametype || '—'}
-							<span class="text-surface-600-400">→ loaded</span>
-							{diag.gametype || '—'}
-						</span>
-					</div>
+				<!-- Grouped live reads. A row is highlighted for a few seconds after its
+				     value CHANGES — sit on a screen, navigate, and the rows that light up
+				     are the signals usable to confirm a press there. -->
+				<div class="grid gap-3 lg:grid-cols-2">
+					{#each GROUPS as g (g.key)}
+						<div class="flex flex-col gap-1">
+							<h4 class="text-[0.65rem] font-semibold tracking-wide text-surface-500 uppercase">
+								{g.title}
+							</h4>
+							<table class="w-full text-xs">
+								<tbody>
+									{#each signals.filter((x) => x.group === g.key) as sig (sig.label)}
+										{@const ago = changedAgo(sig.label)}
+										{@const fresh = ago !== null && ago < 3000}
+										<tr class={fresh ? 'bg-success-500/15' : ''}>
+											<td class="w-40 py-0.5 align-top text-surface-600-400">{sig.label}</td>
+											<td class="py-0.5 font-mono break-all">{sig.value}</td>
+											<td class="w-16 py-0.5 text-right align-top text-[0.6rem] text-surface-500">
+												{#if ago === null}—{:else if fresh}<span class="text-success-500">changed</span
+													>{:else}{Math.round(ago / 1000)}s{/if}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/each}
 				</div>
-
-				<div class="flex flex-col gap-0.5 text-xs">
-					<span class="text-surface-600-400">dela · highlighted-widget path</span>
-					<code class="bg-surface-200-800 break-all rounded p-1 font-mono">{diag.dela || '—'}</code>
-				</div>
-
-				<p class="text-xs text-surface-600-400">
-					enumerated: {diag.enumerated_maps?.length ?? 0} maps · {diag.enumerated_gametypes
-						?.length ?? 0} gametypes
-				</p>
 			{/if}
 		</section>
 	{/if}
