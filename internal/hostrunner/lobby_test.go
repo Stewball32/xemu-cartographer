@@ -805,3 +805,70 @@ func TestSelectProfileAdvancesFast(t *testing.T) {
 		t.Fatal("ProfileAdvanceInterval must be shorter than NavKeyInterval to be a speed-up")
 	}
 }
+
+// SHORTEST PATH WITH WRAPAROUND, proven for the raw ring math: the carousels LOOP,
+// so reaching a target must take the shorter way round — LEFT (wrap backward) when
+// that's closer, not all the way right.
+func TestCarouselWrapsTheShortWay(t *testing.T) {
+	const n = 36
+	cases := []struct {
+		cursor, target int
+		wantRight      bool
+		wantRemaining  int
+		why            string
+	}{
+		{0, 34, false, 2, "0→34 wraps BACKWARD in 2 (not 34 forward)"},
+		{34, 0, true, 2, "34→0 wraps FORWARD in 2 (not 34 backward)"},
+		{0, 5, true, 5, "0→5 is forward"},
+		{5, 0, false, 5, "5→0 is backward"},
+		{2, 30, false, 8, "2→30 wraps backward in 8 (not 28 forward)"},
+		{30, 2, true, 8, "30→2 wraps forward in 8"},
+		{7, 7, true, 0, "already on target"},
+		{0, 18, true, 18, "exact half → forward (tie)"},
+	}
+	for _, c := range cases {
+		right, rem := carouselNav(c.cursor, c.target, n)
+		if right != c.wantRight || rem != c.wantRemaining {
+			t.Errorf("carouselNav(%d,%d,%d) = right:%v rem:%d, want right:%v rem:%d — %s",
+				c.cursor, c.target, n, right, rem, c.wantRight, c.wantRemaining, c.why)
+		}
+		// The chosen route is never longer than the other way round.
+		if other := n - rem; rem > 0 && rem > other {
+			t.Errorf("carouselNav(%d,%d,%d) took the LONG way (%d > %d)", c.cursor, c.target, n, rem, other)
+		}
+	}
+	// Exhaustive: every (cursor,target) pair picks the true minimum.
+	for cur := 0; cur < n; cur++ {
+		for tgt := 0; tgt < n; tgt++ {
+			fwd := ((tgt-cur)%n + n) % n
+			want := fwd
+			if n-fwd < fwd {
+				want = n - fwd
+			}
+			if _, rem := carouselNav(cur, tgt, n); rem != want {
+				t.Fatalf("carouselNav(%d,%d,%d) rem=%d, want min-steps %d", cur, tgt, n, rem, want)
+			}
+		}
+	}
+}
+
+// The wrap-aware drive applies to BOTH carousels end-to-end: a high map target from
+// cursor 0 presses LEFT, and so does a high gametype target.
+func TestBothCardStepsWrapBackward(t *testing.T) {
+	sel := NewAtomicSelector()
+	// Map target 12 of 13 (1 back), gametype target 25 of 26 (1 back).
+	sel.Set(Pick{Name: "lastmap", Steps: 12}, Pick{Name: "lastgt", Steps: 25})
+	s := DefaultHostSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	s.Step(systemLink(), t0) // Y (create)
+	if a := s.Step(hostingCur(0, 0), t0.Add(time.Second)); a.Key() != "Left" {
+		t.Fatalf("map 0→12 of 13 should wrap LEFT (1 step), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// Cursor wrapped to the target → commit, advance to the gametype card.
+	s.Step(hostingCur(12, 0), t0.Add(2*time.Second))                                    // A (commit map)
+	a := s.Step(hostingCur(12, 0), t0.Add(2*time.Second+DefaultTiming.BlindAdvanceAfter)) // → gametype step
+	if a.Key() != "Left" {
+		t.Fatalf("gametype 0→25 of 26 should wrap LEFT (1 step), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+}

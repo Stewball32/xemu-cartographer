@@ -104,12 +104,27 @@ type StepTiming struct {
 }
 
 // DefaultTiming is tuned for CE's ~30Hz menus over VNC.
+// DefaultTiming: SNAPPY by default (Stewart 2026-08). The conservative windows here
+// were set when presses were being DROPPED (pre focus-warmup) and were pure dead time
+// once input became reliable. Every step is CLOSED-LOOP — a press is confirmed by an
+// observed state change (menu-focus for the front-end nav, the live carousel cursor for
+// the card steps) before the next is emitted — so the confirmation is the real gate and
+// these timers only bound RECOVERY. They're now ~1 host tick (hostTickMinInterval is
+// 400ms) rather than multi-second.
+//
+// Deliberately NOT sped up (genuinely required, not pacing):
+//   - sysLinkConnectTimeout — the real System Link network connect wait.
+//   - the B-on-SELECT-MAP interlock — a safety guard, never a timer.
 var DefaultTiming = StepTiming{
-	RepressAfter:      1200 * time.Millisecond,
-	BlindAdvanceAfter: 900 * time.Millisecond,
-	NavKeyInterval:    1200 * time.Millisecond,
-	// ~1 host tick (hostTickMinInterval is 400ms): effectively "next tick after the
-	// press is confirmed landed" — the confirmation, not a timer, is the real gate.
+	// Re-emit a press that never landed. Above one tick so a press still in flight
+	// isn't duplicated (which would overshoot a carousel by one), well under the old
+	// 1200ms. Overshoot stays self-correcting anyway: the loop re-reads the cursor.
+	RepressAfter: 700 * time.Millisecond,
+	// Advance off a committed card (A pressed) — one tick plus margin.
+	BlindAdvanceAfter: 400 * time.Millisecond,
+	// Front-end menu press pacing (main menu / submenu / Back-normalise).
+	NavKeyInterval: 350 * time.Millisecond,
+	// SELECT PROFILE A-advance — fully confirmation-gated, so effectively "next tick".
 	ProfileAdvanceInterval: 250 * time.Millisecond,
 }
 
