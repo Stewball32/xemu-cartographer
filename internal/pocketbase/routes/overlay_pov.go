@@ -155,6 +155,7 @@ func v2Roster(players []sc.GamePlayer) []map[string]any {
 		out = append(out, map[string]any{
 			"index": p.Index, "name": p.Name, "team": p.Team, "armor_color": p.ArmorColor,
 			"score": p.Score, "kills": p.Kills, "deaths": p.Deaths, "assists": p.Assists,
+			"team_kills": p.TeamKills, "suicides": p.Suicides,
 			"kill_streak": p.KillStreak, "shots_fired": p.ShotsFired, "shots_hit": p.ShotsHit,
 			"is_local": p.IsLocal, "local_index": p.LocalIndex, "machine_index": p.MachineIndex,
 		})
