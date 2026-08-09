@@ -215,9 +215,13 @@ func registerOverlayConsole(se *core.ServeEvent) {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "console not found in any live lobby", "console": name})
 		}
 		gd := st.GameData
-		game := map[string]any{"phase": st.Phase}
+		// engine_tick (0x0C, free-running) kept alongside game_elapsed_ticks
+		// (0x10, match-elapsed) so the scorebug can render the count-up clock and
+		// both remain comparable on a live match.
+		game := map[string]any{"phase": st.Phase, "engine_tick": st.Tick}
 		scenario := map[string]any{}
 		if gd != nil {
+			game["game_elapsed_ticks"] = gd.ElapsedTicks
 			game["config"] = map[string]any{
 				"gametype": gd.Gametype, "is_team_game": gd.IsTeamGame, "score_limit": gd.ScoreLimit,
 			}

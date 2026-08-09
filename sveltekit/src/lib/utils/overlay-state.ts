@@ -100,6 +100,13 @@ function cleanMapName(raw: string): string {
 	return seg.toUpperCase();
 }
 
+/** Halo CE match clock: a 30Hz count-up tick → M:SS (e.g. 8:42), counting up
+ * from 0:00 at match start (CE has no countdown). */
+function ticksToClock(ticks: number): string {
+	const sec = Math.max(0, Math.floor(ticks / TICKS_PER_SECOND));
+	return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
 /**
  * matchState maps the native game/scenario classes into the pack's match object
  * (team panels / gametype / map / kill limit). FFA → teams:null.
@@ -115,9 +122,16 @@ export function matchState(
 				.filter((ts) => ts.team === 0 || ts.team === 1)
 				.map((ts) => ({ id: TEAM_IDS[ts.team] ?? 'red', score: ts.score }))
 		: null;
+	// Count-up match clock. LIVE-VERIFIED on beta-stream (2026-08-08): engine_tick
+	// (GTG 0x0C) counts up at 30Hz during a match and re-inits to 0 at match
+	// start, while game_elapsed_ticks (0x10) is stuck at ~1 and never ticks — so
+	// engine_tick is the real match clock, NOT 0x10 (the offset-mapper's inferred
+	// field). Gated to a live match so 0x0C's menu free-running value never shows.
+	const clock = game?.phase === 'live' ? ticksToClock(game.engine_tick ?? 0) : undefined;
 	return {
 		gametype: (cfg?.gametype ?? '').toUpperCase(),
 		map: cleanMapName(scenario?.map ?? ''),
+		clock,
 		phase: game?.phase === 'idle' ? 'postgame' : 'live',
 		killLimit: cfg?.score_limit,
 		teams
