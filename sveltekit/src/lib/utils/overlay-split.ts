@@ -43,6 +43,8 @@ export interface OverlayPlayer {
 	spree: number;
 	accuracy: number; // 0..100
 	damageRatio: number;
+	betrayals: number; // = scrape team_kills (verified live)
+	suicides: number; // = scrape suicides (verified live)
 	alive: boolean;
 	respawn: number; // seconds remaining (0 = alive / no countdown)
 	respawnMax: number;
@@ -129,6 +131,8 @@ export function localOverlayPlayers(
 			spree: p.kill_streak,
 			accuracy: accuracyOf(p.shots_fired, p.shots_hit),
 			damageRatio: 0,
+			betrayals: p.team_kills,
+			suicides: p.suicides,
 			alive: t?.alive ?? true,
 			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
 			respawnMax: RESPAWN_MAX,

@@ -69,6 +69,15 @@ describe('overlayPlayers machine filter (per-console POV)', () => {
 		expect(overlayPlayers(game, tick, 1).map((p) => p.name)).toEqual(['OG50 II']);
 	});
 
+	it('maps betrayals (team_kills) and suicides straight through', () => {
+		const g = fixture().game;
+		g.players[1].team_kills = 2;
+		g.players[1].suicides = 4;
+		const [og] = overlayPlayers(g, tick, 1);
+		expect(og.betrayals).toBe(2);
+		expect(og.suicides).toBe(4);
+	});
+
 	it('BlueBox and RedBox never resolve to the same player', () => {
 		const blue = overlayPlayers(game, tick, 2).map((p) => p.name);
 		const red = overlayPlayers(game, tick, 1).map((p) => p.name);

@@ -8,11 +8,17 @@
 // Pure (no Svelte / no socket) so it's unit-testable; the pages wire it to the
 // reactive createOverlayFeed().
 //
-// Field availability note (2026-08-08): live match clock, real camo timer, team
-// names, and the full postgame carnage ledger are NOT on the wire yet, so those
-// degrade gracefully (clock omitted → pack shows a placeholder; camo from the
-// has_camo bool; team names fall back to RED/BLUE TEAM; postgame renders the
-// live stats we have). See the overlay reboot plan.
+// Field availability note (2026-08-08, live-audited against beta-stream slayer):
+// WIRED + verified non-zero on the wire — score, kills, deaths, betrayals
+// (=team_kills), suicides, spree (=kill_streak, CURRENT streak not peak).
+// PRESENT but read 0 even mid-match, so NOT trustworthy yet (offset-hunt):
+// accuracy (shots_fired/shots_hit both 0 at 22 kills) and assists (0 across the
+// board — real-0 vs dead-offset unknown without forcing one). NOT on the wire at
+// all (offset-hunt candidates): damage, headshots, melee kills, grenade kills,
+// camo pickups, overshield pickups. Match clock = engine_tick (0x0C, verified
+// counting). Real camo timer + team names still deferred (camo from has_camo
+// bool; team names fall back to RED/BLUE TEAM). See the overlay reboot plan +
+// the stats gap list.
 
 import type { GamePayload, ScenarioPayload, TickPayloadV2 } from '$lib/types/scraper-v2';
 import type { OverlayPlayer } from '$lib/utils/overlay-split';
@@ -76,6 +82,8 @@ export function overlayPlayers(
 			spree: p.kill_streak,
 			accuracy: accuracyOf(p.shots_fired, p.shots_hit),
 			damageRatio: 0, // not on the wire (deferred)
+			betrayals: p.team_kills, // verified populated live (beta-stream)
+			suicides: p.suicides, // verified populated live (beta-stream)
 			alive: t?.alive ?? true,
 			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
 			respawnMax: RESPAWN_MAX,

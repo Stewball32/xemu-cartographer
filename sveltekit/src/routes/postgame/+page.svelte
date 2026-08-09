@@ -27,6 +27,13 @@
 	);
 	const match = $derived(matchState(feed.game, feed.scenario));
 
+	// VICTORY banner gate: the "who won" callout is meaningful only once a game
+	// has ended. Scraper phase is "live" during active play, "ready"/"idle"
+	// otherwise — so a result exists exactly when the game is NOT live. Hide the
+	// winner callout during live play; the rest of the report (mode/map/columns)
+	// still renders so the graphic can be lined up mid-game.
+	const gameOver = $derived((feed.game?.phase ?? '') !== 'live');
+
 	// Column spec: [key, width(px), defaultColor]. Score/K/D/A brighter; ratios dimmer.
 	const cols = [
 		['score', 40, '#e8ecf5'],
@@ -187,14 +194,16 @@
 
 <div class="report">
 	<div class="banner">
-		<div class="win">
-			<span
-				class="vic"
-				style="color:{teams ? (winnerTeam[0].id === 'red' ? '#ff8f85' : '#7d9cff') : ORANGE}"
-				>VICTORY</span
-			>
-			<span class="wname">{winnerName} <span style="color:{winnerColor}">✦</span></span>
-		</div>
+		{#if gameOver}
+			<div class="win">
+				<span
+					class="vic"
+					style="color:{teams ? (winnerTeam[0].id === 'red' ? '#ff8f85' : '#7d9cff') : ORANGE}"
+					>VICTORY</span
+				>
+				<span class="wname">{winnerName} <span style="color:{winnerColor}">✦</span></span>
+			</div>
+		{/if}
 		<div class="meta">
 			<span class="mode"
 				>{match.gametype ?? ''}{match.killLimit ? ' — KILL LIMIT ' + match.killLimit : ''}</span
