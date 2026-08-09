@@ -757,3 +757,51 @@ func TestSequenceStaleNoAction(t *testing.T) {
 		t.Fatalf("stale obs should wait, got %v", a.Kind)
 	}
 }
+
+// SELECT PROFILE must A-advance BRISKLY: each A is confirmed by an observed
+// focus change, so the next one goes out on the SHORT ProfileAdvanceInterval —
+// not the conservative NavKeyInterval settle window that made it crawl. It must
+// still never press while the previous press hasn't landed (no overshoot), and
+// the System Link CONNECT hold must stay untouched.
+func TestSelectProfileAdvancesFast(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	var focus uint32 = 0x8000
+	step := func(o Observation, d time.Duration) Action {
+		now = now.Add(d)
+		return s.Step(o, now)
+	}
+
+	// Enter System Link (starts the connect-hold), then the screen moves to SELECT
+	// PROFILE — the highlight leaves the conn item, clearing the hold.
+	if a := step(obsMI(MenuItemSystemLink, focus), DefaultTiming.NavKeyInterval+time.Millisecond); a.Key() != "a" {
+		t.Fatalf("expected the single A on the System Link item, got %v", a)
+	}
+	focus++
+	step(obsMI(MenuItemProfile, focus), 500*time.Millisecond) // connect-hold clears
+
+	// First profile A.
+	a := step(obsMI(MenuItemProfile, focus), DefaultTiming.ProfileAdvanceInterval+time.Millisecond)
+	if a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("Select Profile → A, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+
+	// NOT landed yet (focus unchanged) → must HOLD, never press again (no overshoot),
+	// even well past the short profile interval.
+	if a := step(obsMI(MenuItemProfile, focus), DefaultTiming.ProfileAdvanceInterval+time.Millisecond); a.Kind == ActionTap {
+		t.Fatalf("must not re-press before the A lands (overshoot), got tap %q", a.Key())
+	}
+
+	// Landed (focus changed) → the NEXT A goes out on the SHORT interval. A tick
+	// this soon would still be inside NavKeyInterval, so a tap here proves the
+	// profile-specific pacing (and that the landing tick isn't wasted).
+	focus++
+	next := step(obsMI(MenuItemProfile, focus), DefaultTiming.ProfileAdvanceInterval+time.Millisecond)
+	if next.Kind != ActionTap || next.Key() != "a" {
+		t.Fatalf("after landing, the next A should fire on the short interval, got %v key=%q (%s)",
+			next.Kind, next.Key(), next.Reason)
+	}
+	if DefaultTiming.ProfileAdvanceInterval >= DefaultTiming.NavKeyInterval {
+		t.Fatal("ProfileAdvanceInterval must be shorter than NavKeyInterval to be a speed-up")
+	}
+}

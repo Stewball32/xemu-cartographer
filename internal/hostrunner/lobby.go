@@ -93,6 +93,14 @@ type StepTiming struct {
 	// PROFILE sub-screens take ~1–1.5s to settle before the next press registers
 	// (measured live on the rig).
 	NavKeyInterval time.Duration
+	// ProfileAdvanceInterval paces the SELECT PROFILE A-advance specifically. That
+	// step is fully CLOSED-LOOP — each A is confirmed by an observed menu-focus
+	// change before the next is emitted — so it doesn't need NavKeyInterval's
+	// conservative settle window; the confirmation IS the gate. Kept short so the
+	// join → pick → all-ready sequence walks briskly instead of crawling ~1.2s per
+	// press. (The System Link CONNECT hold is separate and untouched — that's a real
+	// network wait, see sysLinkConnectTimeout.)
+	ProfileAdvanceInterval time.Duration
 }
 
 // DefaultTiming is tuned for CE's ~30Hz menus over VNC.
@@ -100,6 +108,9 @@ var DefaultTiming = StepTiming{
 	RepressAfter:      1200 * time.Millisecond,
 	BlindAdvanceAfter: 900 * time.Millisecond,
 	NavKeyInterval:    1200 * time.Millisecond,
+	// ~1 host tick (hostTickMinInterval is 400ms): effectively "next tick after the
+	// press is confirmed landed" — the confirmation, not a timer, is the real gate.
+	ProfileAdvanceInterval: 250 * time.Millisecond,
 }
 
 func (t StepTiming) orDefault() StepTiming {
@@ -111,6 +122,9 @@ func (t StepTiming) orDefault() StepTiming {
 	}
 	if t.NavKeyInterval == 0 {
 		t.NavKeyInterval = DefaultTiming.NavKeyInterval
+	}
+	if t.ProfileAdvanceInterval == 0 {
+		t.ProfileAdvanceInterval = DefaultTiming.ProfileAdvanceInterval
 	}
 	return t
 }
@@ -622,20 +636,31 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 			}
 			return wait(fmt.Sprintf("nav %s: System Link connecting — holding, no re-press (%.0fs)", t.Name, now.Sub(s.sysLinkConnectAt).Seconds()))
 		}
-		if obs.MenuFocus != s.navFocus { // the highlight / screen changed → landed
+		switch {
+		case obs.MenuFocus != s.navFocus:
+			// LANDED (the highlight / screen changed). Don't burn a whole tick just to
+			// report it — fall through and emit the next key in THIS tick. The pacing
+			// gate below still applies, so this only removes dead time, never a
+			// confirmation: we're here precisely because the previous press landed.
 			s.navDone++
 			s.pressed = false
-			return wait(fmt.Sprintf("nav %s: %q landed (now %s)", t.Name, s.lastKey, obs.MenuItem))
-		}
-		if now.Sub(s.lastPress) >= s.timing.RepressAfter { // dropped → re-emit
-			s.pressed = false
+		case now.Sub(s.lastPress) >= s.timing.RepressAfter:
+			s.pressed = false // dropped → re-emit
 			return s.stepPlanNav(t, obs, now)
+		default:
+			return wait(fmt.Sprintf("nav %s: awaiting %q to land (on %s)", t.Name, s.lastKey, obs.MenuItem))
 		}
-		return wait(fmt.Sprintf("nav %s: awaiting %q to land (on %s)", t.Name, s.lastKey, obs.MenuItem))
 	}
 
-	// (b) emit the planned key, paced by NavKeyInterval.
-	if !s.lastPress.IsZero() && now.Sub(s.lastPress) < s.timing.NavKeyInterval {
+	// (b) emit the planned key. SELECT PROFILE's A-advance is closed-loop (every A is
+	// confirmed by an observed focus change before the next), so it paces on the short
+	// ProfileAdvanceInterval instead of the conservative NavKeyInterval settle window —
+	// the confirmation is the gate, not the clock. Everything else keeps NavKeyInterval.
+	pace := s.timing.NavKeyInterval
+	if s.sysLinkEntered && (obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
+		pace = s.timing.ProfileAdvanceInterval
+	}
+	if !s.lastPress.IsZero() && now.Sub(s.lastPress) < pace {
 		return wait(fmt.Sprintf("nav %s: pacing before %q", t.Name, key))
 	}
 	// stuck-detection: if the highlighted item hasn't changed for navStuckThreshold
