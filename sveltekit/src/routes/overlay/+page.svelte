@@ -16,6 +16,7 @@
 	const feed = createOverlayFeed();
 	onMount(() =>
 		feed.start({
+			console: data.console,
 			instance: data.instance,
 			token: data.token,
 			mock: data.mock,

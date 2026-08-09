@@ -1,8 +1,14 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { onMount } from 'svelte';
 	import { TvIcon, CopyIcon, LoaderIcon, KeyRoundIcon } from '@lucide/svelte';
 	import { toaster } from '$lib/stores/toaster';
-	import { canManageOverlays, mintOverlayToken } from '$lib/utils/overlay-api';
+	import {
+		canManageOverlays,
+		listOverlayInstances,
+		mintOverlayToken,
+		type OverlayInstance
+	} from '$lib/utils/overlay-api';
 
 	// Who may view the OBS catalog + mint the overlay token — admin/superuser or
 	// the overlay_manager role.
@@ -12,11 +18,28 @@
 	// All four overlays are now cartographer-native: each subscribes to ONE
 	// instance's live feed (game/tick/scenario) with a scoped, read-only overlay
 	// token. ONE minted token serves every overlay for that instance.
+	// `instance` is the CONTAINER id the overlay targets; the picker lets the
+	// operator choose by friendly console name (xbox_name) instead of typing it.
 	let instance = $state('');
 	let names = $state('');
 	let minting = $state(false);
 	let token = $state('');
 	let mintedInstance = $state('');
+
+	// Live instances for the picker. Empty (or a non-admin caller) → fall back to
+	// typing the container id manually.
+	let instances = $state<OverlayInstance[]>([]);
+	let manual = $state(false);
+	const instanceLabel = (i: OverlayInstance) =>
+		i.xbox_name && i.xbox_name !== i.name ? `${i.xbox_name}  (${i.name})` : i.name;
+
+	onMount(() => {
+		void listOverlayInstances().then((rows) => {
+			instances = rows;
+			if (rows.length === 0) manual = true;
+			else if (rows.length === 1) instance = rows[0].name; // one console → preselect
+		});
+	});
 
 	async function mint() {
 		const inst = instance.trim();
@@ -107,7 +130,7 @@
 	{:else}
 		<!-- How-to -->
 		<ol class="flex list-decimal flex-col gap-1 card preset-tonal p-4 pl-8 text-sm">
-			<li>Enter the container/instance name and <strong>mint an overlay token</strong>.</li>
+			<li>Pick the live console and <strong>mint an overlay token</strong>.</li>
 			<li>
 				Copy each overlay's URL and add it in OBS as a <strong>Browser Source</strong> at the size shown.
 			</li>
@@ -121,8 +144,28 @@
 		<div class="flex flex-col gap-3 card preset-tonal p-4">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-end">
 				<label class="label flex-1">
-					<span class="label-text text-xs">Container / instance</span>
-					<input class="input text-sm" placeholder="e.g. pod-a" bind:value={instance} />
+					<span class="label-text flex items-center justify-between text-xs">
+						<span>Console / instance</span>
+						{#if instances.length}
+							<button type="button" class="anchor text-[11px]" onclick={() => (manual = !manual)}>
+								{manual ? 'Pick from live list' : 'Type manually'}
+							</button>
+						{/if}
+					</span>
+					{#if instances.length && !manual}
+						<select class="select text-sm" bind:value={instance}>
+							<option value="" disabled>Select a live console…</option>
+							{#each instances as i (i.name)}
+								<option value={i.name}>{instanceLabel(i)}</option>
+							{/each}
+						</select>
+					{:else}
+						<input
+							class="input text-sm"
+							placeholder="container id, e.g. beta-stream"
+							bind:value={instance}
+						/>
+					{/if}
 				</label>
 				<label class="label flex-1">
 					<span class="label-text text-xs">Name overrides (optional)</span>
