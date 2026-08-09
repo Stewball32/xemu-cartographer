@@ -253,7 +253,13 @@ export interface GamePayload {
 	phase: PhaseV2;
 	started_at: string;
 	last_read_at: string;
+	/** The real match clock (GTG 0x0C): 30Hz count-up, re-inits to 0 at match
+	 * start — the scorebug renders this as M:SS while phase==='live'. (At the
+	 * menu it free-runs, hence the phase gate.) LIVE-VERIFIED it ticks 30/s. */
 	engine_tick: number;
+	/** GTG 0x10 (offset-mapper's inferred match-elapsed) — LIVE-VERIFIED STUCK at
+	 * ~1, does NOT tick during play, so NOT used for the clock. Kept for now. */
+	game_elapsed_ticks?: number;
 	iterations: number;
 
 	config: GameConfig | null;
