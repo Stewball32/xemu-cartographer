@@ -175,6 +175,11 @@ func (r *runner) tickHost(gs scraper.GameState, tick uint32) {
 	// froze the panel at tick 0 on any box with host-running disabled (the navfp log
 	// kept updating because it comes from the reader, not the runner).
 	ro := r.buildHostReadout(gs, tick)
+	// Liveness stamps: Seq advances every tick so the panel can prove it is live even
+	// at the menus, where the GAME tick is legitimately 0.
+	r.readoutSeq++
+	ro.Seq = r.readoutSeq
+	ro.ReadAtUnixMs = now.UnixMilli()
 	r.setReadout(ro)
 	if r.host == nil {
 		return

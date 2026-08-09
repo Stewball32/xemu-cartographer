@@ -61,7 +61,14 @@ type ScraperReadout struct {
 	// game_globals+0x10 == 0xDEADBEEF (pregame active).
 	Dela            string
 	PregameSentinel bool
-	MainMenuRaw     int // raw main_menu global (0/1) — cold-boot candidate
+	// Seq / ReadAtUnixMs stamp WHEN this readout was produced. They exist because
+	// Tick (the GAME tick) is legitimately 0 at the front-end menus, so it can NEVER
+	// answer "is the panel live?" — a frozen panel and a healthy menu both read 0.
+	// Seq advances on every scraper tick, so it is the unambiguous liveness signal.
+	Seq          uint64
+	ReadAtUnixMs int64
+
+	MainMenuRaw int // raw main_menu global (0/1) — cold-boot candidate
 	// UI-widget-heap census (cold-vs-woken candidates): live block count, how many
 	// carry the highlight flag, and the max activation tick ("UI tick").
 	UIWidgetBlocks int

@@ -279,6 +279,7 @@ type runner struct {
 	// building anything, so the panel sat frozen at tick 0 while the navfp log (which
 	// comes from the reader itself) updated fine. Guarded by readoutMu: written on
 	// the loop goroutine, read by request goroutines.
+	readoutSeq  uint64 // advances every tick; the panel's unambiguous liveness signal
 	readoutMu   sync.RWMutex
 	lastReadout hostrunner.ScraperReadout
 	hasReadout  bool

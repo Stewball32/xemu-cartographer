@@ -1,5 +1,7 @@
 package hostrunner
 
+import "time"
+
 // CursorView is one carousel cursor read (CE widget +0x4C selected / +0x54 count)
 // for the admin diagnostics panel. Valid is false when the list isn't the live
 // foreground (count 0) or the index is mid-scroll out of range.
@@ -15,9 +17,16 @@ type CursorView struct {
 // screen without grepping beta.log. Built from the last captured RunnerEvent
 // (updated EVERY tick, not just on decision-change) plus the runner's live pick.
 type Diagnostics struct {
-	Instance        string `json:"instance"`
-	Present         bool   `json:"present"`
-	Tick            uint32 `json:"tick"`
+	Instance string `json:"instance"`
+	Present  bool   `json:"present"`
+	Tick     uint32 `json:"tick"` // GAME tick — legitimately 0 at the front-end menus
+	// ReadoutSeq advances on EVERY scraper tick and ReadoutAgeMs is how long ago the
+	// scraper produced this readout. These — not Tick — are the liveness signals: a
+	// healthy box sitting in the menus reads Tick 0 forever, so Tick alone can't
+	// distinguish "live at a menu" from "panel frozen" (exactly the confusion that
+	// masked the frozen-panel bug).
+	ReadoutSeq      uint64 `json:"readout_seq"`
+	ReadoutAgeMs    int64  `json:"readout_age_ms"`
 	Screen          string `json:"screen"`
 	Dela            string `json:"dela"`      // highlighted-widget DeLa path (navfp dela=)
 	MenuItem        int    `json:"menu_item"` // resolved MenuItem enum
@@ -62,6 +71,10 @@ type Diagnostics struct {
 func (d *Diagnostics) ApplyReadout(ro ScraperReadout) {
 	obs := ro.Observation()
 	d.Tick = ro.Tick
+	d.ReadoutSeq = ro.Seq
+	if ro.ReadAtUnixMs > 0 {
+		d.ReadoutAgeMs = time.Now().UnixMilli() - ro.ReadAtUnixMs
+	}
 	d.Screen = Classify(obs).String()
 	d.Dela = ro.Dela
 	d.MenuItem = ro.MenuItem

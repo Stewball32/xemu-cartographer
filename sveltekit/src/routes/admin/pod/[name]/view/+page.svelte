@@ -67,6 +67,8 @@
 		ui_highlighted: number;
 		ui_max_tick: number;
 		tree_built: boolean;
+		readout_seq: number;
+		readout_age_ms: number;
 	};
 
 	// CHANGE TRACKING. The whole point of this panel is answering "which signal
@@ -110,7 +112,13 @@
 			{ group: 'screen', label: 'menu_focus', value: `0x${(d.menu_focus >>> 0).toString(16)}` },
 			{ group: 'screen', label: 'game_connection', value: connName(d.game_connection) },
 			{ group: 'screen', label: 'pregame_sentinel', value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent' },
-			{ group: 'screen', label: 'tick (game)', value: String(d.tick) },
+			// LIVENESS first: readout_seq advances every scraper tick, so it — not the
+			// GAME tick — proves the panel is live. The game tick is legitimately 0 at
+			// the menus, which is exactly what made a frozen panel indistinguishable
+			// from a healthy one sitting in the front end.
+			{ group: 'live', label: 'readout seq', value: String(d.readout_seq) },
+			{ group: 'live', label: 'readout age', value: `${d.readout_age_ms} ms` },
+			{ group: 'live', label: 'tick (game — 0 in menus)', value: String(d.tick) },
 			{ group: 'cold', label: 'tree built?', value: d.tree_built ? 'YES — woken' : 'NO — cold/un-woken' },
 			{ group: 'cold', label: 'ui widget blocks', value: String(d.ui_widget_blocks) },
 			{ group: 'cold', label: 'ui highlighted', value: String(d.ui_highlighted) },
@@ -135,6 +143,7 @@
 	});
 	$effect(() => { if (signals.length) noteChanges(signals); });
 	const GROUPS = [
+		{ key: 'live', title: 'Liveness (is this panel updating?)' },
 		{ key: 'screen', title: 'Screen / nav signals' },
 		{ key: 'cold', title: 'Cold-boot / widget-tree candidates' },
 		{ key: 'select', title: 'Map + gametype select' },
