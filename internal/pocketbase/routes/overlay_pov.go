@@ -3,11 +3,13 @@ package routes
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	sc "github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
@@ -185,20 +187,41 @@ func v2Tick(t *sc.TickPayload) []map[string]any {
 // local player is dropped ONLY when its container is flagged is_neutral_host —
 // so a host that actually plays (not flagged neutral) keeps its player. Plus
 // the dummy_gamertags name allowlist. Best-effort: DB read errors → unfiltered.
-func filterDummies(app core.App, instance string, players []sc.GamePlayer) []sc.GamePlayer {
+//
+// dummyFilter returns BOTH the ready-to-apply roster.Config AND the raw dummy
+// gamertag strings. The raw list is echoed to the client so the WS-push console
+// path (which reads the UNFILTERED host:<instance> broadcast, not this route's
+// pre-filtered snapshot) can re-apply the same filter client-side. One DB read
+// for both.
+func dummyFilter(app core.App, instance string) (roster.Config, []string) {
 	neutral := false
 	if rec, err := app.FindFirstRecordByFilter("containers", "name = {:n}", dbx.Params{"n": instance}); err == nil && rec != nil {
 		neutral = rec.GetBool("is_neutral_host")
 	}
-	var dummySet map[string]struct{}
+	var raw []string
 	if rows, err := app.FindAllRecords("dummy_gamertags"); err == nil {
-		raw := make([]string, 0, len(rows))
+		raw = make([]string, 0, len(rows))
 		for _, r := range rows {
 			raw = append(raw, r.GetString("gamertag"))
 		}
-		dummySet = roster.BuildDummySet(raw)
 	}
-	return roster.FilterRoster(players, roster.Config{IsNeutralHost: neutral, DummyGamertags: dummySet})
+	return roster.Config{IsNeutralHost: neutral, DummyGamertags: roster.BuildDummySet(raw)}, raw
+}
+
+// mintConsoleToken best-effort mints a read-only overlay token scoped to
+// host:<instance> so the ?console= overlay can ride the EXISTING per-instance WS
+// rooms (no Hub change, no new room type). Returns "" on any failure, in which
+// case the client falls back to the HTTP poll path. Auth is deferred per the PoC
+// — this endpoint is unauthenticated, so the token is handed out freely for now.
+// Minting is throttled client-side (once at start + on genuine migration), so
+// this does not spawn a registry row per poll.
+func mintConsoleToken(app core.App, instance string) string {
+	m, err := overlaytoken.Mint(app, "host:"+instance, "console-overlay:"+instance, 0, nil, time.Now())
+	if err != nil {
+		app.Logger().Warn("overlay console: token mint failed (client will poll)", "instance", instance, "err", err)
+		return ""
+	}
+	return m.Token
 }
 
 func registerOverlayConsole(se *core.ServeEvent) {
@@ -216,6 +239,9 @@ func registerOverlayConsole(se *core.ServeEvent) {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "console not found in any live lobby", "console": name})
 		}
 		gd := st.GameData
+		// One DB read: the filter config (applied to the snapshot below) + the raw
+		// dummy list (echoed so the WS-push path can re-filter client-side).
+		cfg, rawDummies := dummyFilter(e.App, instance)
 		// engine_tick (0x0C, free-running) kept alongside game_elapsed_ticks
 		// (0x10, match-elapsed) so the scorebug can render the count-up clock and
 		// both remain comparable on a live match.
@@ -227,7 +253,7 @@ func registerOverlayConsole(se *core.ServeEvent) {
 				"gametype": gd.Gametype, "is_team_game": gd.IsTeamGame, "score_limit": gd.ScoreLimit,
 			}
 			game["team_scores"] = gd.TeamScores
-			game["players"] = v2Roster(filterDummies(e.App, instance, gd.Players))
+			game["players"] = v2Roster(roster.FilterRoster(gd.Players, cfg))
 			game["machines"] = gd.Machines
 			scenario["map"] = gd.Map
 		}
@@ -236,9 +262,17 @@ func registerOverlayConsole(se *core.ServeEvent) {
 			"instance":      instance,
 			"machine_index": machineIndex,
 			"machine_name":  machineName,
-			"game":          game,
-			"tick":          map[string]any{"players": v2Tick(st.LatestTick)},
-			"scenario":      scenario,
+			// WS-push path: a read-only token scoped to host:<instance> (empty if
+			// mint failed → client polls) + the token's room, so the client can
+			// reuse the existing per-instance rooms via scraperWSV2.
+			"token":      mintConsoleToken(e.App, instance),
+			"token_room": "host:" + instance,
+			// Dummy-filter config for the client to re-apply on the unfiltered WS
+			// broadcast (the snapshot's game.players above is already filtered).
+			"filter":   map[string]any{"is_neutral_host": cfg.IsNeutralHost, "dummy_gamertags": rawDummies},
+			"game":     game,
+			"tick":     map[string]any{"players": v2Tick(st.LatestTick)},
+			"scenario": scenario,
 		})
 	})
 }
