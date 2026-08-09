@@ -39,20 +39,29 @@ function accuracyOf(shotsFired: number, shotsHit: number): number {
 }
 
 /**
- * overlayPlayers maps the FULL roster (every player, not just splitscreen
- * locals) into the pack's OverlayPlayer shape, joined to the tick by player
- * index for live health/shield/alive/respawn. Ordered as the roster arrives;
- * the leaderboard/scorebug sort by score themselves.
+ * overlayPlayers maps the roster into the pack's OverlayPlayer shape, joined to
+ * the tick by player index for live health/shield/alive/respawn. By default it
+ * maps the FULL roster (whole-match overlays — scorebug/leaderboard sort/group
+ * themselves). Pass `machineIndex` to keep ONLY the players seated on that
+ * system-link machine — the per-console (POV) case: the resolver hands the
+ * console name → its current machine index (indices shift live, so this is
+ * evaluated per snapshot), and this returns that console's own player(s).
  */
 export function overlayPlayers(
 	game: GamePayload | null,
-	tick: TickPayloadV2 | null
+	tick: TickPayloadV2 | null,
+	machineIndex?: number | null
 ): OverlayPlayer[] {
 	const isTeamGame = game?.config?.is_team_game === true;
 	const ticks = tick?.players ?? [];
 	const tickByIndex = new Map(ticks.map((t) => [t.index, t]));
 
-	return (game?.players ?? []).map((p) => {
+	const roster =
+		machineIndex == null || machineIndex < 0
+			? (game?.players ?? [])
+			: (game?.players ?? []).filter((p) => p.machine_index === machineIndex);
+
+	return roster.map((p) => {
 		const t = tickByIndex.get(p.index);
 		const respawnTicks = t?.respawn_in_ticks ?? null;
 		return {

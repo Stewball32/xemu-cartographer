@@ -6,6 +6,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { deriveSplitCount, layoutKey, localOverlayPlayers } from '$lib/utils/overlay-split';
+	import { overlayPlayers } from '$lib/utils/overlay-state';
 	import { layouts, viewportCenters } from '$lib/overlay/themes.js';
 	import PlayerCard from '$lib/overlay/PlayerCard.svelte';
 	import RespawnRing from '$lib/overlay/RespawnRing.svelte';
@@ -25,16 +26,27 @@
 	);
 	onDestroy(() => feed.stop());
 
-	// Auto splitscreen: local-player count → layout key (manual ?layout overrides
-	// for testing only). All $derived off the reactive feed → re-renders live.
-	const split = $derived(data.layoutOverride || deriveSplitCount(feed.game, feed.tick));
+	// Player selection:
+	//  • console mode (?console=NAME): show that ONE console's own seat(s),
+	//    selected by the resolver's live machine index (indices shift as the
+	//    lobby changes, so this re-selects every snapshot — BlueBox always shows
+	//    BlueBox, never RedBox).
+	//  • instance mode: the host's local splitscreen, auto-detected.
+	const consoleMode = $derived(!!data.console);
+	const rawPlayers = $derived(
+		consoleMode
+			? overlayPlayers(feed.game, feed.tick, feed.machineIndex)
+			: localOverlayPlayers(feed.game, feed.tick)
+	);
+	const split = $derived(
+		data.layoutOverride ||
+			(consoleMode ? Math.max(rawPlayers.length, 1) : deriveSplitCount(feed.game, feed.tick))
+	);
 	const key = $derived(layoutKey(split));
 	const anchors = $derived(layouts[key]);
 	const centers = $derived(viewportCenters[key]);
 	const players = $derived(
-		localOverlayPlayers(feed.game, feed.tick)
-			.slice(0, anchors.length)
-			.map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
+		rawPlayers.slice(0, anchors.length).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
 	);
 
 	const pos = (a) =>
