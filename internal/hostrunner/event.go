@@ -43,7 +43,15 @@ type RunnerEvent struct {
 	// Candidate "menu woken / widget tree built?" signal — non-zero once the tree is
 	// instantiated, expected 0 on a COLD un-interacted main menu (the state where dela
 	// is blank). Surfaced so Stewart can verify what populates cold.
-	MenuFocus           uint32 `json:"menu_focus"`
+	MenuFocus uint32 `json:"menu_focus"`
+	// Cold-boot candidates: the raw main_menu global and a census of the UI widget
+	// heap (live blocks / how many are highlighted / the max activation "UI tick").
+	// A cold, un-interacted front end has only a handful of live blocks; once the
+	// widget tree builds it jumps by an order of magnitude.
+	MainMenuRaw         int    `json:"main_menu_raw"`
+	UIWidgetBlocks      int    `json:"ui_widget_blocks"`
+	UIHighlighted       int    `json:"ui_highlighted"`
+	UIMaxTick           uint32 `json:"ui_max_tick"`
 	MapCursor           int    `json:"map_cursor"`
 	MapCursorCount      int    `json:"map_cursor_count"`
 	MapCursorValid      bool   `json:"map_cursor_valid"`
@@ -87,6 +95,10 @@ func buildEvent(instance string, obs Observation, auth Authority, kind string, a
 		GameConnection:      int(obs.Connection),
 		PregameSentinel:     obs.PregameSentinel,
 		MenuFocus:           obs.MenuFocus,
+		MainMenuRaw:         obs.MainMenuRaw,
+		UIWidgetBlocks:      obs.UIWidgetBlocks,
+		UIHighlighted:       obs.UIHighlighted,
+		UIMaxTick:           obs.UIMaxTick,
 		MapCursor:           obs.MapCursor,
 		MapCursorCount:      obs.MapCursorCount,
 		MapCursorValid:      obs.MapCursorValid,

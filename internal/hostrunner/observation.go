@@ -124,6 +124,10 @@ type Observation struct {
 	// PregameSentinel is game_globals+0x10 == 0xDEADBEEF (pregame active).
 	Dela            string
 	PregameSentinel bool
+	MainMenuRaw     int
+	UIWidgetBlocks  int
+	UIHighlighted   int
+	UIMaxTick       uint32
 }
 
 // MenuItem is which front-end menu item is highlighted, read from the CE UI

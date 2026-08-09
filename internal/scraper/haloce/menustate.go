@@ -97,8 +97,15 @@ func (r *Reader) ReadMenuItem() int {
 		int(r.off.ConstUiWidgetHeapGVAHi-r.off.ConstUiWidgetHeapGVALo))
 	if err != nil {
 		r.lastMenuDela = ""
+		r.lastUIStats = UIHeapStats{}
 		return MenuItemUnknown
 	}
+	// Cheap census of the already-read heap for the admin diagnostics panel — the
+	// COLD-BOOT discriminator. A freshly-booted, un-interacted front end has only a
+	// handful of live widget blocks; once the tree is built it jumps by an order of
+	// magnitude (18 vs 168 measured on the rig). Purely diagnostic — nothing routes
+	// on it yet; Stewart watches it live to tell us which signal is reliable.
+	r.lastUIStats = uiHeapStats(heap)
 	// Resolve the highlighted DeLa path FIRST (cheap over the already-read heap) and
 	// stash it for the admin diagnostics panel — so the raw navfp `dela=` fingerprint
 	// is available on EVERY screen, including System Link Games where the presence
@@ -275,4 +282,47 @@ func widgetHighlightTick(heap []byte, handle uint32) (uint32, bool) {
 		}
 	}
 	return bestTick, found
+}
+
+// UIHeapStats is a cheap census of the CE UI widget heap, surfaced to the admin
+// diagnostics panel as COLD-BOOT / menu-state candidate signals. Diagnostic only —
+// no runner logic routes on these; they exist so an operator can watch which value
+// actually distinguishes a cold, un-woken front end from a built widget tree, and
+// which one moves on a screen (like SELECT PROFILE) where the dela is static.
+type UIHeapStats struct {
+	// Blocks is the number of LIVE (valid header, non-freed) widget blocks. The
+	// headline cold-vs-woken signal: a handful on a cold menu, an order of magnitude
+	// more once the tree is built.
+	Blocks int
+	// Highlighted is how many of those carry the +0x60 highlight flag. Zero on a cold
+	// menu with no selection; CE never clears stale flags, so it grows with depth.
+	Highlighted int
+	// MaxTick is the highest widget activation tick (+0x28) — the "UI tick". The
+	// ACTIVE screen's widgets carry the highest value, so it advances as screens
+	// change; 0 on a cold front end that has never activated a screen.
+	MaxTick uint32
+}
+
+// uiHeapStats walks an already-read UI heap once and counts live/highlighted blocks
+// plus the max activation tick. Same block validity rules as the other heap scans
+// (header &0xFFFF0000 == 0x80000000, +0x14 != 0xFFFFFFFF).
+func uiHeapStats(heap []byte) UIHeapStats {
+	var st UIHeapStats
+	limit := len(heap) - (int(OffUiWidgetHighlightFlag) + 4)
+	for nb := 0; nb <= limit; nb += 4 {
+		if leU32Int(heap, nb)&ConstUiWidgetHeaderMask != ConstUiWidgetHeaderFlag {
+			continue
+		}
+		if leU32Int(heap, nb+int(OffUiWidgetDefDataPtr)) == 0xFFFFFFFF {
+			continue
+		}
+		st.Blocks++
+		if leU32Int(heap, nb+int(OffUiWidgetHighlightFlag)) == 1 {
+			st.Highlighted++
+		}
+		if t := uint32(leU32Int(heap, nb+int(OffUiWidgetActivationTick))); t > st.MaxTick {
+			st.MaxTick = t
+		}
+	}
+	return st
 }

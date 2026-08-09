@@ -61,6 +61,12 @@ type ScraperReadout struct {
 	// game_globals+0x10 == 0xDEADBEEF (pregame active).
 	Dela            string
 	PregameSentinel bool
+	MainMenuRaw     int // raw main_menu global (0/1) — cold-boot candidate
+	// UI-widget-heap census (cold-vs-woken candidates): live block count, how many
+	// carry the highlight flag, and the max activation tick ("UI tick").
+	UIWidgetBlocks int
+	UIHighlighted  int
+	UIMaxTick      uint32
 }
 
 // Observation projects a ScraperReadout into the runner's Observation. Unknown
@@ -102,5 +108,9 @@ func (s ScraperReadout) Observation() Observation {
 		GametypeListLen:     s.GametypeListLen,
 		Dela:                s.Dela,
 		PregameSentinel:     s.PregameSentinel,
+		MainMenuRaw:         s.MainMenuRaw,
+		UIWidgetBlocks:      s.UIWidgetBlocks,
+		UIHighlighted:       s.UIHighlighted,
+		UIMaxTick:           s.UIMaxTick,
 	}
 }

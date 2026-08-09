@@ -197,6 +197,10 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 		// Raw diagnostic reads for the admin panel (string/bool, not integers).
 		ro.Dela, _ = si["menu_dela"].(string)
 		ro.PregameSentinel, _ = si["pregame_sentinel"].(bool)
+		ro.MainMenuRaw = stateInputInt(si, "main_menu")
+		ro.UIWidgetBlocks = stateInputInt(si, "ui_widget_blocks")
+		ro.UIHighlighted = stateInputInt(si, "ui_highlighted")
+		ro.UIMaxTick = uint32(stateInputInt(si, "ui_max_tick"))
 	}
 	ro.Map = r.gameData.Map
 	ro.Gametype = r.gameData.Gametype

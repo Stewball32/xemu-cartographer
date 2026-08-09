@@ -62,6 +62,11 @@
 		team_count: number;
 		countdown_active: boolean;
 		authority: string;
+		main_menu_raw: number;
+		ui_widget_blocks: number;
+		ui_highlighted: number;
+		ui_max_tick: number;
+		tree_built: boolean;
 	};
 
 	// CHANGE TRACKING. The whole point of this panel is answering "which signal
@@ -105,7 +110,12 @@
 			{ group: 'screen', label: 'menu_focus', value: `0x${(d.menu_focus >>> 0).toString(16)}` },
 			{ group: 'screen', label: 'game_connection', value: connName(d.game_connection) },
 			{ group: 'screen', label: 'pregame_sentinel', value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent' },
-			{ group: 'screen', label: 'tick', value: String(d.tick) },
+			{ group: 'screen', label: 'tick (game)', value: String(d.tick) },
+			{ group: 'cold', label: 'tree built?', value: d.tree_built ? 'YES — woken' : 'NO — cold/un-woken' },
+			{ group: 'cold', label: 'ui widget blocks', value: String(d.ui_widget_blocks) },
+			{ group: 'cold', label: 'ui highlighted', value: String(d.ui_highlighted) },
+			{ group: 'cold', label: 'ui max tick', value: `0x${(d.ui_max_tick >>> 0).toString(16)}` },
+			{ group: 'cold', label: 'main_menu (raw)', value: String(d.main_menu_raw) },
 			{ group: 'select', label: 'map cursor', value: cur(d.map_cursor) },
 			{ group: 'select', label: 'map highlighted', value: d.highlighted_map || '—' },
 			{ group: 'select', label: 'gametype cursor', value: cur(d.gametype_cursor) },
@@ -126,6 +136,7 @@
 	$effect(() => { if (signals.length) noteChanges(signals); });
 	const GROUPS = [
 		{ key: 'screen', title: 'Screen / nav signals' },
+		{ key: 'cold', title: 'Cold-boot / widget-tree candidates' },
 		{ key: 'select', title: 'Map + gametype select' },
 		{ key: 'runner', title: 'Runner decision' },
 		{ key: 'lobby', title: 'Lobby' }

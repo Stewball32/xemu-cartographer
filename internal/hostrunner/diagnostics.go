@@ -25,6 +25,11 @@ type Diagnostics struct {
 	GameConnection  int    `json:"game_connection"`  // conn: 0 menu, 1 system-link, 2 hosting, 3 film
 	PregameSentinel bool   `json:"pregame_sentinel"` // game_globals+0x10 == 0xDEADBEEF
 	MenuFocus       uint32 `json:"menu_focus"`       // 0x2F9B38 focused-widget ptr — 0 on a cold un-woken menu
+	MainMenuRaw     int    `json:"main_menu_raw"`    // raw main_menu global
+	UIWidgetBlocks  int    `json:"ui_widget_blocks"` // live widget blocks — the cold-vs-woken discriminator
+	UIHighlighted   int    `json:"ui_highlighted"`   // blocks carrying the +0x60 highlight flag
+	UIMaxTick       uint32 `json:"ui_max_tick"`      // max widget activation tick ("UI tick")
+	TreeBuilt       bool   `json:"tree_built"`       // derived: the widget tree is up (not a cold menu)
 
 	MapCursor      CursorView `json:"map_cursor"`
 	GametypeCursor CursorView `json:"gametype_cursor"`
@@ -73,6 +78,13 @@ func (reg *Registry) Diagnostics(instance string) Diagnostics {
 		d.GameConnection = ev.GameConnection
 		d.PregameSentinel = ev.PregameSentinel
 		d.MenuFocus = ev.MenuFocus
+		d.MainMenuRaw = ev.MainMenuRaw
+		d.UIWidgetBlocks = ev.UIWidgetBlocks
+		d.UIHighlighted = ev.UIHighlighted
+		d.UIMaxTick = ev.UIMaxTick
+		// "Widget tree built?" — the cold-boot go/no-go the prime keys on: a readable
+		// highlight, a focused widget, or a populated heap all mean it's awake.
+		d.TreeBuilt = ev.Dela != "" || ev.MenuFocus != 0 || ev.UIHighlighted > 0
 		d.MapCursor = CursorView{Index: ev.MapCursor, Count: ev.MapCursorCount, Valid: ev.MapCursorValid}
 		d.GametypeCursor = CursorView{Index: ev.GametypeCursor, Count: ev.GametypeCursorCount, Valid: ev.GametypeCursorValid}
 		d.Map = ev.Map

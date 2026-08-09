@@ -54,6 +54,11 @@ type Reader struct {
 	// the admin diagnostics panel. "" off the front-end / on a read failure.
 	lastMenuDela string
 
+	// lastUIStats is the most recent UI-widget-heap census (live block count,
+	// highlighted count, max activation tick) — cold-boot / menu-state candidate
+	// signals for the admin diagnostics panel. See uiHeapStats in menustate.go.
+	lastUIStats UIHeapStats
+
 	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
 	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
 	// a loaded UI cache (front-end session) but the heap block's absolute address
@@ -198,6 +203,9 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"menu_item":               uint32(menuItem),
 		"menu_dela":               menuDela,        // admin diagnostics: raw navfp dela=
 		"pregame_sentinel":        pregameSentinel, // admin diagnostics: 0xDEADBEEF present?
+		"ui_widget_blocks":        uint32(r.lastUIStats.Blocks),
+		"ui_highlighted":          uint32(r.lastUIStats.Highlighted),
+		"ui_max_tick":             r.lastUIStats.MaxTick,
 	}
 	// A failed main_menu read means the low translation is broken (not merely a
 	// game region absent at the menu) — surface it so the ready loop re-translates.
