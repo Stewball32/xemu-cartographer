@@ -76,24 +76,15 @@
 	// move, so the runner can't confirm on it. We remember each signal's previous
 	// value and when it last changed, and mark the ones that just moved. Sit on a
 	// screen, navigate, and the rows that light up are the usable confirm signals.
-	type Sig = { label: string; value: string; group: string };
-	let lastSeen = $state<Record<string, { value: string; at: number }>>({});
-	function noteChanges(sigs: Sig[]) {
-		const now = Date.now();
-		const next = { ...lastSeen };
-		for (const s of sigs) {
-			const prev = next[s.label];
-			if (!prev) next[s.label] = { value: s.value, at: 0 };
-			else if (prev.value !== s.value) next[s.label] = { value: s.value, at: now };
-		}
-		lastSeen = next;
-	}
-	/** ms since this signal last changed, or null if never seen changing. */
-	function changedAgo(label: string): number | null {
-		const e = lastSeen[label];
-		if (!e || e.at === 0) return null;
-		return Date.now() - e.at;
-	}
+	type Sig = { label: string; value: string; group: string; changedAt: number };
+
+	// lastSeen is DELIBERATELY NOT $state. It was, and the $effect that maintained it
+	// both READ it (spreading the previous map) and WROTE it — a self-triggering effect,
+	// which Svelte 5 aborts with effect_update_depth_exceeded. That crash killed the
+	// component's reactivity, so the panel rendered once and then FROZE: the exact
+	// "panel doesn't update" bug. Bookkeeping now lives in a plain Map mutated while the
+	// signals list is (re)built, so nothing reactive is written and no effect is needed.
+	const lastSeen = new Map<string, { value: string; at: number }>();
 	let diag = $state<Diagnostics | null>(null);
 	let diagError = $state<string | null>(null);
 	let diagTimer: ReturnType<typeof setInterval> | null = null;
@@ -105,7 +96,8 @@
 	const signals = $derived.by<Sig[]>(() => {
 		const d = diag;
 		if (!d) return [];
-		return [
+		const now = Date.now();
+		const raw: Array<{ label: string; value: string; group: string }> = [
 			{ group: 'screen', label: 'screen', value: d.screen || 'unknown' },
 			{ group: 'screen', label: 'menu_item', value: `${d.menu_item_name} (${d.menu_item})` },
 			{ group: 'screen', label: 'dela', value: d.dela || '—' },
@@ -140,8 +132,15 @@
 			{ group: 'lobby', label: 'countdown', value: d.countdown_active ? 'active' : 'no' },
 			{ group: 'lobby', label: 'enumerated', value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes` }
 		];
+		// Fold the change bookkeeping in here (before render) so a row's "changed" mark
+		// is correct on the very poll it changes — and so no reactive state is written.
+		return raw.map((sig) => {
+			const prev = lastSeen.get(sig.label);
+			if (!prev) lastSeen.set(sig.label, { value: sig.value, at: 0 });
+			else if (prev.value !== sig.value) lastSeen.set(sig.label, { value: sig.value, at: now });
+			return { ...sig, changedAt: lastSeen.get(sig.label)!.at };
+		});
 	});
-	$effect(() => { if (signals.length) noteChanges(signals); });
 	const GROUPS = [
 		{ key: 'live', title: 'Liveness (is this panel updating?)' },
 		{ key: 'screen', title: 'Screen / nav signals' },
@@ -503,7 +502,7 @@
 							<table class="w-full text-xs">
 								<tbody>
 									{#each signals.filter((x) => x.group === g.key) as sig (sig.label)}
-										{@const ago = changedAgo(sig.label)}
+										{@const ago = sig.changedAt ? Date.now() - sig.changedAt : null}
 										{@const fresh = ago !== null && ago < 3000}
 										<tr class={fresh ? 'bg-success-500/15' : ''}>
 											<td class="w-40 py-0.5 align-top text-surface-600-400">{sig.label}</td>
