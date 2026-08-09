@@ -10,6 +10,9 @@ export function load({ url }) {
 	const mock = p.get('mock');
 	const layout = p.get('layout');
 	return {
+		// PoC: target by console name alone (no instance/token) — the feed
+		// resolves it to whichever host currently sees that console.
+		console: p.get('console') ?? '',
 		// The container/instance whose live split to render, + its overlay token.
 		instance: p.get('instance') ?? '',
 		token: p.get('token') ?? '',

@@ -131,6 +131,9 @@ export function nativeOverlayParams(url: URL) {
 	const p = url.searchParams;
 	const mock = p.get('mock');
 	return {
+		// PoC: `console` targets by console name alone (no instance/token) — the
+		// feed resolves it to whichever host currently sees that console.
+		console: p.get('console') ?? '',
 		instance: p.get('instance') ?? '',
 		token: p.get('token') ?? '',
 		mock: mock === '1' || mock === 'true',

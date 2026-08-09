@@ -1,15 +1,17 @@
-// Per-overlay feed lifecycle. Wraps the shared scraperWSV2 singleton for the
-// live path and swaps in animated sample data for the mock path, behind one
-// uniform set of reactive getters so an overlay page renders the same way
-// regardless of source.
+// Per-overlay feed lifecycle. One uniform set of reactive getters over three
+// sources so an overlay page renders the same regardless of where the data
+// comes from:
+//   • WS (token) — the M10 overlay-token path: subscribe to ONE instance's
+//     host:<instance> per-class rooms (game/tick/scenario/...).
+//   • mock (?mock=1) — animated sample data, no token.
+//   • console (?console=NAME) — PROOF OF CONCEPT: poll /api/overlay/console/{name},
+//     which resolves the console name to whichever host currently sees it (own
+//     xbox_name or a System Link lobby peer) and returns that host's snapshot.
+//     No instance, no token; re-resolves every poll so it survives the box being
+//     recreated. SECURITY DEFERRED — the endpoint is unauthenticated for now.
 //
-// Live path uses the M10 overlay token (read-only): the page passes the token
-// straight off the URL into scraperWSV2.connect(). The token is scoped to one
-// instance's host:<instance> room, so we may join its per-class rooms
-// (host:<instance>:game / :tick / :scenario / ...) but NEVER host:summary and
-// may only send join_room/leave_room — so this factory deliberately avoids
-// subscribeSummary / requestEvents / requestProbe, all of which the Hub rejects
-// for an overlay connection.
+// The WS path deliberately avoids subscribeSummary / requestEvents / requestProbe
+// (the Hub rejects those for an overlay connection).
 
 import type {
 	AnyEvent,
@@ -21,26 +23,67 @@ import type {
 } from '$lib/types/scraper-v2';
 import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 import { mockEvents, mockGame, mockObjects, mockScenario, mockTick } from '$lib/utils/overlay-mock';
+import { apiBaseURL } from '$lib/utils/api-base';
 
 export interface OverlayFeedOptions {
 	instance: string;
 	token: string;
 	mock: boolean;
-	/** Per-class rooms to subscribe to on the live path. */
+	/** Per-class rooms to subscribe to on the live (WS) path. */
 	classes: EnvelopeTypeV2[];
+	/** PoC: target purely by console name (poll mode). Wins over instance/token. */
+	console?: string;
 }
 
-/** ~5 fps mock animation cadence — enough to make bars wobble and scores creep
- * without burning cycles in an idle OBS preview. */
 const MOCK_TICK_MS = 200;
+/** Console poll cadence — a PoC read loop; snappy enough for scores/roster. */
+const CONSOLE_POLL_MS = 700;
+
+/** The console resolver's reply (a v2-shaped snapshot + which machine matched). */
+interface ConsoleSnapshot {
+	instance: string;
+	machine_index: number;
+	machine_name: string;
+	game: GamePayload | null;
+	tick: TickPayloadV2 | null;
+	scenario: ScenarioPayload | null;
+}
 
 export function createOverlayFeed() {
 	let opts = $state<OverlayFeedOptions | null>(null);
 	let frame = $state(0);
 	let timer: ReturnType<typeof setInterval> | null = null;
 
+	// console poll-mode state
+	let snap = $state<ConsoleSnapshot | null>(null);
+	let pollOk = $state(false);
+	let pollErr = $state<string | null>(null);
+
+	async function pollConsole(name: string): Promise<void> {
+		try {
+			const res = await fetch(`${apiBaseURL()}/api/overlay/console/${encodeURIComponent(name)}`);
+			if (!res.ok) {
+				pollOk = false;
+				pollErr =
+					res.status === 404 ? `console "${name}" not in any live lobby` : `HTTP ${res.status}`;
+				return;
+			}
+			snap = (await res.json()) as ConsoleSnapshot;
+			pollOk = true;
+			pollErr = null;
+		} catch (e) {
+			pollOk = false;
+			pollErr = e instanceof Error ? e.message : String(e);
+		}
+	}
+
 	function start(o: OverlayFeedOptions): void {
 		opts = o;
+		if (o.console) {
+			void pollConsole(o.console);
+			timer = setInterval(() => void pollConsole(o.console as string), CONSOLE_POLL_MS);
+			return;
+		}
 		if (o.mock) {
 			timer = setInterval(() => {
 				frame += 1;
@@ -57,12 +100,14 @@ export function createOverlayFeed() {
 			clearInterval(timer);
 			timer = null;
 		}
-		if (opts && !opts.mock) {
+		if (opts && !opts.mock && !opts.console) {
 			scraperWSV2.unsubscribeInstance(opts.instance, opts.classes);
 			scraperWSV2.disconnect();
 		}
 		opts = null;
 	}
+
+	const isConsole = () => !!opts?.console;
 
 	return {
 		start,
@@ -70,43 +115,48 @@ export function createOverlayFeed() {
 		get mock(): boolean {
 			return opts?.mock ?? false;
 		},
-		/** Mock is always "connected"; live mirrors the socket state. */
 		get connected(): boolean {
 			if (!opts) return false;
+			if (opts.console) return pollOk;
 			return opts.mock ? true : scraperWSV2.connected;
 		},
 		get lastError(): string | null {
-			if (!opts || opts.mock) return null;
-			return scraperWSV2.lastError;
+			if (!opts) return null;
+			if (opts.console) return pollErr;
+			return opts.mock ? null : scraperWSV2.lastError;
 		},
-		/** True when no token was supplied to a live overlay — the page surfaces
-		 * a "mint a token" hint instead of an indefinite "Connecting…". */
 		get missingToken(): boolean {
-			return opts != null && !opts.mock && !opts.token;
+			return opts != null && !opts.mock && !opts.console && !opts.token;
+		},
+		/** Console poll mode: which machine (system-link console) the name resolved
+		 * to, for per-console filtering. -1 = the instance's own console. */
+		get machineIndex(): number | null {
+			return isConsole() ? (snap?.machine_index ?? null) : null;
+		},
+		get resolvedInstance(): string | null {
+			return isConsole() ? (snap?.instance ?? null) : null;
 		},
 		get game(): GamePayload | null {
 			if (!opts) return null;
+			if (opts.console) return snap?.game ?? null;
 			return opts.mock ? mockGame(frame) : (scraperWSV2.game[opts.instance] ?? null);
 		},
 		get tick(): TickPayloadV2 | null {
 			if (!opts) return null;
+			if (opts.console) return snap?.tick ?? null;
 			return opts.mock ? mockTick(frame) : (scraperWSV2.tick[opts.instance] ?? null);
 		},
 		get scenario(): ScenarioPayload | null {
 			if (!opts) return null;
+			if (opts.console) return snap?.scenario ?? null;
 			return opts.mock ? mockScenario() : (scraperWSV2.scenario[opts.instance] ?? null);
 		},
 		get objects(): ObjectsPayload | null {
-			if (!opts) return null;
+			if (!opts || opts.console) return null;
 			return opts.mock ? mockObjects() : (scraperWSV2.objects[opts.instance] ?? null);
 		},
-		/** Rolling per-instance event log, newest-first (kill feed). Live path:
-		 * an overlay connection may join the per-class `host:<instance>:event`
-		 * room (it's a normal class room, unlike the rejected `request_events`),
-		 * so the kill-feed page subscribes to the `event` class and reads the
-		 * store's collected stream here. Mock path: a frame-driven synthetic feed. */
 		get events(): AnyEvent[] {
-			if (!opts) return [];
+			if (!opts || opts.console) return [];
 			return opts.mock ? mockEvents(frame) : (scraperWSV2.events[opts.instance] ?? []);
 		}
 	};
