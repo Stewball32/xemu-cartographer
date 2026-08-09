@@ -866,7 +866,7 @@ func TestBothCardStepsWrapBackward(t *testing.T) {
 		t.Fatalf("map 0→12 of 13 should wrap LEFT (1 step), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
 	}
 	// Cursor wrapped to the target → commit, advance to the gametype card.
-	s.Step(hostingCur(12, 0), t0.Add(2*time.Second))                                    // A (commit map)
+	s.Step(hostingCur(12, 0), t0.Add(2*time.Second))                                      // A (commit map)
 	a := s.Step(hostingCur(12, 0), t0.Add(2*time.Second+DefaultTiming.BlindAdvanceAfter)) // → gametype step
 	if a.Key() != "Left" {
 		t.Fatalf("gametype 0→25 of 26 should wrap LEFT (1 step), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
