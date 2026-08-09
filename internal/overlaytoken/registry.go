@@ -17,6 +17,15 @@ import (
 // main.go and passed to Mint).
 const DefaultTTL = 90 * 24 * time.Hour // 90 days
 
+// isUsersRecord reports whether rec is a record from the "users" collection —
+// the only valid target for the minted_by / revoked_by relations. A PB
+// superuser (from _superusers) or nil actor returns false, so the relation is
+// left unset instead of failing app.Save. Mirrors the actor-skip in
+// audit.Write.
+func isUsersRecord(rec *core.Record) bool {
+	return rec != nil && rec.Collection() != nil && rec.Collection().Name == "users"
+}
+
 // Minted is the result of Mint.
 type Minted struct {
 	Token     string
@@ -53,7 +62,11 @@ func Mint(app core.App, room, label string, ttl time.Duration, mintedBy *core.Re
 	rec.Set("label", label)
 	rec.Set("expires_at", exp)
 	rec.Set("revoked", false)
-	if mintedBy != nil {
+	// minted_by is a relation to the users collection, so only set it for a
+	// users-collection actor. A PB superuser (or nil) records no minter —
+	// otherwise app.Save rejects the non-users id and mint 500s. Mirrors the
+	// actor-skip in audit.Write.
+	if isUsersRecord(mintedBy) {
 		rec.Set("minted_by", mintedBy.Id)
 	}
 	if err := app.Save(rec); err != nil {
@@ -116,7 +129,8 @@ func Revoke(app core.App, kid string, by *core.Record) error {
 	}
 	rec.Set("revoked", true)
 	rec.Set("revoked_at", time.Now())
-	if by != nil {
+	// revoked_by is a users relation too — same superuser guard as minted_by.
+	if isUsersRecord(by) {
 		rec.Set("revoked_by", by.Id)
 	}
 	if err := app.Save(rec); err != nil {

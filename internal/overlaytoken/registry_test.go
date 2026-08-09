@@ -122,6 +122,42 @@ func TestMint_Active_Revoke(t *testing.T) {
 	}
 }
 
+// TestMint_SuperuserActor_Succeeds is the regression for the mint-500 bug: a PB
+// superuser is NOT a users-collection record, so minted_by must be skipped
+// rather than set to the superuser id (which app.Save would reject). Before the
+// fix, minting while logged in as a superuser 500'd.
+func TestMint_SuperuserActor_Succeeds(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("NewTestApp: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+	ensureCollections(t, app)
+	Configure(testSecret)
+
+	suCol, err := app.FindCollectionByNameOrId("_superusers")
+	if err != nil {
+		t.Fatalf("_superusers collection: %v", err)
+	}
+	su := core.NewRecord(suCol)
+	su.Set("email", "su@test.com")
+	su.Set("password", "1234567890")
+	if err := app.Save(su); err != nil {
+		t.Fatalf("save superuser: %v", err)
+	}
+
+	if _, err := Mint(app, "host:pod-a", "lbl", time.Hour, su, time.Now()); err != nil {
+		t.Fatalf("Mint with a superuser actor should succeed, got: %v", err)
+	}
+	rows, err := app.FindAllRecords("overlay_tokens")
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("overlay_tokens rows: err=%v n=%d", err, len(rows))
+	}
+	if mb := rows[0].GetString("minted_by"); mb != "" {
+		t.Errorf("minted_by = %q, want empty for a superuser actor", mb)
+	}
+}
+
 func TestActive_Expired(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {

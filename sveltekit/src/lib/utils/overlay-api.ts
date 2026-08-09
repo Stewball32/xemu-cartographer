@@ -66,3 +66,29 @@ export async function revokeOverlayToken(kid: string): Promise<void> {
 export function canManageOverlays(): boolean {
 	return auth.isAdmin || auth.hasRole('overlay_manager');
 }
+
+/** One live scraper instance for the Studio picker: the container `name` (the
+ *  id overlays target) + the friendly `xbox_name` (the console name). */
+export interface OverlayInstance {
+	name: string; // container / instance id — what the overlay ?instance= wants
+	xbox_name: string; // friendly console name (may be empty)
+}
+
+/** List the live scraper instances so Studio can offer a pick-by-friendly-name
+ *  dropdown (targeting by container id under the hood). Reads the admin scraper
+ *  endpoint; returns [] if the caller isn't an admin (a non-admin overlay
+ *  manager falls back to typing the instance id manually). */
+export async function listOverlayInstances(): Promise<OverlayInstance[]> {
+	try {
+		const res = await fetch(`${apiBaseURL()}/api/admin/scraper`, {
+			headers: { Authorization: auth.token }
+		});
+		if (!res.ok) return [];
+		const rows = (await res.json()) as Array<{ name?: string; xbox_name?: string }>;
+		return (rows ?? [])
+			.filter((r) => !!r.name)
+			.map((r) => ({ name: r.name as string, xbox_name: r.xbox_name ?? '' }));
+	} catch {
+		return [];
+	}
+}
