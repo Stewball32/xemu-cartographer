@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	sc "github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 )
 
 // PROOF OF CONCEPT — target an overlay purely by CONSOLE NAME (no instance /
@@ -176,6 +178,28 @@ func v2Tick(t *sc.TickPayload) []map[string]any {
 	return out
 }
 
+// filterDummies drops the neutral-host dummy + globally-allowlisted dummy
+// gamertags from a roster before it reaches any overlay, via the shared M10d
+// roster.FilterRoster. The reliable signature is a CONFIG one: the host's own
+// local player is dropped ONLY when its container is flagged is_neutral_host —
+// so a host that actually plays (not flagged neutral) keeps its player. Plus
+// the dummy_gamertags name allowlist. Best-effort: DB read errors → unfiltered.
+func filterDummies(app core.App, instance string, players []sc.GamePlayer) []sc.GamePlayer {
+	neutral := false
+	if rec, err := app.FindFirstRecordByFilter("containers", "name = {:n}", dbx.Params{"n": instance}); err == nil && rec != nil {
+		neutral = rec.GetBool("is_neutral_host")
+	}
+	var dummySet map[string]struct{}
+	if rows, err := app.FindAllRecords("dummy_gamertags"); err == nil {
+		raw := make([]string, 0, len(rows))
+		for _, r := range rows {
+			raw = append(raw, r.GetString("gamertag"))
+		}
+		dummySet = roster.BuildDummySet(raw)
+	}
+	return roster.FilterRoster(players, roster.Config{IsNeutralHost: neutral, DummyGamertags: dummySet})
+}
+
 func registerOverlayConsole(se *core.ServeEvent) {
 	se.Router.GET("/api/overlay/console/{name}", func(e *core.RequestEvent) error {
 		mgr := scraperroutes.Manager
@@ -198,7 +222,7 @@ func registerOverlayConsole(se *core.ServeEvent) {
 				"gametype": gd.Gametype, "is_team_game": gd.IsTeamGame, "score_limit": gd.ScoreLimit,
 			}
 			game["team_scores"] = gd.TeamScores
-			game["players"] = v2Roster(gd.Players)
+			game["players"] = v2Roster(filterDummies(e.App, instance, gd.Players))
 			game["machines"] = gd.Machines
 			scenario["map"] = gd.Map
 		}
