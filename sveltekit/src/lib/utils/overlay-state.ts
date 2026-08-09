@@ -168,6 +168,8 @@ export function nativeOverlayParams(url: URL) {
 		instance: p.get('instance') ?? '',
 		token: p.get('token') ?? '',
 		mock: mock === '1' || mock === 'true',
+		// ?transport=poll forces the HTTP-poll console fallback (default is WS push).
+		consolePoll: p.get('transport') === 'poll',
 		names: Object.fromEntries(
 			(p.get('names') ?? '')
 				.split(',')

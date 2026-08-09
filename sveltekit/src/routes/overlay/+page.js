@@ -18,6 +18,8 @@ export function load({ url }) {
 		token: p.get('token') ?? '',
 		// ?mock=1 previews with sample data (no token needed).
 		mock: mock === '1' || mock === 'true',
+		// ?transport=poll forces the HTTP-poll console fallback (default is WS push).
+		consolePoll: p.get('transport') === 'poll',
 		// Optional display-name overrides: ?names=SCRAPED:Display,…
 		names: Object.fromEntries(
 			(p.get('names') ?? '')
