@@ -11,7 +11,8 @@ import {
 	TrophyIcon,
 	TvIcon,
 	UserIcon,
-	UsersIcon
+	UsersIcon,
+	WandSparklesIcon
 } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
@@ -46,11 +47,11 @@ export const mainGroups: NavGroup[] = [
 	},
 	{
 		label: 'Organizer',
-		href: '/organizer/gametypes/',
+		href: '/organizer/creator/',
 		icon: SwordsIcon,
 		organizerOnly: true,
 		links: [
-			{ label: 'Gametypes', href: '/organizer/gametypes/', icon: SwordsIcon },
+			{ label: 'Creator', href: '/organizer/creator/', icon: WandSparklesIcon },
 			{ label: 'Games', href: '/organizer/games/', icon: LibraryIcon }
 		]
 	},

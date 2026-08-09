@@ -50,13 +50,23 @@ interface RecordBase {
 	updated: string;
 }
 
-// CE player profile (blam.sav) editable fields. Color is the armor enum
-// (white=0, red=2, blue=3, …); the presets are 0=Default / 1=Southpaw.
-// (Advanced 0x1C-0x2F bytes are a pluggable follow-up.)
+// CE player profile (blam.sav) editable fields — the 2026-08-07 live-verified
+// surface. Color is the armor enum (18 colors); button/thumbstick are the
+// in-game presets; the rest are the nine Advanced Controls. Mirrors
+// saveartifact.CEProfileSettings; keys match the ce_profile_fields schema.
 export interface CeProfileSettings {
 	color?: number;
-	thumbstick?: number;
 	button?: number;
+	thumbstick?: number;
+	h_sens?: number;
+	v_mult?: number;
+	invert?: boolean;
+	vibration?: boolean;
+	rs_deadzone?: number;
+	ls_deadzone?: number;
+	outer_deadzone?: number;
+	deadzone_type?: number;
+	response?: number;
 }
 
 // Profiles do NOT store the gamertag — it lives on the user record
@@ -77,17 +87,45 @@ export interface H2ProfileRecord extends RecordBase {
 	save_info: SaveInfo | null;
 }
 
+// Friendly gametype settings persisted in gametypes.settings — the 2026-08-07
+// live-verified CE surface. Mirrors saveartifact.GametypeSettings; the generator
+// converts these to raw bytes. (Supersedes the pre-2026-08-08 shape whose
+// `time_minutes` actually wrote respawn time.)
 export interface GametypeSettings {
 	teams?: boolean;
 	radar?: boolean;
+	friend_indicators?: boolean;
+	infinite_grenades?: boolean;
+	shields_off?: boolean;
+	invisible_players?: boolean;
+	generic_equipment?: boolean;
+	objectives_indicator?: number;
+	odd_man_out?: boolean;
+	respawn_seconds?: number;
+	respawn_growth_seconds?: number;
+	suicide_seconds?: number;
+	lives?: number;
+	max_health?: number;
 	score_limit?: number;
-	time_minutes?: number;
-	time_limit?: number;
-	time_limit2?: number;
+	weapon_set?: number;
+	nhe_toggles?: number;
+	death_bonus_off?: boolean;
+	kill_penalty_off?: boolean;
+	kill_in_order?: boolean;
+	assault?: boolean;
+	flag_must_reset?: boolean;
+	flag_at_home?: boolean;
+	moving_hill?: boolean;
+	random_start?: boolean;
+	race_any_order?: boolean;
+	ctf_single_flag_minutes?: number;
+	oddball_speed?: number;
+	oddball_trait_with?: number;
+	oddball_trait_without?: number;
+	oddball_ball_type?: number;
+	ball_spawn_count?: number;
+	race_scoring?: number;
 	options?: number;
-	scoring_subtype?: number;
-	option2?: number;
-	respawn?: number;
 	engine_union?: number;
 }
 

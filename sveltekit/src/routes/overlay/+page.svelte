@@ -74,6 +74,12 @@
 		background: transparent;
 		overflow: hidden;
 	}
+	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
+	   composites over the OBS feed. Unlayered + !important beats the themed
+	   @layer base rule in routes/layout.css. */
+	:global(body::before) {
+		display: none !important;
+	}
 	.canvas {
 		position: relative;
 		width: 1440px;

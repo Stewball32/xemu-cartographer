@@ -23,14 +23,18 @@ func init() {
 			for _, f := range halosave.H2ProfileFields {
 				h2Fields = append(h2Fields, field{f.Offset, f.Key, f.Label})
 			}
+			// per-engine score-limit unit word (Slayer kills / CTF captures / …)
+			ceScoreUnits := map[string]string{}
+			for _, eng := range halosave.CEEngines() {
+				ceScoreUnits[eng] = halosave.CEScoreUnit(eng)
+			}
 			return e.JSON(http.StatusOK, map[string]any{
 				"titles": []map[string]any{
 					{
 						"id":       halosave.TitleCE,
 						"label":    "Halo: Combat Evolved",
 						"title_id": halosave.TitleIDHaloCE,
-						"kinds":    []string{halosave.KindGametype},
-						"note":     "Halo: CE has no standalone multiplayer player-profile save — only gametype variants are editable.",
+						"kinds":    []string{halosave.KindGametype, halosave.KindProfile},
 					},
 					{
 						"id":       halosave.TitleH2,
@@ -39,13 +43,19 @@ func init() {
 						"kinds":    []string{halosave.KindProfile, halosave.KindGametype},
 					},
 				},
-				"ce_engines":       halosave.CEEngines(),
-				"h2_appearance":    h2Fields,
-				"h2_gametype_mode": halosave.H2GametypeMode,
-				"fatx_cluster":     cfg.FATXCluster,
-				"digest_resolved":  halosave.DigestResolved(),
-				"digest_note":      halosave.DigestNote,
-				"formats":          []string{"tar", "zip", "payload", "savemeta", "file"},
+				"ce_engines": halosave.CEEngines(),
+				// CE editor schemas — the UI renders itself from these.
+				"ce_gametype_fields":   halosave.CEGametypeSchema(),
+				"ce_gametype_sections": halosave.CESections(),
+				"ce_profile_fields":    halosave.CEProfileSchema(),
+				"ce_profile_sections":  halosave.CEProfileSections(),
+				"ce_score_units":       ceScoreUnits,
+				"h2_appearance":        h2Fields,
+				"h2_gametype_mode":     halosave.H2GametypeMode,
+				"fatx_cluster":         cfg.FATXCluster,
+				"digest_resolved":      halosave.DigestResolved(),
+				"digest_note":          halosave.DigestNote,
+				"formats":              []string{"tar", "zip", "payload", "savemeta", "file"},
 			})
 		})
 	})

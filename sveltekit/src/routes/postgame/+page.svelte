@@ -1,12 +1,30 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked
-	import { onDestroy } from 'svelte';
-	import { CartographerFeed } from '$lib/overlay/cartographer.svelte.js';
+	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
+	// Rewired to cartographer's native live feed (overlay token + instance),
+	// mapped to the pack's match/players shape by overlay-state. Postgame reads
+	// the final live roster (previous_game replays it); stats the wire doesn't
+	// carry yet (damage, headshots, melee/grenade, pickups) render as 0/—.
+	import { onMount, onDestroy } from 'svelte';
+	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
+	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
 	import { ORANGE, TEAM_HEX, tint } from '$lib/overlay/themes.js';
 
 	let { data } = $props();
-	const feed = new CartographerFeed(data.ws, { nameOverrides: data.names });
-	onDestroy(() => feed.destroy());
+	const feed = createOverlayFeed();
+	onMount(() =>
+		feed.start({
+			instance: data.instance,
+			token: data.token,
+			mock: data.mock,
+			classes: ['game', 'tick', 'scenario']
+		})
+	);
+	onDestroy(() => feed.stop());
+
+	const players = $derived(
+		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
+	);
+	const match = $derived(matchState(feed.game, feed.scenario));
 
 	// Column spec: [key, width(px), defaultColor]. Score/K/D/A brighter; ratios dimmer.
 	const cols = [
@@ -107,10 +125,8 @@
 		return rows;
 	};
 
-	const teams = $derived(feed.match.teams ?? null);
-	const allRows = $derived(
-		finishRows([...feed.players].sort((a, b) => b.score - a.score).map(toRow))
-	);
+	const teams = $derived(match.teams ?? null);
+	const allRows = $derived(finishRows([...players].sort((a, b) => b.score - a.score).map(toRow)));
 	const winnerTeam = $derived(teams ? [...teams].sort((a, b) => b.score - a.score) : null);
 	const winnerName = $derived(
 		teams
@@ -140,10 +156,10 @@
 		};
 	};
 	const totals = $derived({
-		kills: feed.players.reduce((t, p) => t + (p.kills ?? 0), 0),
-		shots: feed.players.reduce((t, p) => t + (p.shots ?? 0), 0).toLocaleString('en-US'),
-		nades: feed.players.reduce((t, p) => t + (p.grenadesThrown ?? 0), 0),
-		dmg: feed.players.reduce((t, p) => t + (p.damageDealt ?? 0), 0).toLocaleString('en-US')
+		kills: players.reduce((t, p) => t + (p.kills ?? 0), 0),
+		shots: players.reduce((t, p) => t + (p.shots ?? 0), 0).toLocaleString('en-US'),
+		nades: players.reduce((t, p) => t + (p.grenadesThrown ?? 0), 0),
+		dmg: players.reduce((t, p) => t + (p.damageDealt ?? 0), 0).toLocaleString('en-US')
 	});
 </script>
 
@@ -180,12 +196,10 @@
 		</div>
 		<div class="meta">
 			<span class="mode"
-				>{feed.match.gametype ?? ''}{feed.match.killLimit
-					? ' — KILL LIMIT ' + feed.match.killLimit
-					: ''}</span
+				>{match.gametype ?? ''}{match.killLimit ? ' — KILL LIMIT ' + match.killLimit : ''}</span
 			>
-			<span class="map">{feed.match.map ?? ''}</span>
-			<span class="mtime">MATCH TIME {feed.match.matchTime ?? feed.match.clock ?? ''}</span>
+			<span class="map">{match.map ?? ''}</span>
+			<span class="mtime">MATCH TIME {match.matchTime ?? match.clock ?? ''}</span>
 		</div>
 	</div>
 	<div class="colhead">
@@ -256,6 +270,12 @@
 		margin: 0;
 		background: transparent;
 		overflow: hidden;
+	}
+	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
+	   composites over the OBS feed. Unlayered + !important beats the themed
+	   @layer base rule in routes/layout.css. */
+	:global(body::before) {
+		display: none !important;
 	}
 	.report {
 		width: 900px;

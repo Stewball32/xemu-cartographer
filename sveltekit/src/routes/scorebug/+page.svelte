@@ -1,22 +1,38 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked
-	import { onDestroy } from 'svelte';
-	import { CartographerFeed } from '$lib/overlay/cartographer.svelte.js';
+	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
+	// Rewired to cartographer's native live feed (overlay token + instance),
+	// mapped to the pack's match/players shape by overlay-state.
+	import { onMount, onDestroy } from 'svelte';
+	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
+	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
 	import { ORANGE, themes } from '$lib/overlay/themes.js';
 
 	let { data } = $props();
-	const feed = new CartographerFeed(data.ws, { nameOverrides: data.names });
-	onDestroy(() => feed.destroy());
+	const feed = createOverlayFeed();
+	onMount(() =>
+		feed.start({
+			instance: data.instance,
+			token: data.token,
+			mock: data.mock,
+			classes: ['game', 'tick', 'scenario']
+		})
+	);
+	onDestroy(() => feed.stop());
 
-	const teams = $derived(feed.match.teams ?? null);
+	const players = $derived(
+		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
+	);
+	const match = $derived(matchState(feed.game, feed.scenario));
+
+	const teams = $derived(match.teams ?? null);
 	const red = $derived(teams?.find((t) => t.id === 'red'));
 	const blue = $derived(teams?.find((t) => t.id === 'blue'));
 	const duel = $derived(
-		!teams && feed.players.length === 2 ? [...feed.players].sort((a, b) => b.score - a.score) : null
+		!teams && players.length === 2 ? [...players].sort((a, b) => b.score - a.score) : null
 	);
-	const clock = $derived(feed.match.clock ?? '0:00');
-	const gametype = $derived(feed.match.gametype ?? '');
-	const map = $derived(feed.match.map ?? '');
+	const clock = $derived(match.clock ?? '0:00');
+	const gametype = $derived(match.gametype ?? '');
+	const map = $derived(match.map ?? '');
 </script>
 
 <svelte:head>
@@ -75,6 +91,12 @@
 		margin: 0;
 		background: transparent;
 		overflow: hidden;
+	}
+	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
+	   composites over the OBS feed. Unlayered + !important beats the themed
+	   @layer base rule in routes/layout.css. */
+	:global(body::before) {
+		display: none !important;
 	}
 	.bug {
 		display: inline-flex;

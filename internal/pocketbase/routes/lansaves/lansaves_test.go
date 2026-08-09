@@ -32,7 +32,7 @@ func TestLanAccessAllowed(t *testing.T) {
 }
 
 func TestSpecFromQueryCE(t *testing.T) {
-	q, _ := url.ParseQuery("title=ce&kind=gametype&engine=slayer&name=TS+25&score_limit=25&time_minutes=7&teams=1&radar=true&options=0x23&free_bytes=33554432&format=tar")
+	q, _ := url.ParseQuery("title=ce&kind=gametype&engine=slayer&name=TS+25&score_limit=25&respawn_seconds=7&lives=5&weapon_set=4&teams=1&radar=true&options=0x23&free_bytes=33554432&format=tar")
 	req, tr := specFromQuery(q)
 	if req.Title != "ce" || req.Kind != "gametype" || req.Engine != "slayer" || req.Name != "TS 25" {
 		t.Fatalf("req strings: %+v", req)
@@ -40,8 +40,14 @@ func TestSpecFromQueryCE(t *testing.T) {
 	if req.ScoreLimit == nil || *req.ScoreLimit != 25 {
 		t.Errorf("score_limit not parsed")
 	}
-	if req.TimeMinutes == nil || *req.TimeMinutes != 7 {
-		t.Errorf("time_minutes not parsed")
+	if req.RespawnSeconds == nil || *req.RespawnSeconds != 7 {
+		t.Errorf("respawn_seconds not parsed")
+	}
+	if req.Lives == nil || *req.Lives != 5 {
+		t.Errorf("lives not parsed")
+	}
+	if req.WeaponSet == nil || *req.WeaponSet != 4 {
+		t.Errorf("weapon_set not parsed")
 	}
 	if req.Teams == nil || !*req.Teams {
 		t.Errorf("teams not parsed")
