@@ -872,3 +872,67 @@ func TestBothCardStepsWrapBackward(t *testing.T) {
 		t.Fatalf("gametype 0→25 of 26 should wrap LEFT (1 step), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
 	}
 }
+
+// REGRESSION (urgent, be052c6): the cold-menu prime must press A EXACTLY ONCE and then
+// CONFIRM the widget tree before any further press. The cold menu's default highlight
+// is SINGLE PLAYER and menu_focus stays 0 until the tree builds, so the ordinary
+// RepressAfter path re-pressed A every 700ms — mashing it into Single Player and
+// LAUNCHING A CAMPAIGN GAME.
+func TestColdPrimePressesAOnlyOnce(t *testing.T) {
+	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	t0 := time.Unix(1000, 0)
+
+	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("prime should press A once, got %v key=%q", a.Kind, a.Key())
+	}
+	// Nothing changed (cold box, tree not built). For the WHOLE confirm window there
+	// must be NO further press — most importantly none at RepressAfter (700ms).
+	for _, d := range []time.Duration{
+		DefaultTiming.RepressAfter + time.Millisecond, // the exact regression point
+		DefaultTiming.RepressAfter * 2,
+		primeConfirmWindow - 100*time.Millisecond,
+	} {
+		if a := s.Step(cold, t0.Add(d)); a.Kind == ActionTap {
+			t.Fatalf("at +%v the prime pressed %q again — this mashes A into Single Player "+
+				"and launches a campaign", d, a.Key())
+		}
+	}
+	// Past the generous window a SECOND prime A is allowed (the first genuinely dropped)…
+	a := s.Step(cold, t0.Add(primeConfirmWindow+time.Millisecond))
+	if a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("after the confirm window a retry A is allowed, got %v key=%q", a.Kind, a.Key())
+	}
+	// …but it is BOUNDED: eventually it blocks instead of pressing A forever.
+	now := t0.Add(primeConfirmWindow + time.Millisecond)
+	sawBlocked := false
+	for i := 0; i < 6; i++ {
+		now = now.Add(primeConfirmWindow + time.Millisecond)
+		if s.Step(cold, now).Kind == ActionBlocked {
+			sawBlocked = true
+			break
+		}
+	}
+	if !sawBlocked {
+		t.Fatal("prime must BLOCK after primeMaxAttempts, never keep pressing A on the cold menu")
+	}
+}
+
+// When the A DOES land (tree builds → dela/menu_focus populate) the prime backs out
+// with B immediately — the fast path is unaffected by the safety hold.
+func TestColdPrimeBacksOutAsSoonAsTreeBuilds(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	t0 := time.Unix(1000, 0)
+	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
+	s.Step(cold, t0) // prime A
+
+	built := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\campaign_select\foo`, MenuFocus: 0x80046578}
+	// The landing tick ITSELF emits the B (no wasted tick) — well inside the safety
+	// hold, proving the hold only slows the FAILURE path, never the working one.
+	if a := s.Step(built, t0.Add(500*time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("tree built → back out with B promptly, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+}

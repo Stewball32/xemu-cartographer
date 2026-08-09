@@ -153,6 +153,22 @@ const (
 	primeOpenedSubmenu        // pressed A to open a submenu; waiting for the tree to build, then B
 )
 
+// primeConfirmWindow is how long the cold-menu prime WAITS after its single A before
+// even considering another press. It is deliberately FAR longer than RepressAfter.
+//
+// SAFETY (regression fixed 2026-08): the cold main menu's default highlight is SINGLE
+// PLAYER, and on a cold box menu_focus stays 0 until the widget tree builds — so the
+// "press landed" check can't fire, and the ordinary RepressAfter path re-pressed A
+// every 700ms. That MASHED A into Single Player and LAUNCHED A CAMPAIGN GAME. The prime
+// must press A exactly ONCE and then confirm the tree built (dela / menu_focus
+// populates) before anything else; a second A only after this generous window, and only
+// primeMaxAttempts times before we surface the failure instead of mashing.
+const primeConfirmWindow = 3 * time.Second
+
+// primeMaxAttempts bounds the prime's A presses. Beyond it the planner BLOCKS (loudly)
+// rather than pressing A again on a screen whose default item starts a campaign.
+const primeMaxAttempts = 3
+
 // navRetryBudget caps how many extra times the macro-nav step re-emits its last
 // key (the SELECT PROFILE confirms) while waiting for Done. Enough for the
 // join → pick → all-ready A-presses plus a couple of dropped-press retries;
@@ -182,6 +198,7 @@ type Sequence struct {
 	navStuckItem    MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
 	navStuckCount   int       // consecutive emitted nav presses with an unchanged highlighted item
 	primeState      int       // cold-main-menu prime state (primeIdle / primeOpenedSubmenu)
+	primeAttempts   int       // A presses the cold-menu prime has emitted (bounded by primeMaxAttempts)
 	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
 	// item (multiplayer_type_conn_item). It then A-advances the Select Profile entry
 	// flow (game_connection==0, MenuItem Unknown/Profile) until conn→1 reaches the
@@ -402,6 +419,7 @@ func (s *Sequence) Reset(now time.Time) {
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
 	s.primeState = primeIdle
+	s.primeAttempts = 0
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -420,6 +438,7 @@ func (s *Sequence) advance(now time.Time) {
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
 	s.primeState = primeIdle
+	s.primeAttempts = 0
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
@@ -659,6 +678,12 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 			// confirmation: we're here precisely because the previous press landed.
 			s.navDone++
 			s.pressed = false
+		case s.primeState == primeOpenedSubmenu && now.Sub(s.lastPress) < primeConfirmWindow:
+			// COLD-MENU PRIME: exactly ONE A, then WAIT for the tree. Never the fast
+			// RepressAfter re-press — on the cold menu the default item is SINGLE PLAYER
+			// and a mashed A launches a campaign game.
+			return wait(fmt.Sprintf("nav %s: cold-menu prime — one A sent, confirming the widget tree (%.1fs)",
+				t.Name, now.Sub(s.lastPress).Seconds()))
 		case now.Sub(s.lastPress) >= s.timing.RepressAfter:
 			s.pressed = false // dropped → re-emit
 			return s.stepPlanNav(t, obs, now)
@@ -744,13 +769,23 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		if obs.Dela != "" || obs.MenuFocus != 0 {
 			key = "b" // tree built (on the submenu) → return to the main menu, then normal nav
 			s.primeState = primeIdle
+			s.primeAttempts = 0
+			s.primeAttempts = 0
+		} else if s.primeAttempts >= primeMaxAttempts {
+			// Never keep pressing A on a menu whose default item starts a campaign.
+			return blocked(fmt.Sprintf(
+				"nav %s: cold menu didn't wake after %d primes (dela still blank, menu_focus 0) — "+
+					"NOT pressing A again (it would enter Single Player); is input reaching the box?",
+				t.Name, s.primeAttempts))
 		} else {
-			key = "a" // A hasn't landed/built the tree yet → re-press (paced by the confirm block)
+			key = "a" // the A genuinely didn't land — one more, after primeConfirmWindow
+			s.primeAttempts++
 		}
 	default:
 		if coldBlankMenu {
 			key = "a" // open the default submenu to BUILD the widget tree
 			s.primeState = primeOpenedSubmenu
+			s.primeAttempts = 1
 		}
 	}
 	s.pressed = true
