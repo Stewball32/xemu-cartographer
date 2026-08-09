@@ -17,7 +17,11 @@ type GamePayload struct {
 	StartedAt  time.Time `json:"started_at"`
 	LastReadAt time.Time `json:"last_read_at"`
 	EngineTick uint32    `json:"engine_tick"`
-	Iterations uint64    `json:"iterations"`
+	// GameElapsedTicks is the MATCH-ELAPSED clock (game_time_globals+0x10), a 30Hz
+	// count-UP from 0 at match start — what the scorebug renders as M:SS. EngineTick
+	// above is the free-running frame counter and is NOT match-relative.
+	GameElapsedTicks uint32 `json:"game_elapsed_ticks"`
+	Iterations       uint64 `json:"iterations"`
 
 	Config     *GameConfig        `json:"config"`
 	TeamScores []GameTeamScore    `json:"team_scores"`

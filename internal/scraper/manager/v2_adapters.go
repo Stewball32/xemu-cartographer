@@ -259,6 +259,7 @@ func buildGamePayload(c *instanceCache) GamePayload {
 	}
 	if c.GameData != nil {
 		gd := c.GameData
+		p.GameElapsedTicks = gd.ElapsedTicks
 		p.Config = &GameConfig{
 			Gametype:       gd.Gametype,
 			VariantName:    gd.VariantName,

@@ -282,6 +282,17 @@ func (r *Reader) ReadReadyState() (scraper.GameData, error) {
 func (r *Reader) composeGameData() scraper.GameData {
 	out := scraper.GameData{}
 
+	// MATCH-ELAPSED clock (game_time_globals + OffGTGElapsed 0x10) — a 30Hz count-UP
+	// from 0 at match start, which the scorebug renders as M:SS. It was defined in
+	// offsets.go but never read anywhere, which is why the overlay clock sat at 0.
+	// Read via the low-GVA translation (DerefLowPtr) like the other GTG reads; 0 in
+	// the lobby/menus, where game_time_globals is paused or not yet re-initialised.
+	if gtgPtr, err := r.inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
+		if v, err := r.inst.Mem.ReadU32(gtgPtr + OffGTGElapsed); err == nil {
+			out.ElapsedTicks = v
+		}
+	}
+
 	// Live match-config fields. Cheap; the host can still change these in
 	// pregame, so read every call rather than caching. Sourced from the
 	// host's network_game_server variant settings (NGS+0xC8) — the legacy
