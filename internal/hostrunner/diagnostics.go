@@ -39,6 +39,9 @@ type Diagnostics struct {
 	UIHighlighted   int    `json:"ui_highlighted"`   // blocks carrying the +0x60 highlight flag
 	UIMaxTick       uint32 `json:"ui_max_tick"`      // max widget activation tick ("UI tick")
 	TreeBuilt       bool   `json:"tree_built"`       // derived: the widget tree is up (not a cold menu)
+	// NavCandidates: raw candidate offsets from the capture-and-diff hunts, for an
+	// operator to watch live and tell us which one tracks. Diagnostic only.
+	NavCandidates map[string]uint32 `json:"nav_candidates"`
 
 	MapCursor      CursorView `json:"map_cursor"`
 	GametypeCursor CursorView `json:"gametype_cursor"`
@@ -86,6 +89,7 @@ func (d *Diagnostics) ApplyReadout(ro ScraperReadout) {
 	d.UIWidgetBlocks = ro.UIWidgetBlocks
 	d.UIHighlighted = ro.UIHighlighted
 	d.UIMaxTick = ro.UIMaxTick
+	d.NavCandidates = ro.NavCandidates
 	d.TreeBuilt = ro.Dela != "" || ro.MenuFocus != 0 || ro.UIHighlighted > 0
 	d.MapCursor = CursorView{Index: ro.MapCursor, Count: ro.MapCursorCount, Valid: ro.MapCursorValid}
 	d.GametypeCursor = CursorView{Index: ro.GametypeCursor, Count: ro.GametypeCursorCount, Valid: ro.GametypeCursorValid}

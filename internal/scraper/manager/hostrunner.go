@@ -226,6 +226,7 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 		ro.UIWidgetBlocks = stateInputInt(si, "ui_widget_blocks")
 		ro.UIHighlighted = stateInputInt(si, "ui_highlighted")
 		ro.UIMaxTick = uint32(stateInputInt(si, "ui_max_tick"))
+		ro.NavCandidates, _ = si["nav_candidates"].(map[string]uint32)
 	}
 	ro.Map = r.gameData.Map
 	ro.Gametype = r.gameData.Gametype

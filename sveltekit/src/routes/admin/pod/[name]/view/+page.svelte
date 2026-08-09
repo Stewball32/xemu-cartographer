@@ -69,6 +69,7 @@
 		tree_built: boolean;
 		readout_seq: number;
 		readout_age_ms: number;
+		nav_candidates: Record<string, number> | null;
 	};
 
 	// CHANGE TRACKING. The whole point of this panel is answering "which signal
@@ -130,6 +131,15 @@
 			{ group: 'lobby', label: 'players', value: String(d.player_count) },
 			{ group: 'lobby', label: 'teams', value: String(d.team_count) },
 			{ group: 'lobby', label: 'countdown', value: d.countdown_active ? 'active' : 'no' },
+			// Raw candidate offsets from the capture-and-diff hunts — unclassified, for
+			// eyeballing which one tracks a screen. Sorted so the row order is stable.
+			...Object.entries(d.nav_candidates ?? {})
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([label, v]) => ({
+					group: 'cand',
+					label,
+					value: `0x${(v >>> 0).toString(16).padStart(8, '0')}`
+				})),
 			{ group: 'lobby', label: 'enumerated', value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes` }
 		];
 		// Fold the change bookkeeping in here (before render) so a row's "changed" mark
@@ -147,7 +157,8 @@
 		{ key: 'cold', title: 'Cold-boot / widget-tree candidates' },
 		{ key: 'select', title: 'Map + gametype select' },
 		{ key: 'runner', title: 'Runner decision' },
-		{ key: 'lobby', title: 'Lobby' }
+		{ key: 'lobby', title: 'Lobby' },
+		{ key: 'cand', title: 'Candidate offsets (raw — which one tracks?)' }
 	];
 
 	const CONN_NAMES = ['menu', 'system-link', 'hosting', 'film'];

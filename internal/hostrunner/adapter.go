@@ -74,6 +74,10 @@ type ScraperReadout struct {
 	UIWidgetBlocks int
 	UIHighlighted  int
 	UIMaxTick      uint32
+
+	// NavCandidates are raw, unclassified low globals from the capture-and-diff
+	// hunts, surfaced on the panel for an operator to eyeball. Diagnostic only.
+	NavCandidates map[string]uint32
 }
 
 // Observation projects a ScraperReadout into the runner's Observation. Unknown

@@ -2,6 +2,7 @@ package hostrunner
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -163,7 +164,9 @@ func (r *Runner) Tick(obs Observation, now time.Time) Action {
 		return act
 	}
 
-	act := guardDestructiveBack(r.decide(obs, now), obs) // SAFETY: never B on SELECT MAP
+	// SAFETY: never B on SELECT MAP (kills a live lobby), never Y on a profile screen
+	// (creates a profile).
+	act := guardProfileCreate(guardDestructiveBack(r.decide(obs, now), obs), obs)
 	err := r.execute(act)
 	r.emit(obs, act.Kind.String(), act, err)
 	return act
@@ -293,6 +296,16 @@ func (r *Runner) execute(act Action) error {
 		if k == "b" && r.lastObs.MapCursorCount > 0 {
 			return nil // never sent — the game must not be killed by a stray Back
 		}
+		// SAFETY INTERLOCK: never send Y on a PROFILE screen. The runner's only Y is
+		// create-game, but on "SELECT PROFILE TO EDIT" Y is CREATE NEW PROFILE. The
+		// lingering \connected\server_list widgets make ReadMenuItem report
+		// SystemLinkGames on ANY screen once System Link has been visited, so Classify
+		// could return ScreenSystemLink while the box actually sits on the profile
+		// screen — and create-game would then CREATE A PROFILE (observed on cold boot).
+		// The runner must never create profiles.
+		if k == "y" && onProfileScreen(r.lastObs) {
+			return nil
+		}
 		if k != "" {
 			return r.input.Tap(k)
 		}
@@ -302,6 +315,30 @@ func (r *Runner) execute(act Action) error {
 		}
 	}
 	return nil
+}
+
+// onProfileScreen reports whether the box is on ANY profile screen — the main-menu
+// "SELECT PROFILE TO EDIT" carousel (player_profiles_select, where Y = CREATE NEW
+// PROFILE) or the System Link 4-way join (4way_profile_select). Matched on the
+// highlighted widget path, which is unambiguous: the System Link games browser (the
+// ONE screen where the runner's Y is legitimate) lives under \connected\server_list
+// and contains neither marker.
+func onProfileScreen(obs Observation) bool {
+	return obs.MenuItem == MenuItemProfile ||
+		strings.Contains(obs.Dela, `profiles_select`) ||
+		strings.Contains(obs.Dela, `4way_profile_select`)
+}
+
+// guardProfileCreate converts a would-be Y on a profile screen into a visible blocked
+// Action. The runner must NEVER create a player profile: its only Y is create-game,
+// but on the profile carousel Y is CREATE NEW PROFILE, and the lingering server_list
+// widgets can make Classify read ScreenSystemLink there. execute() also hard-refuses
+// it as the backstop.
+func guardProfileCreate(act Action, obs Observation) Action {
+	if act.Kind == ActionTap && act.Key() == "y" && onProfileScreen(obs) {
+		return blocked("SAFETY: refusing Y on a PROFILE screen — it would CREATE A NEW PROFILE; the runner never creates profiles")
+	}
+	return act
 }
 
 // guardDestructiveBack converts a would-be B on SELECT MAP into a visible blocked

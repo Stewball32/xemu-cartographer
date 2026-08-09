@@ -163,7 +163,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	pregameSentinel := false
 	if !gameEngineRunning {
 		menuItem = r.ReadMenuItem()
-		menuDela = r.lastMenuDela             // raw highlighted DeLa path (navfp dela=)
+		menuDela = r.lastMenuDela                 // raw highlighted DeLa path (navfp dela=)
 		pregameSentinel = r.readPregameSentinel() // game_globals+0x10 == 0xDEADBEEF
 		// PHASE-1 nav diagnostic (HOSTRUNNER_NAV_DEBUG): dump the RAW highlighted
 		// DeLa path per screen so an operator can capture the fingerprint of the
@@ -203,6 +203,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"menu_item":               uint32(menuItem),
 		"menu_dela":               menuDela,        // admin diagnostics: raw navfp dela=
 		"pregame_sentinel":        pregameSentinel, // admin diagnostics: 0xDEADBEEF present?
+		"nav_candidates":          r.readNavCandidates(),
 		"ui_widget_blocks":        uint32(r.lastUIStats.Blocks),
 		"ui_highlighted":          uint32(r.lastUIStats.Highlighted),
 		"ui_max_tick":             r.lastUIStats.MaxTick,
