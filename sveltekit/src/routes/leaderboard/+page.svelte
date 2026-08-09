@@ -1,20 +1,36 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked
-	import { onDestroy } from 'svelte';
+	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
+	// Rewired to cartographer's native live feed (overlay token + instance),
+	// mapped to the pack's match/players shape by overlay-state.
+	import { onMount, onDestroy } from 'svelte';
 	import { flip } from 'svelte/animate';
 	import { quintOut } from 'svelte/easing';
-	import { CartographerFeed } from '$lib/overlay/cartographer.svelte.js';
+	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
+	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
 	import { TEAM_HEX } from '$lib/overlay/themes.js';
 	import LeaderboardRow from '$lib/overlay/LeaderboardRow.svelte';
 
 	let { data } = $props();
-	const feed = new CartographerFeed(data.ws, { nameOverrides: data.names });
-	onDestroy(() => feed.destroy());
+	const feed = createOverlayFeed();
+	onMount(() =>
+		feed.start({
+			instance: data.instance,
+			token: data.token,
+			mock: data.mock,
+			classes: ['game', 'tick', 'scenario']
+		})
+	);
+	onDestroy(() => feed.stop());
 
-	const teams = $derived(feed.match.teams ?? null);
-	const sorted = $derived([...feed.players].sort((a, b) => b.score - a.score));
+	const players = $derived(
+		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
+	);
+	const match = $derived(matchState(feed.game, feed.scenario));
+
+	const teams = $derived(match.teams ?? null);
+	const sorted = $derived([...players].sort((a, b) => b.score - a.score));
 	const topScore = $derived(sorted[0]?.score ?? 0);
-	const topSpree = $derived(Math.max(0, ...feed.players.map((p) => p.spree ?? 0)));
+	const topSpree = $derived(Math.max(0, ...players.map((p) => p.spree ?? 0)));
 	// Ties share a place number.
 	const placeOf = $derived(
 		sorted.reduce((m, p, i) => {
@@ -38,10 +54,10 @@
 <div class="board">
 	<div class="head">
 		<div class="gm">
-			<span class="gt">{feed.match.gametype ?? ''}</span>
-			<span class="map">{feed.match.map ?? ''}</span>
+			<span class="gt">{match.gametype ?? ''}</span>
+			<span class="map">{match.map ?? ''}</span>
 		</div>
-		<span class="clock">{feed.match.clock ?? '0:00'}</span>
+		<span class="clock">{match.clock ?? '0:00'}</span>
 	</div>
 	{#if teams}
 		{#each teams as team (team.id)}
@@ -86,6 +102,12 @@
 		margin: 0;
 		background: transparent;
 		overflow: hidden;
+	}
+	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
+	   composites over the OBS feed. Unlayered + !important beats the themed
+	   @layer base rule in routes/layout.css. */
+	:global(body::before) {
+		display: none !important;
 	}
 	.board {
 		width: 340px;

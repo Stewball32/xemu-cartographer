@@ -1,88 +1,69 @@
 <script lang="ts">
+	// Halo: CE player profile (blam.sav) editor — schema-driven from the backend
+	// (ce_profile_fields), so the mapped surface stays in lockstep with the byte
+	// map: armor color, button/thumbstick presets, and the nine Advanced Controls
+	// (2026-08-07 live-verified). The name is the gamertag above; the generator
+	// signs the file. Binds a plain CeProfileSettings the page persists.
+	import { onMount } from 'svelte';
+	import SchemaField from '$lib/components/creator/SchemaField.svelte';
+	import { lanMeta } from '$lib/utils/lansaves';
+	import type { CEField, CESection } from '$lib/types/lansaves';
 	import type { CeProfileSettings } from '$lib/types/gamertag';
 
-	// Halo: CE player profile (blam.sav) — name (= the gamertag above) + armor
-	// color + control presets, signed. The advanced Setup bytes (sensitivity /
-	// invert / vibration) aren't individually mapped yet; this exposes the mapped
-	// surface. Built on Skeleton components/tokens.
 	let {
 		settings = $bindable()
 	}: {
 		settings: CeProfileSettings;
 	} = $props();
 
-	// Known color enum values (the full carousel isn't enumerated yet).
-	const COLORS = [
-		{ value: 0, label: 'White (0)' },
-		{ value: 2, label: 'Red (2)' },
-		{ value: 3, label: 'Blue (3)' }
-	];
+	let fields = $state<CEField[]>([]);
+	let sections = $state<CESection[]>([]);
+	let loaded = $state(false);
 
-	// Normalize undefined → defaults for the bound controls.
-	const color = $derived(settings.color ?? 0);
-	const thumbstick = $derived(settings.thumbstick ?? 0);
-	const button = $derived(settings.button ?? 0);
+	onMount(() => {
+		void lanMeta()
+			.then((m) => {
+				fields = m.ce_profile_fields ?? [];
+				sections = m.ce_profile_sections ?? [];
+			})
+			.catch(() => {})
+			.finally(() => (loaded = true));
+	});
+
+	function fieldsFor(section: string): CEField[] {
+		return fields.filter((f) => f.section === section);
+	}
+
+	// SchemaField binds boolean | number | undefined; CeProfileSettings values
+	// are exactly that, keyed by the schema key. $derived so a parent reassigning
+	// the whole settings object (e.g. after load) stays tracked.
+	const s = $derived(settings as Record<string, boolean | number | undefined>);
 </script>
 
-{#snippet presetControl(label: string, value: number, set: (v: number) => void)}
-	<div class="flex flex-col gap-1.5">
-		<span class="text-xs text-surface-700-300">{label}</span>
-		<div class="grid grid-cols-2 gap-2">
-			{#each [{ v: 0, l: 'Default' }, { v: 1, l: 'Southpaw' }] as opt (opt.v)}
-				<button
-					type="button"
-					class="chip min-h-11 w-full justify-center {value === opt.v
-						? 'preset-filled-primary-500'
-						: 'preset-tonal'}"
-					aria-pressed={value === opt.v}
-					onclick={() => set(opt.v)}>{opt.l}</button
-				>
-			{/each}
-		</div>
-	</div>
-{/snippet}
-
-<div class="space-y-4">
+<div class="space-y-5">
 	<p class="text-xs text-surface-600-400">
-		Your gamertag is the in-game name. Armor color is a single enum (CE has no two-tone); controls
-		are the in-game presets.
+		Your gamertag is the in-game name. Blank fields keep the fresh-profile factory default.
 	</p>
 
-	<label class="label">
-		<span class="text-xs">Armor color</span>
-		<div class="grid grid-cols-2 gap-2">
-			<select
-				class="select"
-				value={COLORS.some((c) => c.value === color) ? String(color) : 'custom'}
-				onchange={(e) => {
-					const v = (e.currentTarget as HTMLSelectElement).value;
-					if (v !== 'custom') settings.color = Number(v);
-				}}
-			>
-				{#each COLORS as c (c.value)}
-					<option value={String(c.value)}>{c.label}</option>
-				{/each}
-				<option value="custom">Custom…</option>
-			</select>
-			<input
-				type="number"
-				class="input"
-				min="0"
-				max="255"
-				value={color}
-				oninput={(e) => (settings.color = Number((e.currentTarget as HTMLInputElement).value))}
-				title="Color enum value"
-			/>
-		</div>
-	</label>
-
-	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-		{@render presetControl('Thumbstick preset', thumbstick, (v) => (settings.thumbstick = v))}
-		{@render presetControl('Button preset', button, (v) => (settings.button = v))}
-	</div>
-
-	<p class="text-surface-500-400 text-xs">
-		Advanced Setup (look sensitivity / invert / vibration) is a follow-up — one more capture maps
-		those bytes.
-	</p>
+	{#if !loaded}
+		<p class="text-sm text-surface-500">Loading settings…</p>
+	{:else if fields.length === 0}
+		<p class="text-sm text-error-500">Couldn't load the profile schema.</p>
+	{:else}
+		{#each sections as sec (sec.id)}
+			{@const secFields = fieldsFor(sec.id)}
+			{#if secFields.length}
+				<section class="flex flex-col gap-3">
+					<h3 class="text-xs font-semibold tracking-wide text-surface-500 uppercase">
+						{sec.label}
+					</h3>
+					<div class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+						{#each secFields as f (f.key)}
+							<SchemaField field={f} bind:value={s[f.key]} />
+						{/each}
+					</div>
+				</section>
+			{/if}
+		{/each}
+	{/if}
 </div>
