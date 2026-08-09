@@ -161,8 +161,11 @@ func main() {
 		// The play map picker is sourced LIVE per instance from the scraper (never
 		// a stock table) — the Manager satisfies playroutes.MapSource.
 		playroutes.SetMapSource(scrMgr)
-		// The admin diagnostics panel shows the same enumerated carousel.
+		// The admin diagnostics panel shows the same enumerated carousel, and reads the
+		// LIVE per-tick readout (not the host runner's last event) so it stays live on
+		// an observed-only box.
 		scraperroutes.SetMapSource(scrMgr)
+		scraperroutes.SetReadoutSource(scrMgr)
 		scrMgr.SetHostRunner(
 			hostReg,
 			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),

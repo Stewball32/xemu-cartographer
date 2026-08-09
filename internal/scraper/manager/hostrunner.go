@@ -165,16 +165,36 @@ func toMapOptions(in []scraper.LobbyOption) []scraperiface.MapOption {
 // runner's key presses go out asynchronously via the vncinput pump). Called with
 // the freshly-read game state + tick from runReady / runLive.
 func (r *runner) tickHost(gs scraper.GameState, tick uint32) {
-	if r.host == nil {
-		return
-	}
 	now := time.Now()
 	if now.Sub(r.lastHostTickAt) < hostTickMinInterval {
 		return
 	}
 	r.lastHostTickAt = now
-	obs := r.buildHostReadout(gs, tick).Observation()
-	r.host.Tick(obs, now)
+	// Build + PUBLISH the readout on EVERY tick, whether or not a host runner is
+	// attached. The admin diagnostics panel reads this; gating it on r.host was what
+	// froze the panel at tick 0 on any box with host-running disabled (the navfp log
+	// kept updating because it comes from the reader, not the runner).
+	ro := r.buildHostReadout(gs, tick)
+	r.setReadout(ro)
+	if r.host == nil {
+		return
+	}
+	r.host.Tick(ro.Observation(), now)
+}
+
+// setReadout publishes the current tick's readout for the diagnostics endpoint.
+// Loop goroutine only (writer).
+func (r *runner) setReadout(ro hostrunner.ScraperReadout) {
+	r.readoutMu.Lock()
+	r.lastReadout, r.hasReadout = ro, true
+	r.readoutMu.Unlock()
+}
+
+// readout returns the most recent per-tick readout. Safe from request goroutines.
+func (r *runner) readout() (hostrunner.ScraperReadout, bool) {
+	r.readoutMu.RLock()
+	defer r.readoutMu.RUnlock()
+	return r.lastReadout, r.hasReadout
 }
 
 // buildHostReadout projects the loop's current reader + game-data state into the

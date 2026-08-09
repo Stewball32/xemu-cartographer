@@ -54,6 +54,36 @@ type Diagnostics struct {
 	Authority       string   `json:"authority"`
 }
 
+// ApplyReadout overwrites the LIVE-READ fields from the current tick's readout.
+// The runner-decision fields (last action/reason, authority, selection) still come
+// from the registry's captured event; everything an operator watches per-tick comes
+// from here, so the panel stays live even when no host runner is attached (the frozen
+// "tick 0" panel bug: the registry event only exists while a runner ticks).
+func (d *Diagnostics) ApplyReadout(ro ScraperReadout) {
+	obs := ro.Observation()
+	d.Tick = ro.Tick
+	d.Screen = Classify(obs).String()
+	d.Dela = ro.Dela
+	d.MenuItem = ro.MenuItem
+	d.MenuItemName = MenuItem(ro.MenuItem).String()
+	d.GameConnection = ro.GameConnection
+	d.PregameSentinel = ro.PregameSentinel
+	d.MenuFocus = ro.MenuFocus
+	d.MainMenuRaw = ro.MainMenuRaw
+	d.UIWidgetBlocks = ro.UIWidgetBlocks
+	d.UIHighlighted = ro.UIHighlighted
+	d.UIMaxTick = ro.UIMaxTick
+	d.TreeBuilt = ro.Dela != "" || ro.MenuFocus != 0 || ro.UIHighlighted > 0
+	d.MapCursor = CursorView{Index: ro.MapCursor, Count: ro.MapCursorCount, Valid: ro.MapCursorValid}
+	d.GametypeCursor = CursorView{Index: ro.GametypeCursor, Count: ro.GametypeCursorCount, Valid: ro.GametypeCursorValid}
+	d.Map = ro.Map
+	d.Gametype = ro.Gametype
+	d.MachineCount = ro.MachineCount
+	d.PlayerCount = ro.PlayerCount
+	d.TeamCount = ro.TeamCount
+	d.CountdownActive = ro.CountdownActive
+}
+
 // Diagnostics returns the live scraper-read snapshot for an instance, built from
 // the last captured event (every tick) + the runner's current selection. Present
 // is false with a zero snapshot when no runner is attached for the name.

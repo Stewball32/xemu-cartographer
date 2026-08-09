@@ -271,6 +271,18 @@ type runner struct {
 	// Loop-goroutine only.
 	lastEnumAt time.Time
 
+	// lastReadout is the MOST RECENT per-tick ScraperReadout, stored on EVERY tick
+	// regardless of whether a host runner is attached — it powers the admin
+	// diagnostics panel. Previously the panel read the host Registry's last
+	// RunnerEvent, which is only emitted when a runner is attached AND ticking; on a
+	// box with host-running disabled (r.host == nil) tickHost returned before
+	// building anything, so the panel sat frozen at tick 0 while the navfp log (which
+	// comes from the reader itself) updated fine. Guarded by readoutMu: written on
+	// the loop goroutine, read by request goroutines.
+	readoutMu   sync.RWMutex
+	lastReadout hostrunner.ScraperReadout
+	hasReadout  bool
+
 	// Custom gametype variant loading (part C). overlayFor resolves this box's
 	// overlay qcow2 path (host-side) so customvariants can read its saved variant
 	// names; nil disables the feature. customOnce fires the one-time async read

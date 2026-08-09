@@ -22,6 +22,20 @@ var Maps MapSource
 // SetMapSource wires the live map source. Call before RegisterAll.
 func SetMapSource(m MapSource) { Maps = m }
 
+// ReadoutSource supplies the instance's CURRENT per-tick scraper readout — the same
+// one the host runner ticks on and navfp logs from. Injected from cmd/server/main.go
+// (the scraper manager). Without it the panel would fall back to the host Registry's
+// last event, which only exists while a runner is attached and ticking — that is what
+// froze the panel at tick 0 on an observed-only box.
+type ReadoutSource interface {
+	Readout(name string) (hostrunner.ScraperReadout, bool)
+}
+
+var Readouts ReadoutSource
+
+// SetReadoutSource wires the live per-tick readout source. Call before RegisterAll.
+func SetReadoutSource(r ReadoutSource) { Readouts = r }
+
 // diagnosticsResponse is the admin diagnostics-panel payload: the live per-tick
 // scraper reads plus the enumerated map/gametype NAMES and the HIGHLIGHTED (live
 // carousel-selection) names resolved from the cursor index — so the panel can show
@@ -81,6 +95,14 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 			}
 			resp := diagnosticsResponse{Diagnostics: HostRunners.Diagnostics(name)}
+			// Overlay the CURRENT tick's reads so the panel is live even when no host
+			// runner is attached (registry events only flow while a runner ticks).
+			if Readouts != nil {
+				if ro, ok := Readouts.Readout(name); ok {
+					resp.Diagnostics.ApplyReadout(ro)
+					resp.Present = true
+				}
+			}
 			if Maps != nil {
 				ml := Maps.AvailableMaps(name)
 				resp.EnumeratedMaps = optionNames(ml.Maps)

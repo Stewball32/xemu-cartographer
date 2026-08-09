@@ -146,6 +146,21 @@ func (m *Manager) AvailableMaps(name string) scraperiface.MapList {
 	}
 }
 
+// Readout returns the instance's MOST RECENT per-tick ScraperReadout — the same
+// live readout the host runner ticks on and the navfp diagnostic logs from. It is
+// published every tick regardless of whether a host runner is attached, so the admin
+// diagnostics panel stays live on an observed-only box too. ok=false for an unknown
+// instance or before the first tick.
+func (m *Manager) Readout(name string) (hostrunner.ScraperReadout, bool) {
+	m.mu.Lock()
+	r, exists := m.runners[name]
+	m.mu.Unlock()
+	if !exists {
+		return hostrunner.ScraperReadout{}, false
+	}
+	return r.readout()
+}
+
 // SetAvailableMaps records the live-enumerated map/gametype carousel for an
 // instance. The enumeration itself — a guest-memory read of the CE map-select
 // carousel while the runner is parked there, and/or a parse of the instance's
