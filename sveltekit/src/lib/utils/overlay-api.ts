@@ -74,6 +74,30 @@ export interface OverlayInstance {
 	xbox_name: string; // friendly console name (may be empty)
 }
 
+/** One live console for the Studio picker — its name plus which host currently
+ *  sees it. `machine_index` -1 = the host's own console (no live lobby). */
+export interface OverlayConsole {
+	console: string;
+	instance: string;
+	is_local: boolean;
+	machine_index: number;
+}
+
+/** List every console name currently visible across all hosts (each host's own
+ *  console + its System Link lobby peers) — the console index the overlays
+ *  resolve against. Public PoC endpoint; overlays target by these names alone
+ *  (no instance / token). Returns [] on error. */
+export async function listConsoles(): Promise<OverlayConsole[]> {
+	try {
+		const res = await fetch(`${apiBaseURL()}/api/overlay/consoles`);
+		if (!res.ok) return [];
+		const data = await res.json();
+		return (data?.consoles ?? []) as OverlayConsole[];
+	} catch {
+		return [];
+	}
+}
+
 /** List the live scraper instances so Studio can offer a pick-by-friendly-name
  *  dropdown (targeting by container id under the hood). Reads the admin scraper
  *  endpoint; returns [] if the caller isn't an admin (a non-admin overlay
