@@ -1,125 +1,67 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { onMount } from 'svelte';
-	import { TvIcon, CopyIcon, LoaderIcon, KeyRoundIcon } from '@lucide/svelte';
+	import { TvIcon, CopyIcon, RefreshCwIcon, LoaderIcon, MonitorIcon } from '@lucide/svelte';
 	import { toaster } from '$lib/stores/toaster';
-	import {
-		canManageOverlays,
-		listOverlayInstances,
-		mintOverlayToken,
-		type OverlayInstance
-	} from '$lib/utils/overlay-api';
+	import { canManageOverlays, listConsoles, type OverlayConsole } from '$lib/utils/overlay-api';
 
-	// Who may view the OBS catalog + mint the overlay token — admin/superuser or
-	// the overlay_manager role.
+	// Operator page: overlays target by CONSOLE NAME alone. No instance/container,
+	// no token — the overlay resolves the console name to whichever host currently
+	// sees it and re-resolves live. (Auth on the feed is deferred per the PoC.)
 	const authorized = canManageOverlays();
 	const origin = $derived(browser ? window.location.origin : '');
 
-	// All four overlays are now cartographer-native: each subscribes to ONE
-	// instance's live feed (game/tick/scenario) with a scoped, read-only overlay
-	// token. ONE minted token serves every overlay for that instance.
-	// `instance` is the CONTAINER id the overlay targets; the picker lets the
-	// operator choose by friendly console name (xbox_name) instead of typing it.
-	let instance = $state('');
-	let names = $state('');
-	let minting = $state(false);
-	let token = $state('');
-	let mintedInstance = $state('');
+	let consoles = $state<OverlayConsole[]>([]);
+	let loading = $state(true);
+	let names = $state(''); // optional display-name overrides, applied to every URL
 
-	// Live instances for the picker. Empty (or a non-admin caller) → fall back to
-	// typing the container id manually.
-	let instances = $state<OverlayInstance[]>([]);
-	let manual = $state(false);
-	const instanceLabel = (i: OverlayInstance) =>
-		i.xbox_name && i.xbox_name !== i.name ? `${i.xbox_name}  (${i.name})` : i.name;
-
-	onMount(() => {
-		void listOverlayInstances().then((rows) => {
-			instances = rows;
-			if (rows.length === 0) manual = true;
-			else if (rows.length === 1) instance = rows[0].name; // one console → preselect
-		});
-	});
-
-	async function mint() {
-		const inst = instance.trim();
-		if (!inst) {
-			toaster.error({
-				title: 'Instance required',
-				description: 'Enter the container/instance name.'
-			});
-			return;
-		}
-		minting = true;
-		try {
-			const res = await mintOverlayToken(`host:${inst}`, 'OBS overlays');
-			token = res.token;
-			mintedInstance = inst;
-			toaster.success({ title: 'Overlay token minted', description: `host:${inst}` });
-		} catch (e) {
-			toaster.error({ title: 'Mint failed', description: String(e) });
-		} finally {
-			minting = false;
-		}
-	}
-
-	type Source = { id: string; title: string; path: string; size: string; blurb: string };
-	const SOURCES: Source[] = [
-		{
-			id: 'overlay',
-			title: 'POV overlay',
-			path: '/overlay/',
-			size: '1440 × 1080',
-			blurb:
-				'Per-player POV bars + respawn rings over the game feed. Auto-detects splitscreen (1 / 2 / 4) — one source, no cropping.'
-		},
-		{
-			id: 'scorebug',
-			title: 'Scorebug',
-			path: '/scorebug/',
-			size: '~700 × 90 · fit to content',
-			blurb: 'Match bug: team · gametype/map · team (FFA duel at exactly 2 players).'
-		},
-		{
-			id: 'leaderboard',
-			title: 'Leaderboard',
-			path: '/leaderboard/',
-			size: '340 × (72 + 52·rows) · fit to content',
-			blurb: 'Live standings with KDA + spree; rows FLIP-animate on rank change.'
-		},
-		{
-			id: 'postgame',
-			title: 'Postgame',
-			path: '/postgame/',
-			size: '900 × (150 + 46·rows) · fit to content',
-			blurb: 'Full carnage report: winner banner, per-player ledger, team aggregates, totals.'
-		}
+	// The overlay surfaces + their suggested OBS Browser Source sizes.
+	const OVERLAYS = [
+		{ id: 'overlay', label: 'POV', path: '/overlay/', size: '1440 × 1080' },
+		{ id: 'scorebug', label: 'Scorebug', path: '/scorebug/', size: '~700 × 90' },
+		{ id: 'leaderboard', label: 'Leaderboard', path: '/leaderboard/', size: '340 × rows' },
+		{ id: 'postgame', label: 'Postgame', path: '/postgame/', size: '900 × rows' }
 	];
 
-	/** Build a source's OBS URL for the minted instance/token (+ optional name
-	 * overrides). Append ?mock=1 (shown separately) to preview without a token. */
-	function sourceURL(path: string): string {
-		const parts: string[] = [];
-		if (mintedInstance) parts.push(`instance=${encodeURIComponent(mintedInstance)}`);
-		if (token) parts.push(`token=${encodeURIComponent(token)}`);
+	function url(console: string, path: string): string {
+		const parts = [`console=${encodeURIComponent(console)}`];
 		if (names.trim()) parts.push(`names=${encodeURIComponent(names.trim())}`);
-		return `${origin}${path}${parts.length ? `?${parts.join('&')}` : ''}`;
+		return `${origin}${path}?${parts.join('&')}`;
 	}
 
-	async function copy(url: string) {
+	async function copy(u: string) {
 		try {
-			await navigator.clipboard.writeText(url);
+			await navigator.clipboard.writeText(u);
 			toaster.success({ title: 'Copied', description: 'Browser-source URL on the clipboard.' });
 		} catch {
-			toaster.error({ title: 'Copy failed', description: url });
+			toaster.error({ title: 'Copy failed', description: u });
 		}
 	}
+
+	async function refresh() {
+		loading = true;
+		consoles = await listConsoles();
+		loading = false;
+	}
+
+	onMount(refresh);
 </script>
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-5 p-4 sm:p-6">
 	<header class="flex items-center gap-2">
 		<TvIcon class="size-5" />
 		<h1 class="h4">OBS overlays (Studio)</h1>
+		<button
+			class="ml-auto btn preset-tonal btn-sm"
+			onclick={refresh}
+			disabled={loading}
+			aria-label="Refresh consoles"
+		>
+			{#if loading}<LoaderIcon class="size-4 animate-spin" />{:else}<RefreshCwIcon
+					class="size-4"
+				/>{/if}
+			<span>Refresh</span>
+		</button>
 	</header>
 
 	{#if !authorized}
@@ -128,101 +70,69 @@
 			<code>overlay_manager</code> role.
 		</div>
 	{:else}
-		<!-- How-to -->
 		<ol class="flex list-decimal flex-col gap-1 card preset-tonal p-4 pl-8 text-sm">
-			<li>Pick the live console and <strong>mint an overlay token</strong>.</li>
 			<li>
-				Copy each overlay's URL and add it in OBS as a <strong>Browser Source</strong> at the size shown.
+				Pick a <strong>console</strong> below — the overlay finds whichever host is showing it.
 			</li>
 			<li>
-				All overlays render on a <strong>transparent</strong> background — they composite straight over
-				the game capture.
+				Copy the overlay's URL and add it in OBS as a <strong>Browser Source</strong> at the size shown.
+			</li>
+			<li>
+				Every overlay renders <strong>transparent</strong> and targets by console name — it survives the
+				box being recreated.
 			</li>
 		</ol>
 
-		<!-- Step 1: instance + token -->
-		<div class="flex flex-col gap-3 card preset-tonal p-4">
-			<div class="flex flex-col gap-2 sm:flex-row sm:items-end">
-				<label class="label flex-1">
-					<span class="label-text flex items-center justify-between text-xs">
-						<span>Console / instance</span>
-						{#if instances.length}
-							<button type="button" class="anchor text-[11px]" onclick={() => (manual = !manual)}>
-								{manual ? 'Pick from live list' : 'Type manually'}
-							</button>
-						{/if}
-					</span>
-					{#if instances.length && !manual}
-						<select class="select text-sm" bind:value={instance}>
-							<option value="" disabled>Select a live console…</option>
-							{#each instances as i (i.name)}
-								<option value={i.name}>{instanceLabel(i)}</option>
-							{/each}
-						</select>
-					{:else}
-						<input
-							class="input text-sm"
-							placeholder="container id, e.g. beta-stream"
-							bind:value={instance}
-						/>
-					{/if}
-				</label>
-				<label class="label flex-1">
-					<span class="label-text text-xs">Name overrides (optional)</span>
-					<input
-						class="input font-mono text-xs"
-						bind:value={names}
-						placeholder="SCRAPED:Display,…"
-					/>
-				</label>
-				<button class="preset-filled-primary btn" disabled={minting} onclick={mint}>
-					{#if minting}<LoaderIcon class="size-4 animate-spin" />{:else}<KeyRoundIcon
-							class="size-4"
-						/>{/if}
-					<span>Mint token</span>
-				</button>
-			</div>
-			{#if token}
-				<p class="text-xs text-success-600-400">
-					Token minted for <code>host:{mintedInstance}</code> — it serves all four overlays below. It
-					isn't shown again, so copy the URLs now.
-				</p>
-			{:else}
-				<p class="text-xs text-surface-600-400">
-					No live game yet? Append <code>?mock=1</code> to any overlay URL to preview it with sample data
-					(no token needed).
-				</p>
-			{/if}
-		</div>
+		<label class="label max-w-md">
+			<span class="label-text text-xs">Name overrides (optional, applied to all)</span>
+			<input class="input font-mono text-xs" bind:value={names} placeholder="SCRAPED:Display,…" />
+		</label>
 
-		<!-- Step 2: per-overlay OBS URLs -->
-		<div class="grid gap-3 sm:grid-cols-2">
-			{#each SOURCES as s (s.id)}
-				<div class="flex flex-col gap-2 card preset-tonal p-4">
-					<div class="flex items-baseline gap-2">
-						<h2 class="h6">{s.title}</h2>
-						<span class="ml-auto font-mono text-xs text-surface-600-400">{s.size}</span>
+		{#if loading}
+			<div class="flex items-center gap-2 p-4 text-sm text-surface-600-400">
+				<LoaderIcon class="size-4 animate-spin" /> Loading live consoles…
+			</div>
+		{:else if consoles.length === 0}
+			<div class="card preset-tonal p-6 text-sm text-surface-600-400">
+				No live consoles right now. Start a game on a scraped host (or check its System Link lobby)
+				and hit Refresh.
+			</div>
+		{:else}
+			<div class="flex flex-col gap-3">
+				{#each consoles as c (c.console)}
+					<div class="flex flex-col gap-2 card preset-tonal p-4">
+						<div class="flex items-center gap-2">
+							<MonitorIcon class="size-4 opacity-70" />
+							<span class="text-base font-semibold">{c.console}</span>
+							{#if c.is_local}
+								<span class="chip preset-filled-primary-500 text-xs">host</span>
+							{:else}
+								<span class="chip preset-tonal text-xs">lobby</span>
+							{/if}
+							<span class="ml-auto font-mono text-xs text-surface-500">on {c.instance}</span>
+						</div>
+						<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+							{#each OVERLAYS as o (o.id)}
+								<button
+									class="btn flex-col items-start gap-0 preset-tonal btn-sm py-1.5"
+									title={url(c.console, o.path)}
+									onclick={() => copy(url(c.console, o.path))}
+								>
+									<span class="flex w-full items-center gap-1">
+										<CopyIcon class="size-3.5" /><span class="font-medium">{o.label}</span>
+									</span>
+									<span class="text-[10px] text-surface-500">{o.size}</span>
+								</button>
+							{/each}
+						</div>
 					</div>
-					<p class="text-xs text-surface-600-400">{s.blurb}</p>
-					<div class="flex items-center gap-2">
-						<input class="input flex-1 font-mono text-xs" readonly value={sourceURL(s.path)} />
-						<button
-							class="btn-icon preset-tonal"
-							aria-label="Copy URL"
-							disabled={!token}
-							onclick={() => copy(sourceURL(s.path))}
-						>
-							<CopyIcon class="size-4" />
-						</button>
-					</div>
-				</div>
-			{/each}
-		</div>
+				{/each}
+			</div>
+		{/if}
 
 		<p class="max-w-prose text-xs text-surface-600-400">
-			All four overlays read cartographer's native live feed (the minted token authorizes read-only
-			access to this instance's rooms). Fonts currently load from Google Fonts — self-host them for
-			a fully offline LAN.
+			Overlays read cartographer's live feed by console name (no token — auth is deferred for now).
+			Fonts currently load from Google Fonts; self-host for a fully offline LAN.
 		</p>
 	{/if}
 </div>

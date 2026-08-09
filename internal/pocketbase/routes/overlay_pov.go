@@ -25,7 +25,81 @@ import (
 // ⚠️ SECURITY DEFERRED: this endpoint is UNAUTHENTICATED for the PoC. Before
 // production, gate it (console-scoped overlay token / LAN allowlist) — tracked
 // in the overlay reboot plan.
-func init() { register(registerOverlayConsole) }
+func init() {
+	register(registerOverlayConsole)
+	register(registerOverlayConsoleList)
+}
+
+// consoleEntry is one selectable console for the Studio picker: its name, which
+// host currently sees it, whether it's a local/host console, and its lobby
+// machine index (-1 = the host's own console with no live lobby).
+type consoleEntry struct {
+	Console      string `json:"console"`
+	Instance     string `json:"instance"`
+	IsLocal      bool   `json:"is_local"`
+	MachineIndex int    `json:"machine_index"`
+}
+
+// listConsoles aggregates every console name currently visible across all
+// running hosts — each host's own console (xbox_name) plus every System Link
+// lobby peer (game_data.machines) — deduped by name (a lobby-machine entry,
+// which carries a machine index, wins over the bare xbox_name). This is the
+// console index the overlays resolve against; Studio lists it so the operator
+// targets by name.
+func listConsoles(mgr scraperiface.Inspect) []consoleEntry {
+	seen := map[string]consoleEntry{}
+	order := []string{}
+	add := func(e consoleEntry) {
+		k := ovSanitize(e.Console)
+		if k == "" {
+			return
+		}
+		if existing, ok := seen[k]; ok {
+			if existing.MachineIndex < 0 && e.MachineIndex >= 0 {
+				seen[k] = e // prefer the lobby-machine entry (has an index)
+			}
+			return
+		}
+		seen[k] = e
+		order = append(order, k)
+	}
+	for _, info := range mgr.List() {
+		st, ok := mgr.Inspect(info.Name)
+		if !ok {
+			continue
+		}
+		if info.XboxName != "" {
+			add(consoleEntry{Console: info.XboxName, Instance: info.Name, IsLocal: true, MachineIndex: -1})
+		}
+		if st.GameData != nil {
+			for _, m := range st.GameData.Machines {
+				add(consoleEntry{
+					Console:      m.Name,
+					Instance:     info.Name,
+					IsLocal:      m.IsLocal != nil && *m.IsLocal,
+					MachineIndex: m.Index,
+				})
+			}
+		}
+	}
+	out := make([]consoleEntry, 0, len(order))
+	for _, k := range order {
+		out = append(out, seen[k])
+	}
+	return out
+}
+
+func registerOverlayConsoleList(se *core.ServeEvent) {
+	// PUBLIC PoC (security deferred): every console name currently visible, for
+	// the Studio picker. See registerOverlayConsole for the auth caveat.
+	se.Router.GET("/api/overlay/consoles", func(e *core.RequestEvent) error {
+		mgr := scraperroutes.Manager
+		if mgr == nil {
+			return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "scraper not running"})
+		}
+		return e.JSON(http.StatusOK, map[string]any{"consoles": listConsoles(mgr)})
+	})
+}
 
 func ovSanitize(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 

@@ -73,3 +73,32 @@ func TestResolveConsole(t *testing.T) {
 		t.Error("unknown console should not resolve")
 	}
 }
+
+func TestListConsoles(t *testing.T) {
+	got := listConsoles(fixture())
+	// name -> expected {instance, machineIndex, isLocal}
+	want := map[string]struct {
+		instance string
+		machine  int
+		local    bool
+	}{
+		"stream":     {"beta-stream", 0, true}, // xbox_name deduped to lobby machine 0
+		"BlueBox":    {"beta-stream", 1, false},
+		"RedBox":     {"beta-stream", 2, false},
+		"stewball32": {"beta-play", -1, true}, // idle host, no lobby
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d consoles, want %d: %+v", len(got), len(want), got)
+	}
+	for _, c := range got {
+		w, ok := want[c.Console]
+		if !ok {
+			t.Errorf("unexpected console %q", c.Console)
+			continue
+		}
+		if c.Instance != w.instance || c.MachineIndex != w.machine || c.IsLocal != w.local {
+			t.Errorf("%q = {%s,%d,%v}, want {%s,%d,%v}", c.Console,
+				c.Instance, c.MachineIndex, c.IsLocal, w.instance, w.machine, w.local)
+		}
+	}
+}
