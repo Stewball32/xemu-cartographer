@@ -117,7 +117,7 @@ function tryParse<T>(raw: string): T | null {
 }
 
 function teamHref(slug: string): string {
-	return `${resolve('/teams/')}${slug}/`;
+	return resolve('/teams/[slug]', { slug });
 }
 
 function whoLabel(name: string | undefined, handle: string): string {

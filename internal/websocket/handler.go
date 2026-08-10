@@ -4,12 +4,9 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
-
-	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 )
 
 // ConnectHook is invoked once per accepted WebSocket connection, after the
@@ -35,29 +32,23 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 	opts := buildAcceptOptions()
 
 	return func(e *core.RequestEvent) error {
-		// Two doors, same socket: a logged-in user JWT (operator path,
-		// governed by the M09 roster gate in join_room) OR a scoped read-only
-		// overlay token (M10 OBS path). The overlay token binds the connection
-		// to one room and is strictly read-only (enforced in the Hub dispatch +
-		// join_room). A user JWT takes precedence if both somehow validate.
+		// Two doors, same socket: a logged-in user JWT (operator path, governed
+		// by the M09 roster gate in join_room) OR the tokenless console-overlay
+		// door (?console=<name>, read-only, resolved against the live roster in
+		// join_room via Membership()). The M10 overlay-token door is gone — a
+		// future auth story replaces it wholesale.
 		var user *core.Record
-		var overlayRoom string
 		if token := e.Request.URL.Query().Get("token"); token != "" {
 			if record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil {
 				user = record
-			} else if room, ok := overlaytoken.VerifyActive(app, token, time.Now()); ok {
-				overlayRoom = room
 			} else {
-				log.Printf("ws: token is neither a valid user JWT nor a live overlay token")
+				log.Printf("ws: invalid user token on connect")
 			}
 		}
-		// Tokenless console-overlay door (PoC): ?console=<name> binds this
-		// connection to whichever host:<instance> currently rosters that console
-		// (resolved in join_room via Membership()). Read-only, like an overlay
-		// token. Only honored when there's no user JWT / overlay token — a
-		// credentialed connection takes precedence.
+		// Console door only when there's no user JWT — a credentialed
+		// connection takes precedence.
 		consoleName := ""
-		if user == nil && overlayRoom == "" {
+		if user == nil {
 			consoleName = strings.TrimSpace(e.Request.URL.Query().Get("console"))
 		}
 
@@ -71,7 +62,6 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 			conn:        conn,
 			send:        make(chan []byte, sendBufSize),
 			user:        user,
-			overlayRoom: overlayRoom,
 			consoleName: consoleName,
 		}
 

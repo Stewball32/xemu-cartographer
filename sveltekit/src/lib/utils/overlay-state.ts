@@ -164,9 +164,9 @@ export function matchState(
 	};
 }
 
-/** Shared loader params for the native OBS overlay routes (instance + read-only
- * overlay token + optional mock + display-name overrides). Mirrors the POV
- * overlay's loader so all four routes take the same URL shape. */
+/** Shared loader params for the native OBS overlay routes (?console= target +
+ * optional mock + display-name overrides). Mirrors the POV overlay's loader so
+ * all four routes take the same URL shape. */
 export function nativeOverlayParams(url: URL) {
 	const p = url.searchParams;
 	const mock = p.get('mock');
@@ -174,8 +174,6 @@ export function nativeOverlayParams(url: URL) {
 		// PoC: `console` targets by console name alone (no instance/token) — the
 		// feed resolves it to whichever host currently sees that console.
 		console: p.get('console') ?? '',
-		instance: p.get('instance') ?? '',
-		token: p.get('token') ?? '',
 		mock: mock === '1' || mock === 'true',
 		// ?transport=poll forces the HTTP-poll console fallback (default is WS push).
 		consolePoll: p.get('transport') === 'poll',

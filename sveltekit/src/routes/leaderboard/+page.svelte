@@ -15,8 +15,6 @@
 	onMount(() =>
 		feed.start({
 			console: data.console,
-			instance: data.instance,
-			token: data.token,
 			mock: data.mock,
 			consolePoll: data.consolePoll,
 			classes: ['game', 'tick', 'scenario']

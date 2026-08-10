@@ -27,25 +27,15 @@ func handleJoinRoom(e *Event) {
 		return
 	}
 
-	// M10 overlay-token fix: an overlay-token connection carries no user JWT
-	// (e.User is nil), so the host room's RequireAuth guard would reject it
-	// here — before authorizeHostRoom's overlay-scope bypass below ever runs —
-	// and minted overlay tokens (OBS overlays + the ?token= visualizer URL)
-	// could never join a host room. For such a connection the overlay token IS
-	// the credential, and authorizeHostRoom is the sole authority: it validates
-	// the token's room scope and bars the admin-only summary feed. Skip the
-	// generic guard list ONLY in that case. Every other connection — and every
-	// non-host room — still runs CheckGuards unchanged, so auth isn't weakened
-	// elsewhere (a missing/invalid token leaves OverlayRoom == "" and falls
-	// through to RequireAuth, which rejects the nil user).
-	// A tokenless console-overlay connection (?console=) carries no user JWT, so
-	// like the overlay-token case it would fail the host room's RequireAuth guard
-	// before authorizeHostRoom's console branch runs. Skip the generic guard list
-	// for it too — authorizeHostRoom is the sole authority (validates the console
-	// is in that instance's live roster). Non-host rooms still run CheckGuards.
-	overlayHostJoin := e.OverlayRoom != "" && isHostRoom(e.Room)
+	// A tokenless console-overlay connection (?console=) carries no user JWT,
+	// so the host room's RequireAuth guard would reject it here — before
+	// authorizeHostRoom's console branch ever runs. Skip the generic guard list
+	// ONLY for a console connection joining a host room — authorizeHostRoom is
+	// then the sole authority (it validates the console is in that instance's
+	// live roster and bars the summary feed). Every other connection — and
+	// every non-host room — still runs CheckGuards unchanged.
 	consoleHostJoin := e.ConsoleName != "" && isHostRoom(e.Room)
-	if !overlayHostJoin && !consoleHostJoin {
+	if !consoleHostJoin {
 		if err := rt.CheckGuards(e.Services, e.User); err != nil {
 			e.SendError("forbidden", err.Error())
 			return
@@ -105,20 +95,6 @@ func authorizeHostRoom(e *Event) error {
 	isInstance := isHostRoom(e.Room) && !isSummary
 	if !isSummary && !isInstance {
 		return nil // not a host room — leave it to the room type's guards
-	}
-
-	// M10 overlay-token connection: scoped to its bound instance, read-only.
-	// It bypasses the user/admin/roster path (the overlay token IS the grant)
-	// and can never reach the admin-only summary feed. The Hub already limits
-	// it to join/leave message types.
-	if e.OverlayRoom != "" {
-		if isSummary {
-			return errors.New("overlay tokens cannot join the summary feed")
-		}
-		if hostRoomInstance(e.Room) == hostRoomInstance(e.OverlayRoom) {
-			return nil
-		}
-		return errors.New("overlay token is scoped to a different room")
 	}
 
 	svc := e.Services

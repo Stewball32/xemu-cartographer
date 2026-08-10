@@ -22,14 +22,9 @@ type Client struct {
 	conn *websocket.Conn
 	send chan []byte
 	user *core.Record // nil for anonymous connections
-	// overlayRoom is the room a read-only M10 overlay token is bound to
-	// ("host:<name>"); empty for normal (user/anonymous) connections. When set,
-	// the Hub restricts this client to read-only message types scoped to this
-	// room.
-	overlayRoom string
 	// consoleName is a tokenless console-overlay connection's target console
 	// (from ?console=<name>); empty for normal connections. When set, the Hub
-	// treats it read-only (like an overlay token) and join_room admits it to
+	// treats it read-only and join_room admits it to
 	// the host:<instance> room whose live roster currently includes this console
 	// (resolved via Membership()). Deliberately loosened auth for the overlay
 	// PoC — a console name is public, so this is view-only, roster-scoped access.
@@ -43,10 +38,6 @@ func (c *Client) UserID() string {
 	}
 	return ""
 }
-
-// OverlayRoom returns the room an overlay-token connection is bound to, or ""
-// for normal connections.
-func (c *Client) OverlayRoom() string { return c.overlayRoom }
 
 // ConsoleName returns the target console of a tokenless console-overlay
 // connection, or "" for normal connections.

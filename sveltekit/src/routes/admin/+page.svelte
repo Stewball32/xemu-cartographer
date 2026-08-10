@@ -1,14 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import {
-		ActivityIcon,
-		BoxIcon,
-		DatabaseIcon,
-		KeyIcon,
-		UserIcon,
-		UsersIcon
-	} from '@lucide/svelte';
+	import { ActivityIcon, BoxIcon, KeyIcon, UserIcon, UsersIcon } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 	import pb from '$lib/pocketbase';
 	import { adminGet } from '$lib/utils/admin-api';
@@ -72,14 +65,6 @@
 			href: resolve('/admin/roles/'),
 			status: 'live',
 			milestone: 'M08'
-		},
-		{
-			title: 'Games',
-			description: 'Captured games + series persistence.',
-			icon: DatabaseIcon,
-			href: resolve('/admin/games/'),
-			status: 'placeholder',
-			milestone: 'M13'
 		}
 	];
 
