@@ -233,12 +233,25 @@ export function mockGame(frame = 0): GamePayload {
 			deaths: s.deaths,
 			assists: s.assists,
 			ctf_score: 0,
-			team_kills: 0,
-			suicides: 0,
+			// One betrayal + suicide on player 1 so the postgame shame columns
+			// exercise their red-when-nonzero styling in previews.
+			team_kills: s.index === 1 ? 1 : 0,
+			suicides: s.index === 1 ? 1 : 0,
 			kill_streak: s.index === 0 ? 3 : 0,
 			multikill: 0,
 			shots_fired: 0,
 			shots_hit: 0,
+			// Accumulated match stats (acc_* — the server-side HaloCaster-port
+			// deltas), scaled off each seed's kills so every postgame column +
+			// footer total renders non-zero in mock previews.
+			acc_shots_fired: 40 + s.kills * 9 + s.index * 7,
+			acc_grenade_throws: 3 + (s.index % 3) * 2,
+			acc_melees: 1 + (s.index % 2) * 2,
+			acc_damage_dealt: 300 + s.kills * 82,
+			acc_damage_received: 250 + s.deaths * 78,
+			acc_camo_pickups: s.index % 2,
+			acc_overshield_pickups: (s.index + 1) % 2,
+			best_kill_streak: 2 + (s.kills % 5),
 			is_local: s.isLocal,
 			local_index: s.isLocal ? s.index : null,
 			machine_index: s.team,
