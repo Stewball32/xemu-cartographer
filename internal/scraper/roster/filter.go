@@ -16,11 +16,24 @@ import (
 // (no neutral host, empty allowlist), so an unconfigured container's roster
 // passes through unchanged.
 type Config struct {
-	// IsNeutralHost drops this container's local player(s). In a modded
-	// neutral-host match the host machine fields a dummy player that spawns
-	// out of bounds and never participates; it is the local player on the
-	// host seat, so dropping IsLocal players removes it.
+	// IsNeutralHost is the HARD override: drop this container's local
+	// player(s) unconditionally — even if the seat shows activity (an
+	// operator wiggling the neutral host's controller must not unhide the
+	// dummy). In a modded neutral-host match the host machine fields a dummy
+	// player that spawns out of bounds and never participates; it is the
+	// local player on the host seat, so dropping IsLocal players removes it.
 	IsNeutralHost bool
+
+	// HideInactiveLocals is the activity-based default rule: presume a LOCAL
+	// seat is a dummy (hidden) until it shows real activity, at which point
+	// the accumulator latches it Active for the rest of the match (see
+	// scraper.MatchAccum). Remote players are never affected.
+	HideInactiveLocals bool
+
+	// ActiveLocals reports which player indices have latched Active this
+	// match (from the accumulator snapshot). Only consulted when
+	// HideInactiveLocals is set. A nil map means "nobody active yet".
+	ActiveLocals map[int]bool
 
 	// DummyGamertags is the global always-dummy allowlist. Keys must already
 	// be sanitized (see SanitizeName); any player whose name sanitizes into
@@ -37,7 +50,13 @@ func FilterRoster(players []scraper.GamePlayer, cfg Config) []scraper.GamePlayer
 	}
 	out := make([]scraper.GamePlayer, 0, len(players))
 	for _, p := range players {
-		if cfg.IsNeutralHost && p.IsLocal != nil && *p.IsLocal {
+		isLocal := p.IsLocal != nil && *p.IsLocal
+		// Hard override: a neutral host's local seat is always a dummy.
+		if cfg.IsNeutralHost && isLocal {
+			continue
+		}
+		// Activity default: a local seat is presumed dummy until latched Active.
+		if cfg.HideInactiveLocals && isLocal && !cfg.ActiveLocals[p.Index] {
 			continue
 		}
 		if _, dummy := cfg.DummyGamertags[SanitizeName(p.Name)]; dummy {

@@ -80,10 +80,19 @@ export function overlayPlayers(
 			deaths: p.deaths,
 			assists: p.assists,
 			spree: p.kill_streak,
+			bestSpree: p.best_kill_streak ?? 0,
 			accuracy: accuracyOf(p.shots_fired, p.shots_hit),
-			damageRatio: 0, // not on the wire (deferred)
+			damageRatio: 0,
 			betrayals: p.team_kills, // verified populated live (beta-stream)
 			suicides: p.suicides, // verified populated live (beta-stream)
+			// Accumulated match stats (acc_* wire fields — server-side deltas).
+			shotsFired: p.acc_shots_fired ?? 0,
+			grenadeThrows: p.acc_grenade_throws ?? 0,
+			meleeKills: p.acc_melees ?? 0,
+			damageDealt: p.acc_damage_dealt ?? 0,
+			damageTaken: p.acc_damage_received ?? 0,
+			camoPickups: p.acc_camo_pickups ?? 0,
+			osPickups: p.acc_overshield_pickups ?? 0,
 			alive: t?.alive ?? true,
 			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
 			respawnMax: RESPAWN_MAX,

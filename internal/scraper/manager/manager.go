@@ -453,6 +453,7 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 		LatestTick:   c.LatestTick,
 		RecentEvents: c.Events,
 		PreviousGame: prev,
+		PlayerAccum:  c.PlayerAccum,
 	}, true
 }
 

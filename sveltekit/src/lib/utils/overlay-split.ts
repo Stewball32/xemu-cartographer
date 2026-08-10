@@ -40,11 +40,21 @@ export interface OverlayPlayer {
 	kills: number;
 	deaths: number;
 	assists: number;
-	spree: number;
-	accuracy: number; // 0..100
+	spree: number; // CURRENT kill streak (live badge)
+	bestSpree: number; // match PEAK kill streak (postgame SPREE)
+	accuracy: number; // 0..100 — dead upstream (shots offsets read 0); kept for shape
 	damageRatio: number;
 	betrayals: number; // = scrape team_kills (verified live)
 	suicides: number; // = scrape suicides (verified live)
+	// Accumulated match stats (server-side ammo/damage/pickup deltas — the
+	// HaloCaster extract_events port; acc_* on the wire).
+	shotsFired: number;
+	grenadeThrows: number;
+	meleeKills: number; // melee swings (impact rising-edge), pack column MELEE
+	damageDealt: number;
+	damageTaken: number;
+	camoPickups: number;
+	osPickups: number;
 	alive: boolean;
 	respawn: number; // seconds remaining (0 = alive / no countdown)
 	respawnMax: number;
@@ -129,10 +139,18 @@ export function localOverlayPlayers(
 			deaths: p.deaths,
 			assists: p.assists,
 			spree: p.kill_streak,
+			bestSpree: p.best_kill_streak ?? 0,
 			accuracy: accuracyOf(p.shots_fired, p.shots_hit),
 			damageRatio: 0,
 			betrayals: p.team_kills,
 			suicides: p.suicides,
+			shotsFired: p.acc_shots_fired ?? 0,
+			grenadeThrows: p.acc_grenade_throws ?? 0,
+			meleeKills: p.acc_melees ?? 0,
+			damageDealt: p.acc_damage_dealt ?? 0,
+			damageTaken: p.acc_damage_received ?? 0,
+			camoPickups: p.acc_camo_pickups ?? 0,
+			osPickups: p.acc_overshield_pickups ?? 0,
 			alive: t?.alive ?? true,
 			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
 			respawnMax: RESPAWN_MAX,

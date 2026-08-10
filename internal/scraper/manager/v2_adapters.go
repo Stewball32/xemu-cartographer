@@ -271,6 +271,9 @@ func buildGamePayload(c *instanceCache) GamePayload {
 			p.TeamScores = append(p.TeamScores, GameTeamScore{Team: ts.Team, Score: ts.Score})
 		}
 		for _, pl := range gd.Players {
+			// Merge the accumulated match stats (cache.PlayerAccum snapshot) by
+			// player index; zero value when no accumulator ran yet (lobby/idle).
+			acc := c.PlayerAccum[pl.Index]
 			p.Players = append(p.Players, GameRosterPlayer{
 				Index:           pl.Index,
 				Name:            pl.Name,
@@ -291,6 +294,15 @@ func buildGamePayload(c *instanceCache) GamePayload {
 				LocalIndex:      pl.LocalIndex,
 				MachineIndex:    pl.MachineIndex,
 				ControllerIndex: pl.ControllerIndex,
+
+				AccShotsFired:     acc.ShotsFired,
+				AccGrenadeThrows:  acc.GrenadeThrows,
+				AccMelees:         acc.Melees,
+				AccDamageDealt:    acc.DamageDealt,
+				AccDamageReceived: acc.DamageReceived,
+				AccCamoPickups:    acc.CamoPickups,
+				AccOsPickups:      acc.OvershieldPickups,
+				BestKillStreak:    acc.BestKillStreak,
 			})
 		}
 		for _, m := range gd.Machines {

@@ -63,6 +63,21 @@ type GameRosterPlayer struct {
 	LocalIndex      *int   `json:"local_index"`
 	MachineIndex    *int   `json:"machine_index"`
 	ControllerIndex *int   `json:"controller_index"`
+
+	// Accumulated match stats (HaloCaster extract_events port —
+	// internal/scraper/accum.go). The engine's player_datum shots_fired /
+	// shots_hit above read 0 live, so these acc_* fields are the WORKING
+	// tick-delta-accumulated equivalents; best_kill_streak is the match PEAK
+	// (kill_streak above is the current run). Zero outside a live/just-ended
+	// match.
+	AccShotsFired     int32   `json:"acc_shots_fired"`
+	AccGrenadeThrows  int16   `json:"acc_grenade_throws"`
+	AccMelees         int16   `json:"acc_melees"`
+	AccDamageDealt    float32 `json:"acc_damage_dealt"`
+	AccDamageReceived float32 `json:"acc_damage_received"`
+	AccCamoPickups    int16   `json:"acc_camo_pickups"`
+	AccOsPickups      int16   `json:"acc_overshield_pickups"`
+	BestKillStreak    uint16  `json:"best_kill_streak"`
 }
 
 type GameMachine struct {
