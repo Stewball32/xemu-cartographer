@@ -17,7 +17,6 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import {
-		ArrowLeftIcon,
 		ClockIcon,
 		CrownIcon,
 		BriefcaseIcon,
@@ -321,11 +320,6 @@
 </svelte:head>
 
 <div class="mx-auto flex max-w-4xl flex-col gap-4">
-	<a href={resolve('/teams/')} class="inline-flex items-center gap-1 anchor text-sm">
-		<ArrowLeftIcon class="size-4" />
-		Back to teams
-	</a>
-
 	{#if loading}
 		<Card>
 			<div class="flex items-center gap-2 py-6 text-sm opacity-70">

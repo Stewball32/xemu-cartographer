@@ -130,13 +130,11 @@ func (h *Hub) Run() {
 
 // dispatch routes an incoming message to registered handlers or default broadcast.
 func (h *Hub) dispatch(im incomingMsg) {
-	// M10: an overlay-token connection is read-only. Restrict it to the
-	// subscription message types (join/leave its bound room) BEFORE the handler
-	// lookup or the broadcast fallback, so a control/command message can never
-	// ride an overlay token. Room scoping (its bound room only) is enforced in
-	// join_room via Event.OverlayRoom.
-	// A tokenless console-overlay connection is read-only too (same whitelist).
-	if (im.sender.overlayRoom != "" || im.sender.consoleName != "") && !overlayAllowedType(im.msg.Type) {
+	// A tokenless console-overlay connection is read-only. Restrict it to the
+	// subscription message types (join/leave) BEFORE the handler lookup or the
+	// broadcast fallback, so a control/command message can never ride the
+	// console door. Room scoping lives in join_room via Event.ConsoleName.
+	if im.sender.consoleName != "" && !overlayAllowedType(im.msg.Type) {
 		errPayload, _ := json.Marshal(map[string]string{"code": "forbidden", "message": "overlay connections are read-only"})
 		errMsg, _ := json.Marshal(Message{Type: TypeError, Payload: errPayload})
 		h.trySend(im.sender, errMsg)
@@ -151,7 +149,7 @@ func (h *Hub) dispatch(im incomingMsg) {
 	h.broadcast(im.msg)
 }
 
-// overlayAllowedType is the read-only message-type whitelist for overlay-token
+// overlayAllowedType is the read-only message-type whitelist for console-overlay
 // connections — only room subscription, never control or request/probe types.
 func overlayAllowedType(t string) bool {
 	switch t {
@@ -169,7 +167,6 @@ func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 		App:         h.app,
 		UserID:      im.sender.UserID(),
 		User:        im.sender.user,
-		OverlayRoom: im.sender.overlayRoom,
 		ConsoleName: im.sender.consoleName,
 		Type:        im.msg.Type,
 		Room:        im.msg.Room,

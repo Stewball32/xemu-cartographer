@@ -32,59 +32,48 @@ func runJoinRoom(e *Event) joinOutcome {
 	return out
 }
 
-// TestJoinRoom_OverlayTokenPipeline proves a valid overlay token joins its bound
-// host room through the full handler, while a missing/invalid/wrong-scope token
-// — and the admin-only summary feed — is still rejected. Before the fix every
-// row with a non-empty overlay token failed: CheckGuards' RequireAuth rejected
-// the nil user before authorizeHostRoom ran.
-func TestJoinRoom_OverlayTokenPipeline(t *testing.T) {
+// TestJoinRoom_ConsolePipeline proves the tokenless console door's shape
+// through the FULL handler: a console connection (nil user) targeting a host
+// room skips the generic RequireAuth guard (authorizeHostRoom is then the sole
+// authority — with no Services it fails closed), while the summary feeds and a
+// bare anonymous connection are rejected. The happy admit path (console present
+// in the live roster) is covered at the authorizeHostRoom/ContainerHasGamertag
+// unit level (join_room_console_test.go) — it needs a live Membership view.
+func TestJoinRoom_ConsolePipeline(t *testing.T) {
 	tests := []struct {
-		name        string
-		joinRoom    string
-		overlayRoom string // "" models a missing/invalid token (handshake bound none)
-		wantJoined  bool
+		name     string
+		joinRoom string
+		console  string // "" models a plain anonymous connection
 	}{
-		{"valid token joins bound instance", "host:pod-a", "host:pod-a", true},
-		{"valid token joins bound instance class sub-room", "host:pod-a:game", "host:pod-a", true},
-		{"valid token joins another class of bound instance", "host:pod-a:xbox", "host:pod-a", true},
-		{"wrong-scope token rejected", "host:pod-b", "host:pod-a", false},
-		{"overlay token barred from summary feed", "host:summary", "host:pod-a", false},
-		{"overlay token barred from legacy all feed", "host:all", "host:pod-a", false},
-		{"missing/invalid token (nil user) rejected", "host:pod-a", "", false},
+		{"console conn to instance room fails closed without services", "host:pod-a", "BlueBox"},
+		{"console conn barred from summary feed", "host:summary", "BlueBox"},
+		{"console conn barred from legacy all feed", "host:all", "BlueBox"},
+		{"anonymous (no console) rejected by RequireAuth", "host:pod-a", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Services left nil: the admitted-join replay path early-returns on a
-			// nil Scraper, and the rejection paths never reach it.
-			out := runJoinRoom(&Event{Room: tc.joinRoom, OverlayRoom: tc.overlayRoom})
-			if tc.wantJoined {
-				if out.joined != tc.joinRoom {
-					t.Fatalf("join %q (overlay %q): joined=%q errCode=%q errMsg=%q, want joined",
-						tc.joinRoom, tc.overlayRoom, out.joined, out.errCode, out.errMsg)
-				}
-				return
-			}
+			out := runJoinRoom(&Event{Room: tc.joinRoom, ConsoleName: tc.console})
 			if out.joined != "" {
-				t.Fatalf("join %q (overlay %q): joined=%q, want rejection", tc.joinRoom, tc.overlayRoom, out.joined)
+				t.Fatalf("join %q (console %q): joined=%q, want rejection", tc.joinRoom, tc.console, out.joined)
 			}
 			if out.errCode == "" {
-				t.Fatalf("join %q (overlay %q): no error sent, want rejection", tc.joinRoom, tc.overlayRoom)
+				t.Fatalf("join %q (console %q): no error sent, want rejection", tc.joinRoom, tc.console)
 			}
 		})
 	}
 }
 
-// TestJoinRoom_OverlayBypassDoesNotLeakToNonHostRooms confirms the fix is scoped
-// to host:* rooms: an overlay-token connection (nil user) targeting a non-host
-// room still runs the room type's guard list, so it can't ride the overlay
-// bypass into, e.g., the admin room.
-func TestJoinRoom_OverlayBypassDoesNotLeakToNonHostRooms(t *testing.T) {
-	out := runJoinRoom(&Event{Room: "admin:dashboard", OverlayRoom: "host:pod-a"})
+// TestJoinRoom_ConsoleBypassDoesNotLeakToNonHostRooms confirms the guard bypass
+// is scoped to host:* rooms: a console connection (nil user) targeting a
+// non-host room still runs the room type's guard list, so it can't ride the
+// console door into, e.g., the admin room.
+func TestJoinRoom_ConsoleBypassDoesNotLeakToNonHostRooms(t *testing.T) {
+	out := runJoinRoom(&Event{Room: "admin:dashboard", ConsoleName: "BlueBox"})
 	if out.joined != "" {
-		t.Fatalf("overlay token joined %q, want rejection (non-host room runs its guards)", out.joined)
+		t.Fatalf("console conn joined %q, want rejection (non-host room runs its guards)", out.joined)
 	}
 	if out.errCode == "" {
-		t.Fatal("overlay token joining admin:dashboard: no error sent, want rejection")
+		t.Fatal("console conn joining admin:dashboard: no error sent, want rejection")
 	}
 }
 

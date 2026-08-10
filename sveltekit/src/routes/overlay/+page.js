@@ -14,9 +14,7 @@ export function load({ url }) {
 		// resolves it to whichever host currently sees that console.
 		console: p.get('console') ?? '',
 		// The container/instance whose live split to render, + its overlay token.
-		instance: p.get('instance') ?? '',
-		token: p.get('token') ?? '',
-		// ?mock=1 previews with sample data (no token needed).
+		// ?mock=1 previews with sample data.
 		mock: mock === '1' || mock === 'true',
 		// ?transport=poll forces the HTTP-poll console fallback (default is WS push).
 		consolePoll: p.get('transport') === 'poll',

@@ -1,14 +1,12 @@
 import {
 	BookmarkXIcon,
 	BoxIcon,
-	GamepadIcon,
 	IdCardIcon,
 	LibraryIcon,
 	PlayIcon,
 	SettingsIcon,
 	ShieldIcon,
 	SwordsIcon,
-	TrophyIcon,
 	TvIcon,
 	UserIcon,
 	UsersIcon,
@@ -40,9 +38,7 @@ export const mainGroups: NavGroup[] = [
 	{
 		links: [
 			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true },
-			{ label: 'Gamertag', href: '/gamertag/', icon: IdCardIcon },
-			{ label: 'Series', href: '/series/', icon: TrophyIcon },
-			{ label: 'Teams', href: '/teams/', icon: UsersIcon }
+			{ label: 'Gamertag', href: '/gamertag/', icon: IdCardIcon }
 		]
 	},
 	{
@@ -62,7 +58,6 @@ export const mainGroups: NavGroup[] = [
 		adminOnly: true,
 		links: [
 			{ label: 'Pod', href: '/admin/pod/', icon: BoxIcon, showInBar: true },
-			{ label: 'LAN saves', href: '/admin/lan/', icon: GamepadIcon },
 			{ label: 'Players', href: '/admin/players/', icon: UserIcon },
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },

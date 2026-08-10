@@ -1,8 +1,6 @@
-// Per-overlay feed lifecycle. One uniform set of reactive getters over four
+// Per-overlay feed lifecycle. One uniform set of reactive getters over three
 // sources so an overlay page renders the same regardless of where the data
 // comes from:
-//   • WS (token) — the M10 overlay-token path: subscribe to ONE instance's
-//     host:<instance> per-class rooms (game/tick/scenario/...).
 //   • console-ws (?console=NAME) — DEFAULT for console targeting. Resolves the
 //     console name → instance ONCE (/api/overlay/console/{name}), opens a
 //     TOKENLESS WS (?console=NAME — the server admits it to that instance's
@@ -32,12 +30,10 @@ import { mockEvents, mockGame, mockObjects, mockScenario, mockTick } from '$lib/
 import { apiBaseURL } from '$lib/utils/api-base';
 
 export interface OverlayFeedOptions {
-	instance: string;
-	token: string;
 	mock: boolean;
 	/** Per-class rooms to subscribe to on the live (WS) path. */
 	classes: EnvelopeTypeV2[];
-	/** PoC: target purely by console name. Wins over instance/token. */
+	/** Target purely by console name (the only live mode). */
 	console?: string;
 	/** Force the HTTP-poll console fallback instead of WS push (?transport=poll). */
 	consolePoll?: boolean;
@@ -163,9 +159,7 @@ export function createOverlayFeed() {
 			}, MOCK_TICK_MS);
 			return;
 		}
-		if (!o.token) return; // no token → stay disconnected; page shows a hint
-		scraperWSV2.connect(o.token);
-		scraperWSV2.subscribeInstance(o.instance, o.classes);
+		// No console and not mock: nothing to feed (the M10 token mode is gone).
 	}
 
 	function stop(): void {
@@ -176,9 +170,6 @@ export function createOverlayFeed() {
 		if (opts) {
 			if (wsActive) {
 				scraperWSV2.unsubscribeInstance(wsInstance, wsClasses);
-				scraperWSV2.disconnect();
-			} else if (!opts.mock && !opts.console) {
-				scraperWSV2.unsubscribeInstance(opts.instance, opts.classes);
 				scraperWSV2.disconnect();
 			}
 			// console-poll: only the interval to clear (done above).
@@ -207,9 +198,6 @@ export function createOverlayFeed() {
 			if (opts.console) return wsActive ? scraperWSV2.lastError : (pollErr ?? resolveErr);
 			return opts.mock ? null : scraperWSV2.lastError;
 		},
-		get missingToken(): boolean {
-			return opts != null && !opts.mock && !opts.console && !opts.token;
-		},
 		/** Console mode: which machine (system-link console) the name resolves to,
 		 * for per-console filtering. -1 = the instance's own console / not in the
 		 * live lobby. WS path derives it from the live envelope each read (indices
@@ -234,29 +222,29 @@ export function createOverlayFeed() {
 			// poll fallback uses the server-filtered snapshot.
 			if (opts.console)
 				return wsActive ? (scraperWSV2.game[wsInstance] ?? null) : (snap?.game ?? null);
-			return opts.mock ? mockGame(frame) : (scraperWSV2.game[opts.instance] ?? null);
+			return opts.mock ? mockGame(frame) : null;
 		},
 		get tick(): TickPayloadV2 | null {
 			if (!opts) return null;
 			if (opts.console)
 				return wsActive ? (scraperWSV2.tick[wsInstance] ?? null) : (snap?.tick ?? null);
-			return opts.mock ? mockTick(frame) : (scraperWSV2.tick[opts.instance] ?? null);
+			return opts.mock ? mockTick(frame) : null;
 		},
 		get scenario(): ScenarioPayload | null {
 			if (!opts) return null;
 			if (opts.console)
 				return wsActive ? (scraperWSV2.scenario[wsInstance] ?? null) : (snap?.scenario ?? null);
-			return opts.mock ? mockScenario() : (scraperWSV2.scenario[opts.instance] ?? null);
+			return opts.mock ? mockScenario() : null;
 		},
 		get objects(): ObjectsPayload | null {
 			if (!opts) return null;
 			if (opts.console) return wsActive ? (scraperWSV2.objects[wsInstance] ?? null) : null;
-			return opts.mock ? mockObjects() : (scraperWSV2.objects[opts.instance] ?? null);
+			return opts.mock ? mockObjects() : null;
 		},
 		get events(): AnyEvent[] {
 			if (!opts) return [];
 			if (opts.console) return wsActive ? (scraperWSV2.events[wsInstance] ?? []) : [];
-			return opts.mock ? mockEvents(frame) : (scraperWSV2.events[opts.instance] ?? []);
+			return opts.mock ? mockEvents(frame) : [];
 		}
 	};
 }
