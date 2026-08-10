@@ -474,6 +474,12 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 	defer r.persistFinishedGame(svc)
 	defer r.captureLiveAsPrevious()
 
+	// Fresh match → fresh stat accumulator + activity latches. The cache's
+	// previous-match snapshot is cleared here (not on Live→Ready) so the
+	// postgame graphic keeps the finished match's stats until a new one starts.
+	r.accum = scraper.NewMatchAccum()
+	r.publishAccum(nil)
+
 	var lastBroadcastTick uint32
 
 	for {
@@ -537,6 +543,11 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			continue
 		}
 		r.publishTick(tickResult.Payload)
+
+		// Accumulate match stats + activity latches off this tick (HaloCaster
+		// extract_events port) and publish the snapshot for the wire/filter.
+		r.accum.Observe(tickResult)
+		r.publishAccum(r.accum.Snapshot())
 
 		// Refresh cached game data so the next state_update / current_state
 		// carries current scoreboard / roster data. Not broadcast separately

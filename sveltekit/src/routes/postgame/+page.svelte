@@ -1,9 +1,11 @@
 <script>
 	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
-	// Rewired to cartographer's native live feed (overlay token + instance),
-	// mapped to the pack's match/players shape by overlay-state. Postgame reads
-	// the final live roster (previous_game replays it); stats the wire doesn't
-	// carry yet (damage, headshots, melee/grenade, pickups) render as 0/—.
+	// Rewired to cartographer's native live feed, mapped to the pack's
+	// match/players shape by overlay-state. Stats come from the server-side
+	// match accumulator (acc_* wire fields — the HaloCaster extract_events
+	// port): DMG (damage dealt, replacing the dead ACC column), SPREE (peak
+	// streak), MELEE, NADE (throws), CAMO/OS pickups, and the footer's shots
+	// fired. Headshots (HS) remains a genuine gap and renders 0.
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
@@ -42,8 +44,7 @@
 		['d', 30, '#e8ecf5'],
 		['a', 30, '#e8ecf5'],
 		['kd', 42, '#cdd9ea'],
-		['acc', 42, '#cdd9ea'],
-		['dmg', 42, '#cdd9ea'],
+		['dmg', 48, '#cdd9ea'],
 		['spree', 42, '#cdd9ea'],
 		['hs', 30, '#cdd9ea'],
 		['melee', 36, '#cdd9ea'],
@@ -59,7 +60,6 @@
 		d: 'D',
 		a: 'A',
 		kd: 'K/D',
-		acc: 'ACC',
 		dmg: 'DMG',
 		spree: 'SPREE',
 		hs: 'HS',
@@ -77,7 +77,6 @@
 		d: 'lo',
 		a: 'hi',
 		kd: 'hi',
-		acc: 'hi',
 		dmg: 'hi',
 		spree: 'hi',
 		hs: 'hi',
@@ -97,12 +96,11 @@
 		d: p.deaths ?? 0,
 		a: p.assists ?? 0,
 		kdN: (p.kills ?? 0) / Math.max(p.deaths ?? 0, 1),
-		accN: p.shots ? ((p.hits ?? 0) / p.shots) * 100 : (p.accuracy ?? 0),
-		dmgN: p.damageTaken ? (p.damageDealt ?? 0) / p.damageTaken : (p.damageRatio ?? 0),
+		dmgN: p.damageDealt ?? 0,
 		spreeN: p.bestSpree ?? p.spree ?? 0,
 		hs: p.headshots ?? 0,
 		melee: p.meleeKills ?? 0,
-		nade: p.grenadeKills ?? 0,
+		nade: p.grenadeThrows ?? 0,
 		camoP: p.camoPickups ?? 0,
 		os: p.osPickups ?? 0,
 		btrl: p.betrayals ?? 0,
@@ -111,12 +109,11 @@
 	const finishRows = (rows) => {
 		rows.forEach((r) => {
 			r.kd = r.kdN.toFixed(2);
-			r.acc = r.accN.toFixed(1);
-			r.dmg = r.dmgN.toFixed(2);
+			r.dmg = Math.round(r.dmgN);
 			r.spree = '×' + r.spreeN;
 			r.colors = {};
 		});
-		const numKey = { kd: 'kdN', acc: 'accN', dmg: 'dmgN', spree: 'spreeN' };
+		const numKey = { kd: 'kdN', dmg: 'dmgN', spree: 'spreeN' };
 		for (const [key] of cols) {
 			if (key === 'btrl' || key === 'suic') {
 				rows.forEach((r) => {
@@ -152,8 +149,7 @@
 			d: s('d'),
 			a: s('a'),
 			kd: (s('k') / Math.max(s('d'), 1)).toFixed(2),
-			acc: (rows.reduce((t, r) => t + r.accN, 0) / Math.max(rows.length, 1)).toFixed(1),
-			dmg: (rows.reduce((t, r) => t + r.dmgN, 0) / Math.max(rows.length, 1)).toFixed(2),
+			dmg: Math.round(rows.reduce((t, r) => t + r.dmgN, 0)),
 			spree: '×' + Math.max(0, ...rows.map((r) => r.spreeN)),
 			hs: s('hs'),
 			melee: s('melee'),
@@ -166,9 +162,9 @@
 	};
 	const totals = $derived({
 		kills: players.reduce((t, p) => t + (p.kills ?? 0), 0),
-		shots: players.reduce((t, p) => t + (p.shots ?? 0), 0).toLocaleString('en-US'),
-		nades: players.reduce((t, p) => t + (p.grenadesThrown ?? 0), 0),
-		dmg: players.reduce((t, p) => t + (p.damageDealt ?? 0), 0).toLocaleString('en-US')
+		shots: players.reduce((t, p) => t + (p.shotsFired ?? 0), 0).toLocaleString('en-US'),
+		nades: players.reduce((t, p) => t + (p.grenadeThrows ?? 0), 0),
+		dmg: Math.round(players.reduce((t, p) => t + (p.damageDealt ?? 0), 0)).toLocaleString('en-US')
 	});
 </script>
 

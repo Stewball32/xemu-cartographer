@@ -148,15 +148,21 @@ func resolveConsole(mgr scraperiface.Inspect, console string) (instance string, 
 // v2Roster reshapes the reader GamePlayer roster into the v2 GameRosterPlayer
 // JSON the overlay client already parses (field names match; this is a pass-
 // through of the overlay-relevant subset).
-func v2Roster(players []sc.GamePlayer) []map[string]any {
+func v2Roster(players []sc.GamePlayer, accum map[int]sc.PlayerAccum) []map[string]any {
 	out := make([]map[string]any, 0, len(players))
 	for _, p := range players {
+		acc := accum[p.Index]
 		out = append(out, map[string]any{
 			"index": p.Index, "name": p.Name, "team": p.Team, "armor_color": p.ArmorColor,
 			"score": p.Score, "kills": p.Kills, "deaths": p.Deaths, "assists": p.Assists,
 			"team_kills": p.TeamKills, "suicides": p.Suicides,
 			"kill_streak": p.KillStreak, "shots_fired": p.ShotsFired, "shots_hit": p.ShotsHit,
 			"is_local": p.IsLocal, "local_index": p.LocalIndex, "machine_index": p.MachineIndex,
+			// Accumulated match stats (same names as the WS game class).
+			"acc_shots_fired": acc.ShotsFired, "acc_grenade_throws": acc.GrenadeThrows,
+			"acc_melees": acc.Melees, "acc_damage_dealt": acc.DamageDealt,
+			"acc_damage_received": acc.DamageReceived, "acc_camo_pickups": acc.CamoPickups,
+			"acc_overshield_pickups": acc.OvershieldPickups, "best_kill_streak": acc.BestKillStreak,
 		})
 	}
 	return out
@@ -178,6 +184,22 @@ func v2Tick(t *sc.TickPayload) []map[string]any {
 	return out
 }
 
+// activeFromAccum projects an accumulator snapshot into the filter's
+// index→latched-Active map (mirror of the manager's activeLocals — kept local
+// to avoid exporting a one-liner across the scraperiface boundary).
+func activeFromAccum(snap map[int]sc.PlayerAccum) map[int]bool {
+	if len(snap) == 0 {
+		return nil
+	}
+	out := make(map[int]bool, len(snap))
+	for idx, st := range snap {
+		if st.Active {
+			out[idx] = true
+		}
+	}
+	return out
+}
+
 func registerOverlayConsole(se *core.ServeEvent) {
 	se.Router.GET("/api/overlay/console/{name}", func(e *core.RequestEvent) error {
 		mgr := scraperroutes.Manager
@@ -193,11 +215,14 @@ func registerOverlayConsole(se *core.ServeEvent) {
 			return e.JSON(http.StatusNotFound, map[string]any{"error": "console not found in any live lobby", "console": name})
 		}
 		gd := st.GameData
-		// Snapshot roster is filtered server-side (shared roster.LoadConfig — the
-		// same config the scraper's game_filtered broadcast uses). This snapshot
-		// only serves the HTTP-poll fallback; the WS-push path gets the already-
-		// filtered game_filtered class, so no filter config is sent to the client.
+		// Snapshot roster is filtered server-side with the SAME unified rule as
+		// the scraper's game_filtered broadcast: local seats hidden until the
+		// accumulator latches them Active; is_neutral_host = hard override;
+		// dummy_gamertags allowlist. This snapshot only serves the HTTP-poll
+		// fallback; the WS-push path gets the game_filtered class.
 		cfg := roster.LoadConfig(e.App, instance)
+		cfg.HideInactiveLocals = true
+		cfg.ActiveLocals = activeFromAccum(st.PlayerAccum)
 		// engine_tick (0x0C, free-running) kept alongside game_elapsed_ticks
 		// (0x10, match-elapsed) so the scorebug can render the count-up clock and
 		// both remain comparable on a live match.
@@ -209,7 +234,7 @@ func registerOverlayConsole(se *core.ServeEvent) {
 				"gametype": gd.Gametype, "is_team_game": gd.IsTeamGame, "score_limit": gd.ScoreLimit,
 			}
 			game["team_scores"] = gd.TeamScores
-			game["players"] = v2Roster(roster.FilterRoster(gd.Players, cfg))
+			game["players"] = v2Roster(roster.FilterRoster(gd.Players, cfg), st.PlayerAccum)
 			game["machines"] = gd.Machines
 			scenario["map"] = gd.Map
 		}

@@ -99,6 +99,14 @@ type instanceCache struct {
 	LatestTick *scraper.TickPayload
 	Events     []scraper.Envelope // newest-first; bounded by recentEventsCap
 
+	// PlayerAccum is the per-player accumulated match stats + activity latch
+	// (HaloCaster extract_events port — see internal/scraper/accum.go).
+	// Replaced WHOLESALE each tick with a fresh Snapshot() map (never mutated
+	// in place), so the shallow instanceCache copy readCache() hands out is
+	// race-free. Persists through Live→Ready so the postgame graphic keeps
+	// the finished match's stats; reset at the next match start (runLive).
+	PlayerAccum map[int]scraper.PlayerAccum
+
 	// Just-ended match. Populated on Live→Ready transition (deferred so a
 	// panic / ctx-cancel mid-match still moves the data); dropped on
 	// Ready→Idle.
@@ -178,6 +186,12 @@ type runner struct {
 	// Mirrored into cache.GameData so the loop avoids round-tripping
 	// through cacheMu on every tick read of e.g. PowerItemSpawns.
 	gameData scraper.GameData
+
+	// accum is the per-match stat accumulator + activity latch (HaloCaster
+	// extract_events port, internal/scraper/accum.go). Fresh at each runLive
+	// entry (match start); Observe'd once per fresh engine tick; snapshots
+	// published into cache.PlayerAccum. Loop-goroutine only.
+	accum *scraper.MatchAccum
 
 	// powerItemsInitialised gates state.InitPowerItems so it only fires
 	// once per match — and only after the game data's PowerItemSpawns
@@ -461,6 +475,14 @@ func (r *runner) publishTick(tp scraper.TickPayload) {
 	cp := tp
 	r.cacheMu.Lock()
 	r.cache.LatestTick = &cp
+	r.cacheMu.Unlock()
+}
+
+// publishAccum swaps in a fresh accumulated-stats snapshot (see
+// instanceCache.PlayerAccum for the wholesale-replacement contract).
+func (r *runner) publishAccum(snap map[int]scraper.PlayerAccum) {
+	r.cacheMu.Lock()
+	r.cache.PlayerAccum = snap
 	r.cacheMu.Unlock()
 }
 

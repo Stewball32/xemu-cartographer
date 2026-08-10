@@ -78,6 +78,38 @@ describe('overlayPlayers machine filter (per-console POV)', () => {
 		expect(og.suicides).toBe(4);
 	});
 
+	it('maps the accumulated match stats (acc_* wire fields)', () => {
+		const g = fixture().game;
+		Object.assign(g.players[1], {
+			acc_shots_fired: 120,
+			acc_grenade_throws: 6,
+			acc_melees: 3,
+			acc_damage_dealt: 1450.5,
+			acc_damage_received: 900,
+			acc_camo_pickups: 2,
+			acc_overshield_pickups: 1,
+			best_kill_streak: 7,
+			kill_streak: 2
+		});
+		const [og] = overlayPlayers(g, tick, 1);
+		expect(og.shotsFired).toBe(120);
+		expect(og.grenadeThrows).toBe(6);
+		expect(og.meleeKills).toBe(3);
+		expect(og.damageDealt).toBe(1450.5);
+		expect(og.damageTaken).toBe(900);
+		expect(og.camoPickups).toBe(2);
+		expect(og.osPickups).toBe(1);
+		expect(og.bestSpree).toBe(7); // peak, distinct from...
+		expect(og.spree).toBe(2); // ...the current streak
+	});
+
+	it('defaults acc stats to 0 when absent (older server)', () => {
+		const [og] = overlayPlayers(fixture().game, tick, 1);
+		expect(og.shotsFired).toBe(0);
+		expect(og.bestSpree).toBe(0);
+		expect(og.damageDealt).toBe(0);
+	});
+
 	it('BlueBox and RedBox never resolve to the same player', () => {
 		const blue = overlayPlayers(game, tick, 2).map((p) => p.name);
 		const red = overlayPlayers(game, tick, 1).map((p) => p.name);

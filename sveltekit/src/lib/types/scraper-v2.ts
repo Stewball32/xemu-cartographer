@@ -306,6 +306,18 @@ export interface GameRosterPlayer {
 	local_index: number | null;
 	machine_index: number | null;
 	controller_index: number | null;
+	/** Accumulated match stats (HaloCaster extract_events port, server-side).
+	 * The engine's shots_fired/shots_hit above read 0 live — acc_* are the
+	 * working tick-delta equivalents; best_kill_streak is the match PEAK.
+	 * Optional: absent from pre-accumulator servers; consumers default to 0. */
+	acc_shots_fired?: number;
+	acc_grenade_throws?: number;
+	acc_melees?: number;
+	acc_damage_dealt?: number;
+	acc_damage_received?: number;
+	acc_camo_pickups?: number;
+	acc_overshield_pickups?: number;
+	best_kill_streak?: number;
 }
 
 export interface GameMachine {

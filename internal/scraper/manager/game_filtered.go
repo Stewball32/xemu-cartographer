@@ -5,6 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 )
 
@@ -34,19 +35,41 @@ func (r *runner) dummyConfig(app core.App) roster.Config {
 }
 
 // buildGameFilteredPayload is buildGamePayload with the dummy roster removed —
-// identical GamePayload wire shape as the `game` class, minus the neutral-host
-// dummy + globally allowlisted dummy gamertags (roster.FilterRoster). It powers
-// the game_filtered class so dummy filtering stays SERVER-SIDE for the viewer
-// overlays, while the raw `game` class (debug) stays unfiltered. Filtering the
-// cache's GameData.Players before buildGamePayload keeps the mapping in one
-// place (no separate wire-shape filter to drift).
+// identical GamePayload wire shape as the `game` class, minus dummies
+// (roster.FilterRoster). It powers the game_filtered class so dummy filtering
+// stays SERVER-SIDE for the viewer overlays, while the raw `game` class
+// (debug) stays unfiltered. Filtering the cache's GameData.Players before
+// buildGamePayload keeps the mapping in one place.
+//
+// The unified dummy rule: local seats are hidden BY DEFAULT until the match
+// accumulator latches them Active (real input/movement — see scraper.MatchAccum);
+// is_neutral_host stays as the hard "always hide this host's locals" override;
+// the dummy_gamertags allowlist applies to everyone.
 func buildGameFilteredPayload(c *instanceCache, cfg roster.Config) GamePayload {
 	if c == nil || c.GameData == nil {
 		return buildGamePayload(c)
 	}
+	cfg.HideInactiveLocals = true
+	cfg.ActiveLocals = activeLocals(c.PlayerAccum)
 	gdCopy := *c.GameData
 	gdCopy.Players = roster.FilterRoster(c.GameData.Players, cfg)
 	cCopy := *c
 	cCopy.GameData = &gdCopy
 	return buildGamePayload(&cCopy)
+}
+
+// activeLocals projects an accumulator snapshot into the filter's
+// index→latched-Active view. Nil snapshot → nil map (nobody active yet, so
+// every local seat stays hidden — the pre-match default).
+func activeLocals(snap map[int]scraper.PlayerAccum) map[int]bool {
+	if len(snap) == 0 {
+		return nil
+	}
+	out := make(map[int]bool, len(snap))
+	for idx, st := range snap {
+		if st.Active {
+			out[idx] = true
+		}
+	}
+	return out
 }
