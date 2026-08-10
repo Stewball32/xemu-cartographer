@@ -12,6 +12,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
@@ -223,6 +224,15 @@ type runner struct {
 
 	cacheMu sync.Mutex
 	cache   instanceCache
+
+	// dummy-filter config cache for the game_filtered class. Loaded from the DB
+	// (roster.LoadConfig) and refreshed after dummyCfgTTL so a live
+	// is_neutral_host / dummy_gamertags change applies without a restart. Read
+	// from the loop goroutine (broadcastPoll) AND request goroutines (join
+	// replay via classEnvelopeMessages), so it's mutex-guarded. See game_filtered.go.
+	dummyMu    sync.RWMutex
+	dummyCfg   roster.Config
+	dummyCfgAt time.Time
 
 	// seqMu guards seqByClass. Each envelope class has its own
 	// monotonically-increasing per-(instance, class) sequence number so
@@ -569,9 +579,9 @@ func (r *runner) emitClass(svc *guards.Services, class string, tick uint32, payl
 // broadcast and by per-class join replay.
 //
 // Returns (class-name, bytes) pairs so callers can route or filter.
-func (r *runner) classEnvelopeMessages() []classMessage {
+func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 	c := r.readCache()
-	out := make([]classMessage, 0, 7)
+	out := make([]classMessage, 0, 8)
 	add := func(class string, payload any) {
 		if payload == nil {
 			return
@@ -587,6 +597,7 @@ func (r *runner) classEnvelopeMessages() []classMessage {
 		add("scenario", *sp)
 	}
 	add("game", buildGamePayload(&c))
+	add("game_filtered", buildGameFilteredPayload(&c, cfg))
 	if pg := buildPreviousGamePayload(&c); pg != nil {
 		add("previous_game", *pg)
 	}
@@ -628,7 +639,7 @@ func (r *runner) broadcastSnapshot(svc *guards.Services) {
 	}
 	c := r.readCache()
 	r.lastScenarioFingerprint = computeScenarioFingerprint(c.GameData)
-	for _, m := range r.classEnvelopeMessages() {
+	for _, m := range r.classEnvelopeMessages(r.dummyConfig(svc.App)) {
 		room, err := rooms.RoomForInstanceClass(r.name, m.Class)
 		if err != nil {
 			continue
@@ -654,6 +665,13 @@ func (r *runner) broadcastPoll(svc *guards.Services) {
 	pol := r.getPolicies()
 	if shouldRead(r.name, "game", pol, svc.WS) {
 		r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	}
+	// Viewer-facing filtered variant: only built + sent when an overlay is
+	// actually subscribed to host:<inst>:game_filtered (shouldRead gates on room
+	// membership), so this is zero-cost when nobody's watching. Dummy filtering
+	// stays server-side here.
+	if shouldRead(r.name, "game_filtered", pol, svc.WS) {
+		r.emitClass(svc, "game_filtered", c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig(svc.App)))
 	}
 	if c.LatestTick == nil {
 		return

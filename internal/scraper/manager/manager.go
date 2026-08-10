@@ -28,6 +28,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/pocketbase/pocketbase/core"
+
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
@@ -467,6 +469,15 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 // instanceCache snapshot, not just GameData — so a late-joining client
 // gets phase, identity, freshness, current game data, recent events, and
 // previous_game in a single message.
+// cfgApp returns the core.App for dummy-filter config loads, nil-safe for test
+// Managers built without a Services (dummyConfig treats nil as no-filter).
+func (m *Manager) cfgApp() core.App {
+	if m.svc == nil {
+		return nil
+	}
+	return m.svc.App
+}
+
 func (m *Manager) JoinReplayMessages() [][]byte {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
@@ -477,8 +488,8 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners)*4)
 	for _, r := range runners {
-		for _, m := range r.classEnvelopeMessages() {
-			out = append(out, m.Bytes)
+		for _, cm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
+			out = append(out, cm.Bytes)
 		}
 	}
 	return out
@@ -496,7 +507,7 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	msgs := r.classEnvelopeMessages()
+	msgs := r.classEnvelopeMessages(r.dummyConfig(m.cfgApp()))
 	out := make([][]byte, 0, len(msgs))
 	for _, mm := range msgs {
 		out = append(out, mm.Bytes)
@@ -516,7 +527,7 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 	if !ok {
 		return nil
 	}
-	for _, mm := range r.classEnvelopeMessages() {
+	for _, mm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
 		if mm.Class == class {
 			return [][]byte{mm.Bytes}
 		}

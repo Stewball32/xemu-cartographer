@@ -3,23 +3,21 @@
 // comes from:
 //   • WS (token) — the M10 overlay-token path: subscribe to ONE instance's
 //     host:<instance> per-class rooms (game/tick/scenario/...).
-//   • console-ws (?console=NAME) — DEFAULT for console targeting: resolve the
-//     console name ONCE (/api/overlay/console/{name}) to {instance, token,
-//     filter}, then ride the SAME host:<instance> WS rooms via scraperWSV2 —
-//     live PUSH, not polling. machine_index is derived client-side from each
-//     game envelope's machines[] (indices shift live). A low-frequency check
-//     follows console migration: if the name drops out of the current
-//     instance's machines[] (or the socket drops), re-resolve and re-subscribe
-//     to the new host. The neutral-host dummy is re-filtered client-side (the
-//     WS broadcast is unfiltered; see overlay-filter).
+//   • console-ws (?console=NAME) — DEFAULT for console targeting. Resolves the
+//     console name → instance ONCE (/api/overlay/console/{name}), opens a
+//     TOKENLESS WS (?console=NAME — the server admits it to that instance's
+//     rooms via Membership()), and subscribes to the SERVER-FILTERED
+//     host:<instance>:game_filtered class (+ tick/scenario) — live PUSH, dummy
+//     filtering stays server-side. machine_index is derived client-side from
+//     each envelope's machines[] (indices shift live). Migration is followed on
+//     the SAME socket: if the console drops out of the current instance's
+//     machines[], re-resolve and re-subscribe to the new instance.
 //   • console-poll (fallback) — the original PoC: poll /api/overlay/console/{name}
-//     @700ms. Used when the resolver returns no token (older backend / mint
-//     failure) or when ?transport=poll forces it. Kept intact on purpose.
+//     @700ms (server-filtered snapshot). Forced via ?transport=poll. Kept intact.
 //   • mock (?mock=1) — animated sample data, no token.
 //
 // The WS path deliberately avoids subscribeSummary / requestEvents / requestProbe
-// (the Hub rejects those for an overlay connection). SECURITY DEFERRED — the
-// console resolver is unauthenticated and mints the scoped token for now.
+// (the Hub rejects those for an overlay connection).
 
 import type {
 	AnyEvent,
@@ -31,7 +29,6 @@ import type {
 } from '$lib/types/scraper-v2';
 import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 import { mockEvents, mockGame, mockObjects, mockScenario, mockTick } from '$lib/utils/overlay-mock';
-import { filterRoster, type DummyFilterConfig } from '$lib/utils/overlay-filter';
 import { apiBaseURL } from '$lib/utils/api-base';
 
 export interface OverlayFeedOptions {
@@ -47,27 +44,31 @@ export interface OverlayFeedOptions {
 }
 
 const MOCK_TICK_MS = 200;
-/** Console poll cadence (fallback path) — a PoC read loop; snappy for scores. */
+/** Console poll cadence (fallback path). */
 const CONSOLE_POLL_MS = 700;
-/** console-ws migration check cadence: cheap local machines[] scan; only
- *  re-hits the resolver when the console isn't present or the socket dropped. */
+/** console-ws migration/attach check cadence: cheap local machines[] scan; only
+ *  re-hits the resolver when the console isn't present or isn't attached yet. */
 const CONSOLE_RESOLVE_MS = 4000;
 
-/** The console resolver's reply (a v2-shaped snapshot + WS handoff fields). */
+/** The console resolver's reply — used only to map console→instance (WS path)
+ * and as the snapshot for the poll fallback. No token / no filter: the WS door
+ * is tokenless and filtering is server-side (game_filtered). */
 interface ConsoleSnapshot {
 	instance: string;
 	machine_index: number;
 	machine_name: string;
-	/** WS handoff: read-only token scoped to host:<instance> ("" → poll). */
-	token?: string;
-	/** Dummy-filter config to re-apply on the (unfiltered) WS broadcast. */
-	filter?: DummyFilterConfig;
 	game: GamePayload | null;
 	tick: TickPayloadV2 | null;
 	scenario: ScenarioPayload | null;
 }
 
 const sanitize = (s: string) => s.trim().toLowerCase();
+
+/** Swap the raw `game` class for the dummy-filtered `game_filtered` class on the
+ * console-ws path; other classes pass through. */
+function toFilteredClasses(classes: EnvelopeTypeV2[]): EnvelopeTypeV2[] {
+	return classes.map((c) => (c === 'game' ? 'game_filtered' : c));
+}
 
 export function createOverlayFeed() {
 	let opts = $state<OverlayFeedOptions | null>(null);
@@ -80,9 +81,9 @@ export function createOverlayFeed() {
 	let pollErr = $state<string | null>(null);
 
 	// console-ws state
-	let wsActive = $state(false); // true once resolved + subscribed over WS
+	let wsActive = $state(false); // true once subscribed over WS
 	let wsInstance = $state<string>(''); // instance currently subscribed to
-	let filterCfg = $state<DummyFilterConfig | null>(null);
+	let wsClasses: EnvelopeTypeV2[] = [];
 	let resolveErr = $state<string | null>(null);
 
 	/** Fetch the resolver once. Returns null on network/HTTP failure. */
@@ -120,58 +121,40 @@ export function createOverlayFeed() {
 		timer = setInterval(() => void pollConsole(name), CONSOLE_POLL_MS);
 	}
 
-	// ---- console-ws (default) ---------------------------------------------
-	/** Connect scraperWSV2 to the resolved instance's rooms and record state. */
-	function subscribeResolved(s: ConsoleSnapshot, classes: EnvelopeTypeV2[]): void {
-		wsInstance = s.instance;
-		filterCfg = s.filter ?? null;
-		wsActive = true;
-		scraperWSV2.connect(s.token as string);
-		scraperWSV2.subscribeInstance(s.instance, classes);
-	}
-
-	async function startConsoleWS(name: string, classes: EnvelopeTypeV2[]): Promise<void> {
-		const s = await resolve(name);
-		if (!s || !s.token) {
-			// No token (older backend / mint failure) → fall back to polling.
-			startConsolePoll(name);
-			return;
-		}
-		subscribeResolved(s, classes);
-		// Migration watcher: only re-resolves when the console is no longer in the
-		// live roster or the socket is down — so mint happens at start + genuine
-		// migration, not every tick.
-		timer = setInterval(() => void checkMigration(name, classes), CONSOLE_RESOLVE_MS);
-	}
-
+	// ---- console-ws (default): tokenless socket + server-filtered class ----
 	/** True while the subscribed instance's live game still shows this console. */
 	function consolePresent(name: string): boolean {
-		const g = scraperWSV2.game[wsInstance];
-		const machines = g?.machines;
+		const machines = scraperWSV2.game[wsInstance]?.machines;
 		if (!machines || machines.length === 0) return true; // no lobby data yet — don't thrash
 		return machines.some((m) => sanitize(m.name) === sanitize(name));
 	}
 
-	async function checkMigration(name: string, classes: EnvelopeTypeV2[]): Promise<void> {
-		if (scraperWSV2.connected && consolePresent(name)) return; // still here — nothing to do
+	/** Resolve console→instance and (re)subscribe. Only re-resolves when not yet
+	 * attached or the console left the current instance (migration). */
+	async function ensureConsoleWS(name: string): Promise<void> {
+		if (wsInstance && consolePresent(name)) return;
 		const s = await resolve(name);
-		if (!s || !s.token) return; // transient; keep the current subscription
+		if (!s || !s.instance) return; // not live yet / transient — retry next tick
 		if (s.instance !== wsInstance) {
-			// Console migrated to a different host — move our subscription.
-			scraperWSV2.unsubscribeInstance(wsInstance, classes);
-			scraperWSV2.disconnect();
-			subscribeResolved(s, classes);
-		} else {
-			// Same host (e.g. reconnect after a drop); refresh filter config.
-			filterCfg = s.filter ?? null;
+			if (wsInstance) scraperWSV2.unsubscribeInstance(wsInstance, wsClasses);
+			wsInstance = s.instance;
+			scraperWSV2.subscribeInstance(wsInstance, wsClasses); // same socket
 		}
+		wsActive = true;
+	}
+
+	function startConsoleWS(name: string, classes: EnvelopeTypeV2[]): void {
+		wsClasses = toFilteredClasses(classes);
+		scraperWSV2.connectConsole(name); // tokenless
+		void ensureConsoleWS(name);
+		timer = setInterval(() => void ensureConsoleWS(name), CONSOLE_RESOLVE_MS);
 	}
 
 	function start(o: OverlayFeedOptions): void {
 		opts = o;
 		if (o.console) {
 			if (o.consolePoll) startConsolePoll(o.console);
-			else void startConsoleWS(o.console, o.classes);
+			else startConsoleWS(o.console, o.classes);
 			return;
 		}
 		if (o.mock) {
@@ -192,7 +175,7 @@ export function createOverlayFeed() {
 		}
 		if (opts) {
 			if (wsActive) {
-				scraperWSV2.unsubscribeInstance(wsInstance, opts.classes);
+				scraperWSV2.unsubscribeInstance(wsInstance, wsClasses);
 				scraperWSV2.disconnect();
 			} else if (!opts.mock && !opts.console) {
 				scraperWSV2.unsubscribeInstance(opts.instance, opts.classes);
@@ -202,16 +185,11 @@ export function createOverlayFeed() {
 		}
 		wsActive = false;
 		wsInstance = '';
+		wsClasses = [];
 		opts = null;
 	}
 
 	const isConsole = () => !!opts?.console;
-	/** console-ws game with the neutral-host dummy re-filtered (WS is raw). */
-	function wsGame(): GamePayload | null {
-		const g = scraperWSV2.game[wsInstance] ?? null;
-		if (!g) return null;
-		return { ...g, players: filterRoster(g.players, filterCfg) };
-	}
 
 	return {
 		start,
@@ -226,7 +204,7 @@ export function createOverlayFeed() {
 		},
 		get lastError(): string | null {
 			if (!opts) return null;
-			if (opts.console) return wsActive ? scraperWSV2.lastError : pollErr;
+			if (opts.console) return wsActive ? scraperWSV2.lastError : (pollErr ?? resolveErr);
 			return opts.mock ? null : scraperWSV2.lastError;
 		},
 		get missingToken(): boolean {
@@ -234,8 +212,8 @@ export function createOverlayFeed() {
 		},
 		/** Console mode: which machine (system-link console) the name resolves to,
 		 * for per-console filtering. -1 = the instance's own console / not in the
-		 * live lobby. On the WS path it is derived from the live envelope each read
-		 * (indices shift); on the poll path it is the resolver's snapshot value. */
+		 * live lobby. WS path derives it from the live envelope each read (indices
+		 * shift); poll path uses the resolver's snapshot value. */
 		get machineIndex(): number | null {
 			if (!isConsole()) return null;
 			if (wsActive) {
@@ -252,7 +230,10 @@ export function createOverlayFeed() {
 		},
 		get game(): GamePayload | null {
 			if (!opts) return null;
-			if (opts.console) return wsActive ? wsGame() : (snap?.game ?? null);
+			// console-ws reads the SERVER-FILTERED game slot (fed by game_filtered);
+			// poll fallback uses the server-filtered snapshot.
+			if (opts.console)
+				return wsActive ? (scraperWSV2.game[wsInstance] ?? null) : (snap?.game ?? null);
 			return opts.mock ? mockGame(frame) : (scraperWSV2.game[opts.instance] ?? null);
 		},
 		get tick(): TickPayloadV2 | null {

@@ -135,8 +135,9 @@ func (h *Hub) dispatch(im incomingMsg) {
 	// lookup or the broadcast fallback, so a control/command message can never
 	// ride an overlay token. Room scoping (its bound room only) is enforced in
 	// join_room via Event.OverlayRoom.
-	if im.sender.overlayRoom != "" && !overlayAllowedType(im.msg.Type) {
-		errPayload, _ := json.Marshal(map[string]string{"code": "forbidden", "message": "overlay tokens are read-only"})
+	// A tokenless console-overlay connection is read-only too (same whitelist).
+	if (im.sender.overlayRoom != "" || im.sender.consoleName != "") && !overlayAllowedType(im.msg.Type) {
+		errPayload, _ := json.Marshal(map[string]string{"code": "forbidden", "message": "overlay connections are read-only"})
 		errMsg, _ := json.Marshal(Message{Type: TypeError, Payload: errPayload})
 		h.trySend(im.sender, errMsg)
 		return
@@ -169,6 +170,7 @@ func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 		UserID:      im.sender.UserID(),
 		User:        im.sender.user,
 		OverlayRoom: im.sender.overlayRoom,
+		ConsoleName: im.sender.consoleName,
 		Type:        im.msg.Type,
 		Room:        im.msg.Room,
 		Target:      im.msg.Target,

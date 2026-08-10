@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
@@ -37,8 +38,14 @@ func handleJoinRoom(e *Event) {
 	// non-host room — still runs CheckGuards unchanged, so auth isn't weakened
 	// elsewhere (a missing/invalid token leaves OverlayRoom == "" and falls
 	// through to RequireAuth, which rejects the nil user).
+	// A tokenless console-overlay connection (?console=) carries no user JWT, so
+	// like the overlay-token case it would fail the host room's RequireAuth guard
+	// before authorizeHostRoom's console branch runs. Skip the generic guard list
+	// for it too — authorizeHostRoom is the sole authority (validates the console
+	// is in that instance's live roster). Non-host rooms still run CheckGuards.
 	overlayHostJoin := e.OverlayRoom != "" && isHostRoom(e.Room)
-	if !overlayHostJoin {
+	consoleHostJoin := e.ConsoleName != "" && isHostRoom(e.Room)
+	if !overlayHostJoin && !consoleHostJoin {
 		if err := rt.CheckGuards(e.Services, e.User); err != nil {
 			e.SendError("forbidden", err.Error())
 			return
@@ -115,6 +122,28 @@ func authorizeHostRoom(e *Event) error {
 	}
 
 	svc := e.Services
+
+	// Tokenless console-overlay connection (?console=NAME): admit to the
+	// host:<instance> room whose LIVE roster currently includes that console
+	// (resolved via Membership() — the same identity view the M09 roster gate
+	// uses). Read-only (enforced in the Hub). Never the summary feed. This is
+	// the deliberately loosened, view-only overlay door. Migration is automatic:
+	// the same socket re-joins the new instance's room and this re-checks.
+	if e.ConsoleName != "" {
+		if isSummary {
+			return errors.New("console overlays cannot join the summary feed")
+		}
+		instance := hostRoomInstance(e.Room)
+		if svc == nil || svc.Scraper == nil || instance == "" {
+			return errors.New("console not in any live match")
+		}
+		want := scraperiface.SanitizeIdentity(e.ConsoleName)
+		if scraperiface.ContainerHasGamertag(svc.Scraper.Membership(), instance, []string{want}) {
+			return nil
+		}
+		return errors.New("console not in this match")
+	}
+
 	// Admins (superuser or admin role) always get in — any host room,
 	// regardless of roster membership.
 	if svc != nil && svc.App != nil && roles.IsAdminAuth(svc.App, e.User) {
