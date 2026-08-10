@@ -24,6 +24,7 @@ import {
 	isEventEnv,
 	isEventsReplyEnv,
 	isGameEnv,
+	isGameFilteredEnv,
 	isHelloEnv,
 	isObjectsEnv,
 	isPreviousGameEnv,
@@ -51,12 +52,21 @@ function buildURL(token: string): string {
 	return `${wsBaseURL()}/api/ws?token=${encodeURIComponent(token)}`;
 }
 
+/** Tokenless console-overlay connection: the server admits it to whichever
+ * host:<instance> currently rosters this console (join_room via Membership()). */
+function buildConsoleURL(console: string): string {
+	return `${wsBaseURL()}/api/ws?console=${encodeURIComponent(console)}`;
+}
+
 function createScraperWSV2() {
 	let ws: WebSocket | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let attempt = 0;
 	let manuallyClosed = false;
 	let currentToken = '';
+	// Set for a tokenless console-overlay connection; wins over currentToken when
+	// building the socket URL (incl. on reconnect). Cleared on disconnect.
+	let currentConsole = '';
 
 	let connected = $state(false);
 	let lastError = $state<string | null>(null);
@@ -327,7 +337,10 @@ function createScraperWSV2() {
 		} else if (isScenarioEnv(env)) {
 			[scenario, scenarioAt] = setSlot(scenario, scenarioAt, env.instance, env.data, now);
 			scenarioEnvelope = { ...scenarioEnvelope, [env.instance]: env };
-		} else if (isGameEnv(env)) {
+		} else if (isGameEnv(env) || isGameFilteredEnv(env)) {
+			// game_filtered is the dummy-filtered game class (viewer overlays);
+			// stored in the same game slot — a page subscribes to one or the other,
+			// never both, so there's no clobber.
 			[game, gameAt] = setSlot(game, gameAt, env.instance, env.data, now);
 			gameEnvelope = { ...gameEnvelope, [env.instance]: env };
 		} else if (isTickEnv(env)) {
@@ -382,7 +395,7 @@ function createScraperWSV2() {
 		currentToken = token;
 		manuallyClosed = false;
 		try {
-			ws = new WebSocket(buildURL(token));
+			ws = new WebSocket(currentConsole ? buildConsoleURL(currentConsole) : buildURL(token));
 		} catch (err) {
 			lastError = err instanceof Error ? err.message : String(err);
 			scheduleReconnect();
@@ -428,12 +441,23 @@ function createScraperWSV2() {
 
 	function connect(token: string) {
 		if (ws) return;
+		currentConsole = '';
 		open(token);
+	}
+
+	/** Open a TOKENLESS console-overlay socket (?console=NAME). The server admits
+	 * it to whichever host:<instance> currently rosters that console; migration is
+	 * handled by re-subscribing to the new instance on the same socket. */
+	function connectConsole(console: string) {
+		if (ws) return;
+		currentConsole = console;
+		open('');
 	}
 
 	function disconnect() {
 		manuallyClosed = true;
 		clearReconnect();
+		currentConsole = '';
 		if (ws) {
 			ws.close();
 			ws = null;
@@ -551,6 +575,7 @@ function createScraperWSV2() {
 		},
 
 		connect,
+		connectConsole,
 		disconnect,
 		subscribe,
 		subscribeSummary,

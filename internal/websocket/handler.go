@@ -51,6 +51,15 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 				log.Printf("ws: token is neither a valid user JWT nor a live overlay token")
 			}
 		}
+		// Tokenless console-overlay door (PoC): ?console=<name> binds this
+		// connection to whichever host:<instance> currently rosters that console
+		// (resolved in join_room via Membership()). Read-only, like an overlay
+		// token. Only honored when there's no user JWT / overlay token — a
+		// credentialed connection takes precedence.
+		consoleName := ""
+		if user == nil && overlayRoom == "" {
+			consoleName = strings.TrimSpace(e.Request.URL.Query().Get("console"))
+		}
 
 		conn, err := websocket.Accept(e.Response, e.Request, opts)
 		if err != nil {
@@ -63,6 +72,7 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 			send:        make(chan []byte, sendBufSize),
 			user:        user,
 			overlayRoom: overlayRoom,
+			consoleName: consoleName,
 		}
 
 		hub.register <- client

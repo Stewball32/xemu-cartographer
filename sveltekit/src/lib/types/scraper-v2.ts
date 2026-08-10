@@ -26,6 +26,10 @@ export type EnvelopeTypeV2 =
 	| 'xbox'
 	| 'scenario'
 	| 'game'
+	// game_filtered: the viewer-facing game class, dummy-filtered server-side.
+	// Same GamePayload shape as 'game'; overlays subscribe to this room and the
+	// client stores it in the normal `game` slot (see scraper-ws-v2 handleEnvelope).
+	| 'game_filtered'
 	| 'tick'
 	| 'objects'
 	| 'debug'
@@ -780,6 +784,12 @@ export function isScenarioEnv(
 }
 export function isGameEnv(e: EnvelopeV2): e is EnvelopeV2<GamePayload> & { type: 'game' } {
 	return e.type === 'game';
+}
+/** game_filtered carries a GamePayload just like game (dummy-filtered server-side). */
+export function isGameFilteredEnv(
+	e: EnvelopeV2
+): e is EnvelopeV2<GamePayload> & { type: 'game_filtered' } {
+	return e.type === 'game_filtered';
 }
 export function isTickEnv(e: EnvelopeV2): e is EnvelopeV2<TickPayloadV2> & { type: 'tick' } {
 	return e.type === 'tick';
