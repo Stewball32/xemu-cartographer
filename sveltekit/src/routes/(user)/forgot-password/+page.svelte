@@ -50,11 +50,13 @@
 				<form class="space-y-4" onsubmit={handleSubmit}>
 					<label class="label">
 						<span>Email</span>
-						<div class="input-group grid-cols-[auto_1fr_auto]">
-							<div class="ig-cell"><MailIcon class="size-4" /></div>
+						<div class="field-group grid-cols-[auto_1fr_auto]">
+							<div class="flex items-center justify-center preset-tonal px-3">
+								<MailIcon class="size-4" />
+							</div>
 							<input
 								type="email"
-								class="ig-input"
+								class="input"
 								placeholder="you@example.com"
 								bind:value={email}
 								required

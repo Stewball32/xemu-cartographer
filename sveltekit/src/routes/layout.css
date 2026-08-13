@@ -1,13 +1,16 @@
 @import 'tailwindcss';
 @import '@skeletonlabs/skeleton';
 @import '@skeletonlabs/skeleton-svelte';
-@import '../lib/styles/theme-default.css';
-@import '../lib/styles/theme-forerunner.css';
-@import '../lib/styles/theme-norcal.css';
-@import '../lib/styles/theme-xbox.css';
-@import '../lib/styles/theme-phosphor.css';
-@import '../lib/styles/theme-midnight.css';
-@import '../lib/styles/theme-debug.css';
+@import '../lib/themes/theme-default.css';
+@import '../lib/themes/theme-forerunner.css';
+@import '../lib/themes/theme-norcal.css';
+@import '../lib/themes/theme-xbox.css';
+@import '../lib/themes/theme-phosphor.css';
+@import '../lib/themes/theme-midnight.css';
+@import '../lib/themes/theme-debug.css';
+@import '../lib/themes/theme-starcommand.css';
+@import '../lib/styles/motion.css';
+@import '../lib/styles/starcommand-utilities.css';
 
 /* Theme-agnostic Xbox / Halo presets. These tokens stay constant across all
    six Skeleton themes so team identity (Red/Blue/Green/Yellow), Xbox face
@@ -438,7 +441,7 @@
 					color-mix(in oklch, var(--color-tertiary-500) 10%, transparent) 0%,
 					transparent 50%
 				),
-				var(--body-background-color-dark);
+				var(--color-root-bg-dark);
 		}
 	}
 
@@ -450,9 +453,19 @@
 	   shows through. Pure CSS can't fake full sphere-interior curvature in
 	   all directions, but a single perspective tilt + radial fade reads as
 	   warped depth. */
+	/* background-color stays `transparent` in both modes on purpose. Skeleton
+	   v5 paints the root background on `html` (`background-color: light-dark(
+	   var(--color-root-bg-light), var(--color-root-bg-dark))`), where v4 put it
+	   on `body`. Because `html` is no longer transparent, `body`'s background
+	   stops propagating to the canvas and paints as an ordinary block
+	   background instead — which, per CSS painting order, lands ABOVE every
+	   negative-z-index descendant. An opaque body here therefore hides the
+	   z-index:-1 mesh below completely (it did, after the v5 migration). Body
+	   keeps only the translucent jewel gradient, which is meant to sit over
+	   the mesh anyway; `html` supplies the base color. */
 	[data-theme='xbox'] body {
 		position: relative;
-		background-color: var(--body-background-color);
+		background-color: transparent;
 		background-image: radial-gradient(
 			ellipse 60% 50% at 50% 50%,
 			color-mix(in oklch, var(--color-primary-500) 22%, transparent) 0%,
@@ -460,7 +473,7 @@
 		);
 
 		@variant dark {
-			background-color: var(--body-background-color-dark);
+			background-color: transparent;
 			background-image:
 				radial-gradient(
 					ellipse 30% 22% at 50% 50%,
@@ -506,14 +519,46 @@
 		}
 	}
 
+	/* starcommand mounts StarfieldBackground as a fixed, full-viewport layer at
+	   z-index:-10 (see +layout.svelte). Same paint-order constraint as the xbox
+	   mesh above: an opaque body background would paint straight over it, so
+	   body stays fully transparent here and the starfield IS the backdrop,
+	   sitting over html's root-bg canvas. This also drops the base body rule's
+	   dark radial gradients, which would otherwise wash out the starfield. */
+	[data-theme='starcommand'] body {
+		background: transparent;
+
+		@variant dark {
+			background: transparent;
+		}
+	}
+
+	/* StarfieldBackground is mounted unconditionally in +layout.svelte; these
+	   two rules decide when it actually paints. Scoping by attribute rather
+	   than mounting conditionally keeps a runtime `data-theme` / mode swap
+	   working with no JS.
+	     - Theme: it's THIS theme's backdrop — the other seven bring their own
+	       (xbox's hex mesh, debug's flat fill).
+	     - Mode: dark only. starcommand ships dark-first; in light mode the
+	       navy starfield would sit behind dark body text and swallow it. With
+	       the starfield hidden, body stays transparent and html's
+	       `light-dark()` root-bg supplies a proper light backdrop instead. */
+	.starfield {
+		display: none;
+	}
+
+	html.dark[data-theme='starcommand'] .starfield {
+		display: block;
+	}
+
 	/* debug theme — flat in both modes for screenshot clarity. Overrides the
 	   base body rule's dark-mode radial gradients so the body backdrop is a
 	   single neutral color in any screenshot. */
 	[data-theme='debug'] body {
-		background: var(--body-background-color);
+		background: var(--color-root-bg-light);
 
 		@variant dark {
-			background: var(--body-background-color-dark);
+			background: var(--color-root-bg-dark);
 		}
 	}
 

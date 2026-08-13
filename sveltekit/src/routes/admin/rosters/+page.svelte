@@ -419,13 +419,13 @@
 				</Tabs>
 
 				<div class="flex items-center justify-between gap-2">
-					<div class="input-group flex-1 grid-cols-[auto_1fr]">
-						<div class="ig-cell preset-tonal">
+					<div class="field-group flex-1 grid-cols-[auto_1fr]">
+						<div class="flex items-center justify-center preset-tonal px-3">
 							<SearchIcon class="size-4" />
 						</div>
 						<input
 							type="search"
-							class="ig-input"
+							class="input"
 							placeholder="Filter by name, slug, or creator"
 							bind:value={tmFilter}
 						/>
@@ -558,13 +558,13 @@
 		<Tabs.Content value="rosters">
 			<div class="flex flex-col gap-4 pt-4">
 				<div class="flex items-center justify-between gap-2">
-					<div class="input-group flex-1 grid-cols-[auto_1fr]">
-						<div class="ig-cell preset-tonal">
+					<div class="field-group flex-1 grid-cols-[auto_1fr]">
+						<div class="flex items-center justify-center preset-tonal px-3">
 							<SearchIcon class="size-4" />
 						</div>
 						<input
 							type="search"
-							class="ig-input"
+							class="input"
 							placeholder="Filter by team, gamertag, or user"
 							bind:value={rsFilter}
 						/>

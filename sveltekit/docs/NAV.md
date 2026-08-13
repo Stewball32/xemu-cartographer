@@ -1,6 +1,6 @@
 # Navigation layout
 
-This doc covers the SvelteKit navigation surface in template-derived repos: how `NavPanel` swaps between modes, and one Skeleton-v4 quirk that needs a targeted CSS override every time.
+This doc covers the SvelteKit navigation surface in template-derived repos: how `NavPanel` swaps between modes, and one Skeleton quirk that needs a targeted CSS override every time.
 
 ## The 3-mode nav
 
@@ -81,7 +81,7 @@ Skeleton's selectors look like `[data-scope='navigation'][data-part='menu']` —
 
 Apply this override in **any** project that:
 
-1. Uses `@skeletonlabs/skeleton-svelte` v4.x (or any version that still ships the `flex: 1` + `justify-content: center` rules in `skeleton-common/.../navigation.css` — re-check on major upgrades).
+1. Uses `@skeletonlabs/skeleton-svelte` v4.x or v5.x (or any version that still ships the `flex: 1` + `justify-content: center` rules on `[data-scope=navigation][data-part=menu]` — re-check on major upgrades; **confirmed still present in v5.0.0**, so the override survived the v5 migration unchanged).
 2. Renders `<Navigation layout="rail">` (or `<Navigation>` with a binding that can produce `data-layout="rail"`).
 3. Has **two or more** `<Navigation.Group>` instances.
 

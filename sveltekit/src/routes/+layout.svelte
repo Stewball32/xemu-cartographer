@@ -6,6 +6,9 @@
 	import Header from '$lib/components/layout/Header.svelte';
 	import NavPanel from '$lib/components/layout/NavPanel.svelte';
 	import NavBar from '$lib/components/layout/NavBar.svelte';
+	import PageTransition from '$lib/components/fx/PageTransition.svelte';
+	import ScrollProgress from '$lib/components/fx/ScrollProgress.svelte';
+	import StarfieldBackground from '$lib/components/starcommand/StarfieldBackground.svelte';
 	import { toaster, type ToastConfirmMeta } from '$lib/stores/toaster';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -65,23 +68,36 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if hideLayout}
-	<main class="min-h-screen">
-		{@render children()}
-	</main>
-{:else}
-	<div class="flex h-screen flex-col">
-		<Header onToggle={handleToggle} />
-		<div class="relative flex flex-1 overflow-hidden">
-			<div class="hidden w-25 shrink-0 sm:flex lg:hidden" aria-hidden="true"></div>
-			<NavPanel bind:open={navOpen} {isDesktop} {isTablet} currentPath={page.url.pathname} />
-			<main class="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 sm:pb-4 lg:p-8 lg:pb-8">
-				{@render children()}
-			</main>
-		</div>
-		<NavBar currentPath={page.url.pathname} />
-	</div>
+<!-- Fixed full-viewport backdrop at z -10, mounted once for the whole app.
+     Skipped on hideLayout routes: those are the OBS browser sources, which
+     must composite over a transparent page — a starfield would fill the
+     source with navy. Kept outside PageTransition so it isn't torn down and
+     rebuilt on every navigation (it would restart its drift animations). -->
+{#if !hideLayout}
+	<StarfieldBackground />
 {/if}
+
+<PageTransition>
+	{#if hideLayout}
+		<main class="min-h-screen">
+			{@render children()}
+		</main>
+	{:else}
+		<div class="flex h-screen flex-col">
+			<Header onToggle={handleToggle} />
+			<div class="relative flex flex-1 overflow-hidden">
+				<div class="hidden w-25 shrink-0 sm:flex lg:hidden" aria-hidden="true"></div>
+				<NavPanel bind:open={navOpen} {isDesktop} {isTablet} currentPath={page.url.pathname} />
+				<!-- id="page" is the scroll container ScrollProgress tracks (window never scrolls here) -->
+				<main id="page" class="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 sm:pb-4 lg:p-8 lg:pb-8">
+					{@render children()}
+				</main>
+			</div>
+			<NavBar currentPath={page.url.pathname} />
+		</div>
+		<ScrollProgress target="#page" />
+	{/if}
+</PageTransition>
 
 <Toast.Group {toaster}>
 	{#snippet children(toast)}

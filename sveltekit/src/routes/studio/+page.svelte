@@ -114,7 +114,7 @@
 						<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 							{#each OVERLAYS as o (o.id)}
 								<button
-									class="btn flex-col items-start gap-0 preset-tonal btn-sm py-1.5"
+									class="btn flex-col items-start gap-0 preset-tonal py-1.5 btn-sm"
 									title={url(c.console, o.path)}
 									onclick={() => copy(url(c.console, o.path))}
 								>

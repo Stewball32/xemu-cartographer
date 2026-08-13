@@ -20,7 +20,12 @@
 		]);
 		if (pods.status === 'fulfilled') podCount = (pods.value ?? []).length;
 		if (scrapers.status === 'fulfilled') scraperCount = (scrapers.value ?? []).length;
-		if (users.status === 'fulfilled') userCount = users.value.totalItems;
+		// `totalItems` is typed `number`, but the SDK falls back to `{}` on a
+		// non-JSON body, so a 200 can land here undefined — which fmt() would
+		// print as "undefined" since it only special-cases null. Same guard as
+		// the unread count in notifications.svelte.ts.
+		if (users.status === 'fulfilled')
+			userCount = Number.isFinite(users.value.totalItems) ? users.value.totalItems : null;
 	}
 
 	onMount(loadStats);

@@ -52,7 +52,16 @@ function createNotificationsStore() {
 				filter: 'read = false',
 				fields: 'id'
 			});
-			unreadCount = unread.totalItems;
+			// `totalItems` is typed `number`, but the SDK falls back to `{}` when a
+			// response body isn't JSON — an SPA-fallback index.html, a proxy error
+			// page — so a 200 can still land here undefined. Unguarded, that reaches
+			// the bell as the literal string "undefined". Treat it as a failed read
+			// and keep the last known good count, same as the catch below.
+			if (Number.isFinite(unread.totalItems)) {
+				unreadCount = unread.totalItems;
+			} else {
+				console.warn('notifications.refresh: unread count was not a number');
+			}
 		} catch (err) {
 			// Silent on the store side — the bell UI still shows the last
 			// known good count rather than zeroing out on transient errors.

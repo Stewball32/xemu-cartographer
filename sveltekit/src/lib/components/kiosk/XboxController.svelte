@@ -235,7 +235,7 @@
 				onlostpointercapture={(e) => handlePointerUp(e, 's')}>L←</button
 			>
 			<button
-				class="btn aspect-square btn-sm text-[10px] {buttonClass('3', 'gray')}"
+				class="btn aspect-square text-[10px] btn-sm {buttonClass('3', 'gray')}"
 				{disabled}
 				onpointerdown={(e) => handlePointerDown(e, '3')}
 				onpointerup={(e) => handlePointerUp(e, '3')}
@@ -301,7 +301,7 @@
 				onlostpointercapture={(e) => handlePointerUp(e, 'j')}>R←</button
 			>
 			<button
-				class="btn aspect-square btn-sm text-[10px] {buttonClass('4', 'gray')}"
+				class="btn aspect-square text-[10px] btn-sm {buttonClass('4', 'gray')}"
 				{disabled}
 				onpointerdown={(e) => handlePointerDown(e, '4')}
 				onpointerup={(e) => handlePointerUp(e, '4')}

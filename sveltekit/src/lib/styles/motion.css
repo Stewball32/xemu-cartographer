@@ -1,0 +1,180 @@
+/* ============================================================
+   motion.css — motion utilities for Skeleton v5 / Tailwind v4
+   Save to src/lib/styles/motion.css and add to layout.css:
+     @import '../lib/styles/motion.css';
+
+   All utilities compose with Skeleton presets, are theme-token
+   driven, and respect prefers-reduced-motion.
+   Usage: <div class="card p-6 hover-lift">, <button class="btn preset-filled press icon-slide">
+   ============================================================ */
+
+/* Lift on hover — cards, tiles, anything clickable */
+@utility hover-lift {
+	transition:
+		transform 200ms cubic-bezier(0.2, 0.7, 0.3, 1),
+		box-shadow 200ms cubic-bezier(0.2, 0.7, 0.3, 1);
+
+	@variant hover {
+		transform: translateY(-3px);
+		box-shadow:
+			0 10px 24px -8px color-mix(in oklab, var(--color-surface-950) 30%, transparent),
+			0 0 0 1px color-mix(in oklab, var(--color-primary-500) 30%, transparent);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition: none;
+		@variant hover {
+			transform: none;
+		}
+	}
+}
+
+/* Press-down on click — buttons, chips */
+@utility press {
+	transition: transform 120ms ease-out;
+
+	@variant active {
+		transform: scale(0.97);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition: none;
+		@variant active {
+			transform: none;
+		}
+	}
+}
+
+/* Nudge the trailing icon on hover — CTAs with an arrow */
+@utility icon-slide {
+	& > svg:last-child {
+		transition: transform 200ms cubic-bezier(0.2, 0.7, 0.3, 1);
+	}
+
+	@variant hover {
+		& > svg:last-child {
+			transform: translateX(0.25rem);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		& > svg:last-child {
+			transition: none;
+		}
+	}
+}
+
+/* Soft brand glow ring on hover/focus — outlined or ghost elements */
+@utility glow {
+	transition: box-shadow 200ms ease-out;
+
+	@variant hover {
+		box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary-500) 25%, transparent);
+	}
+	@variant focus-visible {
+		box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-primary-500) 40%, transparent);
+	}
+}
+
+/* Loading sheen — pair with Skeleton's .placeholder blocks:
+   <div class="shimmer"> <div class="placeholder">... */
+@utility shimmer {
+	position: relative;
+	overflow: hidden;
+	isolation: isolate;
+
+	&::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		transform: translateX(-100%);
+		background: linear-gradient(
+			100deg,
+			transparent 30%,
+			color-mix(in oklab, var(--color-surface-50-950) 8%, transparent) 50%,
+			transparent 70%
+		);
+		animation: shimmer-sweep 1.8s ease-in-out infinite;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		&::after {
+			animation: none;
+		}
+	}
+}
+
+@keyframes shimmer-sweep {
+	to {
+		transform: translateX(100%);
+	}
+}
+
+/* Aurora background — two drifting, blurred, theme-tinted blobs.
+   Apply to a section (position/overflow handled here). */
+@utility bg-aurora {
+	position: relative;
+	overflow: hidden;
+	isolation: isolate;
+
+	&::before,
+	&::after {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		width: 55%;
+		aspect-ratio: 1;
+		border-radius: 50%;
+		filter: blur(64px);
+		pointer-events: none;
+	}
+	&::before {
+		top: -20%;
+		left: -10%;
+		background: color-mix(in oklab, var(--color-primary-500) 30%, transparent);
+		animation: aurora-drift-a 16s ease-in-out infinite;
+	}
+	&::after {
+		bottom: -25%;
+		right: -10%;
+		background: color-mix(in oklab, var(--color-tertiary-500) 22%, transparent);
+		animation: aurora-drift-b 20s ease-in-out infinite;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		&::before,
+		&::after {
+			animation: none;
+		}
+	}
+}
+
+@keyframes aurora-drift-a {
+	50% {
+		transform: translate(18%, 14%) scale(1.15);
+	}
+}
+@keyframes aurora-drift-b {
+	50% {
+		transform: translate(-16%, -10%) scale(0.9);
+	}
+}
+
+/* Dot grid background — theme-tinted dots fading out radially. Static, zero JS. */
+@utility bg-dotgrid {
+	position: relative;
+
+	&::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background-image: radial-gradient(
+			color-mix(in oklab, var(--color-primary-500) 35%, transparent) 1px,
+			transparent 1px
+		);
+		background-size: 24px 24px;
+		mask-image: radial-gradient(ellipse at 50% 35%, black 25%, transparent 75%);
+	}
+}

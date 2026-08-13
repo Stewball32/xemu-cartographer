@@ -130,7 +130,7 @@
 				<p class="text-sm font-semibold">Notifications</p>
 				<button
 					type="button"
-					class="btn preset-tonal btn-sm text-xs"
+					class="btn preset-tonal text-xs btn-sm"
 					onclick={handleMarkAllRead}
 					disabled={notifications.unreadCount === 0}
 					title="Mark all as read"
@@ -174,7 +174,7 @@
 									<div class="flex items-center justify-end gap-1 px-3 pb-2">
 										<button
 											type="button"
-											class="btn preset-tonal-error btn-sm text-xs"
+											class="btn preset-tonal-error text-xs btn-sm"
 											disabled={actionBusy[n.id]}
 											onclick={() => handleDecline(n.id, requestID!)}
 										>
@@ -183,7 +183,7 @@
 										</button>
 										<button
 											type="button"
-											class="btn preset-filled-primary-500 btn-sm text-xs"
+											class="btn preset-filled-primary-500 text-xs btn-sm"
 											disabled={actionBusy[n.id]}
 											onclick={() => handleAccept(n.id, requestID!)}
 										>

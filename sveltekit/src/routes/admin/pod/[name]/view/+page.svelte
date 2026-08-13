@@ -67,6 +67,19 @@
 		ui_highlighted: number;
 		ui_max_tick: number;
 		tree_built: boolean;
+		// Screen-record classifier + UI support reads (2026-08-10 pacing pass).
+		ui_screen: string;
+		ui_back_screen_rec: number;
+		at_root_menu: boolean;
+		ui_osk_active: boolean;
+		ui_ms_clock: number;
+		ui_fade_state: number;
+		// Entry-flow slot fields + classified ladder frame (2026-08-11).
+		slot_claimed: boolean;
+		slot_profile_handle: number;
+		entry_frame: string;
+		// Debounced provisional game-over flag (0x277B94) — the postgame trigger.
+		game_over_flag: boolean;
 		readout_seq: number;
 		readout_age_ms: number;
 		nav_candidates: Record<string, number> | null;
@@ -85,6 +98,9 @@
 	// component's reactivity, so the panel rendered once and then FROZE: the exact
 	// "panel doesn't update" bug. Bookkeeping now lives in a plain Map mutated while the
 	// signals list is (re)built, so nothing reactive is written and no effect is needed.
+	// A reactive SvelteMap (the lint rule's suggestion) would re-create exactly that
+	// write-inside-$derived self-trigger, hence the targeted disable.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- deliberately non-reactive, see above
 	const lastSeen = new Map<string, { value: string; at: number }>();
 	let diag = $state<Diagnostics | null>(null);
 	let diagError = $state<string | null>(null);
@@ -100,19 +116,62 @@
 		const now = Date.now();
 		const raw: Array<{ label: string; value: string; group: string }> = [
 			{ group: 'screen', label: 'screen', value: d.screen || 'unknown' },
+			// The SCREEN RECORD (2026-08-10): the current screen's resolved tag path from
+			// the fixed record pool — the classifier the fast host tick keys on. Watch it
+			// against dela on a live walk: the two should agree per screen, and ui_screen
+			// keeps resolving on screens where dela goes blank (cold menu, ENTER NAME).
+			{ group: 'screen', label: 'ui_screen (record)', value: d.ui_screen || '—' },
+			{
+				group: 'screen',
+				label: 'back rec (0 = root)',
+				value: `0x${(d.ui_back_screen_rec >>> 0).toString(16)}${d.at_root_menu ? ' — AT ROOT MENU' : ''}`
+			},
 			{ group: 'screen', label: 'menu_item', value: `${d.menu_item_name} (${d.menu_item})` },
 			{ group: 'screen', label: 'dela', value: d.dela || '—' },
 			{ group: 'screen', label: 'menu_focus', value: `0x${(d.menu_focus >>> 0).toString(16)}` },
 			{ group: 'screen', label: 'game_connection', value: connName(d.game_connection) },
-			{ group: 'screen', label: 'pregame_sentinel', value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent' },
+			{
+				group: 'screen',
+				label: 'pregame_sentinel',
+				value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent'
+			},
+			{
+				group: 'screen',
+				label: 'osk active',
+				value: d.ui_osk_active ? 'YES — capturing input' : 'no'
+			},
+			{ group: 'screen', label: 'fade state', value: fadeName(d.ui_fade_state) },
+			// Entry-flow ladder (System Link join → select → commit): the frame is the
+			// per-A truth (slot fields), classified only while the 4way record is up.
+			{
+				group: 'screen',
+				label: 'entry frame',
+				value: `${d.entry_frame || 'none'} (claimed=${d.slot_claimed ? 1 : 0}, handle=0x${((d.slot_profile_handle ?? 0) >>> 0).toString(16)})`
+			},
+			// The postgame scoreboard is invisible to every classic gate — this
+			// debounced flag is what flips the screen to post_game and starts the
+			// runner's A → A → A re-prep walk back to a fresh pregame lobby.
+			{
+				group: 'screen',
+				label: 'game over flag',
+				value: d.game_over_flag ? 'SET — postgame' : 'clear'
+			},
 			// LIVENESS first: readout_seq advances every scraper tick, so it — not the
 			// GAME tick — proves the panel is live. The game tick is legitimately 0 at
 			// the menus, which is exactly what made a frozen panel indistinguishable
 			// from a healthy one sitting in the front end.
 			{ group: 'live', label: 'readout seq', value: String(d.readout_seq) },
 			{ group: 'live', label: 'readout age', value: `${d.readout_age_ms} ms` },
+			// The UI's own ms-scale clock — the "shell alive" heartbeat. It should tick
+			// continuously at any menu (this row stays lit); a static value with the
+			// panel live means the front end itself is wedged, not the scraper.
+			{ group: 'live', label: 'ui ms clock', value: String(d.ui_ms_clock) },
 			{ group: 'live', label: 'tick (game — 0 in menus)', value: String(d.tick) },
-			{ group: 'cold', label: 'tree built?', value: d.tree_built ? 'YES — woken' : 'NO — cold/un-woken' },
+			{
+				group: 'cold',
+				label: 'tree built?',
+				value: d.tree_built ? 'YES — woken' : 'NO — cold/un-woken'
+			},
 			{ group: 'cold', label: 'ui widget blocks', value: String(d.ui_widget_blocks) },
 			{ group: 'cold', label: 'ui highlighted', value: String(d.ui_highlighted) },
 			{ group: 'cold', label: 'ui max tick', value: `0x${(d.ui_max_tick >>> 0).toString(16)}` },
@@ -121,10 +180,22 @@
 			{ group: 'select', label: 'map highlighted', value: d.highlighted_map || '—' },
 			{ group: 'select', label: 'gametype cursor', value: cur(d.gametype_cursor) },
 			{ group: 'select', label: 'gametype highlighted', value: d.highlighted_gametype || '—' },
-			{ group: 'select', label: 'map picked → loaded', value: `${d.selected_map || '—'} → ${d.map || '—'}` },
-			{ group: 'select', label: 'gametype picked → loaded', value: `${d.selected_gametype || '—'} → ${d.gametype || '—'}` },
+			{
+				group: 'select',
+				label: 'map picked → loaded',
+				value: `${d.selected_map || '—'} → ${d.map || '—'}`
+			},
+			{
+				group: 'select',
+				label: 'gametype picked → loaded',
+				value: `${d.selected_gametype || '—'} → ${d.gametype || '—'}`
+			},
 			{ group: 'runner', label: 'authority', value: d.authority || '—' },
-			{ group: 'runner', label: 'last action', value: `${d.last_kind}${d.last_intent ? ` [${d.last_intent}]` : ''}` },
+			{
+				group: 'runner',
+				label: 'last action',
+				value: `${d.last_kind}${d.last_intent ? ` [${d.last_intent}]` : ''}`
+			},
 			{ group: 'runner', label: 'last keys', value: (d.last_keys ?? []).join(',') || '—' },
 			{ group: 'runner', label: 'last reason', value: d.last_reason || '—' },
 			{ group: 'lobby', label: 'machines', value: String(d.machine_count) },
@@ -140,7 +211,11 @@
 					label,
 					value: `0x${(v >>> 0).toString(16).padStart(8, '0')}`
 				})),
-			{ group: 'lobby', label: 'enumerated', value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes` }
+			{
+				group: 'lobby',
+				label: 'enumerated',
+				value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes`
+			}
 		];
 		// Fold the change bookkeeping in here (before render) so a row's "changed" mark
 		// is correct on the very poll it changes — and so no reactive state is written.
@@ -164,6 +239,15 @@
 	const CONN_NAMES = ['menu', 'system-link', 'hosting', 'film'];
 	function connName(c: number): string {
 		return `${c}${CONN_NAMES[c] ? ` (${CONN_NAMES[c]})` : ''}`;
+	}
+
+	// The fade byte pair at 0x2D37D4 (read LE u16): D5/49 at the root menu,
+	// D4/48 on a sub-screen — one atomic flip per transition.
+	function fadeName(v: number): string {
+		const hex = `0x${(v >>> 0).toString(16).padStart(4, '0')}`;
+		if (v === 0x49d5) return `${hex} (root)`;
+		if (v === 0x48d4) return `${hex} (sub-screen)`;
+		return hex;
 	}
 
 	async function loadDiag() {
@@ -487,7 +571,7 @@
 		</div>
 
 		<!-- Live scraper-read diagnostics: watch the box AND what the scraper sees. -->
-		<section class="card preset-tonal flex flex-col gap-2 p-3">
+		<section class="flex flex-col gap-2 card preset-tonal p-3">
 			<header class="flex flex-wrap items-center gap-2 text-xs">
 				<span class="font-medium">Live scraper reads</span>
 				{#if diag}
@@ -519,7 +603,8 @@
 											<td class="w-40 py-0.5 align-top text-surface-600-400">{sig.label}</td>
 											<td class="py-0.5 font-mono break-all">{sig.value}</td>
 											<td class="w-16 py-0.5 text-right align-top text-[0.6rem] text-surface-500">
-												{#if ago === null}—{:else if fresh}<span class="text-success-500">changed</span
+												{#if ago === null}—{:else if fresh}<span class="text-success-500"
+														>changed</span
 													>{:else}{Math.round(ago / 1000)}s{/if}
 											</td>
 										</tr>

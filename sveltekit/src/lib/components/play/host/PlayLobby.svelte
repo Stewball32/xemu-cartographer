@@ -63,6 +63,9 @@
 	// picker, keeping the first (lowest-steps) occurrence the backend resolves to.
 	// Maps have unique names, so they're used as-is.
 	const gametypeOptions = $derived.by(() => {
+		// Plain Set on purpose: a scratchpad local to this computation, discarded
+		// when it returns. SvelteSet would add reactivity nothing ever reads.
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const seen = new Set<string>();
 		return (options?.gametypes ?? []).filter((g) => {
 			if (seen.has(g.name)) return false;
@@ -107,7 +110,6 @@
 		if (!canSave) return;
 		onselect(pickMap.trim(), pickGametype.trim());
 	}
-
 </script>
 
 <div class="flex flex-col gap-4">
@@ -187,7 +189,11 @@
 				     carousel index (steps) so a keyed-each duplicate key can never
 				     corrupt this dropdown the way raw duplicate names did (the map
 				     list has unique names, so it rendered fine). -->
-				<select class="select" bind:value={pickGametype} disabled={!gametypesReady || !controllable || busy}>
+				<select
+					class="select"
+					bind:value={pickGametype}
+					disabled={!gametypesReady || !controllable || busy}
+				>
 					{#if gametypesReady}
 						<option value="" disabled>Choose a gametype…</option>
 						{#each gametypeOptions as g (g.steps)}
@@ -204,9 +210,8 @@
 
 		{#if !enumerable}
 			<p class="text-xs text-surface-500">
-				This box's map / gametype lists aren't readable yet (the create-game
-				carousels load once the box reaches the front-end). The pickers enable
-				automatically as soon as they're readable.
+				This box's map / gametype lists aren't readable yet (the create-game carousels load once the
+				box reaches the front-end). The pickers enable automatically as soon as they're readable.
 			</p>
 		{/if}
 

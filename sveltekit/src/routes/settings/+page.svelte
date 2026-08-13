@@ -494,11 +494,13 @@
 					     mechanism for changing how others see you. -->
 				<label class="label">
 					<span>Username</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><LockIcon class="size-4" /></div>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<LockIcon class="size-4" />
+						</div>
 						<input
 							type="text"
-							class="ig-input opacity-70"
+							class="input opacity-70"
 							value={_user?.username ?? ''}
 							readonly
 							title="Usernames cannot be changed. Add a gamertag to use a different displayed handle."
@@ -509,9 +511,11 @@
 				<!-- Input Groups -->
 				<label class="label">
 					<span>Display Name</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><UserIcon class="size-4" /></div>
-						<input type="text" class="ig-input" bind:value={displayName} />
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<UserIcon class="size-4" />
+						</div>
+						<input type="text" class="input" bind:value={displayName} />
 					</div>
 				</label>
 
@@ -520,9 +524,11 @@
 					     has to opt in to the verification flow. -->
 				<label class="label">
 					<span>Email</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><MailIcon class="size-4" /></div>
-						<input type="email" class="ig-input" bind:value={email} />
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<MailIcon class="size-4" />
+						</div>
+						<input type="email" class="input" bind:value={email} />
 						<button
 							type="button"
 							class="btn preset-tonal btn-sm"
@@ -556,11 +562,13 @@
 
 				<label class="label">
 					<span>Location</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><MapPinIcon class="size-4" /></div>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<MapPinIcon class="size-4" />
+						</div>
 						<input
 							type="text"
-							class="ig-input"
+							class="input"
 							bind:value={location}
 							maxlength="100"
 							placeholder="City, Country"
@@ -599,11 +607,13 @@
 
 				<label class="label">
 					<span>Current Password</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><LockIcon class="size-4" /></div>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<LockIcon class="size-4" />
+						</div>
 						<input
 							type="password"
-							class="ig-input"
+							class="input"
 							placeholder="••••••••"
 							bind:value={oldPassword}
 							required
@@ -613,11 +623,13 @@
 
 				<label class="label">
 					<span>New Password</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><LockIcon class="size-4" /></div>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<LockIcon class="size-4" />
+						</div>
 						<input
 							type="password"
-							class="ig-input"
+							class="input"
 							placeholder="••••••••"
 							bind:value={newPassword}
 							minlength="8"
@@ -628,11 +640,13 @@
 
 				<label class="label">
 					<span>Confirm New Password</span>
-					<div class="input-group grid-cols-[auto_1fr_auto]">
-						<div class="ig-cell"><LockIcon class="size-4" /></div>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<LockIcon class="size-4" />
+						</div>
 						<input
 							type="password"
-							class="ig-input"
+							class="input"
 							placeholder="••••••••"
 							bind:value={newPasswordConfirm}
 							minlength="8"
@@ -786,11 +800,13 @@
 				>
 					<label class="label flex-1">
 						<span>Add a gamertag</span>
-						<div class="input-group grid-cols-[auto_1fr_auto]">
-							<div class="ig-cell"><TagIcon class="size-4" /></div>
+						<div class="field-group grid-cols-[auto_1fr_auto]">
+							<div class="flex items-center justify-center preset-tonal px-3">
+								<TagIcon class="size-4" />
+							</div>
 							<input
 								type="text"
-								class="ig-input"
+								class="input"
 								placeholder="e.g. Stewball32"
 								maxlength="32"
 								bind:value={newTagInput}
@@ -897,11 +913,13 @@
 						<h3 class="h4">Create team</h3>
 						<label class="label">
 							<span>Name</span>
-							<div class="input-group grid-cols-[auto_1fr_auto]">
-								<div class="ig-cell"><UsersIcon class="size-4" /></div>
+							<div class="field-group grid-cols-[auto_1fr_auto]">
+								<div class="flex items-center justify-center preset-tonal px-3">
+									<UsersIcon class="size-4" />
+								</div>
 								<input
 									type="text"
-									class="ig-input"
+									class="input"
 									maxlength="60"
 									bind:value={teamCreateName}
 									placeholder="NorCal Halo"
@@ -910,11 +928,15 @@
 						</label>
 						<label class="label">
 							<span>Slug</span>
-							<div class="input-group grid-cols-[auto_1fr_auto]">
-								<div class="ig-cell font-mono text-xs opacity-50">/teams/</div>
+							<div class="field-group grid-cols-[auto_1fr_auto]">
+								<div
+									class="flex items-center justify-center preset-tonal px-3 font-mono text-xs opacity-50"
+								>
+									/teams/
+								</div>
 								<input
 									type="text"
-									class="ig-input"
+									class="input"
 									maxlength="60"
 									bind:value={teamCreateSlug}
 									onkeydown={() => (teamSlugTouched = true)}

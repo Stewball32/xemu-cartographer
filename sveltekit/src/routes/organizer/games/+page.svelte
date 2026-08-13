@@ -291,11 +291,13 @@
 	</Card>
 
 	<!-- Catalog toolbar -->
-	<div class="input-group grid-cols-[auto_1fr]">
-		<div class="ig-cell preset-tonal"><SearchIcon class="size-4" /></div>
+	<div class="field-group grid-cols-[auto_1fr]">
+		<div class="flex items-center justify-center preset-tonal px-3">
+			<SearchIcon class="size-4" />
+		</div>
 		<input
 			type="search"
-			class="ig-input"
+			class="input"
 			placeholder="Filter by name, file, or title id"
 			bind:value={filter}
 		/>
