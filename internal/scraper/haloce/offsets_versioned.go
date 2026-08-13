@@ -19,6 +19,7 @@ type Offsets struct {
 	AddrGameConnection             uint32
 	AddrGameEngineGlobalsPtr       uint32
 	AddrGameGlobalsPtr             uint32
+	AddrGameOverFlag               uint32
 	AddrGameServerPtr              uint32
 	AddrGameTimeGlobalsPtr         uint32
 	AddrGameVariantGlobalPtr       uint32
@@ -41,6 +42,14 @@ type Offsets struct {
 	AddrScoreSlayer                uint32
 	AddrTagHeaderPtr               uint32
 	AddrTeamsPtr                   uint32
+	AddrUiBackScreenRec            uint32
+	AddrUiCurrentScreenRec         uint32
+	AddrUiFadeState                uint32
+	AddrUiMsClock                  uint32
+	AddrUiOskActive                uint32
+	AddrUiSlotClaimed              uint32
+	AddrUiSlotProfile              uint32
+	AddrUiWidgetFocusPtr           uint32
 	AddrVariant                    uint32
 	ConstUiWidgetHeapGVAHi         uint32
 	ConstUiWidgetHeapGVALo         uint32

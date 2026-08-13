@@ -23,6 +23,10 @@
       "value": "0x27629C",
       "type": "uint32"
     },
+    "AddrGameOverFlag": {
+      "value": "0x277B94",
+      "type": "uint32"
+    },
     "AddrGameServerPtr": {
       "value": "0x2E3628",
       "type": "uint32"
@@ -109,6 +113,38 @@
     },
     "AddrTeamsPtr": {
       "value": "0x2FAD24",
+      "type": "uint32"
+    },
+    "AddrUiBackScreenRec": {
+      "value": "0x2E4010",
+      "type": "uint32"
+    },
+    "AddrUiCurrentScreenRec": {
+      "value": "0x2E4000",
+      "type": "uint32"
+    },
+    "AddrUiFadeState": {
+      "value": "0x2D37D4",
+      "type": "uint32"
+    },
+    "AddrUiMsClock": {
+      "value": "0x2E4020",
+      "type": "uint32"
+    },
+    "AddrUiOskActive": {
+      "value": "0x2E3DA8",
+      "type": "uint32"
+    },
+    "AddrUiSlotClaimed": {
+      "value": "0x2E4104",
+      "type": "uint32"
+    },
+    "AddrUiSlotProfile": {
+      "value": "0x2E4100",
+      "type": "uint32"
+    },
+    "AddrUiWidgetFocusPtr": {
+      "value": "0x2F9B38",
       "type": "uint32"
     },
     "AddrVariant": {

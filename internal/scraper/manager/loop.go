@@ -395,7 +395,11 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 		r.tickHost(gs, tick)
 
 		r.broadcastPoll(svc)
-		r.sleepOrCancel(readyPollInterval)
+		// Sleep in host-tick slices: with a host runner attached the box
+		// re-reads state + ticks the runner every hostTickMinInterval (~100ms)
+		// so the nav's closed-loop confirmations land promptly; without one
+		// this is a plain readyPollInterval sleep.
+		r.hostSubTicks(readyPollInterval)
 	}
 }
 

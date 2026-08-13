@@ -71,6 +71,12 @@ func (r *Reader) OnStateChange(prev, next scraper.GameState) error {
 		r.lobbyCursorHandles = nil
 		r.menuItemHandles = nil
 		r.sysLinkGamesHandles = nil
+		// Screen-record resolve caches (screenrec.go): tag ids are per loaded tag
+		// cache, and the dynamic page translations can go stale across an XBE
+		// swap — both re-resolve cheaply on the next front-end read.
+		r.screenTagPaths = nil
+		r.lowPageHVAs = nil
+		r.lowPageFails = nil
 	}
 	return nil
 }

@@ -50,6 +50,22 @@ type Runner struct {
 	startAt   time.Time
 	lastPhase Phase
 
+	// POSTGAME RE-PREP (mapper scrape-side findings 2026-08-11): after game over
+	// the HOST walks A → A → A — postgame scoreboard → postgame map select
+	// (previous map pre-highlighted) → gametype select (previous variant
+	// pre-highlighted) → pregame lobby — and the clients auto-follow with zero
+	// input. prepActive drives that walk as one paced, EFFECT-CONFIRMED A per
+	// screen: the first scoreboard A is often swallowed (observed live — a
+	// re-press ~3s later took immediately), so each press is confirmed by the
+	// screen actually moving (ui_screen / main_menu changing) and re-pressed on
+	// a ~3s timer until it does. The walk hard-stops the instant the pregame
+	// lobby classifies — a surplus A there could arm the countdown.
+	prepActive        bool
+	prepPressedAt     time.Time
+	prepScreenAtPress string
+	prepMmaAtPress    bool
+	prepPresses       int
+
 	// lastObs is the most recent observation, stored so execute() can enforce the
 	// SAFETY interlock (never send B on SELECT MAP — it ends the live lobby) at the
 	// single key-emission choke point, regardless of which path produced the action.
@@ -183,11 +199,18 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 	switch Classify(obs) {
 	case ScreenInGame:
 		r.armed = false
+		r.prepActive = false // a match is running — any pending re-prep is moot
 		return wait("match live")
 	case ScreenPostGame:
-		// Clear the post-game / carnage screen so a fresh lobby can be set up.
+		// GAME OVER (the debounced flag): begin/continue the host re-prep walk so
+		// the lobby is ready for another match without an operator.
 		r.armed = false
-		return tap("a", "clear carnage", "post-game screen — tapping A to clear")
+		if !r.prepActive {
+			r.prepActive = true
+			r.prepPresses = 0
+			r.prepPressedAt = time.Time{}
+		}
+		return r.stepPostgamePrep(obs, now)
 	}
 
 	// Just returned from a game to a hostable menu → re-host from the top. Rebuild the
@@ -200,6 +223,26 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 		r.armed = false
 		r.lobbyApplied = false
 		r.appliedGen = 0
+	}
+
+	// RE-PREP CONTINUATION: past the scoreboard the walk crosses the postgame
+	// map select (record …connected_map_select_postgame_wrapper, mma back to 1)
+	// and the gametype select — both classify Hosting — before the pregame
+	// lobby appears. Keep driving the paced effect-confirmed A's there; the
+	// instant the LOBBY classifies (the pregame record), stop and hand the
+	// settled lobby to the ordinary sequence catch-up below (which also runs
+	// the re-select if the player picked new settings mid-match). Any OTHER
+	// screen means the walk went somewhere unexpected — stand the walk down and
+	// let normal routing recover rather than pressing A into an unknown screen.
+	if r.prepActive {
+		switch Classify(obs) {
+		case ScreenLobby:
+			r.prepActive = false // walked into the pregame lobby — re-prep complete
+		case ScreenHosting:
+			return r.stepPostgamePrep(obs, now)
+		default:
+			r.prepActive = false
+		}
 	}
 
 	act := r.seq.Step(obs, now)
@@ -232,6 +275,52 @@ func (r *Runner) decide(obs Observation, now time.Time) Action {
 		}
 	}
 	return wait("lobby ready — map + gametype selected; players start the match")
+}
+
+// Postgame re-prep pacing. postgamePrepRepressEvery matches the live
+// observation (a swallowed scoreboard A took immediately on a ~3s re-press);
+// postgamePrepSettle lets a freshly-appeared screen finish its transition
+// before the next A; postgamePrepMaxPresses bounds the walk (3 needed + swallow
+// retries) so a wedged box surfaces instead of pressing A forever.
+const (
+	postgamePrepRepressEvery = 3 * time.Second
+	postgamePrepSettle       = 500 * time.Millisecond
+	postgamePrepMaxPresses   = 12
+)
+
+// stepPostgamePrep emits one paced, effect-confirmed A of the postgame walk
+// (scoreboard → postgame map select → gametype select → the pregame lobby; the
+// previous map + gametype come up PRE-HIGHLIGHTED, so each A re-commits the
+// prior settings and the clients auto-follow). "Effect-confirmed" is the
+// screen visibly moving — ui_screen or main_menu changing since the press —
+// because the scoreboard's classic gates never move and its first A is often
+// swallowed. The caller stops calling this the moment the pregame lobby (or
+// anything unexpected) classifies.
+func (r *Runner) stepPostgamePrep(obs Observation, now time.Time) Action {
+	if r.prepPresses >= postgamePrepMaxPresses {
+		return blocked(fmt.Sprintf(
+			"postgame re-prep: %d A presses without reaching the pregame lobby (on %s) — is input reaching the box?",
+			r.prepPresses, screenName(obs)))
+	}
+	moved := obs.UiScreen != r.prepScreenAtPress || obs.MenuActive != r.prepMmaAtPress
+	if !r.prepPressedAt.IsZero() {
+		if !moved {
+			// Same screen as the last A: hold the generous window, then re-press
+			// (the observed swallow pattern), never a fast mash.
+			if now.Sub(r.prepPressedAt) < postgamePrepRepressEvery {
+				return wait("postgame re-prep: A sent, watching for the screen to move")
+			}
+		} else if now.Sub(r.prepPressedAt) < postgamePrepSettle {
+			// The screen just moved — let the transition settle before the next A.
+			return wait("postgame re-prep: screen moved — settling before the next A")
+		}
+	}
+	r.prepPressedAt = now
+	r.prepScreenAtPress = obs.UiScreen
+	r.prepMmaAtPress = obs.MenuActive
+	r.prepPresses++
+	return tap("a", "postgame re-prep",
+		fmt.Sprintf("game over — A toward a fresh pregame lobby (press %d, on %s)", r.prepPresses, screenName(obs)))
 }
 
 // WalkBack is an operator/admin command: press B to back out one screen, or
@@ -320,13 +409,18 @@ func (r *Runner) execute(act Action) error {
 // onProfileScreen reports whether the box is on ANY profile screen — the main-menu
 // "SELECT PROFILE TO EDIT" carousel (player_profiles_select, where Y = CREATE NEW
 // PROFILE) or the System Link 4-way join (4way_profile_select). Matched on the
-// highlighted widget path, which is unambiguous: the System Link games browser (the
-// ONE screen where the runner's Y is legitimate) lives under \connected\server_list
-// and contains neither marker.
+// highlighted widget path AND the screen record — the record matters because the
+// 4way flow's widgets never claim the heap highlight (dela reads empty there), so
+// the dela-only guard went blind exactly where the lingering server_list widgets
+// can make Classify read the CREATE screen. The games browser (the ONE screen
+// where the runner's Y is legitimate) lives under \connected\server_list and
+// matches none of these.
 func onProfileScreen(obs Observation) bool {
 	return obs.MenuItem == MenuItemProfile ||
 		strings.Contains(obs.Dela, `profiles_select`) ||
-		strings.Contains(obs.Dela, `4way_profile_select`)
+		strings.Contains(obs.Dela, `4way_profile_select`) ||
+		strings.Contains(obs.UiScreen, `profiles_select`) ||
+		obs.InSysLinkEntryFlow()
 }
 
 // guardProfileCreate converts a would-be Y on a profile screen into a visible blocked

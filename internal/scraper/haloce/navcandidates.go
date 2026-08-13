@@ -30,7 +30,7 @@ type navCandidate struct {
 
 var navCandidates = []navCandidate{
 	// Moved in BOTH hunts (highest interest).
-	{"c1_focus-0x08", -0x08, func(r *Reader) uint32 { return AddrUiWidgetFocusPtr }},
+	{"c1_focus-0x08", -0x08, func(r *Reader) uint32 { return r.off.AddrUiWidgetFocusPtr }},
 	{"c2_conn-0x38", -0x38, func(r *Reader) uint32 { return r.off.AddrGameConnection }},
 	{"c3_mm+0x3A4", +0x3A4, func(r *Reader) uint32 { return r.off.AddrMainMenuActive }}, // 0x2E440C
 	// main_menu global neighbourhood.
@@ -43,8 +43,8 @@ var navCandidates = []navCandidate{
 	{"c7_array0", +0x480C, func(r *Reader) uint32 { return r.off.AddrMainMenuActive }},
 	{"c8_array1", +0x4A14, func(r *Reader) uint32 { return r.off.AddrMainMenuActive }},
 	// Cold-menu hunt only (relative to menu_focus).
-	{"c9_focus+0x5364", +0x5364, func(r *Reader) uint32 { return AddrUiWidgetFocusPtr }},
-	{"c10_focus+0x53E0", +0x53E0, func(r *Reader) uint32 { return AddrUiWidgetFocusPtr }},
+	{"c9_focus+0x5364", +0x5364, func(r *Reader) uint32 { return r.off.AddrUiWidgetFocusPtr }},
+	{"c10_focus+0x53E0", +0x53E0, func(r *Reader) uint32 { return r.off.AddrUiWidgetFocusPtr }},
 }
 
 // readNavCandidates reads each candidate as a u32 THROUGH THE LOW-GVA TRANSLATION.

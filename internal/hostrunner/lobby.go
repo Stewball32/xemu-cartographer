@@ -103,29 +103,45 @@ type StepTiming struct {
 	ProfileAdvanceInterval time.Duration
 }
 
-// DefaultTiming is tuned for CE's ~30Hz menus over VNC.
-// DefaultTiming: SNAPPY by default (Stewart 2026-08). The conservative windows here
-// were set when presses were being DROPPED (pre focus-warmup) and were pure dead time
-// once input became reliable. Every step is CLOSED-LOOP — a press is confirmed by an
-// observed state change (menu-focus for the front-end nav, the live carousel cursor for
-// the card steps) before the next is emitted — so the confirmation is the real gate and
-// these timers only bound RECOVERY. They're now ~1 host tick (hostTickMinInterval is
-// 400ms) rather than multi-second.
+// DefaultTiming is tuned for CE's ~30Hz menus over VNC, tightened 2026-08-10
+// against the halo-offset-mapper menu-nav pacing measurements (commit b991fd0,
+// full RFB pipeline on ce-h1perf): press → menu_focus confirmation arrives in
+// +31…176ms (12/12 accepted presses), discrete presses with 100ms gaps all
+// landed, and there is NO game-side repeat gate — the front end takes one step
+// per 30Hz tick, so pacing is bounded by the input pipeline + confirmation
+// latency, not the game. Every step is CLOSED-LOOP — a press is confirmed by an
+// observed state change (menu-focus for the front-end nav, the live carousel
+// cursor for the card steps) before the next is emitted — so the confirmation
+// is the real gate and these timers only bound RECOVERY of the ~5% pipeline
+// press-drop rate. The host tick runs at ~100ms (hostTickMinInterval) so
+// confirmations are observed promptly.
 //
 // Deliberately NOT sped up (genuinely required, not pacing):
-//   - sysLinkConnectTimeout — the real System Link network connect wait.
+//   - sysLinkConnectTimeout — the connect-hold backstop on the conn-item A.
 //   - the B-on-SELECT-MAP interlock — a safety guard, never a timer.
 var DefaultTiming = StepTiming{
-	// Re-emit a press that never landed. Above one tick so a press still in flight
-	// isn't duplicated (which would overshoot a carousel by one), well under the old
-	// 1200ms. Overshoot stays self-correcting anyway: the loop re-reads the cursor.
+	// Re-emit a press that never landed. The measured confirm ceiling is ~176ms,
+	// but the FULL worst-case chain before a landed press is SEEN runs through
+	// the vncinput pump: a focus-grab settle (300ms — fired on the first press
+	// after any ≥2s pause, and on EVERY press during the 30s post-connect
+	// warmup) + delivery + land (≤176ms) + the ~100ms observation cadence
+	// ≈ 600ms. The first tightening pass set 350ms, INSIDE that chain — so the
+	// first press after every pause double-delivered (re-press queued behind the
+	// settle), and a duplicated A activates the NEXT screen's default item: the
+	// observed "off track but finds its way" wandering. 700ms clears the chain;
+	// it only bounds RECOVERY of genuinely dropped presses — the confirmed fast
+	// path still paces on NavKeyInterval.
 	RepressAfter: 700 * time.Millisecond,
-	// Advance off a committed card (A pressed) — one tick plus margin.
+	// Advance off a committed card (A pressed): transition measured ≤~170ms +
+	// one observation tick. Kept at a conservative one-tick-plus-margin.
 	BlindAdvanceAfter: 400 * time.Millisecond,
-	// Front-end menu press pacing (main menu / submenu / Back-normalise).
-	NavKeyInterval: 350 * time.Millisecond,
-	// SELECT PROFILE A-advance — fully confirmation-gated, so effectively "next tick".
-	ProfileAdvanceInterval: 250 * time.Millisecond,
+	// Front-end menu press pacing (main menu / submenu / Back-normalise): each
+	// press is confirmed before the next, and 100ms-gap presses all landed, so
+	// 150ms is pipeline-safe with margin (was 350ms of pure dead time).
+	NavKeyInterval: 150 * time.Millisecond,
+	// SELECT PROFILE A-advance — fully confirmation-gated, so effectively "next
+	// observed confirm" (was 250ms).
+	ProfileAdvanceInterval: 150 * time.Millisecond,
 }
 
 func (t StepTiming) orDefault() StepTiming {
@@ -144,30 +160,27 @@ func (t StepTiming) orDefault() StepTiming {
 	return t
 }
 
-// Cold-main-menu prime states. On a freshly-booted main menu the CE widget tree
-// isn't built (dela blank, menu_focus 0); a direction press doesn't build it — only
-// ENTERING a reversible submenu does. The planner primes it with A (open submenu) →
-// B (return), after which the normal nav reads the now-built menu.
-const (
-	primeIdle          = iota // not priming
-	primeOpenedSubmenu        // pressed A to open a submenu; waiting for the tree to build, then B
-)
+// THE COLD-MENU PRIME IS GONE (mapper 2026-08-11 §4). There was never anything
+// to "wake": on a genuinely cold container boot the screen record is already
+// populated, the widget tree exists with load_camp (rendered SINGLE PLAYER)
+// already highlighted, and a landed cold Down steps the highlight exactly like a
+// warm one. The historical "blank cold menu" was our own reads — an untranslated
+// menu_focus reading 0 plus the nondeterministic highlight pick — not the game.
+// What replaces it: the item-kind + stamp-gated highlight pick makes the cold
+// item readable, a record of 0 means "front end still initializing" (wait, don't
+// press), and a record-confirmed ROOT with no readable item gets a paced,
+// never-activating Down probe (see stepPlanNav's root-blind fallback). No
+// activate key is ever fired into an unread highlight.
 
-// primeConfirmWindow is how long the cold-menu prime WAITS after its single A before
-// even considering another press. It is deliberately FAR longer than RepressAfter.
-//
-// SAFETY (regression fixed 2026-08): the cold main menu's default highlight is SINGLE
-// PLAYER, and on a cold box menu_focus stays 0 until the widget tree builds — so the
-// "press landed" check can't fire, and the ordinary RepressAfter path re-pressed A
-// every 700ms. That MASHED A into Single Player and LAUNCHED A CAMPAIGN GAME. The prime
-// must press A exactly ONCE and then confirm the tree built (dela / menu_focus
-// populates) before anything else; a second A only after this generous window, and only
-// primeMaxAttempts times before we surface the failure instead of mashing.
-const primeConfirmWindow = 3 * time.Second
+// rootBlindProbeGap paces the root-blind Down probes: a landed Down re-stamps
+// the ring into readability within a beat, so this only bounds re-probing when
+// nothing observable came back.
+const rootBlindProbeGap = 1 * time.Second
 
-// primeMaxAttempts bounds the prime's A presses. Beyond it the planner BLOCKS (loudly)
-// rather than pressing A again on a screen whose default item starts a campaign.
-const primeMaxAttempts = 3
+// attractConfirmAfter is how long the attract-shaped state (main_menu=0, shell
+// alive) must PERSIST before the wake-B fires. main_menu is a stale-prone low
+// global; a 1-tick 0-blip mid-route must not trigger a Back.
+const attractConfirmAfter = 600 * time.Millisecond
 
 // navRetryBudget caps how many extra times the macro-nav step re-emits its last
 // key (the SELECT PROFILE confirms) while waiting for Done. Enough for the
@@ -197,8 +210,25 @@ type Sequence struct {
 	lastKey         string    // last key the planner emitted (for wait-reason text)
 	navStuckItem    MenuItem  // highlighted item at the last emitted nav press (stuck-detection)
 	navStuckCount   int       // consecutive emitted nav presses with an unchanged highlighted item
-	primeState      int       // cold-main-menu prime state (primeIdle / primeOpenedSubmenu)
-	primeAttempts   int       // A presses the cold-menu prime has emitted (bounded by primeMaxAttempts)
+	// entryFrameAtPress is the System Link entry-ladder frame (EntryFrameOf) at
+	// the moment the flow's A was emitted; the press is confirmed by the frame
+	// ADVANCING (the slot field flipping), never by menu_focus — focus relinks
+	// on DELIVERY even when the flow ignores the press (mapper §1: a delivered
+	// A was watched getting ignored). EntryNone when no entry-flow press is in
+	// flight.
+	entryFrameAtPress EntryFrame
+	// lastMenuActive tracks the main_menu global across ticks so the nav press
+	// budget RESETS when the menu appears (0→1): the budget guards "pressing
+	// without progress", and the boot/intro window legitimately eats presses —
+	// the attract-wake B's double as intro-video skips — before the menu exists
+	// (beta.log 2026-08-10: ~30 of the 48 presses were spent pre-menu, so the
+	// at-menu phase started nearly exhausted and blocked).
+	lastMenuActive bool
+	// attractAt is when the attract-shaped state (main_menu=0, shell alive) was
+	// FIRST observed; the wake-B fires only once it has PERSISTED briefly, so a
+	// 1-tick stale-read blip of main_menu=0 mid-route can't fire a stray B (a
+	// Back that un-navigates a correct screen). Zero when not in attract.
+	attractAt time.Time
 	// sysLinkEntered is set once the planner presses A on the SYSTEM LINK submenu
 	// item (multiplayer_type_conn_item). It then A-advances the Select Profile entry
 	// flow (game_connection==0, MenuItem Unknown/Profile) until conn→1 reaches the
@@ -208,8 +238,13 @@ type Sequence struct {
 	// sysLinkConnectAt is when the single A was pressed on the SYSTEM LINK item; the
 	// planner then HOLDS (no re-press) until the screen/conn moves or
 	// sysLinkConnectTimeout elapses, so it doesn't hammer A through the ~6s connect.
-	// Zero when not connecting. See stepPlanNav.
+	// Zero when not connecting. sysLinkScreen is the screen-record path at that
+	// press — the hold ALSO clears the moment the record moves off it, because the
+	// entry flow's widgets never claim the heap highlight (menu_item reads the
+	// stale conn item throughout), and highlight-only clearing burned the full
+	// connect window per press. See stepPlanNav.
 	sysLinkConnectAt time.Time
+	sysLinkScreen    string
 }
 
 // NewSequence builds a Sequence over steps with the given timing. Set Selector
@@ -418,16 +453,18 @@ func (s *Sequence) Reset(now time.Time) {
 	s.navDone = 0
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
-	s.primeState = primeIdle
-	s.primeAttempts = 0
+	s.entryFrameAtPress = EntryNone
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
 	s.navStuckItem = MenuItemUnknown
 	s.navStuckCount = 0
 	s.lastPress = time.Time{}
+	s.lastMenuActive = false
+	s.attractAt = time.Time{}
 	s.sysLinkEntered = false
 	s.sysLinkConnectAt = time.Time{}
+	s.sysLinkScreen = ""
 }
 
 func (s *Sequence) advance(now time.Time) {
@@ -437,14 +474,15 @@ func (s *Sequence) advance(now time.Time) {
 	s.navDone = 0
 	s.lastNavCursor = 0
 	s.lastValidCursor = 0
-	s.primeState = primeIdle
-	s.primeAttempts = 0
+	s.entryFrameAtPress = EntryNone
 	s.navFocus = 0
 	s.navPresses = 0
 	s.lastKey = ""
 	s.navStuckItem = MenuItemUnknown
 	s.navStuckCount = 0
 	s.lastPress = time.Time{}
+	s.lastMenuActive = false
+	s.attractAt = time.Time{}
 }
 
 // Step decides the next Action for the current observation + clock:
@@ -631,9 +669,55 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		s.advance(now)
 		return s.Step(obs, now)
 	}
-	// A select that mis-fired into a loaded map/campaign leaves the front-end:
-	// MenuActive==0 while game_connection is still menu. Surface it, don't press on.
+	// PROGRESS RESET: the menu appearing (main_menu 0→1) proves the box responds —
+	// restart the press budget + stuck counter so presses spent skipping the boot
+	// intro / waking the attract demo don't starve the at-menu routing (the budget
+	// guards "pressing without progress"; a screen transition IS progress).
+	if obs.MenuActive {
+		if !s.lastMenuActive {
+			s.navPresses = 0
+			s.navStuckCount = 0
+		}
+		s.attractAt = time.Time{} // not in attract — reset the persistence gate
+	}
+	s.lastMenuActive = obs.MenuActive
+	// MenuActive==0 at ConnMenu is one of two very different states:
+	//
+	//   ATTRACT MODE (2026-08-10 pass): after idling, the front end plays an
+	//   in-engine demo — main_menu_active drops to 0 while the SHELL is still
+	//   resident (menu_focus stays non-zero, and the screen record still resolves
+	//   a front-end screen). The old unconditional block left the runner
+	//   permanently stuck here; B is the safe wake key (it ends the demo, and is
+	//   a no-op at the root menu it returns to), so press it, paced.
+	//
+	//   A mis-fired select into a loaded map/campaign: no shell signal remains.
+	//   Surface it loudly, don't press on. (A fully-loaded game also flips Phase
+	//   to in_game, which stands the runner down before this branch runs.)
 	if !obs.MenuActive && obs.Connection == ConnMenu {
+		shellAlive := obs.MenuFocus != 0 || screenFromUiPath(obs.UiScreen) == ScreenMainMenu
+		if shellAlive && s.navPresses < navMaxPresses {
+			// PERSISTENCE GATE: main_menu is a stale-prone low global, and a 1-tick
+			// 0-blip mid-route would otherwise fire a stray B here — a Back that
+			// un-navigates a correct screen (an observed wander source). Real attract
+			// holds main_menu=0 continuously, so require it to persist briefly first.
+			if s.attractAt.IsZero() {
+				s.attractAt = now
+			}
+			if now.Sub(s.attractAt) < attractConfirmAfter {
+				return wait(fmt.Sprintf("nav %s: main_menu=0 with the shell alive — confirming attract before B", t.Name))
+			}
+			if !s.lastPress.IsZero() && now.Sub(s.lastPress) < s.timing.RepressAfter {
+				return wait(fmt.Sprintf("nav %s: attract demo — pacing before the next B", t.Name))
+			}
+			s.pressed = false
+			s.lastKey = "b"
+			s.lastPress = now
+			s.navPresses++
+			return tap("b", t.Intent, fmt.Sprintf("nav %s: attract demo (main_menu=0, shell alive) — pressing B to wake (press %d)", t.Name, s.navPresses))
+		}
+		if shellAlive {
+			return blocked(fmt.Sprintf("nav step %q: attract demo didn't wake within %d presses — is input reaching the box?", t.Name, s.navPresses))
+		}
 		return blocked(fmt.Sprintf("nav step %q: left the front-end into a map/campaign (a select mis-fired) — MenuActive=0", t.Name))
 	}
 	if s.navPresses >= navMaxPresses {
@@ -652,25 +736,49 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 		// elapses (the single A genuinely dropped). Done (reachedSystemLink) at the top
 		// short-circuits this the instant conn→1.
 		if !s.sysLinkConnectAt.IsZero() {
-			// Advance ONLY when the reliable high-GVA HIGHLIGHT leaves the conn item
-			// (onto a Select Profile widget, the server_list browser, or any other
-			// screen). Do NOT consult game_connection — it flickers/reads stale here
-			// and was falsely firing "connected — advancing" while the highlight never
-			// moved, which then re-pressed A in a loop.
-			if obs.MenuItem != MenuItemSystemLink {
+			// Advance when the reliable high-GVA HIGHLIGHT leaves the conn item — OR
+			// when the SCREEN RECORD moves off the screen the A was pressed on. The
+			// record clause is the entry-flow speed fix (beta.log 2026-08-11): the
+			// Select Profile / start2join widgets never claim the heap highlight, so
+			// menu_item read the STALE conn item through the whole flow and the
+			// highlight-only check burned the full connect window per A (the observed
+			// one-press-per-8s crawl; the record flipped to 4way_start2join within a
+			// second of the A landing). Do NOT consult game_connection — it
+			// flickers/reads stale here and was falsely firing "connected — advancing"
+			// while the highlight never moved, which then re-pressed A in a loop.
+			screenMoved := obs.UiScreen != "" && obs.UiScreen != s.sysLinkScreen
+			if obs.MenuItem != MenuItemSystemLink || screenMoved {
 				s.sysLinkConnectAt = time.Time{}
 				s.pressed = false
 				s.navDone++
-				return wait(fmt.Sprintf("nav %s: System Link highlight moved — advancing (now %s)", t.Name, obs.MenuItem))
+				return wait(fmt.Sprintf("nav %s: System Link screen/highlight moved — advancing (now %s)", t.Name, obs.MenuItem))
 			}
 			if now.Sub(s.sysLinkConnectAt) >= sysLinkConnectTimeout {
 				s.sysLinkConnectAt = time.Time{}
 				s.pressed = false
 				return s.stepPlanNav(t, obs, now) // window elapsed → the A dropped, re-press once
 			}
-			return wait(fmt.Sprintf("nav %s: System Link connecting — holding, no re-press (%.0fs)", t.Name, now.Sub(s.sysLinkConnectAt).Seconds()))
+			return wait(fmt.Sprintf("nav %s: System Link connecting — holding, no re-press", t.Name))
 		}
 		switch {
+		case s.entryFrameAtPress != EntryNone:
+			// ENTRY-FLOW EFFECT CONFIRM (mapper §1): the A is confirmed by the slot
+			// FRAME advancing (0x2E4104 claim flip / 0x2E4100 handle / the record
+			// leaving 4way on commit) — NEVER by menu_focus, which relinks on
+			// DELIVERY even when the flow ignores the press (a delivered-but-ignored
+			// A was watched live). No flip by RepressAfter ⇒ the press was swallowed
+			// (cold pipes swallow several in a row) → re-press the SAME frame's A.
+			if EntryFrameOf(obs) != s.entryFrameAtPress {
+				s.navDone++
+				s.pressed = false
+				s.entryFrameAtPress = EntryNone
+				// Landed — fall through and emit the next frame's key this tick.
+			} else if now.Sub(s.lastPress) >= s.timing.RepressAfter {
+				s.pressed = false
+				return s.stepPlanNav(t, obs, now) // swallowed → re-press this frame's A
+			} else {
+				return wait(fmt.Sprintf("nav %s: entry flow %s — A sent, awaiting the slot field", t.Name, s.entryFrameAtPress))
+			}
 		case obs.MenuFocus != s.navFocus:
 			// LANDED (the highlight / screen changed). Don't burn a whole tick just to
 			// report it — fall through and emit the next key in THIS tick. The pacing
@@ -678,12 +786,6 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 			// confirmation: we're here precisely because the previous press landed.
 			s.navDone++
 			s.pressed = false
-		case s.primeState == primeOpenedSubmenu && now.Sub(s.lastPress) < primeConfirmWindow:
-			// COLD-MENU PRIME: exactly ONE A, then WAIT for the tree. Never the fast
-			// RepressAfter re-press — on the cold menu the default item is SINGLE PLAYER
-			// and a mashed A launches a campaign game.
-			return wait(fmt.Sprintf("nav %s: cold-menu prime — one A sent, confirming the widget tree (%.1fs)",
-				t.Name, now.Sub(s.lastPress).Seconds()))
 		case now.Sub(s.lastPress) >= s.timing.RepressAfter:
 			s.pressed = false // dropped → re-emit
 			return s.stepPlanNav(t, obs, now)
@@ -697,7 +799,8 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 	// ProfileAdvanceInterval instead of the conservative NavKeyInterval settle window —
 	// the confirmation is the gate, not the clock. Everything else keeps NavKeyInterval.
 	pace := s.timing.NavKeyInterval
-	if s.sysLinkEntered && (obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
+	if obs.InSysLinkEntryFlow() ||
+		(s.sysLinkEntered && (obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile)) {
 		pace = s.timing.ProfileAdvanceInterval
 	}
 	if !s.lastPress.IsZero() && now.Sub(s.lastPress) < pace {
@@ -734,59 +837,53 @@ func (s *Sequence) stepPlanNav(t Transition, obs Observation, now time.Time) Act
 	// conn read must not misroute here. The System Link games browser is its own
 	// MenuItemSystemLinkGames (reachedSystemLink advances the step to create-game's Y
 	// before this runs), so it never matches Unknown/Profile → we never A (JOIN) it.
-	if s.sysLinkEntered &&
-		(obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile) {
+	// The record-detected entry flow (…\4way_profile_select\…) joins the A-advance
+	// conditions because the heap highlight stays the STALE conn item there — the
+	// item alone can't see the flow at all (beta.log 2026-08-11).
+	if obs.InSysLinkEntryFlow() ||
+		(s.sysLinkEntered && (obs.MenuItem == MenuItemUnknown || obs.MenuItem == MenuItemProfile)) {
 		key = "a"
 	}
 	// Remember we entered System Link, so the Select-Profile advance above kicks in,
 	// and start the connect-hold window so we don't hammer A through the ~6s link-up.
-	if key == "a" && obs.MenuItem == MenuItemSystemLink {
+	// NEVER re-arm the hold once the record shows the entry flow: the stale conn-item
+	// highlight otherwise re-arms it on every A, which is exactly the
+	// one-press-per-8s crawl. sysLinkScreen is the record at the press — the hold
+	// clears the moment the record moves off it.
+	if key == "a" && obs.MenuItem == MenuItemSystemLink && !obs.InSysLinkEntryFlow() {
 		s.sysLinkEntered = true
 		s.sysLinkConnectAt = now
+		s.sysLinkScreen = obs.UiScreen
 	}
-	// COLD MAIN MENU PRIME (final override). On a freshly-booted main menu the CE
-	// widget TREE isn't built until you ENTER a submenu — the highlighted DeLa path
-	// reads empty, menu_item is Unknown, menu_focus is 0 (RUNTIME cold boot: main_menu=1
-	// yet dela="" every tick). A DIRECTION press does NOT build it (the old Down-wake
-	// looped forever); only entering a reversible submenu does — Stewart woke it by
-	// pressing A into Profiles then backing out. So prime it: press A to open the
-	// default item's submenu (which BUILDS the tree), then once the tree is up (dela
-	// populated / menu_focus non-zero → we're on the submenu) press B to return — after
-	// which the normal state-aware nav reads the now-built menu and routes to
-	// Multiplayer. The focus warmup (pump) makes A LAND; the prime makes it WAKE the
-	// tree — together they replicate the manual fix.
-	//
-	// Gated STRICTLY on the cold MAIN MENU: MenuActive (main_menu!=0) + Connection
-	// ConnMenu + a blank highlight (dela=="" && menu_focus==0 && menu_item Unknown), and
-	// !sysLinkEntered. So A/B can NEVER fire on a submenu (dela non-empty), a live lobby
-	// (ConnHosting / dela set), or SELECT MAP (dela set; the B-on-map-select interlock
-	// is a further hard backstop). The pressed/confirm block paces the A re-press if it
-	// dropped — no A spam.
-	coldBlankMenu := !s.sysLinkEntered && obs.MenuActive && obs.Connection == ConnMenu &&
-		obs.MenuItem == MenuItemUnknown && obs.Dela == "" && obs.MenuFocus == 0
-	switch s.primeState {
-	case primeOpenedSubmenu:
-		if obs.Dela != "" || obs.MenuFocus != 0 {
-			key = "b" // tree built (on the submenu) → return to the main menu, then normal nav
-			s.primeState = primeIdle
-			s.primeAttempts = 0
-			s.primeAttempts = 0
-		} else if s.primeAttempts >= primeMaxAttempts {
-			// Never keep pressing A on a menu whose default item starts a campaign.
-			return blocked(fmt.Sprintf(
-				"nav %s: cold menu didn't wake after %d primes (dela still blank, menu_focus 0) — "+
-					"NOT pressing A again (it would enter Single Player); is input reaching the box?",
-				t.Name, s.primeAttempts))
-		} else {
-			key = "a" // the A genuinely didn't land — one more, after primeConfirmWindow
-			s.primeAttempts++
+	// ROOT-BLIND FALLBACK (replaces the cold-menu prime — mapper 2026-08-11 §4:
+	// there is nothing to "wake"; the cold tree exists with SINGLE PLAYER resting
+	// highlighted and a landed Down steps it exactly like a warm one; the record
+	// is populated before any input, so a record of 0 means the front end is
+	// still INITIALIZING). With no live item resolved: record empty → wait it
+	// out; record-confirmed ROOT → probe with a paced Down — safe, it never
+	// activates, and a landed Down re-stamps the ring into readability for the
+	// item-kind pick. A record-resolved NON-root screen keeps the planned key
+	// (Back-normalise). No activate key is ever fired into an unread highlight.
+	// OSK gate: a capturing keyboard turns Down into a grid move — keep B there
+	// (B is BACK on every OSK screen on this build, §3; a second B cancels the
+	// create-flow edit page, which the ordinary paced re-B delivers).
+	if obs.MenuItem == MenuItemUnknown && obs.Dela == "" && !obs.UiOskActive && !s.sysLinkEntered {
+		if obs.UiScreen == "" {
+			return wait(fmt.Sprintf("nav %s: front end initializing (no screen record yet) — holding", t.Name))
 		}
-	default:
-		if coldBlankMenu {
-			key = "a" // open the default submenu to BUILD the widget tree
-			s.primeState = primeOpenedSubmenu
-			s.primeAttempts = 1
+		if obs.AtRootMainMenu() {
+			if !s.lastPress.IsZero() && now.Sub(s.lastPress) < rootBlindProbeGap {
+				return wait(fmt.Sprintf("nav %s: root menu, no readable item — paced Down probe pending", t.Name))
+			}
+			key = "Down"
 		}
+	}
+	// Record which entry-ladder frame this A drives, so the confirm block gates
+	// on the slot field flipping rather than menu_focus (EntryNone for everything
+	// that isn't an entry-flow press).
+	s.entryFrameAtPress = EntryNone
+	if key == "a" {
+		s.entryFrameAtPress = EntryFrameOf(obs)
 	}
 	s.pressed = true
 	s.navFocus = obs.MenuFocus
@@ -831,18 +928,41 @@ func (s *Sequence) stepCard(t Transition, obs Observation, now time.Time) Action
 	}
 
 	// (B) LIST GONE (count 0): we're not on this card. Advance PAST it only when the
-	// finalized pick is resident (the settled lobby, or a box handed to us mid-flow) —
-	// this is what lets the catch-up complete for an already-settled box. Gating on
+	// box is DEMONSTRABLY in the settled lobby — the pregame SCREEN RECORD — which
+	// is what lets the catch-up complete for an already-settled box. Gating on
 	// count<=0 (not merely !valid) is what stops (A)'s mid-scroll tick from advancing
 	// select-map → select-gametype → reach-lobby after ONE press (the f8513e6 bug):
 	// while the carousel is live (count>0) Done is ONLY target-reached + A, never the
 	// sentinel/lobbyReadable/finalized-resident state.
+	//
+	// The old "finalized map+gametype resident" test alone is kept ONLY as the
+	// record-less fallback: during a RE-SELECT the PREVIOUS commit's values are
+	// still resident, so the count-0 tick in the map→gametype screen-transition
+	// window (the sequence advances onto this card on BlindAdvanceAfter, before
+	// the gametype list activates) advanced PAST the card without its A — a
+	// map-only re-pick then hung on SELECT GAMETYPE with the reach-lobby sentinel
+	// waiting for a lobby the box can't reach (live-reported 2026-08-11). The
+	// record distinguishes the two states cleanly: the settled lobby reads
+	// connected_pregame, the transition reads the card wrappers.
 	if !ok || count <= 0 {
-		if obs.Map != "" && obs.Gametype != "" {
+		// THIS card's commit A was pressed and its list has deactivated — the
+		// commit took (the deactivation IS the confirmation, ahead of the blind
+		// timer); advance to the next card.
+		if s.pressed {
 			s.advance(now)
 			return s.Step(obs, now)
 		}
-		// Hold for the create→card transition until the carousel comes up.
+		// No A pressed yet: advance only for the genuine catch-up case (a box
+		// already settled in the lobby). The screen record is the discriminator;
+		// the resident test alone survives only record-less.
+		settled := screenFromUiPath(obs.UiScreen) == ScreenLobby ||
+			(obs.UiScreen == "" && obs.Map != "" && obs.Gametype != "")
+		if settled {
+			s.advance(now)
+			return s.Step(obs, now)
+		}
+		// Hold for the create→card / card→card transition until the carousel
+		// comes up (or the pregame record appears).
 		return wait(fmt.Sprintf("card %s: awaiting live cursor read", t.Name))
 	}
 

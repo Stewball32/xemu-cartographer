@@ -25,6 +25,18 @@ func (o *Offsets) AllLowGVAs() []uint32 {
 		o.AddrGameCanScore,
 		o.AddrGlobalStageName,
 		o.AddrVariant,
+		// Front-end UI globals — VERSIONED as of 2026-08-11 (they were package
+		// consts through the menu-nav/entry-flow/postgame passes). AddrUiFadeState
+		// and AddrGameOverFlag are deliberately absent: both are read through the
+		// DYNAMIC page translation (their pages carry no other global), so
+		// pre-translating them here would add Init failure surface for nothing.
+		o.AddrUiWidgetFocusPtr,
+		o.AddrUiCurrentScreenRec,
+		o.AddrUiBackScreenRec,
+		o.AddrUiOskActive,
+		o.AddrUiMsClock,
+		o.AddrUiSlotClaimed,
+		o.AddrUiSlotProfile,
 		o.AddrScoreCTF,
 		o.AddrScoreSlayer,
 		o.AddrScoreOddball,

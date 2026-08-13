@@ -48,10 +48,23 @@ type RunnerEvent struct {
 	// heap (live blocks / how many are highlighted / the max activation "UI tick").
 	// A cold, un-interacted front end has only a handful of live blocks; once the
 	// widget tree builds it jumps by an order of magnitude.
-	MainMenuRaw         int    `json:"main_menu_raw"`
-	UIWidgetBlocks      int    `json:"ui_widget_blocks"`
-	UIHighlighted       int    `json:"ui_highlighted"`
-	UIMaxTick           uint32 `json:"ui_max_tick"`
+	MainMenuRaw    int    `json:"main_menu_raw"`
+	UIWidgetBlocks int    `json:"ui_widget_blocks"`
+	UIHighlighted  int    `json:"ui_highlighted"`
+	UIMaxTick      uint32 `json:"ui_max_tick"`
+	// Screen-record classifier + UI support reads (2026-08-10): the resolved
+	// current-screen tag path, the back-screen record (0 exactly at the root
+	// menu), OSK-capturing flag, the UI ms clock heartbeat, and the fade pair.
+	UiScreen        string `json:"ui_screen,omitempty"`
+	UiBackScreenRec uint32 `json:"ui_back_screen_rec"`
+	UiOskActive     bool   `json:"ui_osk_active"`
+	UiMsClock       uint32 `json:"ui_ms_clock"`
+	UiFadeState     uint32 `json:"ui_fade_state"`
+	// Entry-flow slot fields + the classified ladder frame (mapper 2026-08-11).
+	SlotClaimed         bool   `json:"slot_claimed"`
+	SlotProfileHandle   uint32 `json:"slot_profile_handle"`
+	EntryFrame          string `json:"entry_frame"`
+	GameOverFlag        bool   `json:"game_over_flag"`
 	MapCursor           int    `json:"map_cursor"`
 	MapCursorCount      int    `json:"map_cursor_count"`
 	MapCursorValid      bool   `json:"map_cursor_valid"`
@@ -99,6 +112,15 @@ func buildEvent(instance string, obs Observation, auth Authority, kind string, a
 		UIWidgetBlocks:      obs.UIWidgetBlocks,
 		UIHighlighted:       obs.UIHighlighted,
 		UIMaxTick:           obs.UIMaxTick,
+		UiScreen:            obs.UiScreen,
+		UiBackScreenRec:     obs.UiBackScreenRec,
+		UiOskActive:         obs.UiOskActive,
+		UiMsClock:           obs.UiMsClock,
+		UiFadeState:         obs.UiFadeState,
+		SlotClaimed:         obs.SlotClaimed,
+		SlotProfileHandle:   obs.SlotProfileHandle,
+		EntryFrame:          EntryFrameOf(obs).String(),
+		GameOverFlag:        obs.GameOverFlag,
 		MapCursor:           obs.MapCursor,
 		MapCursorCount:      obs.MapCursorCount,
 		MapCursorValid:      obs.MapCursorValid,

@@ -106,11 +106,13 @@ func (r *Reader) ReadMenuItem() int {
 	// magnitude (18 vs 168 measured on the rig). Purely diagnostic — nothing routes
 	// on it yet; Stewart watches it live to tell us which signal is reliable.
 	r.lastUIStats = uiHeapStats(heap)
-	// Resolve the highlighted DeLa path FIRST (cheap over the already-read heap) and
-	// stash it for the admin diagnostics panel — so the raw navfp `dela=` fingerprint
-	// is available on EVERY screen, including System Link Games where the presence
-	// detection below short-circuits the classification.
-	path, _ := r.rawHighlightPathFromHeap(heap)
+	// Resolve the LIVE screen's highlighted ITEM (stamp-gated, item-kind-bit —
+	// see rawHighlightPathFromHeap) and stash it for the admin diagnostics panel —
+	// so the raw navfp `dela=` fingerprint is available on EVERY screen, including
+	// System Link Games where the presence detection below short-circuits the
+	// classification. "" = no live item, a VALID state (the whole 4way entry flow
+	// and the pregame screen run with no item highlighted).
+	path, _ := r.rawHighlightPathFromHeap(heap, r.lastRecStamp, r.lastRecStampOK)
 	r.lastMenuDela = path
 	// System Link Games — detect by PRESENCE of its games-list widget in the heap
 	// (the screen with the "SYSTEM LINK GAMES" title + the list of hosted games), NOT

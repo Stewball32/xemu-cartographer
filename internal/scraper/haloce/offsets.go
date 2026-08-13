@@ -121,14 +121,29 @@ const (
 	AddrIsTeamGame     uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
 	AddrMainMenuActive uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
 	// AddrUiWidgetFocusPtr — CE front-end menu widget-focus pointer (runbook
-	// AddrUiWidgetFocusPtr). Not in the versioned offset set: its value is a
-	// per-boot/relinking heap ptr used ONLY for change-detection (the host-runner
-	// nav phase confirms a menu press landed when this pointer moves). Fixed low
-	// GVA in the shared CE .data layout, so a package const suffices.
+	// AddrUiWidgetFocusPtr). Its VALUE is a per-boot/relinking heap ptr used only
+	// for change-detection (the host-runner nav phase confirms a menu press
+	// landed when this pointer moves); the ADDRESS is versioned like everything
+	// else. This constant is the baseline literal the set is extracted from —
+	// read sites go through r.off (TestBaselineOffsetsMatchConstants pins them
+	// equal).
 	AddrUiWidgetFocusPtr uint32 = 0x2F9B38 // u32 ptr — runbook; changes on menu navigation
 	AddrGameCanScore     uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
-	AddrGlobalStageName  uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
-	AddrVariant          uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
+	// AddrGameOverFlag — PROVISIONAL (halo-offset-mapper scrape-side findings
+	// 2026-08-11, OBSERVED ONCE on the H1 Perf 1.1 Server build; not yet in the
+	// committed offset maps). u32 in the score-globals neighborhood: 0 in-match,
+	// 0xFFFFFFFF from "game over decided" (≤4s after the final kill) until the
+	// host leaves the postgame scoreboard, then 0 again. It is the ONLY readable
+	// game-end signal on that build — gc/mma/screen-record/engine-ptr all hold
+	// their in-match values through the whole scoreboard phase ("postgame is
+	// invisible to every classic gate"). Read DYNAMICALLY (its page carries no
+	// other global — a translate failure must degrade, never block attach), with
+	// an exact-sentinel match, a netgame-hosting context gate, and a consecutive-
+	// read debounce (see ReadGameState) since a false positive would end a live
+	// match (Live→Ready + game persistence fire on the postgame transition).
+	AddrGameOverFlag    uint32 = 0x277B94
+	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
+	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
 )
 
 // ----------------------------------------------------------------------
@@ -183,6 +198,21 @@ var AllLowGVAs = []uint32{
 	AddrGameCanScore,
 	AddrGlobalStageName,
 	AddrVariant,
+	// Front-end UI globals (menu-nav pacing pass, 2026-08-10). All on pages the
+	// list above already translates (0x2E3xxx / 0x2E4xxx / 0x2F9xxx), so they add
+	// no new Init-failure surface. AddrUiWidgetFocusPtr was previously read
+	// best-effort WITHOUT ever being translated — menu_focus silently read 0 and
+	// the nav's per-press focus-change confirmation never fired; pre-translating
+	// it is what makes the closed loop actually close. AddrUiFadeState and
+	// AddrGameOverFlag are deliberately NOT here (their pages carry no other
+	// global — see screenrec.go's dynamic translation).
+	AddrUiWidgetFocusPtr,
+	AddrUiCurrentScreenRec,
+	AddrUiBackScreenRec,
+	AddrUiOskActive,
+	AddrUiMsClock,
+	AddrUiSlotClaimed,
+	AddrUiSlotProfile,
 	// Score bases
 	AddrScoreCTF,
 	AddrScoreSlayer,
@@ -559,6 +589,15 @@ const (
 	OffUiWidgetItemListPtr    uint32 = 0x50 // u32 item-list ptr (nonzero only when active)
 	OffUiWidgetItemCount      uint32 = 0x54 // i32 item count (>0 only when list is active)
 	OffUiWidgetHighlightFlag  uint32 = 0x60 // u32 == 1 on the currently-HIGHLIGHTED front-end menu item widget (0 otherwise). RUNTIME-VERIFIED 2026-08-07 on H1 Perf: main_menu_item_multiplayer +0x60 flips 1↔0 as the highlight moves; identifies the selected item build-independently (by its DeLa path) instead of a wrap-prone key count.
+
+	// OffUiWidgetKindFlags (+0x64) carries the widget KIND bits; the item bit
+	// (0x20000) is set on EVERY selectable *_item widget observed (16 across
+	// root / MP submenu / map select / server list, all exactly 0x20000) and on
+	// NO decoration (pics 0x250000/0x130000/0x40000, headers/screens 0x10000,
+	// text 0) — the deterministic discriminator that replaced the lexicographic
+	// highlight tie-break (docs/MENU-ENTRYFLOW-2026-08-11.md §7).
+	OffUiWidgetKindFlags     uint32 = 0x64
+	ConstUiWidgetItemKindBit uint32 = 0x20000
 
 	ConstUiWidgetHeaderFlag uint32 = 0x80000000 // header allocated-flag; hdr&0xFFFF0000 == this
 	ConstUiWidgetHeaderMask uint32 = 0xFFFF0000 // mask applied before the flag compare

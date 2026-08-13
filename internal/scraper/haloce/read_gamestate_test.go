@@ -116,3 +116,34 @@ func stInt(si map[string]any, key string) int {
 		return 0
 	}
 }
+
+// determineGameState with the provisional game-over flag (mapper 2026-08-11):
+// the Server build's postgame scoreboard keeps every classic gate at its
+// in-match value, so the debounced flag is what flips in_game → postgame; it
+// must do nothing in any non-in-match shape.
+func TestDetermineGameStateGameOver(t *testing.T) {
+	inMatch := func(gameOver bool) scraper.GameState {
+		return determineGameState(0, 1, 1, 0, true, 0, gameOver)
+	}
+	if got := inMatch(false); got != scraper.GameStateInGame {
+		t.Fatalf("in-match without the flag = %v, want in_game", got)
+	}
+	if got := inMatch(true); got != scraper.GameStatePostGame {
+		t.Fatalf("in-match with the flag = %v, want postgame", got)
+	}
+	// The classic game_can_score path still works.
+	if got := determineGameState(0, 1, 1, 0, true, 1, false); got != scraper.GameStatePostGame {
+		t.Fatalf("game_can_score postgame = %v, want postgame", got)
+	}
+	// Non-in-match shapes ignore the flag entirely.
+	if got := determineGameState(1, 1, 1, 0, true, 0, true); got != scraper.GameStateMenu {
+		t.Fatalf("menu shape with the flag = %v, want menu", got)
+	}
+	if got := determineGameState(0, 1, 0, 1, true, 0, true); got != scraper.GameStatePreGame {
+		t.Fatalf("pregame shape with the flag = %v, want pregame", got)
+	}
+	// Engine not running (front end): the in-match branch can't fire at all.
+	if got := determineGameState(0, 1, 1, 0, false, 0, true); got != scraper.GameStateInGame {
+		t.Fatalf("engine-down shape with the flag = %v, want in_game (flag gated on engine)", got)
+	}
+}

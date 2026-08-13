@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
@@ -44,10 +45,11 @@ type Reader struct {
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
 
-	// lastNavFP is the last raw front-end DeLa fingerprint logged by the
-	// HOSTRUNNER_NAV_DEBUG diagnostic — so it logs one line per screen (on change),
-	// not per tick. See menustate_debug.go.
-	lastNavFP string
+	// lastNavFP / lastNavFPAt gate the HOSTRUNNER_NAV_DEBUG diagnostic — one line
+	// per fingerprint CHANGE plus a slow heartbeat, not per tick (which would be
+	// ~10 lines/sec at the host sub-tick cadence). See menustate_debug.go.
+	lastNavFP   string
+	lastNavFPAt time.Time
 
 	// lastMenuDela is the raw highlighted-widget DeLa path from the most recent
 	// ReadMenuItem (the navfp `dela=`), surfaced via LastStateInputs["menu_dela"] for
@@ -58,6 +60,21 @@ type Reader struct {
 	// highlighted count, max activation tick) — cold-boot / menu-state candidate
 	// signals for the admin diagnostics panel. See uiHeapStats in menustate.go.
 	lastUIStats UIHeapStats
+
+	// lastRecStamp is the current screen record's activation stamp (rec+0x18)
+	// from the most recent readUiScreen. The highlight pick gates widget blocks
+	// on tick(+0x28)==stamp — the "belongs to the ACTIVE screen" invariant — so
+	// stale prior-screen blocks can't win. StampOK false = record unreadable
+	// this tick (the pick then falls back to max-tick).
+	lastRecStamp   uint32
+	lastRecStampOK bool
+
+	// gameOverStreak debounces the PROVISIONAL game-over flag (AddrGameOverFlag,
+	// observed once): consecutive in-context reads of the exact 0xFFFFFFFF
+	// sentinel before ReadGameState reports postgame. A transient misread must
+	// not end a live match — the postgame transition exits the Live loop and
+	// fires game persistence.
+	gameOverStreak int
 
 	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
 	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
@@ -80,6 +97,20 @@ type Reader struct {
 	// its list widget in the UI heap (robust vs the stale highlighted-item read).
 	// nil until resolved; cleared on menu entry with the other handle caches.
 	sysLinkGamesHandles map[uint32]bool
+
+	// screenTagPaths caches widget_definition tag id → DeLa path for the
+	// screen-record classifier (screenrec.go). Keyed by TAG ID, never by record
+	// address — the record pool reuses slots. Cleared on menu entry with the
+	// other UI-session caches.
+	screenTagPaths map[uint32]string
+
+	// lowPageHVAs / lowPageFails back lowHVADynamic (screenrec.go): per-page
+	// host-VA translations for low GVAs outside the Init list (screen-record
+	// slots, the fade pair), plus a negative cache so an unmapped page can't
+	// become a per-tick QMP hammer. Cleared on menu entry so a post-XBE-swap
+	// stale mapping self-heals.
+	lowPageHVAs  map[uint32]int64
+	lowPageFails map[uint32]time.Time
 
 	// Diagnostic one-shot flags for the two readers under offset investigation
 	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
@@ -135,7 +166,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	// dropped d-pad press can't leave it on the wrong item (e.g. firing A on
 	// Single Player → Campaign). Best-effort: a failed read leaves it 0.
 	var menuFocus uint32
-	if hva, e := inst.LowHVA(AddrUiWidgetFocusPtr); e == nil {
+	if hva, e := inst.LowHVA(r.off.AddrUiWidgetFocusPtr); e == nil {
 		menuFocus, _ = mem.ReadU32At(hva)
 	}
 
@@ -161,7 +192,33 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	menuItem := MenuItemUnknown
 	menuDela := ""
 	pregameSentinel := false
+	uiScreen := ""
+	var uiScreenRec, uiBackRec, uiMsClock, slotProfile uint32
+	var uiFadeState uint16
+	oskActive := false
+	slotClaimed := false
 	if !gameEngineRunning {
+		// SCREEN-RECORD classifier (screenrec.go): 2 fixed low reads + a cached
+		// tag resolve → the CURRENT screen's canonical DeLa path, plus the
+		// back-screen record (0 exactly at the root main menu) and the record's
+		// activation stamp (the highlight pick's tick gate). This is the cheap,
+		// authoritative "which screen" signal the host runner's Classify prefers;
+		// the heap-based menu_item below stays for ITEM routing (which entry is
+		// highlighted), which no fixed global carries.
+		uiScreen, uiScreenRec, uiBackRec, r.lastRecStamp, r.lastRecStampOK = r.readUiScreen()
+		uiMsClock = r.readLowU32(r.off.AddrUiMsClock) // UI-liveness heartbeat (ms-scale, free-running)
+		if v, err := readLowU8(inst, r.off.AddrUiOskActive); err == nil {
+			oskActive = v != 0 // on-screen keyboard is capturing input
+		}
+		uiFadeState = r.readLowU16Dynamic(r.off.AddrUiFadeState) // D5/49 root ↔ D4/48 sub-screen
+		// System Link entry-flow slot fields (port 0): the per-A effect confirms
+		// for join → select → commit. PERSISTENT across flow exits — consumers
+		// gate on the 4way screen record.
+		if v, err := readLowU8(inst, r.off.AddrUiSlotClaimed); err == nil {
+			slotClaimed = v != 0
+		}
+		slotProfile = r.readLowU32(r.off.AddrUiSlotProfile)
+
 		menuItem = r.ReadMenuItem()
 		menuDela = r.lastMenuDela                 // raw highlighted DeLa path (navfp dela=)
 		pregameSentinel = r.readPregameSentinel() // game_globals+0x10 == 0xDEADBEEF
@@ -170,7 +227,7 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		// System Link screens (Select Profile vs System Link Games) live on a
 		// networked box, where the classifier otherwise collapses both to Unknown.
 		if navDebug {
-			r.logNavFingerprint(gameConnection, mainMenu, menuItem, menuFocus)
+			r.logNavFingerprint(gameConnection, mainMenu, menuItem, menuFocus, uiScreen, uiBackRec)
 		}
 	}
 
@@ -188,7 +245,26 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		gameCanScore, _ = mem.ReadU32At(hva)
 	}
 
-	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore)
+	// GAME-OVER flag (AddrGameOverFlag — PROVISIONAL, see offsets.go). On the
+	// Server build the postgame scoreboard is invisible to every classic gate
+	// (gc/mma/record/engine-ptr all keep their in-match values), so this is the
+	// signal that ends a hosted match. Defences, in order: read only in the
+	// netgame-hosting in-match context (gc==2 + engine running); exact-sentinel
+	// match; and a consecutive-read debounce before it counts. Unreadable (page
+	// translate failed) degrades to "no signal".
+	gameOver := false
+	if gameConnection == 2 && gameEngineRunning {
+		if v, ok := r.readLowU32Dynamic(r.off.AddrGameOverFlag); ok && v == 0xFFFFFFFF {
+			r.gameOverStreak++
+		} else {
+			r.gameOverStreak = 0
+		}
+		gameOver = r.gameOverStreak >= gameOverDebounceReads
+	} else {
+		r.gameOverStreak = 0
+	}
+
+	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore, gameOver)
 	r.lastStateInputs = scraper.StateInputs{
 		"main_menu":               mainMenu,
 		"game_connection":         gameConnection,
@@ -207,6 +283,20 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"ui_widget_blocks":        uint32(r.lastUIStats.Blocks),
 		"ui_highlighted":          uint32(r.lastUIStats.Highlighted),
 		"ui_max_tick":             r.lastUIStats.MaxTick,
+		// Screen-record classifier + support reads (screenrec.go). ui_screen is
+		// the CURRENT screen's resolved DeLa path ("" = no signal → heap
+		// fallback); ui_back_screen_rec == 0 exactly at the root main menu.
+		"ui_screen":          uiScreen,
+		"ui_screen_rec":      uiScreenRec,
+		"ui_back_screen_rec": uiBackRec,
+		"ui_osk_active":      oskActive,
+		"ui_ms_clock":        uiMsClock,
+		"ui_fade_state":      uint32(uiFadeState),
+		// Entry-flow slot fields (gate on the 4way record before trusting them).
+		"ui_slot_claimed": slotClaimed,
+		"ui_slot_profile": slotProfile,
+		// Debounced provisional game-over flag (the Server-build postgame signal).
+		"game_over": gameOver,
 	}
 	// A failed main_menu read means the low translation is broken (not merely a
 	// game region absent at the menu) — surface it so the ready loop re-translates.
@@ -235,7 +325,13 @@ func (r *Reader) LastStateInputs() scraper.StateInputs {
 	return r.lastStateInputs
 }
 
-func determineGameState(mainMenu, initialized, active, paused uint8, engineRunning bool, gameCanScore uint32) scraper.GameState {
+// gameOverDebounceReads is how many consecutive in-context sentinel reads the
+// provisional game-over flag needs before it flips the state — ~30ms at the
+// Live loop's 10ms poll, well under the ≥3s the scoreboard is up, but enough
+// that a single torn/garbage read can't end a live match.
+const gameOverDebounceReads = 3
+
+func determineGameState(mainMenu, initialized, active, paused uint8, engineRunning bool, gameCanScore uint32, gameOver bool) scraper.GameState {
 	if mainMenu != 0 || initialized == 0 {
 		return scraper.GameStateMenu
 	}
@@ -243,7 +339,10 @@ func determineGameState(mainMenu, initialized, active, paused uint8, engineRunni
 		return scraper.GameStatePreGame
 	}
 	if initialized == 1 && active == 1 && paused == 0 {
-		if engineRunning && gameCanScore != 0 {
+		// gameOver is the Server-build postgame signal (the debounced
+		// AddrGameOverFlag): the scoreboard phase keeps every classic gate at
+		// its in-match value, so game_can_score alone never fires there.
+		if engineRunning && (gameCanScore != 0 || gameOver) {
 			return scraper.GameStatePostGame
 		}
 		return scraper.GameStateInGame

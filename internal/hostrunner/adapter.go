@@ -56,6 +56,40 @@ type ScraperReadout struct {
 	GametypeCursorValid bool
 	GametypeListLen     int
 
+	// SCREEN-RECORD classifier (menu-nav pacing pass 2026-08-10). UiScreen is the
+	// CURRENT screen's widget_definition tag path, resolved from the fixed
+	// screen-record pool (AddrUiCurrentScreenRec 0x2E4000 → rec+0x00 tag id →
+	// tag table) — 2 fixed reads + a cached resolve, so it's cheap enough for the
+	// ~100ms host tick and it distinguishes visually identical screens the heap
+	// fingerprint can't. "" = unreadable (cold boot / mod without the tags) →
+	// Classify falls back to the heap-derived signals. UiBackScreenRec is the
+	// record of the screen B returns to; it reads 0 EXACTLY at the root main
+	// menu (non-zero = the cold-prime's "submenu opened" confirm; with UiScreen
+	// it derives the at_root_menu diagnostic). The raw CURRENT-record pointer is
+	// deliberately not carried — record slots are reused, so nothing downstream
+	// may ever key on the address (it stays visible in the raw StateInputs debug
+	// dump as "ui_screen_rec").
+	UiScreen        string
+	UiBackScreenRec uint32
+
+	// UI support reads (diagnostic surfaces: OskActive = the on-screen keyboard
+	// is capturing input, UiMsClock is the "UI alive" heartbeat, UiFadeState is
+	// the D5/49 root ↔ D4/48 sub-screen byte pair).
+	UiOskActive bool
+	UiMsClock   uint32
+	UiFadeState uint32
+
+	// System Link entry-flow slot fields (port 0) — the per-A effect confirms
+	// for join → select → commit. Persistent across flow exits; only meaningful
+	// under the 4way screen record (EntryFrameOf applies the gate).
+	SlotClaimed       bool
+	SlotProfileHandle uint32
+
+	// GameOver is the DEBOUNCED provisional game-over flag (AddrGameOverFlag —
+	// the Server build's only readable game-end signal; it also drives
+	// GameState postgame reader-side). Surfaced for the diagnostics panel.
+	GameOver bool
+
 	// Raw diagnostic reads for the admin panel (not used by the runner logic):
 	// Dela is the highlighted-widget DeLa path (navfp `dela=`); PregameSentinel is
 	// game_globals+0x10 == 0xDEADBEEF (pregame active).
@@ -117,6 +151,14 @@ func (s ScraperReadout) Observation() Observation {
 		GametypeCursorCount: s.GametypeCursorCount,
 		GametypeCursorValid: s.GametypeCursorValid,
 		GametypeListLen:     s.GametypeListLen,
+		UiScreen:            s.UiScreen,
+		UiBackScreenRec:     s.UiBackScreenRec,
+		UiOskActive:         s.UiOskActive,
+		UiMsClock:           s.UiMsClock,
+		UiFadeState:         s.UiFadeState,
+		SlotClaimed:         s.SlotClaimed,
+		SlotProfileHandle:   s.SlotProfileHandle,
+		GameOverFlag:        s.GameOver,
 		Dela:                s.Dela,
 		PregameSentinel:     s.PregameSentinel,
 		MainMenuRaw:         s.MainMenuRaw,

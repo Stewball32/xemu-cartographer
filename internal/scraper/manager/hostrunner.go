@@ -12,13 +12,17 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/customvariants"
 )
 
-// hostTickMinInterval bounds how often the host runner is ticked, decoupling it
-// from the scraper's per-phase poll cadence (500ms Ready, 10ms Live). It keeps
-// the observable admin stream + input re-evaluation at a few Hz — well below the
-// runner's own gating timings (BlindAdvanceAfter 900ms, RepressAfter 1200ms), so
-// menu navigation still lands, while the 30Hz Live poll doesn't flood the admin
-// room with "match live" waits.
-const hostTickMinInterval = 400 * time.Millisecond
+// hostTickMinInterval bounds how often the host runner is ticked. 100ms
+// (menu-nav pacing pass 2026-08-10): with the screen-record classifier the
+// per-tick cost is 2 fixed reads + cached resolves on top of the reads the
+// Ready loop already does, and the runner's tightened closed-loop timings
+// (NavKeyInterval 150ms, RepressAfter 350ms) need observations at this cadence
+// to confirm presses promptly — at the old 400ms a press's confirmation
+// (measured +31…176ms) always burned a whole extra tick. The Ready loop's
+// 500ms iteration stays the cadence for broadcasts/refreshes; hostSubTicks
+// slices its sleep to re-read state + tick the runner at this interval, and
+// ONLY while a host runner is attached (no cost for plain scraped boxes).
+const hostTickMinInterval = 100 * time.Millisecond
 
 // enumMinInterval bounds how often the create-game carousel enumeration runs.
 // The lists change only when a disc / gametype set changes, so a few-second
@@ -187,6 +191,51 @@ func (r *runner) tickHost(gs scraper.GameState, tick uint32) {
 	r.host.Tick(ro.Observation(), now)
 }
 
+// hostSubTicks sleeps out the remainder of a Ready iteration in
+// hostTickMinInterval slices, re-reading game state and ticking the host runner
+// between slices — the fast path that gives the runner ~100ms observations
+// while the Ready loop's heavier work (broadcasts, game-data refresh, title
+// checks, enumeration) stays at its 500ms cadence. Without a host runner
+// attached this is exactly sleepOrCancel(total): a plain scraped box pays
+// nothing for the fast cadence.
+//
+// Sub-ticks deliberately do ONLY ReadGameState + tickHost: a state transition
+// observed mid-window is acted on by the runner immediately (its Observation is
+// built from the fresh read) and the loop's own transition bookkeeping
+// (OnStateChange, thorough refresh, phase moves) runs on the next full
+// iteration, ≤500ms later — the same latency it had before. A failed sub-read
+// skips the tick (the runner never acts on a stale frame) and leaves recovery
+// to the full iteration's failure gates. Loop-goroutine only.
+func (r *runner) hostSubTicks(total time.Duration) {
+	if r.host == nil {
+		r.sleepOrCancel(total)
+		return
+	}
+	deadline := time.Now().Add(total)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		step := hostTickMinInterval
+		if remaining < step {
+			step = remaining
+		}
+		r.sleepOrCancel(step)
+		if r.ctx.Err() != nil {
+			return
+		}
+		if time.Until(deadline) <= 0 {
+			return // full iteration due — let runReady do the heavy read
+		}
+		gs, tick, err := r.reader.ReadGameState()
+		if err != nil {
+			continue
+		}
+		r.tickHost(gs, tick)
+	}
+}
+
 // setReadout publishes the current tick's readout for the diagnostics endpoint.
 // Loop goroutine only (writer).
 func (r *runner) setReadout(ro hostrunner.ScraperReadout) {
@@ -219,6 +268,15 @@ func (r *runner) buildHostReadout(gs scraper.GameState, tick uint32) hostrunner.
 		ro.GameConnection = stateInputInt(si, "game_connection")
 		ro.MenuFocus = uint32(stateInputInt(si, "menu_focus"))
 		ro.MenuItem = stateInputInt(si, "menu_item")
+		// Screen-record classifier + UI support reads (haloce screenrec.go).
+		ro.UiScreen, _ = si["ui_screen"].(string)
+		ro.UiBackScreenRec = uint32(stateInputInt(si, "ui_back_screen_rec"))
+		ro.UiOskActive, _ = si["ui_osk_active"].(bool)
+		ro.UiMsClock = uint32(stateInputInt(si, "ui_ms_clock"))
+		ro.UiFadeState = uint32(stateInputInt(si, "ui_fade_state"))
+		ro.SlotClaimed, _ = si["ui_slot_claimed"].(bool)
+		ro.SlotProfileHandle = uint32(stateInputInt(si, "ui_slot_profile"))
+		ro.GameOver, _ = si["game_over"].(bool)
 		// Raw diagnostic reads for the admin panel (string/bool, not integers).
 		ro.Dela, _ = si["menu_dela"].(string)
 		ro.PregameSentinel, _ = si["pregame_sentinel"].(bool)

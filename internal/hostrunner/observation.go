@@ -119,6 +119,45 @@ type Observation struct {
 	// Maps have no such prefix (widget index == ustr index), so no map equivalent.
 	GametypeListLen int
 
+	// UiScreen is the CURRENT screen's widget_definition tag path from the CE
+	// screen-record pool (AddrUiCurrentScreenRec 0x2E4000 → rec+0x00 tag id →
+	// tag table; menu-nav pacing pass 2026-08-10). Two fixed low reads + a cached
+	// resolve — the cheap, authoritative "which screen" signal Classify prefers
+	// over the UI-heap DeLa fingerprint, and the only signal that distinguishes
+	// visually identical screens (campaign ENTER NAME vs profiles ENTER NAME).
+	// "" = unreadable → Classify falls back to the heap-derived signals.
+	UiScreen string
+	// UiBackScreenRec is the record of the screen B returns to
+	// (AddrUiBackScreenRec 0x2E4010); it reads 0 EXACTLY at the root main menu.
+	// Going non-zero is the cold-menu prime's record-gated "a submenu opened"
+	// confirm after its tree-building A; with UiScreen it also derives the
+	// AtRootMainMenu diagnostic.
+	UiBackScreenRec uint32
+	// UiOskActive is 1 while the on-screen keyboard is capturing input (presses
+	// land in a text buffer, not menu nav). Diagnostic surface for now.
+	UiOskActive bool
+	// UiMsClock is the free-running ms-scale UI clock — the correct "UI alive"
+	// heartbeat. Diagnostic surface for now.
+	UiMsClock uint32
+	// UiFadeState is the transition byte pair (D5/49 root ↔ D4/48 sub-screen,
+	// read as LE u16). Diagnostic surface.
+	UiFadeState uint32
+
+	// System Link ENTRY-FLOW slot fields (port 0; mapper 2026-08-11 §1). The
+	// per-A effect confirms for the join → select → commit ladder: SlotClaimed
+	// flips 0→1 on the claim A (~173ms), SlotProfileHandle goes -1 → handle on
+	// the select A (~163ms), and the commit A flips the record + back-rec +
+	// game_connection in the same frame. PERSISTENT across flow exits — only
+	// meaningful while InSysLinkEntryFlow() (the 4way record); entryFrameOf
+	// applies that gate.
+	SlotClaimed       bool
+	SlotProfileHandle uint32
+
+	// GameOverFlag mirrors the debounced provisional game-over read (the same
+	// signal that flips Phase to postgame reader-side) — a diagnostic surface;
+	// the runner routes on Phase.
+	GameOverFlag bool
+
 	// Raw diagnostic reads surfaced to the admin panel (NOT consumed by Classify or
 	// the runner logic): Dela is the highlighted-widget DeLa path (navfp `dela=`);
 	// PregameSentinel is game_globals+0x10 == 0xDEADBEEF (pregame active).
@@ -128,6 +167,114 @@ type Observation struct {
 	UIWidgetBlocks  int
 	UIHighlighted   int
 	UIMaxTick       uint32
+}
+
+// uiPathMainMenuRoot is the root main menu's screen-record tag path (resolved
+// live on ce-h1perf, 2026-08-10). AtRootMainMenu requires the CURRENT screen to
+// resolve to exactly this — never infer root from back-rec==0 alone, because a
+// cold/unreadable record pool also reads 0.
+const uiPathMainMenuRoot = `ui\shell\main_menu\main_menu`
+
+// AtRootMainMenu reports a POSITIVE screen-record confirmation that the box sits
+// on the root main menu: the current screen resolves to the main-menu tag AND
+// the back-screen record is 0 (which is true exactly there). Surfaced on the
+// admin diagnostics (`at_root_menu`) so a live walk can verify the record reads;
+// the cold-menu prime itself runs its fixed check-B → check-Down → check-A
+// ladder regardless (see lobby.go), so nothing routes on this.
+func (obs Observation) AtRootMainMenu() bool {
+	return obs.UiScreen == uiPathMainMenuRoot && obs.UiBackScreenRec == 0
+}
+
+// screenFromUiPath maps a screen-record tag path onto the host-flow Screen.
+// Substring rules mirror the verified heap-signal markers; the hosting-flow
+// paths were live-confirmed on beta 2026-08-11 (`connected_map_select_wrapper`
+// is the System Link create-flow SELECT MAP screen, `server_list_screen` the
+// games browser, `4way_start2join_screen` the entry flow). Classify still
+// consults this AFTER the runtime-verified heap signals, as gap-fill rather
+// than override:
+//
+//	…\connected\pregame…       → the settled pregame lobby
+//	…\connected\server_list…   → the System Link games browser (CREATE screen)
+//	…connected_map_select… / …mp_map_select… / …gametype_select… → hosting cards
+//	ui\shell\main_menu…        → any front-end shell screen (root, submenus,
+//	                             profile flows, ENTER NAME, 4way join, …)
+func screenFromUiPath(path string) Screen {
+	switch {
+	case path == "":
+		return ScreenUnknown
+	case strings.Contains(path, `\connected\pregame`):
+		return ScreenLobby
+	case strings.Contains(path, `\connected\server_list`):
+		return ScreenSystemLink
+	case strings.Contains(path, `connected_map_select`),
+		strings.Contains(path, `mp_map_select`),
+		strings.Contains(path, `gametype_select`):
+		return ScreenHosting
+	case strings.HasPrefix(path, `ui\shell\main_menu`):
+		return ScreenMainMenu
+	}
+	return ScreenUnknown
+}
+
+// InSysLinkEntryFlow reports the screen record resolving to the System Link
+// ENTRY flow — the whole join → select → commit ladder runs under the ONE
+// 4way_start2join record ("4way" = the four LOCAL controller quadrants, not
+// network machines; the record does NOT flip per sub-screen). The heap
+// highlight stays the STALE conn item throughout — no 4way widget carries the
+// item kind bit — so the record is the only screen truth here, and the slot
+// fields (SlotClaimed / SlotProfileHandle) are the per-A truth.
+func (obs Observation) InSysLinkEntryFlow() bool {
+	return strings.Contains(obs.UiScreen, `4way`)
+}
+
+// slotProfileNone is AddrUiSlotProfile's "no profile selected" sentinel.
+const slotProfileNone = 0xFFFFFFFF
+
+// EntryFrame is which step of the System Link entry ladder the port-0 slot is
+// on, classified from the slot-field frame table (mapper §1 — cold-attachable
+// mid-flow; verified on five independently-staged rigs):
+//
+//	initial:  4way record, slot not claimed        → next press: claim A
+//	claimed:  4way, claimed, handle == none        → next press: select A
+//	selected: 4way, claimed, handle != none        → next press: commit A
+//
+// EntryNone outside the 4way record — the slot fields DO NOT reset on flow
+// exit, so they must never be read without this gate.
+type EntryFrame int
+
+const (
+	EntryNone EntryFrame = iota
+	EntryInitial
+	EntryClaimed
+	EntrySelected
+)
+
+func (f EntryFrame) String() string {
+	switch f {
+	case EntryInitial:
+		return "initial"
+	case EntryClaimed:
+		return "claimed"
+	case EntrySelected:
+		return "selected"
+	default:
+		return "none"
+	}
+}
+
+// EntryFrameOf classifies the observation onto the entry-ladder frame table.
+func EntryFrameOf(obs Observation) EntryFrame {
+	if !obs.InSysLinkEntryFlow() {
+		return EntryNone
+	}
+	switch {
+	case !obs.SlotClaimed:
+		return EntryInitial
+	case obs.SlotProfileHandle == slotProfileNone:
+		return EntryClaimed
+	default:
+		return EntrySelected
+	}
 }
 
 // MenuItem is which front-end menu item is highlighted, read from the CE UI
@@ -226,9 +373,15 @@ func Classify(obs Observation) Screen {
 	// (menu_item=SystemLinkGames) and re-press Y — RUNTIME-OBSERVED on a box that
 	// BOOTED INTO a persisted pregame lobby (Stewart: dela=…\connected\pregame\…,
 	// menu_item=6, serverlist=true, conn=2 → runner looped "create system-link game").
-	// The highlighted widget under \connected\pregame is a definitive "this IS the
-	// lobby" signal that overrides the sticky server_list, so classify it as the lobby.
-	if strings.Contains(obs.Dela, `\connected\pregame`) {
+	// Signalled by the SCREEN RECORD or the dela under \connected\pregame — the
+	// record is the primary since the item-kind highlight pick correctly reports
+	// "no live item" on the pregame screen (its only highlighted block is the
+	// xbox_graphic DECORATION — mapper 2026-08-11 §7), leaving dela empty there.
+	// Safe ahead of the cursor checks: the create-flow card screens carry their own
+	// records (connected_map_select_wrapper — live-verified), never the pregame one.
+	if strings.Contains(obs.Dela, `\connected\pregame`) ||
+		strings.Contains(obs.UiScreen, `\connected\pregame`) ||
+		strings.Contains(obs.UiScreen, `connected_pregame`) {
 		return ScreenLobby
 	}
 	// HIGH-GVA screen signals FIRST — read from the UI widget heap via the stable
@@ -262,7 +415,10 @@ func Classify(obs Observation) Screen {
 	// off the RELIABLE widget, NOT game_connection, which reads stale-0 here in the
 	// runner's fast loop (the same low-global drift as the original stall). Without
 	// this, create-game's "Y at conn==1" never fired and the runner pressed A (JOIN).
-	if obs.MenuItem == MenuItemSystemLinkGames {
+	// NOT while the record shows the 4way ENTRY flow: the browser's list widgets
+	// LINGER after a prior visit (presence-detection), so on a re-entry the flow
+	// would otherwise classify as the CREATE screen and fire Y mid-join.
+	if obs.MenuItem == MenuItemSystemLinkGames && !obs.InSysLinkEntryFlow() {
 		return ScreenSystemLink
 	}
 	// Front-end menu: a recognised highlighted front-end item (main menu / MP
@@ -270,6 +426,17 @@ func Classify(obs Observation) Screen {
 	// possibly-stale low main_menu global.
 	if obs.MenuItem.onFrontEndMenu() {
 		return ScreenMainMenu
+	}
+	// SCREEN-RECORD classifier (2026-08-10): the resolved current-screen tag
+	// path. Placed AFTER the runtime-verified heap signals (cursor counts /
+	// server-list presence / highlighted item) so it can never override them —
+	// its job is the gaps they leave: a cold main menu whose widget tree isn't
+	// built yet (record readable, dela blank — classifies as the front-end
+	// WITHOUT waking the tree), the campaign/profile ENTER NAME screens, the
+	// 4way join flow, and any shell screen with an unreadable highlight. This
+	// is what lets the fast host tick classify from 2 fixed reads.
+	if s := screenFromUiPath(obs.UiScreen); s != ScreenUnknown {
+		return s
 	}
 	// LOW-GVA fallback. The system-link browser is NOT classified from
 	// game_connection anymore — that low global flickers/reads stale in the runner's

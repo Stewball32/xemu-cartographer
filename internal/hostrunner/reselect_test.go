@@ -140,3 +140,75 @@ func TestReselectSettlesAtLobby(t *testing.T) {
 		t.Fatalf("re-select should settle to idle at the lobby, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
 	}
 }
+
+// REGRESSION (live, 2026-08-11): a MAP-ONLY re-pick hung on SELECT GAMETYPE. The
+// sequence advances onto the gametype card on BlindAdvanceAfter — inside the
+// map→gametype screen-transition window where the gametype list isn't up yet
+// (count 0) — and during a RE-SELECT the PREVIOUS commit's map+gametype are still
+// resident, so the old "finalized pick resident" test advanced PAST the card
+// without pressing its A; the reach-lobby sentinel then waited forever. The
+// count-0 advance now requires the settled-lobby SCREEN RECORD; the transition
+// tick (card-wrapper record + stale residents) must HOLD, and the gametype card —
+// whose cursor already rests ON the unchanged pick — must still commit its A.
+func TestReselectMapOnlyStillCommitsGametypeA(t *testing.T) {
+	const (
+		mapScreen      = `ui\shell\main_menu\multiplayer_type_select\connected\connected_map_select_wrapper`
+		gametypeScreen = `ui\shell\main_menu\multiplayer_type_select\connected\connected_gametype_select_wrapper`
+		pregameScreen  = `ui\shell\main_menu\multiplayer_type_select\connected\pregame\connected_pregame_screen`
+	)
+	withResidents := func(o Observation, screen string) Observation {
+		o.Map, o.Gametype = "bloodgulch", "slayer" // the PREVIOUS commit, still resident
+		o.UiScreen = screen
+		return o
+	}
+	sel := NewAtomicSelector()
+	sel.Set(Pick{Name: "wizard", Steps: 2}, Pick{Name: "slayer", Steps: 0}) // map changed, gametype unchanged
+	s := ReselectSequence(DefaultTiming, sel)
+	t0 := time.Unix(1000, 0)
+
+	// Safe back-out: B on the lobby, then B on SELECT GAMETYPE.
+	lob := withResidents(lobby(), pregameScreen)
+	if a := s.Step(lob, t0); a.Key() != "b" {
+		t.Fatalf("back-out 1 should press B on the lobby, got %v", a)
+	}
+	if a := s.Step(withResidents(gametypeSelectObs(0), gametypeScreen), t0.Add(time.Second)); a.Key() != "b" {
+		t.Fatalf("back-out 2 should press B on SELECT GAMETYPE, got %v", a)
+	}
+	// Re-drive the map: cursor 0 → target 2, then commit.
+	if a := s.Step(withResidents(mapSelectObs(0), mapScreen), t0.Add(2*time.Second)); a.Key() != "Right" {
+		t.Fatalf("map re-drive should press Right, got %v", a)
+	}
+	if a := s.Step(withResidents(mapSelectObs(2), mapScreen), t0.Add(3*time.Second)); a.Key() != "a" {
+		t.Fatalf("map on target should commit A, got %v", a)
+	}
+	// THE RACE TICK: the sequence advances onto the gametype card on the blind
+	// timer while the screen is still transitioning — no list up (count 0), the
+	// OLD map+gametype resident, the record on a card wrapper. Must HOLD.
+	transition := withResidents(Observation{Fresh: true, Phase: PhasePreGame, Connection: ConnHosting}, gametypeScreen)
+	raceAt := t0.Add(3*time.Second + DefaultTiming.BlindAdvanceAfter)
+	if a := s.Step(transition, raceAt); a.Kind != ActionWait {
+		t.Fatalf("count-0 transition with stale residents must HOLD, got %v (%s)", a.Kind, a.Reason)
+	}
+	if cur, _ := s.Current(); cur.Name != "reselect-gametype" {
+		t.Fatalf("sequence skipped the gametype card during the transition (now %q) — the live hang", cur.Name)
+	}
+	// The gametype list comes up with the cursor already ON the unchanged pick —
+	// the card must STILL press A to leave the screen.
+	if a := s.Step(withResidents(gametypeSelectObs(0), gametypeScreen), raceAt.Add(300*time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("unchanged gametype on target must still commit A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// A committed → settled lobby (pregame record) → done.
+	done := s.Step(withResidents(lobby(), pregameScreen), raceAt.Add(300*time.Millisecond+DefaultTiming.BlindAdvanceAfter))
+	if done.Kind != ActionDone {
+		t.Fatalf("after the gametype A the re-select should settle at the lobby, got %v (%s)", done.Kind, done.Reason)
+	}
+}
+
+// The record-less fallback must still let the catch-up complete for a settled box
+// (no ui_screen, finalized map+gametype resident) — the pre-record behavior.
+func TestCardCatchUpFallbackWithoutRecord(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s.Step(lobby(), time.Unix(1000, 0)); a.Kind != ActionDone {
+		t.Fatalf("settled record-less box should catch up to done, got %v (%s)", a.Kind, a.Reason)
+	}
+}

@@ -10,9 +10,15 @@ import (
 	"github.com/coder/websocket"
 )
 
-// defaultHold mirrors VNCKeyboard.sendChord's 60ms hold and xemu.SendKey's
-// default press duration closely enough for menu input.
-const defaultHold = 80 * time.Millisecond
+// defaultHold is the press→release gap for Tap/Chord. 30ms (menu-nav pacing
+// pass 2026-08-10): CE's front end has NO initial repeat delay — a HELD d-pad
+// autosteps once per 30Hz menu tick (~33ms), so the old 80ms hold spanned 2–3
+// ticks and a single "tap" could step a carousel 2–3 cards (the overshoot the
+// closed-loop nav kept having to walk back). ~30ms holds landed 12/12 through
+// the same RFB pipeline while 50ms holds already sometimes double-stepped.
+// (The browser-side VNCKeyboard keeps its own 60ms hold — a human path, not
+// this one.)
+const defaultHold = 30 * time.Millisecond
 
 // Injector holds one RFB-over-WebSocket connection to a container's Xvnc and
 // writes KeyEvents. Not safe for concurrent use — serialise from one goroutine

@@ -39,6 +39,19 @@ type Diagnostics struct {
 	UIHighlighted   int    `json:"ui_highlighted"`   // blocks carrying the +0x60 highlight flag
 	UIMaxTick       uint32 `json:"ui_max_tick"`      // max widget activation tick ("UI tick")
 	TreeBuilt       bool   `json:"tree_built"`       // derived: the widget tree is up (not a cold menu)
+	// Screen-record classifier + UI support reads (2026-08-10 pacing pass).
+	UiScreen        string `json:"ui_screen"`          // resolved current-screen tag path ("" = no signal)
+	UiBackScreenRec uint32 `json:"ui_back_screen_rec"` // back-screen record — 0 exactly at the root menu
+	AtRootMenu      bool   `json:"at_root_menu"`       // derived: screen record positively confirms the root main menu
+	UiOskActive     bool   `json:"ui_osk_active"`      // on-screen keyboard is capturing input
+	UiMsClock       uint32 `json:"ui_ms_clock"`        // free-running UI ms clock — the "UI alive" heartbeat
+	UiFadeState     uint32 `json:"ui_fade_state"`      // D5/49 root ↔ D4/48 sub-screen byte pair
+	// Entry-flow slot fields + the classified ladder frame (2026-08-11): the
+	// per-A truth of the System Link join → select → commit ladder.
+	SlotClaimed       bool   `json:"slot_claimed"`
+	SlotProfileHandle uint32 `json:"slot_profile_handle"`
+	EntryFrame        string `json:"entry_frame"`
+	GameOverFlag      bool   `json:"game_over_flag"` // debounced provisional 0x277B94 (postgame trigger)
 	// NavCandidates: raw candidate offsets from the capture-and-diff hunts, for an
 	// operator to watch live and tell us which one tracks. Diagnostic only.
 	NavCandidates map[string]uint32 `json:"nav_candidates"`
@@ -89,6 +102,16 @@ func (d *Diagnostics) ApplyReadout(ro ScraperReadout) {
 	d.UIWidgetBlocks = ro.UIWidgetBlocks
 	d.UIHighlighted = ro.UIHighlighted
 	d.UIMaxTick = ro.UIMaxTick
+	d.UiScreen = ro.UiScreen
+	d.UiBackScreenRec = ro.UiBackScreenRec
+	d.AtRootMenu = obs.AtRootMainMenu()
+	d.UiOskActive = ro.UiOskActive
+	d.UiMsClock = ro.UiMsClock
+	d.UiFadeState = ro.UiFadeState
+	d.SlotClaimed = ro.SlotClaimed
+	d.SlotProfileHandle = ro.SlotProfileHandle
+	d.EntryFrame = EntryFrameOf(obs).String()
+	d.GameOverFlag = ro.GameOver
 	d.NavCandidates = ro.NavCandidates
 	d.TreeBuilt = ro.Dela != "" || ro.MenuFocus != 0 || ro.UIHighlighted > 0
 	d.MapCursor = CursorView{Index: ro.MapCursor, Count: ro.MapCursorCount, Valid: ro.MapCursorValid}
@@ -129,6 +152,16 @@ func (reg *Registry) Diagnostics(instance string) Diagnostics {
 		d.UIWidgetBlocks = ev.UIWidgetBlocks
 		d.UIHighlighted = ev.UIHighlighted
 		d.UIMaxTick = ev.UIMaxTick
+		d.UiScreen = ev.UiScreen
+		d.UiBackScreenRec = ev.UiBackScreenRec
+		d.AtRootMenu = ev.UiScreen == uiPathMainMenuRoot && ev.UiBackScreenRec == 0
+		d.UiOskActive = ev.UiOskActive
+		d.UiMsClock = ev.UiMsClock
+		d.UiFadeState = ev.UiFadeState
+		d.SlotClaimed = ev.SlotClaimed
+		d.SlotProfileHandle = ev.SlotProfileHandle
+		d.EntryFrame = ev.EntryFrame
+		d.GameOverFlag = ev.GameOverFlag
 		// "Widget tree built?" — the cold-boot go/no-go the prime keys on: a readable
 		// highlight, a focused widget, or a populated heap all mean it's awake.
 		d.TreeBuilt = ev.Dela != "" || ev.MenuFocus != 0 || ev.UIHighlighted > 0

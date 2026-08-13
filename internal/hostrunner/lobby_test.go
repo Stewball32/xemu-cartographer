@@ -1,6 +1,7 @@
 package hostrunner
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -155,7 +156,7 @@ func TestSequenceCardWaitsForCursorMove(t *testing.T) {
 		t.Fatalf("first map nav should press Right, got %v", a)
 	}
 	// Same cursor, within RepressAfter → wait (don't double-press → don't overshoot).
-	if a := s.Step(hostingCur(0, 0), t0.Add(1500*time.Millisecond)); a.Kind != ActionWait {
+	if a := s.Step(hostingCur(0, 0), t0.Add(1*time.Second+DefaultTiming.RepressAfter/2)); a.Kind != ActionWait {
 		t.Fatalf("nav should hold until cursor moves, got %v (%s)", a.Kind, a.Reason)
 	}
 }
@@ -341,55 +342,13 @@ func TestSelectMapKeepsDrivingMidScroll(t *testing.T) {
 	}
 }
 
-// TestColdMainMenuPrime reproduces the cold-boot main-menu hang and asserts the
-// A→(wait tree)→B prime: main_menu=1 but the CE widget tree isn't built (dela empty,
-// menu_focus 0). A direction press doesn't build it (looped on Down/b); pressing A
-// into a reversible submenu does. The planner primes with A, waits for the tree, then
-// B, then resumes normal nav. A genuinely off-route Unknown (dela populated) still Backs.
-func TestColdMainMenuPrime(t *testing.T) {
-	t0 := time.Unix(1000, 0)
-	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
-	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-
-	// 1. Cold blank main menu → press A to open a submenu (build the tree), NOT Down/B.
-	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("cold menu: got %v key=%q, want tap a (prime open submenu)", a.Kind, a.Key())
-	}
-	// 2. A landed → on a submenu now (dela populated / menu_focus set) → press B to
-	//    return (after the NavKeyInterval pacing window).
-	sub := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\load_game_menu\foo`, MenuFocus: 0x80046578}
-	s.Step(sub, t0.Add(300*time.Millisecond)) // confirm A landed (focus changed 0→set)
-	if a := s.Step(sub, t0.Add(1400*time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
-		t.Fatalf("tree built on submenu → got %v key=%q (%s), want tap b (prime return)", a.Kind, a.Key(), a.Reason)
-	}
-	// 3. B landed → back on the main menu with the tree built (dela reads an item) →
-	//    NORMAL nav resumes (MULTIPLAYER highlighted → A).
-	built := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemMultiplayer, Dela: `ui\shell\main_menu\main_menu_item_multiplayer`, MenuFocus: 0x80046600}
-	s.Step(built, t0.Add(1700*time.Millisecond)) // confirm B landed
-	if a := s.Step(built, t0.Add(2900*time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("back on built menu (MULTIPLAYER) → got %v key=%q (%s), want tap a (enter MP)", a.Kind, a.Key(), a.Reason)
-	}
-
-	// Off-route Unknown with a POPULATED highlight (dela set, menu_focus set) must NOT
-	// prime — it Back-normalises.
-	off := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\settings_select\player_setup\foo`, MenuFocus: 0x80046700}
-	s2 := DefaultHostSequence(DefaultTiming, proceedSelector())
-	if a := s2.Step(off, t0); a.Kind != ActionTap || a.Key() != "b" {
-		t.Fatalf("off-route Unknown: got %v key=%q, want tap b (Back-normalise, no prime)", a.Kind, a.Key())
-	}
-}
-
 // The prime must NEVER fire outside the cold main menu — not on SELECT MAP (a live
 // lobby screen) even with a blank-ish read.
 func TestPrimeNeverFiresOffMainMenu(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	// Hosting (ConnHosting) with no readable highlight is NOT the cold main menu.
 	o := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnHosting,
-		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0x80046588}
 	a := s.Step(o, time.Unix(1000, 0))
 	if a.Kind == ActionTap && a.Key() == "a" {
 		t.Fatalf("prime must not fire off the main menu (ConnHosting), got tap a")
@@ -704,7 +663,7 @@ func TestSequenceRepress(t *testing.T) {
 	if a := s.Step(systemLink(), t0); a.Key() != "y" {
 		t.Fatal("expected first Y press")
 	}
-	if a := s.Step(systemLink(), t0.Add(500*time.Millisecond)); a.Kind != ActionWait {
+	if a := s.Step(systemLink(), t0.Add(DefaultTiming.RepressAfter/2)); a.Kind != ActionWait {
 		t.Fatal("expected wait before repress window")
 	}
 	a := s.Step(systemLink(), t0.Add(DefaultTiming.RepressAfter+time.Millisecond))
@@ -801,8 +760,11 @@ func TestSelectProfileAdvancesFast(t *testing.T) {
 		t.Fatalf("after landing, the next A should fire on the short interval, got %v key=%q (%s)",
 			next.Kind, next.Key(), next.Reason)
 	}
-	if DefaultTiming.ProfileAdvanceInterval >= DefaultTiming.NavKeyInterval {
-		t.Fatal("ProfileAdvanceInterval must be shorter than NavKeyInterval to be a speed-up")
+	// Both intervals were tightened to the measured pipeline floor (2026-08-10
+	// pacing pass), so they may be EQUAL — but the profile advance must never be
+	// SLOWER than general nav pacing (it's the flow's fully-confirmed segment).
+	if DefaultTiming.ProfileAdvanceInterval > DefaultTiming.NavKeyInterval {
+		t.Fatal("ProfileAdvanceInterval must not exceed NavKeyInterval — the profile A-advance is fully confirmation-gated")
 	}
 }
 
@@ -873,66 +835,244 @@ func TestBothCardStepsWrapBackward(t *testing.T) {
 	}
 }
 
-// REGRESSION (urgent, be052c6): the cold-menu prime must press A EXACTLY ONCE and then
-// CONFIRM the widget tree before any further press. The cold menu's default highlight
-// is SINGLE PLAYER and menu_focus stays 0 until the tree builds, so the ordinary
-// RepressAfter path re-pressed A every 700ms — mashing it into Single Player and
-// LAUNCHING A CAMPAIGN GAME.
-func TestColdPrimePressesAOnlyOnce(t *testing.T) {
-	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
+// TestAttractModeWakesWithB: after idling, the front end plays an in-engine demo —
+// main_menu_active reads 0 while the shell stays resident (menu_focus non-zero /
+// the screen record still resolves a front-end screen). The nav must press B
+// (paced) to wake it, NOT block; a mis-fired select into a map/campaign (no shell
+// signal) still blocks loudly.
+func TestAttractModeWakesWithB(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
 	t0 := time.Unix(1000, 0)
 
-	if a := s.Step(cold, t0); a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("prime should press A once, got %v key=%q", a.Kind, a.Key())
+	attract := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, MenuFocus: 0x80046600} // focus alive ⇒ shell resident
+	// PERSISTENCE GATE: a 1-tick main_menu=0 blip must not fire a stray B — the
+	// state has to hold for attractConfirmAfter before the first wake press.
+	if a := s.Step(attract, t0); a.Kind != ActionWait {
+		t.Fatalf("attract must be CONFIRMED before pressing, got %v (%s)", a.Kind, a.Reason)
 	}
-	// Nothing changed (cold box, tree not built). For the WHOLE confirm window there
-	// must be NO further press — most importantly none at RepressAfter (700ms).
-	for _, d := range []time.Duration{
-		DefaultTiming.RepressAfter + time.Millisecond, // the exact regression point
-		DefaultTiming.RepressAfter * 2,
-		primeConfirmWindow - 100*time.Millisecond,
-	} {
-		if a := s.Step(cold, t0.Add(d)); a.Kind == ActionTap {
-			t.Fatalf("at +%v the prime pressed %q again — this mashes A into Single Player "+
-				"and launches a campaign", d, a.Key())
-		}
+	tB := t0.Add(attractConfirmAfter + time.Millisecond)
+	if a := s.Step(attract, tB); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("attract (focus alive, persisted): got %v key=%q (%s), want tap b", a.Kind, a.Key(), a.Reason)
 	}
-	// Past the generous window a SECOND prime A is allowed (the first genuinely dropped)…
-	a := s.Step(cold, t0.Add(primeConfirmWindow+time.Millisecond))
-	if a.Kind != ActionTap || a.Key() != "a" {
-		t.Fatalf("after the confirm window a retry A is allowed, got %v key=%q", a.Kind, a.Key())
+	// Paced — no B-mash inside the repress window.
+	if a := s.Step(attract, tB.Add(DefaultTiming.RepressAfter/2)); a.Kind != ActionWait {
+		t.Fatalf("attract B must pace, got %v (%s)", a.Kind, a.Reason)
 	}
-	// …but it is BOUNDED: eventually it blocks instead of pressing A forever.
-	now := t0.Add(primeConfirmWindow + time.Millisecond)
-	sawBlocked := false
-	for i := 0; i < 6; i++ {
-		now = now.Add(primeConfirmWindow + time.Millisecond)
-		if s.Step(cold, now).Kind == ActionBlocked {
-			sawBlocked = true
-			break
-		}
+	if a := s.Step(attract, tB.Add(DefaultTiming.RepressAfter+time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("attract: next paced B, got %v key=%q", a.Kind, a.Key())
 	}
-	if !sawBlocked {
-		t.Fatal("prime must BLOCK after primeMaxAttempts, never keep pressing A on the cold menu")
+	// A blip that RESOLVES (main_menu back to 1) resets the persistence gate: the
+	// next attract-shaped tick starts the confirmation over instead of pressing.
+	s.Step(mainMenu(), tB.Add(2*time.Second))
+	if a := s.Step(attract, tB.Add(2*time.Second+100*time.Millisecond)); a.Kind == ActionTap {
+		t.Fatalf("post-blip attract must re-confirm before pressing, got tap %q", a.Key())
+	}
+
+	// Screen record alone (focus unreadable) is also enough shell evidence.
+	s2 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	attractRec := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, UiScreen: uiPathMainMenuRoot}
+	s2.Step(attractRec, t0) // confirming
+	if a := s2.Step(attractRec, t0.Add(attractConfirmAfter+time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("attract (screen record alive): got %v key=%q, want tap b", a.Kind, a.Key())
+	}
+
+	// No shell signal at all ⇒ the mis-fired-select case: block loudly, never press.
+	s3 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	misfire := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu}
+	if a := s3.Step(misfire, t0); a.Kind != ActionBlocked {
+		t.Fatalf("mis-fired select (no shell signal) must block, got %v (%s)", a.Kind, a.Reason)
 	}
 }
 
-// When the A DOES land (tree builds → dela/menu_focus populate) the prime backs out
-// with B immediately — the fast path is unaffected by the safety hold.
-func TestColdPrimeBacksOutAsSoonAsTreeBuilds(t *testing.T) {
+// TestSysLinkEntryFlowAdvancesOnScreenRecord: the entry-flow crawl regression
+// (beta.log 2026-08-11). The Select Profile / start2join widgets never claim the
+// heap highlight, so menu_item reads the STALE conn item through the whole flow;
+// the highlight-only connect-hold check therefore burned the full 8s window per
+// A (one press per 8s). The SCREEN RECORD flips to the 4way flow within a second
+// of the A landing — the hold must clear on that record move, the entry-flow A's
+// must pace on ProfileAdvanceInterval, and the hold must never re-arm there.
+func TestSysLinkEntryFlowAdvancesOnScreenRecord(t *testing.T) {
 	s := DefaultHostSequence(DefaultTiming, proceedSelector())
-	t0 := time.Unix(1000, 0)
-	cold := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0}
-	s.Step(cold, t0) // prime A
+	now := time.Unix(1000, 0)
+	subScreen := `ui\shell\main_menu\multiplayer_type_select\multiplayer_type_select_screen`
+	entryScreen := `ui\shell\main_menu\multiplayer_type_select\connected\4way_profile_select\4way_start2join_screen`
 
-	built := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
-		MenuItem: MenuItemUnknown, Dela: `ui\shell\main_menu\campaign_select\foo`, MenuFocus: 0x80046578}
-	// The landing tick ITSELF emits the B (no wasted tick) — well inside the safety
-	// hold, proving the hold only slows the FAILURE path, never the working one.
-	if a := s.Step(built, t0.Add(500*time.Millisecond)); a.Kind != ActionTap || a.Key() != "b" {
-		t.Fatalf("tree built → back out with B promptly, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	conn := obsMI(MenuItemSystemLink, 0x8000)
+	conn.UiScreen = subScreen
+	if a := s.Step(conn, now); a.Key() != "a" {
+		t.Fatalf("expected the single A on the System Link item, got %v", a)
+	}
+	// The record flips to the entry flow while the highlight stays the stale conn
+	// item — the hold must clear NOW, not after the 8s connect window.
+	entry := obsMI(MenuItemSystemLink, 0x8000) // stale item, unchanged focus
+	entry.UiScreen = entryScreen
+	now = now.Add(1500 * time.Millisecond)
+	if a := s.Step(entry, now); a.Kind != ActionWait || !strings.Contains(a.Reason, "moved") {
+		t.Fatalf("record moved → the connect hold must clear, got %v (%s)", a.Kind, a.Reason)
+	}
+	// The next A (the claim) goes out on the SHORT profile pace and must NOT
+	// re-arm the hold.
+	now = now.Add(DefaultTiming.ProfileAdvanceInterval + time.Millisecond)
+	if a := s.Step(entry, now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("entry flow should A-advance on the short pace, got %v (%s)", a.Kind, a.Reason)
+	}
+	if !s.sysLinkConnectAt.IsZero() {
+		t.Fatal("the connect hold must NOT re-arm on an entry-flow A (that was the one-press-per-8s crawl)")
+	}
+	// The claim's slot field flipped (frame advanced) → the next A fires after
+	// just the short pace.
+	claimed := obsMI(MenuItemSystemLink, 0x8000) // focus deliberately UNCHANGED — the frame is the confirm
+	claimed.UiScreen = entryScreen
+	claimed.SlotClaimed = true
+	claimed.SlotProfileHandle = slotProfileNone
+	now = now.Add(DefaultTiming.ProfileAdvanceInterval + time.Millisecond)
+	if a := s.Step(claimed, now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("next entry-flow A should fire on the short pace after the frame advanced, got %v (%s)", a.Kind, a.Reason)
+	}
+}
+
+// TestEntryFlowFrameConfirms: each entry-ladder A is confirmed ONLY by its slot
+// field flipping (mapper §1) — menu_focus relinks on DELIVERY even when the flow
+// ignores the press, so a focus change with an unchanged frame must NOT advance;
+// a swallowed press (no flip) re-presses after RepressAfter; and the commit is
+// confirmed by the record leaving the 4way flow.
+func TestEntryFlowFrameConfirms(t *testing.T) {
+	entryScreen := `ui\shell\main_menu\multiplayer_type_select\connected\4way_profile_select\4way_start2join_screen`
+	frame := func(claimed bool, handle uint32, focus uint32) Observation {
+		o := obsMI(MenuItemUnknown, focus) // no live item through the whole flow (stamp-gated pick)
+		o.UiScreen = entryScreen
+		o.SlotClaimed = claimed
+		o.SlotProfileHandle = handle
+		return o
+	}
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+
+	// initial → claim A.
+	if a := s.Step(frame(false, slotProfileNone, 0x8000), now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("initial frame should press the claim A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Focus relinks (delivery) but the claim flag did NOT flip — the flow ignored
+	// or hasn't processed the press: must HOLD, not advance on focus.
+	now = now.Add(200 * time.Millisecond)
+	if a := s.Step(frame(false, slotProfileNone, 0x8001), now); a.Kind != ActionWait {
+		t.Fatalf("focus-only change must not confirm an entry A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Still no flip by RepressAfter → the press was swallowed → re-press the SAME A.
+	now = now.Add(DefaultTiming.RepressAfter)
+	if a := s.Step(frame(false, slotProfileNone, 0x8001), now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("swallowed claim should re-press after RepressAfter, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Claim flipped → the select A fires on the short pace.
+	now = now.Add(DefaultTiming.ProfileAdvanceInterval + time.Millisecond)
+	if a := s.Step(frame(true, slotProfileNone, 0x8001), now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("claimed frame should press the select A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Handle landed → the commit A fires.
+	now = now.Add(DefaultTiming.ProfileAdvanceInterval + time.Millisecond)
+	if a := s.Step(frame(true, 0x80330000, 0x8001), now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("selected frame should press the commit A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Commit lands: the record leaves the 4way flow (browser) — Done short-circuits
+	// the step entirely via reachedSystemLink (create-game presses Y next).
+	browser := systemLink()
+	now = now.Add(300 * time.Millisecond)
+	if a := s.Step(browser, now); a.Kind != ActionTap || a.Key() != "y" {
+		t.Fatalf("browser after commit should reach create-game's Y, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+}
+
+// TestRootBlindFallback (replaces the prime tests — mapper §4: nothing to wake):
+// a record-confirmed ROOT menu with no readable item gets a PACED, never-
+// activating Down probe; an empty record means the front end is initializing →
+// hold; a record-resolved non-root blank screen Back-normalises; an OSK-capturing
+// blank screen presses B (BACK on every OSK screen on this build, §3).
+func TestRootBlindFallback(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	base := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, Dela: "", MenuFocus: 0x80046588}
+
+	// Initializing (record 0/unreadable): hold, never press.
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s.Step(base, t0); a.Kind != ActionWait {
+		t.Fatalf("no record → front end initializing → wait, got %v (%s)", a.Kind, a.Reason)
+	}
+
+	// Root-confirmed + blind → paced Down probes, never an activate.
+	root := base
+	root.UiScreen = uiPathMainMenuRoot
+	s2 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s2.Step(root, t0); a.Kind != ActionTap || a.Key() != "Down" {
+		t.Fatalf("blind root should probe Down, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// Focus relinks on delivery → the landed branch fires, but the next Down still
+	// paces on the probe gap (never a rapid-fire Down).
+	rootMoved := root
+	rootMoved.MenuFocus = 0x80046600
+	if a := s2.Step(rootMoved, t0.Add(200*time.Millisecond)); a.Kind == ActionTap {
+		t.Fatalf("root-blind Down must pace on the probe gap, got tap %q", a.Key())
+	}
+	if a := s2.Step(rootMoved, t0.Add(rootBlindProbeGap+time.Millisecond)); a.Kind != ActionTap || a.Key() != "Down" {
+		t.Fatalf("next paced Down probe, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// The probe re-stamps the ring into readability → normal identity routing.
+	woke := obsMI(MenuItemMultiplayer, 0x80046700)
+	if a := s2.Step(woke, t0.Add(rootBlindProbeGap+400*time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("item readable → route (A on MULTIPLAYER), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+
+	// Non-root blank screen (e.g. the campaign profile flow): Back-normalise.
+	offRoute := base
+	offRoute.UiScreen = `ui\shell\main_menu\new_campaign_creating_profile`
+	offRoute.UiBackScreenRec = 0x4B3098
+	s3 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s3.Step(offRoute, t0); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("non-root blank screen should Back-normalise, got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+
+	// OSK capturing on that screen: STILL B — it is BACK, not backspace, on every
+	// OSK screen on this build (the create-flow edit page's second B cancels).
+	osk := offRoute
+	osk.UiOskActive = true
+	s4 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s4.Step(osk, t0); a.Kind != ActionTap || a.Key() != "b" {
+		t.Fatalf("OSK screen should press B (BACK), got %v key=%q (%s)", a.Kind, a.Key(), a.Reason)
+	}
+	// And the Down probe is OSK-suppressed even at a confirmed root (a grid key
+	// would move the OSK cursor): B routes instead.
+	oskRoot := root
+	oskRoot.UiOskActive = true
+	s5 := DefaultHostSequence(DefaultTiming, proceedSelector())
+	if a := s5.Step(oskRoot, t0); a.Kind == ActionTap && a.Key() == "Down" {
+		t.Fatal("the root-blind Down must not fire while the OSK is capturing")
+	}
+}
+
+// TestNavBudgetResetsWhenMenuAppears: presses spent BEFORE the menu exists (the
+// attract-wake B's double as boot-intro skips) must not starve the at-menu
+// routing — beta.log 2026-08-10 showed ~30 of 48 presses burned pre-menu, so the
+// planner blocked moments after the menu finally appeared. The budget guards
+// "pressing without progress"; main_menu going 0→1 IS progress, so it resets.
+func TestNavBudgetResetsWhenMenuAppears(t *testing.T) {
+	s := DefaultHostSequence(DefaultTiming, proceedSelector())
+	now := time.Unix(1000, 0)
+	attract := Observation{Fresh: true, Phase: PhaseMenu, MenuActive: false, Connection: ConnMenu,
+		MenuItem: MenuItemUnknown, MenuFocus: 0x80046588}
+	// Burn the whole budget on pre-menu attract wakes (paced, so each tap counts).
+	for i := 0; i < navMaxPresses+4; i++ {
+		s.Step(attract, now)
+		now = now.Add(DefaultTiming.RepressAfter + time.Millisecond)
+	}
+	if s.navPresses < navMaxPresses {
+		t.Fatalf("setup: expected the budget consumed pre-menu, navPresses=%d", s.navPresses)
+	}
+	// The menu appears → the budget resets and routing presses normally instead of
+	// staying terminally blocked.
+	menu := obsMI(MenuItemMultiplayer, 0x80046600)
+	if a := s.Step(menu, now); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("menu appeared after the pre-menu burn: got %v key=%q (%s), want tap a (budget reset)",
+			a.Kind, a.Key(), a.Reason)
 	}
 }

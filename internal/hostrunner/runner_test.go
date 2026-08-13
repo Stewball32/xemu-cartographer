@@ -1,6 +1,7 @@
 package hostrunner
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,10 +103,11 @@ func TestRunnerAutoHostLoop(t *testing.T) {
 
 	r.Tick(Observation{Fresh: true, Phase: PhaseInGame}, t0) // match live: wait
 	a := r.Tick(Observation{Fresh: true, Phase: PhasePostGame, Connection: ConnHosting}, t0.Add(time.Second))
-	if a.Kind != ActionTap || a.Key() != "a" || a.Intent != "clear carnage" {
-		t.Fatalf("post-game should tap A to clear carnage, got %v (%s)", a.Kind, a.Reason)
+	if a.Kind != ActionTap || a.Key() != "a" || a.Intent != "postgame re-prep" {
+		t.Fatalf("post-game should start the re-prep A walk, got %v (%s)", a.Kind, a.Reason)
 	}
-	// Back at system link after the game → sequence resets and re-hosts (tap y).
+	// Back at system link after the game (an off-walk screen) → the re-prep
+	// stands down and the sequence resets + re-hosts (tap y).
 	a = r.Tick(systemLink(), t0.Add(2*time.Second))
 	if a.Kind != ActionTap || a.Key() != "y" {
 		t.Fatalf("after game, should re-host from top (tap y), got %v (%s)", a.Kind, a.Reason)
@@ -177,5 +179,104 @@ func TestRunnerStaleNoInput(t *testing.T) {
 	r.Tick(Observation{Fresh: false}, time.Unix(1000, 0))
 	if len(in.taps) != 0 {
 		t.Fatalf("stale obs must emit no input, got %v", in.taps)
+	}
+}
+
+// TestPostgameRePrepWalk drives the mapper's 2026-08-11 game-end recipe end to
+// end: from the postgame scoreboard (invisible to classic gates — only the
+// debounced flag flips Phase) the host walks A → A → A through the postgame map
+// select and gametype select (previous settings pre-highlighted, clients
+// auto-follow) into the pregame lobby, each A effect-confirmed by the screen
+// moving, with the observed swallowed-first-A recovered by a ~3s re-press —
+// and the walk hard-stops the moment the lobby classifies (a surplus A there
+// could arm the countdown).
+func TestPostgameRePrepWalk(t *testing.T) {
+	const (
+		mapPostScreen  = `ui\shell\main_menu\multiplayer_type_select\connected\connected_map_select_postgame_wrapper`
+		gametypeScreen = `ui\shell\main_menu\multiplayer_type_select\gametype_select_screen_wrapper`
+		pregameScreen  = `ui\shell\main_menu\multiplayer_type_select\connected\pregame\connected_pregame_screen`
+	)
+	// The scoreboard: gc=2, mma=0, no record, engine up — Phase postgame via the
+	// debounced flag is the ONLY tell.
+	scoreboard := Observation{Fresh: true, Phase: PhasePostGame, Connection: ConnHosting}
+	// The walk screens: mma back to 1, engine down (Phase menu), records per the
+	// state table; the lobby lands with the roster intact.
+	walkObs := func(screen string) Observation {
+		return Observation{Fresh: true, Phase: PhaseMenu, MenuActive: true, Connection: ConnHosting,
+			UiScreen: screen}
+	}
+	lob := walkObs(pregameScreen)
+	lob.MachineCount, lob.TeamCount = 3, 2
+	lob.Map, lob.Gametype = "downrush", "slayer"
+
+	in := &fakeInput{}
+	r := New(Config{Instance: "pod1"}, in, nil)
+	t0 := time.Unix(1000, 0)
+	r.Tick(Observation{Fresh: true, Phase: PhaseInGame}, t0)
+
+	// Scoreboard: first A.
+	if a := r.Tick(scoreboard, t0.Add(time.Second)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("scoreboard should press the first A, got %v (%s)", a.Kind, a.Reason)
+	}
+	// Swallowed (nothing moved): hold inside the window, re-press after ~3s.
+	if a := r.Tick(scoreboard, t0.Add(2*time.Second)); a.Kind != ActionWait {
+		t.Fatalf("no movement inside the window must hold, got %v (%s)", a.Kind, a.Reason)
+	}
+	if a := r.Tick(scoreboard, t0.Add(1*time.Second+postgamePrepRepressEvery+time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("swallowed scoreboard A should re-press after the window, got %v (%s)", a.Kind, a.Reason)
+	}
+	tRepress := t0.Add(1*time.Second + postgamePrepRepressEvery + time.Millisecond)
+
+	// The A took: postgame map select appears (mma 0→1, record up) — settle, then
+	// the next A.
+	mapSel := walkObs(mapPostScreen)
+	if a := r.Tick(mapSel, tRepress.Add(200*time.Millisecond)); a.Kind != ActionWait {
+		t.Fatalf("fresh screen should settle before the next A, got %v (%s)", a.Kind, a.Reason)
+	}
+	if a := r.Tick(mapSel, tRepress.Add(postgamePrepSettle+time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("postgame map select should press A (previous map pre-highlighted), got %v (%s)", a.Kind, a.Reason)
+	}
+	tMapA := tRepress.Add(postgamePrepSettle + time.Millisecond)
+
+	// Gametype select appears → settle → A.
+	gtSel := walkObs(gametypeScreen)
+	if a := r.Tick(gtSel, tMapA.Add(postgamePrepSettle+time.Millisecond)); a.Kind != ActionTap || a.Key() != "a" {
+		t.Fatalf("gametype select should press A (previous variant pre-highlighted), got %v (%s)", a.Kind, a.Reason)
+	}
+	tGtA := tMapA.Add(postgamePrepSettle + time.Millisecond)
+
+	// Pregame lobby classifies → the walk STOPS; the sequence catches up to Done
+	// and the runner parks armed ("lobby ready"). No further A.
+	a := r.Tick(lob, tGtA.Add(time.Second))
+	if a.Kind == ActionTap {
+		t.Fatalf("the walk must hard-stop at the pregame lobby, got tap %q", a.Key())
+	}
+	if a.Kind != ActionWait || !strings.Contains(a.Reason, "lobby ready") {
+		t.Fatalf("lobby after re-prep should settle to 'lobby ready', got %v (%s)", a.Kind, a.Reason)
+	}
+	if r.prepActive {
+		t.Fatal("re-prep must be cleared once the lobby is reached")
+	}
+	// The whole walk pressed exactly 4 A's (1 swallowed + 3 landed).
+	taps := 0
+	for _, k := range in.taps {
+		if k == "a" {
+			taps++
+		}
+	}
+	if taps != 4 {
+		t.Fatalf("expected exactly 4 A presses through the walk, got %d (%v)", taps, in.taps)
+	}
+}
+
+// A new match starting mid-walk (players started it themselves) stands the
+// re-prep down instantly — no A into a live game.
+func TestPostgameRePrepStandsDownInGame(t *testing.T) {
+	r := New(Config{Instance: "pod1"}, &fakeInput{}, nil)
+	t0 := time.Unix(1000, 0)
+	r.Tick(Observation{Fresh: true, Phase: PhasePostGame, Connection: ConnHosting}, t0)
+	a := r.Tick(Observation{Fresh: true, Phase: PhaseInGame}, t0.Add(time.Second))
+	if a.Kind != ActionWait || r.prepActive {
+		t.Fatalf("in-game must stand the re-prep down, got %v prepActive=%v", a.Kind, r.prepActive)
 	}
 }
