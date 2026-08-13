@@ -50,6 +50,35 @@ tasks:
     dir: sveltekit
     cmds: ["pnpm typegen"]
 
+  # --- migrations (schema source of truth — see docs/MIGRATIONS.md) -----------
+  migrate:
+    desc: Apply pending migrations (alias of migrate:up)
+    cmds: [{ task: "migrate:up" }]
+
+  migrate:up:
+    desc: Apply pending migrations. Beta/prod also do this automatically on boot.
+    cmds: ["go run ./cmd/server migrate up"]
+
+  migrate:create:
+    desc: 'Create a blank migration: task migrate:create -- backfill_gamertags'
+    cmds: ["go run ./cmd/server migrate create {{.CLI_ARGS}}"]
+
+  migrate:collections:
+    desc: Snapshot current collections into a migration (baseline / re-sync)
+    cmds: ["go run ./cmd/server migrate collections"]
+
+  migrate:down:
+    desc: Revert the last applied migration (DEV ONLY — destructive)
+    cmds: ["go run ./cmd/server migrate down"]
+
+  migrate:squash:
+    desc: 'Squash this branch''s granular migrations into one release migration: task migrate:squash -- --version v0.3.0'
+    cmds: ["./scripts/migrate-squash.sh {{.CLI_ARGS}}"]
+
+  migrate:verify:
+    desc: 'Prove the squash == the granular set (run before merging): task migrate:verify -- --from /path/to/pb_data-copy'
+    cmds: ["./scripts/migrate-verify.sh {{.CLI_ARGS}}"]
+
   build:
     desc: Build production binary with static frontend
     cmds:

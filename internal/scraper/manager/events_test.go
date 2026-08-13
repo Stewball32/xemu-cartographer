@@ -107,7 +107,7 @@ func TestEventsReplyIdleReturnsEmpty(t *testing.T) {
 	m := New(nil)
 	defer m.Close()
 
-	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil)
+	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil, nil)
 	defer r.cancel()
 	r.cache.Phase = PhaseIdle
 	// Stash some events on the cache to prove they're filtered out by phase
@@ -136,7 +136,7 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	m := New(nil)
 	defer m.Close()
 
-	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil)
+	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil, nil)
 	defer r.cancel()
 	r.cache.Phase = PhaseLive
 	r.cache.EngineTick = 100

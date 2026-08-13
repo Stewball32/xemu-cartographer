@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -70,22 +71,71 @@ type BuildRequest struct {
 	InternalName string `json:"internal_name,omitempty"`
 	DirName      string `json:"dir_name,omitempty"`
 
-	// CE gametype — raw mapped fields (authoritative) + friendly helpers.
-	Engine         string   `json:"engine,omitempty"` // slayer/ctf/oddball/king/race
-	Teams          *bool    `json:"teams,omitempty"`
-	Options        *uint32  `json:"options,omitempty"`
-	ScoringSubtype *uint32  `json:"scoring_subtype,omitempty"`
-	TimeLimit      *uint32  `json:"time_limit,omitempty"`   // raw; wins over TimeMinutes
-	TimeMinutes    *float64 `json:"time_minutes,omitempty"` // friendly (inferred ×30 scale)
-	TimeLimit2     *uint32  `json:"time_limit2,omitempty"`
-	ScoreLimit     *uint32  `json:"score_limit,omitempty"` // also H2 gametype score
-	Option2        *uint32  `json:"option2,omitempty"`
-	Respawn        *uint32  `json:"respawn,omitempty"`
-	EngineUnion    *uint32  `json:"engine_union,omitempty"`
-	Radar          *bool    `json:"radar,omitempty"` // helper: toggles options bit0 ("R")
+	// CE gametype — friendly settings. buildCEGametype owns the offset/bit/scale
+	// knowledge and converts these to raw bytes; a nil field keeps the template's
+	// value. Raw escape hatches (Options / EngineUnion) are applied first, then
+	// the matching bool toggles win per-bit on top.
+	Engine string `json:"engine,omitempty"` // slayer/ctf/oddball/king/race
+	Teams  *bool  `json:"teams,omitempty"`
+
+	// options bitfield @0x20 (Player/Item/Indicator toggles)
+	Radar            *bool   `json:"radar,omitempty"`             // other players on radar ("R")
+	FriendIndicators *bool   `json:"friend_indicators,omitempty"` // friend indicators on screen
+	InfiniteGrenades *bool   `json:"infinite_grenades,omitempty"`
+	ShieldsOff       *bool   `json:"shields_off,omitempty"` // set = no shields
+	InvisiblePlayers *bool   `json:"invisible_players,omitempty"`
+	GenericEquipment *bool   `json:"generic_equipment,omitempty"` // set = generic, clear = custom
+	Options          *uint32 `json:"options,omitempty"`           // raw override
+
+	ObjectivesIndicator  *uint32  `json:"objectives_indicator,omitempty"` // 0 motion, 1 nav, 2 none
+	OddManOut            *bool    `json:"odd_man_out,omitempty"`
+	RespawnSeconds       *float64 `json:"respawn_seconds,omitempty"`        // 0x30 (sec)
+	RespawnGrowthSeconds *float64 `json:"respawn_growth_seconds,omitempty"` // 0x2C (sec)
+	SuicideSeconds       *float64 `json:"suicide_seconds,omitempty"`        // 0x34 (sec)
+	Lives                *uint32  `json:"lives,omitempty"`                  // 0 = infinite
+	MaxHealth            *float32 `json:"max_health,omitempty"`             // multiplier (1.0 = 100%)
+	ScoreLimit           *uint32  `json:"score_limit,omitempty"`            // also H2 gametype score
+	WeaponSet            *uint32  `json:"weapon_set,omitempty"`             // 0..6
+	NHEToggles           *uint32  `json:"nhe_toggles,omitempty"`            // 0..4
+	EngineUnion          *uint32  `json:"engine_union,omitempty"`           // raw override
+
+	// engine_union rule toggles (only the selected engine's are meaningful)
+	DeathBonusOff  *bool `json:"death_bonus_off,omitempty"`  // slayer
+	KillPenaltyOff *bool `json:"kill_penalty_off,omitempty"` // slayer
+	KillInOrder    *bool `json:"kill_in_order,omitempty"`    // slayer
+	Assault        *bool `json:"assault,omitempty"`          // ctf
+	FlagMustReset  *bool `json:"flag_must_reset,omitempty"`  // ctf
+	FlagAtHome     *bool `json:"flag_at_home,omitempty"`     // ctf
+	MovingHill     *bool `json:"moving_hill,omitempty"`      // king
+	RandomStart    *bool `json:"random_start,omitempty"`     // oddball
+	RaceAnyOrder   *bool `json:"race_any_order,omitempty"`   // race
+
+	// engine scratch (0x50..0x60), engine-specific
+	CTFSingleFlagMinutes *float64 `json:"ctf_single_flag_minutes,omitempty"` // ctf; 0 = off
+	OddballSpeed         *uint32  `json:"oddball_speed,omitempty"`           // 0 slow,1 normal,2 fast
+	OddballTraitWith     *uint32  `json:"oddball_trait_with,omitempty"`      // 0..3
+	OddballTraitWithout  *uint32  `json:"oddball_trait_without,omitempty"`   // 0..3
+	OddballBallType      *uint32  `json:"oddball_ball_type,omitempty"`       // 0 normal,1 reverse tag
+	BallSpawnCount       *uint32  `json:"ball_spawn_count,omitempty"`        // oddball
+	RaceScoring          *uint32  `json:"race_scoring,omitempty"`            // 0 min,1 max
 
 	// H2 profile — appearance/controller bytes keyed by H2ProfileFields.Key.
 	Appearance map[string]int `json:"appearance,omitempty"`
+
+	// CE profile — armor color, controller presets, and the nine Advanced
+	// Controls (2026-08-07 live-verified). nil = fresh-MP factory default.
+	Color         *uint32  `json:"color,omitempty"`
+	Button        *uint32  `json:"button,omitempty"`     // 0..4 preset
+	Thumbstick    *uint32  `json:"thumbstick,omitempty"` // 0..3 preset
+	HSens         *float64 `json:"h_sens,omitempty"`     // 1.00..10.00
+	VMult         *float64 `json:"v_mult,omitempty"`     // 0.50..1.00
+	Invert        *bool    `json:"invert,omitempty"`
+	Vibration     *bool    `json:"vibration,omitempty"`
+	RSDeadzone    *uint32  `json:"rs_deadzone,omitempty"`    // 0..35
+	LSDeadzone    *uint32  `json:"ls_deadzone,omitempty"`    // 0..35
+	OuterDeadzone *uint32  `json:"outer_deadzone,omitempty"` // 1..15
+	DeadzoneType  *uint32  `json:"deadzone_type,omitempty"`  // 0 radial,1 axial
+	Response      *uint32  `json:"response,omitempty"`       // 1..7 curve
 
 	// Recompute is retained for API compatibility. The digest algorithm is now
 	// resolved (see digest.go), so CE/H2 files are ALWAYS correctly re-signed
@@ -143,45 +193,98 @@ func buildCEGametype(req BuildRequest) (*SaveSet, error) {
 	if req.Teams != nil {
 		p.Teams = u32ptr(boolU32(*req.Teams))
 	}
-	if req.ScoringSubtype != nil {
-		p.ScoringSubtype = req.ScoringSubtype
+
+	// Options bitfield: raw override applied first, then the bool toggles win
+	// per-bit on top of the resolved value. If nothing touched it, leave the
+	// template's value alone.
+	opts := base.Options
+	optTouched := false
+	if req.Options != nil {
+		opts = *req.Options
+		optTouched = true
 	}
-	if req.TimeLimit != nil {
-		p.TimeLimit = req.TimeLimit
-	} else if req.TimeMinutes != nil {
-		p.TimeLimit = u32ptr(CEMinutesToRaw(*req.TimeMinutes))
+	optTouched = setBitOpt(&opts, ceOptRadar, req.Radar) || optTouched
+	optTouched = setBitOpt(&opts, ceOptFriendInd, req.FriendIndicators) || optTouched
+	optTouched = setBitOpt(&opts, ceOptInfGrenades, req.InfiniteGrenades) || optTouched
+	optTouched = setBitOpt(&opts, ceOptShieldsOff, req.ShieldsOff) || optTouched
+	optTouched = setBitOpt(&opts, ceOptInvisible, req.InvisiblePlayers) || optTouched
+	optTouched = setBitOpt(&opts, ceOptGenericEquip, req.GenericEquipment) || optTouched
+	if optTouched {
+		p.Options = u32ptr(opts)
 	}
-	if req.TimeLimit2 != nil {
-		p.TimeLimit2 = req.TimeLimit2
+
+	if req.ObjectivesIndicator != nil {
+		p.ObjectivesIndicator = req.ObjectivesIndicator
+	}
+	if req.OddManOut != nil {
+		p.OddManOut = u32ptr(boolU32(*req.OddManOut))
+	}
+	if req.RespawnSeconds != nil {
+		p.RespawnTime = u32ptr(CESecondsToRaw(*req.RespawnSeconds))
+	}
+	if req.RespawnGrowthSeconds != nil {
+		p.RespawnGrowth = u32ptr(CESecondsToRaw(*req.RespawnGrowthSeconds))
+	}
+	if req.SuicideSeconds != nil {
+		p.SuicidePenalty = u32ptr(CESecondsToRaw(*req.SuicideSeconds))
+	}
+	if req.Lives != nil {
+		p.Lives = req.Lives
+	}
+	if req.MaxHealth != nil {
+		p.MaxHealth = req.MaxHealth
 	}
 	if req.ScoreLimit != nil {
 		p.ScoreLimit = req.ScoreLimit
 	}
-	if req.Option2 != nil {
-		p.Option2 = req.Option2
+	if req.WeaponSet != nil {
+		p.WeaponSet = req.WeaponSet
 	}
-	if req.Respawn != nil {
-		p.Respawn = req.Respawn
+	if req.NHEToggles != nil {
+		p.NHEToggles = req.NHEToggles
 	}
+
+	// engine_union: raw override first, then engine-specific rule toggles.
+	eu := base.EngineUnion
+	euTouched := false
 	if req.EngineUnion != nil {
-		p.EngineUnion = req.EngineUnion
+		eu = *req.EngineUnion
+		euTouched = true
 	}
-	// Options resolution: explicit raw Options wins; otherwise start from the
-	// template's options. The Radar helper then toggles bit0 on the resolved
-	// value.
-	opts := base.Options
-	if req.Options != nil {
-		opts = *req.Options
+	euTouched = setBitOpt(&eu, ceEUSlayerDeathBonusOff, req.DeathBonusOff) || euTouched
+	euTouched = setBitOpt(&eu, ceEUSlayerKillPenOff, req.KillPenaltyOff) || euTouched
+	euTouched = setBitOpt(&eu, ceEUSlayerKillInOrder, req.KillInOrder) || euTouched
+	euTouched = setBitOpt(&eu, ceEUCTFAssault, req.Assault) || euTouched
+	euTouched = setBitOpt(&eu, ceEUCTFFlagReset, req.FlagMustReset) || euTouched
+	euTouched = setBitOpt(&eu, ceEUCTFFlagAtHome, req.FlagAtHome) || euTouched
+	euTouched = setBitOpt(&eu, ceEUKingMovingHill, req.MovingHill) || euTouched
+	euTouched = setBitOpt(&eu, ceEUOddRandomStart, req.RandomStart) || euTouched
+	euTouched = setBitOpt(&eu, ceEURaceType, req.RaceAnyOrder) || euTouched
+	if euTouched {
+		p.EngineUnion = u32ptr(eu)
 	}
-	if req.Radar != nil {
-		if *req.Radar {
-			opts |= ceOptRadarBit
-		} else {
-			opts &^= ceOptRadarBit
-		}
+
+	// engine scratch (0x50..0x60)
+	if req.CTFSingleFlagMinutes != nil {
+		p.CTFSingleFlag = u32ptr(uint32(math.Round(*req.CTFSingleFlagMinutes * 60 * 30)))
 	}
-	if req.Options != nil || req.Radar != nil {
-		p.Options = u32ptr(opts)
+	if req.OddballSpeed != nil {
+		p.OddballSpeed = req.OddballSpeed
+	}
+	if req.OddballTraitWith != nil {
+		p.OddballTraitWith = req.OddballTraitWith
+	}
+	if req.OddballTraitWithout != nil {
+		p.OddballTraitWithout = req.OddballTraitWithout
+	}
+	if req.OddballBallType != nil {
+		p.OddballBallType = req.OddballBallType
+	}
+	if req.BallSpawnCount != nil {
+		p.BallSpawnCount = req.BallSpawnCount
+	}
+	if req.RaceScoring != nil {
+		p.RaceScoring = req.RaceScoring
 	}
 
 	payload, err := CEBuild(tmpl, p, true) // always re-sign: a valid digest is mandatory
@@ -214,34 +317,58 @@ func buildCEGametype(req BuildRequest) (*SaveSet, error) {
 	return set, nil
 }
 
-// buildCEProfile generates a signed Halo: CE player profile (blam.sav). The
-// editable surface (req.Appearance keyed by CEProfileFields): "color" (u32),
-// "thumbstick"/"button" (preset bytes). Name is the in-game MP name. Always
+// buildCEProfile generates a signed Halo: CE player profile (blam.sav). Editable
+// surface: armor color, button/thumbstick presets, and the nine Advanced
+// Controls (all 2026-08-07 live-verified). Name is the in-game MP name. Always
 // re-signed at 0x30.
 func buildCEProfile(req BuildRequest) (*SaveSet, error) {
 	name := req.Name
-	p := CEProfilePatch{Name: &name}
-	if v, ok := req.Appearance["color"]; ok {
-		if v < 0 {
-			return nil, fmt.Errorf("halosave: CE color %d is negative", v)
+	p := CEProfilePatch{Name: &name, Color: req.Color}
+	if req.Button != nil {
+		if *req.Button > 255 {
+			return nil, fmt.Errorf("halosave: CE button preset %d out of byte range", *req.Button)
 		}
-		c := uint32(v)
-		p.Color = &c
-	}
-	if v, ok := req.Appearance["thumbstick"]; ok {
-		if v < 0 || v > 255 {
-			return nil, fmt.Errorf("halosave: CE thumbstick preset %d out of byte range", v)
-		}
-		b := byte(v)
-		p.Thumbstick = &b
-	}
-	if v, ok := req.Appearance["button"]; ok {
-		if v < 0 || v > 255 {
-			return nil, fmt.Errorf("halosave: CE button preset %d out of byte range", v)
-		}
-		b := byte(v)
+		b := byte(*req.Button)
 		p.Button = &b
 	}
+	if req.Thumbstick != nil {
+		if *req.Thumbstick > 255 {
+			return nil, fmt.Errorf("halosave: CE thumbstick preset %d out of byte range", *req.Thumbstick)
+		}
+		b := byte(*req.Thumbstick)
+		p.Thumbstick = &b
+	}
+
+	// Advanced controls: start from factory default, override provided fields.
+	adv := ceAdvancedDefault()
+	if req.HSens != nil {
+		adv.HSens = *req.HSens
+	}
+	if req.VMult != nil {
+		adv.VMult = *req.VMult
+	}
+	if req.Invert != nil {
+		adv.Invert = *req.Invert
+	}
+	if req.Vibration != nil {
+		adv.Vibration = *req.Vibration
+	}
+	if req.RSDeadzone != nil {
+		adv.RSDeadzone = uint8(min32(*req.RSDeadzone, 35))
+	}
+	if req.LSDeadzone != nil {
+		adv.LSDeadzone = uint8(min32(*req.LSDeadzone, 35))
+	}
+	if req.OuterDeadzone != nil {
+		adv.OuterDeadzone = uint8(clamp32(*req.OuterDeadzone, 1, 15))
+	}
+	if req.DeadzoneType != nil {
+		adv.DeadzoneType = uint8(min32(*req.DeadzoneType, 1))
+	}
+	if req.Response != nil {
+		adv.Response = uint8(clamp32(*req.Response, 1, 7))
+	}
+	p.Advanced = &adv
 
 	payload, err := CEProfileBuild(p, true) // always re-sign
 	if err != nil {
@@ -268,11 +395,28 @@ func buildCEProfile(req BuildRequest) (*SaveSet, error) {
 		Digest: recomputedDigest(true),
 		Parsed: parsed,
 		Warnings: []string{
-			"Halo: CE Advanced Setup bytes (0x1C-0x2F: look-sensitivity / invert / vibration) are not yet individually mapped; fresh-profile defaults are applied. A campaign savegame.bin sibling is not generated (CE auto-creates it) — confirm on xemu whether it's required for the profile to list.",
+			"CE profile does not generate a campaign savegame.bin sibling (CE auto-creates it on first play). The HSENS byte uses the game's LOAD map, which the editor displays correctly.",
 		},
 	}
 	set.finish()
 	return set, nil
+}
+
+func min32(v, hi uint32) uint32 {
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func clamp32(v, lo, hi uint32) uint32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 func buildH2Profile(req BuildRequest) (*SaveSet, error) {
@@ -375,13 +519,32 @@ func (s *SaveSet) finish() {
 	}
 }
 
+// ceWarnings returns build caveats for a CE gametype. The field map is
+// 2026-08-07 LIVE-VERIFIED (single-setting differentials + in-title load-back on
+// all five engines), so an edited file is trustworthy; the only residual
+// caveats are two enum ranges that weren't exhaustively cycled.
 func ceWarnings(edited bool) []string {
 	if edited {
 		return []string{
-			"CE time-limit unit (raw = minutes×30) is inferred from value patterns, not confirmed in-game; raw values are stored verbatim.",
+			"Oddball SPEED WITH BALL (0 slow, 2 fast) and BALL TYPE (0 normal, 1 reverse tag) were confirmed at those values but not every intermediate value was cycled in-game.",
 		}
 	}
 	return nil
+}
+
+// setBitOpt applies an optional boolean toggle to bit(s) mask in *v and reports
+// whether it changed anything (i.e. b was non-nil). Used to resolve the CE
+// options and engine_union bitfields from friendly per-bit toggles.
+func setBitOpt(v *uint32, mask uint32, b *bool) bool {
+	if b == nil {
+		return false
+	}
+	if *b {
+		*v |= mask
+	} else {
+		*v &^= mask
+	}
+	return true
 }
 
 // deriveH2Dir produces a deterministic 12-hex-uppercase FATX directory name

@@ -4,12 +4,9 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
-
-	"github.com/Stewball32/xemu-cartographer/internal/overlaytoken"
 )
 
 // ConnectHook is invoked once per accepted WebSocket connection, after the
@@ -35,21 +32,24 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 	opts := buildAcceptOptions()
 
 	return func(e *core.RequestEvent) error {
-		// Two doors, same socket: a logged-in user JWT (operator path,
-		// governed by the M09 roster gate in join_room) OR a scoped read-only
-		// overlay token (M10 OBS path). The overlay token binds the connection
-		// to one room and is strictly read-only (enforced in the Hub dispatch +
-		// join_room). A user JWT takes precedence if both somehow validate.
+		// Two doors, same socket: a logged-in user JWT (operator path, governed
+		// by the M09 roster gate in join_room) OR the tokenless console-overlay
+		// door (?console=<name>, read-only, resolved against the live roster in
+		// join_room via Membership()). The M10 overlay-token door is gone — a
+		// future auth story replaces it wholesale.
 		var user *core.Record
-		var overlayRoom string
 		if token := e.Request.URL.Query().Get("token"); token != "" {
 			if record, err := app.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil {
 				user = record
-			} else if room, ok := overlaytoken.VerifyActive(app, token, time.Now()); ok {
-				overlayRoom = room
 			} else {
-				log.Printf("ws: token is neither a valid user JWT nor a live overlay token")
+				log.Printf("ws: invalid user token on connect")
 			}
+		}
+		// Console door only when there's no user JWT — a credentialed
+		// connection takes precedence.
+		consoleName := ""
+		if user == nil {
+			consoleName = strings.TrimSpace(e.Request.URL.Query().Get("console"))
 		}
 
 		conn, err := websocket.Accept(e.Response, e.Request, opts)
@@ -62,7 +62,7 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 			conn:        conn,
 			send:        make(chan []byte, sendBufSize),
 			user:        user,
-			overlayRoom: overlayRoom,
+			consoleName: consoleName,
 		}
 
 		hub.register <- client
@@ -92,6 +92,13 @@ func NewHandler(hub *Hub, app core.App, hooks ...ConnectHook) func(*core.Request
 func buildAcceptOptions() *websocket.AcceptOptions {
 	origins := os.Getenv("WS_ALLOWED_ORIGINS")
 	if origins == "" {
+		// FAIL-OPEN default (dev convenience): with no allowlist the handshake
+		// accepts ALL origins (InsecureSkipVerify), widening the cross-site
+		// WebSocket-hijacking surface. Auth (JWT / overlay token) is still
+		// required, so this is not an open door — but it is looser than a prod
+		// deploy wants. Behavior is intentionally unchanged; this only warns.
+		// Recommendation: set WS_ALLOWED_ORIGINS to your public origin(s).
+		log.Printf("SECURITY WARNING: WS_ALLOWED_ORIGINS unset — the WebSocket endpoint accepts all origins (InsecureSkipVerify). Set it to your public origin(s) in production.")
 		return &websocket.AcceptOptions{
 			InsecureSkipVerify: true,
 		}

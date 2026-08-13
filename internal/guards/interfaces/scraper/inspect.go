@@ -87,6 +87,10 @@ type InspectState struct {
 	LatestTick   *scraper.TickPayload `json:"latest_tick"`
 	RecentEvents []scraper.Envelope   `json:"recent_events"`
 	PreviousGame *PreviousGameInfo    `json:"previous_game,omitempty"`
+	// PlayerAccum is the per-player accumulated match stats + activity latch
+	// snapshot (internal/scraper/accum.go). Read-only — replaced wholesale by
+	// the runner, never mutated in place. Nil before the first live tick.
+	PlayerAccum map[int]scraper.PlayerAccum `json:"player_accum,omitempty"`
 }
 
 // Inspect lets callers enumerate currently-running scrapers and fetch the

@@ -48,6 +48,7 @@ func (s *ContainersStore) Upsert(info *podman.ContainerInfo) error {
 	}
 
 	record.Set("name", info.Name)
+	record.Set("display_name", info.DisplayName)
 	record.Set("index", info.Index)
 	record.Set("xemu_http", info.Ports.XemuHTTP)
 	record.Set("xemu_https", info.Ports.XemuHTTPS)
@@ -76,8 +77,9 @@ func (s *ContainersStore) Delete(name string) error {
 
 func recordToContainer(r *core.Record) *podman.ContainerInfo {
 	return &podman.ContainerInfo{
-		Name:  r.GetString("name"),
-		Index: r.GetInt("index"),
+		Name:        r.GetString("name"),
+		DisplayName: r.GetString("display_name"),
+		Index:       r.GetInt("index"),
 		Ports: podman.Ports{
 			XemuHTTP:   r.GetInt("xemu_http"),
 			XemuHTTPS:  r.GetInt("xemu_https"),

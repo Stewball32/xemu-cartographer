@@ -35,10 +35,10 @@ func (r *Reader) readCTFFlags() []scraper.TickCTFFlag {
 	}
 
 	out := make([]scraper.TickCTFFlag, 0, 2)
-	if f, ok := read(0, RefAddrCTFFlag0Ptr); ok {
+	if f, ok := read(0, r.off.RefAddrCTFFlag0Ptr); ok {
 		out = append(out, f)
 	}
-	if f, ok := read(1, RefAddrCTFFlag1Ptr); ok {
+	if f, ok := read(1, r.off.RefAddrCTFFlag1Ptr); ok {
 		out = append(out, f)
 	}
 	if len(out) == 0 {

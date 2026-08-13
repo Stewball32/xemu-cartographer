@@ -99,3 +99,60 @@ func TestBuildDummySet(t *testing.T) {
 		t.Error("BuildDummySet(nil) should be nil")
 	}
 }
+
+// The unified activity rule (HideInactiveLocals): a LOCAL seat is presumed a
+// dummy until the accumulator latches it Active; remotes are never affected;
+// IsNeutralHost remains the hard override that hides locals even when Active.
+func TestFilterRoster_ActivityRule(t *testing.T) {
+	roster := []scraper.GamePlayer{
+		{Index: 0, Name: "IdleLocal", IsLocal: boolPtr(true)},
+		{Index: 1, Name: "MovingLocal", IsLocal: boolPtr(true)},
+		{Index: 2, Name: "Remote", IsLocal: boolPtr(false)},
+	}
+
+	t.Run("inactive local hidden, active local shown, remote untouched", func(t *testing.T) {
+		got := FilterRoster(roster, Config{
+			HideInactiveLocals: true,
+			ActiveLocals:       map[int]bool{1: true},
+		})
+		if !eq(names(got), []string{"MovingLocal", "Remote"}) {
+			t.Fatalf("got %v", names(got))
+		}
+	})
+
+	t.Run("nil ActiveLocals (pre-match) hides every local, keeps remotes", func(t *testing.T) {
+		got := FilterRoster(roster, Config{HideInactiveLocals: true})
+		if !eq(names(got), []string{"Remote"}) {
+			t.Fatalf("got %v", names(got))
+		}
+	})
+
+	t.Run("neutral-host override hides locals even when latched Active", func(t *testing.T) {
+		got := FilterRoster(roster, Config{
+			IsNeutralHost:      true,
+			HideInactiveLocals: true,
+			ActiveLocals:       map[int]bool{0: true, 1: true},
+		})
+		if !eq(names(got), []string{"Remote"}) {
+			t.Fatalf("got %v", names(got))
+		}
+	})
+
+	t.Run("rule off (zero config) passes everyone — debug surfaces unchanged", func(t *testing.T) {
+		got := FilterRoster(roster, Config{})
+		if !eq(names(got), []string{"IdleLocal", "MovingLocal", "Remote"}) {
+			t.Fatalf("got %v", names(got))
+		}
+	})
+
+	t.Run("allowlist still drops an active remote by name", func(t *testing.T) {
+		got := FilterRoster(roster, Config{
+			HideInactiveLocals: true,
+			ActiveLocals:       map[int]bool{1: true},
+			DummyGamertags:     BuildDummySet([]string{" REMOTE "}),
+		})
+		if !eq(names(got), []string{"MovingLocal"}) {
+			t.Fatalf("got %v", names(got))
+		}
+	})
+}

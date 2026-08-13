@@ -30,6 +30,256 @@
 
 	const isRunning = $derived(status === 'running');
 
+	// --- Live scraper-read diagnostics panel -------------------------------------
+	type Cursor = { index: number; count: number; valid: boolean };
+	type Diagnostics = {
+		instance: string;
+		present: boolean;
+		tick: number;
+		screen: string;
+		dela: string;
+		menu_item: number;
+		menu_item_name: string;
+		game_connection: number;
+		pregame_sentinel: boolean;
+		menu_focus: number;
+		map_cursor: Cursor;
+		gametype_cursor: Cursor;
+		map: string;
+		gametype: string;
+		selected_map: string;
+		selected_gametype: string;
+		highlighted_map: string;
+		highlighted_gametype: string;
+		enumerated_maps: string[] | null;
+		enumerated_gametypes: string[] | null;
+		last_kind: string;
+		last_intent: string;
+		last_keys: string[] | null;
+		last_reason: string;
+		machine_count: number;
+		player_count: number;
+		team_count: number;
+		countdown_active: boolean;
+		authority: string;
+		main_menu_raw: number;
+		ui_widget_blocks: number;
+		ui_highlighted: number;
+		ui_max_tick: number;
+		tree_built: boolean;
+		// Screen-record classifier + UI support reads (2026-08-10 pacing pass).
+		ui_screen: string;
+		ui_back_screen_rec: number;
+		at_root_menu: boolean;
+		ui_osk_active: boolean;
+		ui_ms_clock: number;
+		ui_fade_state: number;
+		// Entry-flow slot fields + classified ladder frame (2026-08-11).
+		slot_claimed: boolean;
+		slot_profile_handle: number;
+		entry_frame: string;
+		// Debounced provisional game-over flag (0x277B94) — the postgame trigger.
+		game_over_flag: boolean;
+		readout_seq: number;
+		readout_age_ms: number;
+		nav_candidates: Record<string, number> | null;
+	};
+
+	// CHANGE TRACKING. The whole point of this panel is answering "which signal
+	// actually updates on THIS screen?" — e.g. on SELECT PROFILE the dela does NOT
+	// move, so the runner can't confirm on it. We remember each signal's previous
+	// value and when it last changed, and mark the ones that just moved. Sit on a
+	// screen, navigate, and the rows that light up are the usable confirm signals.
+	type Sig = { label: string; value: string; group: string; changedAt: number };
+
+	// lastSeen is DELIBERATELY NOT $state. It was, and the $effect that maintained it
+	// both READ it (spreading the previous map) and WROTE it — a self-triggering effect,
+	// which Svelte 5 aborts with effect_update_depth_exceeded. That crash killed the
+	// component's reactivity, so the panel rendered once and then FROZE: the exact
+	// "panel doesn't update" bug. Bookkeeping now lives in a plain Map mutated while the
+	// signals list is (re)built, so nothing reactive is written and no effect is needed.
+	// A reactive SvelteMap (the lint rule's suggestion) would re-create exactly that
+	// write-inside-$derived self-trigger, hence the targeted disable.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- deliberately non-reactive, see above
+	const lastSeen = new Map<string, { value: string; at: number }>();
+	let diag = $state<Diagnostics | null>(null);
+	let diagError = $state<string | null>(null);
+	let diagTimer: ReturnType<typeof setInterval> | null = null;
+
+	const cur = (c: { index: number; count: number; valid: boolean }) =>
+		`${c.count ? c.index + 1 : 0}/${c.count}${c.valid ? '' : ' (invalid)'}`;
+
+	// Every live read, grouped. Order = most useful first for nav debugging.
+	const signals = $derived.by<Sig[]>(() => {
+		const d = diag;
+		if (!d) return [];
+		const now = Date.now();
+		const raw: Array<{ label: string; value: string; group: string }> = [
+			{ group: 'screen', label: 'screen', value: d.screen || 'unknown' },
+			// The SCREEN RECORD (2026-08-10): the current screen's resolved tag path from
+			// the fixed record pool — the classifier the fast host tick keys on. Watch it
+			// against dela on a live walk: the two should agree per screen, and ui_screen
+			// keeps resolving on screens where dela goes blank (cold menu, ENTER NAME).
+			{ group: 'screen', label: 'ui_screen (record)', value: d.ui_screen || '—' },
+			{
+				group: 'screen',
+				label: 'back rec (0 = root)',
+				value: `0x${(d.ui_back_screen_rec >>> 0).toString(16)}${d.at_root_menu ? ' — AT ROOT MENU' : ''}`
+			},
+			{ group: 'screen', label: 'menu_item', value: `${d.menu_item_name} (${d.menu_item})` },
+			{ group: 'screen', label: 'dela', value: d.dela || '—' },
+			{ group: 'screen', label: 'menu_focus', value: `0x${(d.menu_focus >>> 0).toString(16)}` },
+			{ group: 'screen', label: 'game_connection', value: connName(d.game_connection) },
+			{
+				group: 'screen',
+				label: 'pregame_sentinel',
+				value: d.pregame_sentinel ? '0xDEADBEEF' : 'absent'
+			},
+			{
+				group: 'screen',
+				label: 'osk active',
+				value: d.ui_osk_active ? 'YES — capturing input' : 'no'
+			},
+			{ group: 'screen', label: 'fade state', value: fadeName(d.ui_fade_state) },
+			// Entry-flow ladder (System Link join → select → commit): the frame is the
+			// per-A truth (slot fields), classified only while the 4way record is up.
+			{
+				group: 'screen',
+				label: 'entry frame',
+				value: `${d.entry_frame || 'none'} (claimed=${d.slot_claimed ? 1 : 0}, handle=0x${((d.slot_profile_handle ?? 0) >>> 0).toString(16)})`
+			},
+			// The postgame scoreboard is invisible to every classic gate — this
+			// debounced flag is what flips the screen to post_game and starts the
+			// runner's A → A → A re-prep walk back to a fresh pregame lobby.
+			{
+				group: 'screen',
+				label: 'game over flag',
+				value: d.game_over_flag ? 'SET — postgame' : 'clear'
+			},
+			// LIVENESS first: readout_seq advances every scraper tick, so it — not the
+			// GAME tick — proves the panel is live. The game tick is legitimately 0 at
+			// the menus, which is exactly what made a frozen panel indistinguishable
+			// from a healthy one sitting in the front end.
+			{ group: 'live', label: 'readout seq', value: String(d.readout_seq) },
+			{ group: 'live', label: 'readout age', value: `${d.readout_age_ms} ms` },
+			// The UI's own ms-scale clock — the "shell alive" heartbeat. It should tick
+			// continuously at any menu (this row stays lit); a static value with the
+			// panel live means the front end itself is wedged, not the scraper.
+			{ group: 'live', label: 'ui ms clock', value: String(d.ui_ms_clock) },
+			{ group: 'live', label: 'tick (game — 0 in menus)', value: String(d.tick) },
+			{
+				group: 'cold',
+				label: 'tree built?',
+				value: d.tree_built ? 'YES — woken' : 'NO — cold/un-woken'
+			},
+			{ group: 'cold', label: 'ui widget blocks', value: String(d.ui_widget_blocks) },
+			{ group: 'cold', label: 'ui highlighted', value: String(d.ui_highlighted) },
+			{ group: 'cold', label: 'ui max tick', value: `0x${(d.ui_max_tick >>> 0).toString(16)}` },
+			{ group: 'cold', label: 'main_menu (raw)', value: String(d.main_menu_raw) },
+			{ group: 'select', label: 'map cursor', value: cur(d.map_cursor) },
+			{ group: 'select', label: 'map highlighted', value: d.highlighted_map || '—' },
+			{ group: 'select', label: 'gametype cursor', value: cur(d.gametype_cursor) },
+			{ group: 'select', label: 'gametype highlighted', value: d.highlighted_gametype || '—' },
+			{
+				group: 'select',
+				label: 'map picked → loaded',
+				value: `${d.selected_map || '—'} → ${d.map || '—'}`
+			},
+			{
+				group: 'select',
+				label: 'gametype picked → loaded',
+				value: `${d.selected_gametype || '—'} → ${d.gametype || '—'}`
+			},
+			{ group: 'runner', label: 'authority', value: d.authority || '—' },
+			{
+				group: 'runner',
+				label: 'last action',
+				value: `${d.last_kind}${d.last_intent ? ` [${d.last_intent}]` : ''}`
+			},
+			{ group: 'runner', label: 'last keys', value: (d.last_keys ?? []).join(',') || '—' },
+			{ group: 'runner', label: 'last reason', value: d.last_reason || '—' },
+			{ group: 'lobby', label: 'machines', value: String(d.machine_count) },
+			{ group: 'lobby', label: 'players', value: String(d.player_count) },
+			{ group: 'lobby', label: 'teams', value: String(d.team_count) },
+			{ group: 'lobby', label: 'countdown', value: d.countdown_active ? 'active' : 'no' },
+			// Raw candidate offsets from the capture-and-diff hunts — unclassified, for
+			// eyeballing which one tracks a screen. Sorted so the row order is stable.
+			...Object.entries(d.nav_candidates ?? {})
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([label, v]) => ({
+					group: 'cand',
+					label,
+					value: `0x${(v >>> 0).toString(16).padStart(8, '0')}`
+				})),
+			{
+				group: 'lobby',
+				label: 'enumerated',
+				value: `${d.enumerated_maps?.length ?? 0} maps / ${d.enumerated_gametypes?.length ?? 0} gametypes`
+			}
+		];
+		// Fold the change bookkeeping in here (before render) so a row's "changed" mark
+		// is correct on the very poll it changes — and so no reactive state is written.
+		return raw.map((sig) => {
+			const prev = lastSeen.get(sig.label);
+			if (!prev) lastSeen.set(sig.label, { value: sig.value, at: 0 });
+			else if (prev.value !== sig.value) lastSeen.set(sig.label, { value: sig.value, at: now });
+			return { ...sig, changedAt: lastSeen.get(sig.label)!.at };
+		});
+	});
+	const GROUPS = [
+		{ key: 'live', title: 'Liveness (is this panel updating?)' },
+		{ key: 'screen', title: 'Screen / nav signals' },
+		{ key: 'cold', title: 'Cold-boot / widget-tree candidates' },
+		{ key: 'select', title: 'Map + gametype select' },
+		{ key: 'runner', title: 'Runner decision' },
+		{ key: 'lobby', title: 'Lobby' },
+		{ key: 'cand', title: 'Candidate offsets (raw — which one tracks?)' }
+	];
+
+	const CONN_NAMES = ['menu', 'system-link', 'hosting', 'film'];
+	function connName(c: number): string {
+		return `${c}${CONN_NAMES[c] ? ` (${CONN_NAMES[c]})` : ''}`;
+	}
+
+	// The fade byte pair at 0x2D37D4 (read LE u16): D5/49 at the root menu,
+	// D4/48 on a sub-screen — one atomic flip per transition.
+	function fadeName(v: number): string {
+		const hex = `0x${(v >>> 0).toString(16).padStart(4, '0')}`;
+		if (v === 0x49d5) return `${hex} (root)`;
+		if (v === 0x48d4) return `${hex} (sub-screen)`;
+		return hex;
+	}
+
+	async function loadDiag() {
+		if (!isRunning) {
+			diag = null;
+			return;
+		}
+		try {
+			diag = await adminGet<Diagnostics>(`scraper/${encodeURIComponent(name)}/diagnostics`);
+			diagError = null;
+		} catch (err) {
+			diag = null;
+			// 503 = host-runner subsystem off; 404 = no runner attached. Show a hint,
+			// don't spam the console.
+			diagError = err instanceof AdminFetchError ? err.message : 'diagnostics unavailable';
+		}
+	}
+
+	function startDiagPolling() {
+		stopDiagPolling();
+		diagTimer = setInterval(() => {
+			if (document.visibilityState !== 'visible') return;
+			loadDiag();
+		}, 1000);
+	}
+	function stopDiagPolling() {
+		if (diagTimer !== null) {
+			clearInterval(diagTimer);
+			diagTimer = null;
+		}
+	}
+
 	function statusBadgeClass(s: RowStatus): string {
 		switch (s) {
 			case 'running':
@@ -210,10 +460,13 @@
 	onMount(async () => {
 		await loadDetail();
 		startPolling();
+		loadDiag();
+		startDiagPolling();
 	});
 
 	onDestroy(() => {
 		stopPolling();
+		stopDiagPolling();
 		vnc?.disconnect();
 		vnc = null;
 	});
@@ -316,5 +569,52 @@
 				/>
 			</div>
 		</div>
+
+		<!-- Live scraper-read diagnostics: watch the box AND what the scraper sees. -->
+		<section class="flex flex-col gap-2 card preset-tonal p-3">
+			<header class="flex flex-wrap items-center gap-2 text-xs">
+				<span class="font-medium">Live scraper reads</span>
+				{#if diag}
+					<span class="badge preset-tonal-surface">tick {diag.tick}</span>
+				{/if}
+				<span class="ms-auto text-surface-600-400">polling 1s</span>
+			</header>
+
+			{#if !isRunning}
+				<p class="text-xs text-surface-600-400">Box not running.</p>
+			{:else if !diag}
+				<p class="text-xs text-warning-500">{diagError ?? 'awaiting scraper…'}</p>
+			{:else}
+				<!-- Grouped live reads. A row is highlighted for a few seconds after its
+				     value CHANGES — sit on a screen, navigate, and the rows that light up
+				     are the signals usable to confirm a press there. -->
+				<div class="grid gap-3 lg:grid-cols-2">
+					{#each GROUPS as g (g.key)}
+						<div class="flex flex-col gap-1">
+							<h4 class="text-[0.65rem] font-semibold tracking-wide text-surface-500 uppercase">
+								{g.title}
+							</h4>
+							<table class="w-full text-xs">
+								<tbody>
+									{#each signals.filter((x) => x.group === g.key) as sig (sig.label)}
+										{@const ago = sig.changedAt ? Date.now() - sig.changedAt : null}
+										{@const fresh = ago !== null && ago < 3000}
+										<tr class={fresh ? 'bg-success-500/15' : ''}>
+											<td class="w-40 py-0.5 align-top text-surface-600-400">{sig.label}</td>
+											<td class="py-0.5 font-mono break-all">{sig.value}</td>
+											<td class="w-16 py-0.5 text-right align-top text-[0.6rem] text-surface-500">
+												{#if ago === null}—{:else if fresh}<span class="text-success-500"
+														>changed</span
+													>{:else}{Math.round(ago / 1000)}s{/if}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 	{/if}
 </div>

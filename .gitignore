@@ -1,9 +1,13 @@
 # Go
 bin/
 tmp/
+tmp-dev/
 vendor/
 /server
 /server.exe
+
+# Dev tier (run-dev.sh) runtime artifacts
+dev.log
 
 # Task
 .task/
@@ -45,8 +49,10 @@ sveltekit/static/game-geometry/
 
 # Environment
 .env
+.env.dev
+.env.beta
 !.env.example
-!sveltekit/.env.example
+!.env.dev.example
 
 # Local dev seed overrides — seed.local.json etc. are personal/local; only
 # the committed template (seed.example.json) is tracked.
@@ -80,3 +86,17 @@ Thumbs.db
 
 # Stray dev-server logs
 dev-server.log
+/inputpoc
+
+# migrate:squash archives the granular migrations here so migrate:verify can
+# rebuild the "before" side to compare against (see docs/MIGRATIONS.md).
+.migrate-archive/
+
+# ISO ingest drop-zone (tier-root inbox). Contents are large disc images
+# staged for ingest into the managed library; never committed. Keep the dir.
+/inbox/*
+!/inbox/.gitkeep
+
+# Python bytecode cache
+__pycache__/
+*.pyc

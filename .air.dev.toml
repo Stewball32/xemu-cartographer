@@ -1,0 +1,24 @@
+# DEV-TIER Air config for dev.norcal.pro's PocketBase (hot-reload Go backend).
+# Isolated from `task dev` (.air.toml → tmp/) via its own tmp-dev/ so both can
+# coexist. Built with -tags dev → the in-process seeder runs (dev users/data).
+# The --http / --dir are supplied by run-dev.sh:
+#   air -c .air.dev.toml -- --http=127.0.0.1:19090 --dir=./tmp-dev/pb_data
+# clean_on_exit wipes tmp-dev/ (incl. the dev pb_data) → ephemeral, per-session.
+root = "."
+tmp_dir = "tmp-dev"
+
+[build]
+  cmd = "go build -tags dev -o ./tmp-dev/server.exe ./cmd/server"
+  entrypoint = "./tmp-dev/server.exe"
+  args_bin = ["serve"]
+  delay = 1000
+  include_ext = ["go"]
+  include_dir = ["cmd", "internal"]
+  exclude_dir = ["tmp", "tmp-dev", "sveltekit", "pb_data", "pb_public", "vendor"]
+  exclude_regex = ["_test\\.go$"]
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

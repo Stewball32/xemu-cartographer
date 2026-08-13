@@ -17,6 +17,7 @@ import type {
 	ScenarioPayload,
 	TickPayloadV2
 } from '$lib/types/scraper-v2';
+import { CE_COLORS, colorHex, H2_KEYS, type Appearance } from '$lib/utils/emblem';
 
 /** Instance name the mock pretends to be. Any instance segment works in mock
  * mode — the URL's `[instance]` is ignored when ?mock=1 is set. */
@@ -31,6 +32,11 @@ interface MockSeed {
 	assists: number;
 	score: number;
 	isLocal: boolean;
+	/** CE/H2 armor-palette index (0..17) — tints the player card's Spartan. Warm
+	 * indices for the red team, cool for blue, so the roster reads team-wise while
+	 * every card still shows a distinct hue (real team games lock armor to the
+	 * team colour; this is preview data chosen to exercise the palette). */
+	armorColor: number;
 	/** base health/shields as a 0..1 fraction; the frame counter wobbles it. */
 	baseHealth: number;
 	baseShields: number;
@@ -48,6 +54,7 @@ const SEEDS: MockSeed[] = [
 		assists: 4,
 		score: 17,
 		isLocal: true,
+		armorColor: 2, // Red
 		baseHealth: 0.82,
 		baseShields: 1
 	},
@@ -60,6 +67,7 @@ const SEEDS: MockSeed[] = [
 		assists: 6,
 		score: 12,
 		isLocal: true,
+		armorColor: 11, // Orange
 		baseHealth: 0.55,
 		baseShields: 0.4
 	},
@@ -72,6 +80,7 @@ const SEEDS: MockSeed[] = [
 		assists: 8,
 		score: 9,
 		isLocal: false,
+		armorColor: 16, // Maroon
 		baseHealth: 1,
 		baseShields: 0.75
 	},
@@ -84,6 +93,7 @@ const SEEDS: MockSeed[] = [
 		assists: 3,
 		score: 7,
 		isLocal: false,
+		armorColor: 17, // Salmon
 		baseHealth: 0,
 		baseShields: 0,
 		dead: true
@@ -97,6 +107,7 @@ const SEEDS: MockSeed[] = [
 		assists: 5,
 		score: 15,
 		isLocal: false,
+		armorColor: 3, // Blue
 		baseHealth: 0.9,
 		baseShields: 0.9
 	},
@@ -109,6 +120,7 @@ const SEEDS: MockSeed[] = [
 		assists: 2,
 		score: 11,
 		isLocal: false,
+		armorColor: 10, // Cobalt
 		baseHealth: 0.3,
 		baseShields: 0
 	},
@@ -121,6 +133,7 @@ const SEEDS: MockSeed[] = [
 		assists: 7,
 		score: 8,
 		isLocal: false,
+		armorColor: 9, // Cyan
 		baseHealth: 0.65,
 		baseShields: 0.6
 	},
@@ -133,6 +146,7 @@ const SEEDS: MockSeed[] = [
 		assists: 1,
 		score: 6,
 		isLocal: false,
+		armorColor: 12, // Teal
 		baseHealth: 1,
 		baseShields: 1
 	}
@@ -213,18 +227,31 @@ export function mockGame(frame = 0): GamePayload {
 			index: s.index,
 			name: s.name,
 			team: s.team,
-			armor_color: s.team,
+			armor_color: s.armorColor,
 			score: s.score + (s.team === 0 ? redDrift : blueDrift),
 			kills: s.kills + (s.index === 0 ? redDrift : 0),
 			deaths: s.deaths,
 			assists: s.assists,
 			ctf_score: 0,
-			team_kills: 0,
-			suicides: 0,
+			// One betrayal + suicide on player 1 so the postgame shame columns
+			// exercise their red-when-nonzero styling in previews.
+			team_kills: s.index === 1 ? 1 : 0,
+			suicides: s.index === 1 ? 1 : 0,
 			kill_streak: s.index === 0 ? 3 : 0,
 			multikill: 0,
 			shots_fired: 0,
 			shots_hit: 0,
+			// Accumulated match stats (acc_* — the server-side HaloCaster-port
+			// deltas), scaled off each seed's kills so every postgame column +
+			// footer total renders non-zero in mock previews.
+			acc_shots_fired: 40 + s.kills * 9 + s.index * 7,
+			acc_grenade_throws: 3 + (s.index % 3) * 2,
+			acc_melees: 1 + (s.index % 2) * 2,
+			acc_damage_dealt: 300 + s.kills * 82,
+			acc_damage_received: 250 + s.deaths * 78,
+			acc_camo_pickups: s.index % 2,
+			acc_overshield_pickups: (s.index + 1) % 2,
+			best_kill_streak: 2 + (s.kills % 5),
 			is_local: s.isLocal,
 			local_index: s.isLocal ? s.index : null,
 			machine_index: s.team,
@@ -511,4 +538,75 @@ export function mockObjects(): ObjectsPayload {
 			}
 		]
 	};
+}
+
+// H2 emblem/appearance for the Halo 2-THEMED broadcast previews. Halo 2 players
+// carry an emblem (foreground symbol + background plate + four colours) the way
+// CE players never did — the H2 broadcast theme renders it on the Spartan's
+// chest and as a card badge. Live H2 will source this from the (unfinished) H2
+// scraper's profile read; until then, mockAppearance derives a stable,
+// distinct-per-slot emblem so the H2 theme is previewable. Deterministic on the
+// slot index so a given card looks the same every frame.
+//
+// NOTE (CE vs H2): CE has NO emblem system — the CE theme intentionally never
+// calls this. This is Halo 2 broadcast preview data only.
+export function mockAppearance(index: number): Appearance {
+	const seed = SEEDS[((index % SEEDS.length) + SEEDS.length) % SEEDS.length];
+	const armorPrimary = seed.armorColor % 18;
+	return {
+		[H2_KEYS.armorPrimary]: armorPrimary,
+		[H2_KEYS.armorSecondary]: (armorPrimary + 9) % 18,
+		[H2_KEYS.emblemPrimary]: 0, // white symbol
+		[H2_KEYS.emblemSecondary]: (armorPrimary + 4) % 18,
+		// The Arbiter (slot 4) fittingly rides in as an Elite; everyone else is a
+		// Spartan (Master Chief bust).
+		[H2_KEYS.character]: index === 4 ? 3 : 0,
+		[H2_KEYS.foreground]: (index * 7 + 12) % 64,
+		[H2_KEYS.background]: (index * 5 + 3) % 32,
+		[H2_KEYS.flags]: 0
+	};
+}
+
+// Mock stand-in for a user's PocketBase avatar file (users.avatar): a small
+// self-contained SVG data-URI — coloured plate + the gamertag's initial — so the
+// preview exercises the cards' PB-avatar <img> spot with a real image and no
+// backend. Live mode replaces this with the /api/files/users/... thumb URL.
+function mockAvatarDataURI(name: string, hex: string): string {
+	const initial = (name[0] ?? '?').toUpperCase();
+	const svg =
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+		`<rect width="64" height="64" rx="10" fill="${hex}"/>` +
+		`<rect width="64" height="32" rx="10" fill="rgba(255,255,255,0.14)"/>` +
+		`<text x="32" y="43" text-anchor="middle" font-family="sans-serif" font-size="32" font-weight="700" fill="#fff">${initial}</text>` +
+		`</svg>`;
+	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+// Mock profile-avatar table for the broadcast player cards — the ?mock=1 stand-in
+// for the live /api/public/profiles endpoint, keyed by lowercased gamertag so it
+// matches how the card resolves a live player name. Each seed gets a PB avatar
+// image (data-URI stand-in) + a CE armor colour + an H2 emblem/appearance.
+// Deliberate gaps to preview every fallback branch:
+//   - SEED 5 (TartarusX): NO profile at all → generic avatar + plain Spartan.
+//   - SEED 7 (flood_carrier): profile but NO avatar image → generic avatar spot,
+//     emblem still renders.
+export function mockProfiles(): Record<
+	string,
+	{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+> {
+	const out: Record<
+		string,
+		{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+	> = {};
+	for (const s of SEEDS) {
+		if (s.index === 5) continue; // no profile → full fallback demo
+		out[s.name.toLowerCase()] = {
+			...(s.index === 7
+				? {} // profile without an avatar image → avatar-spot fallback demo
+				: { avatar: mockAvatarDataURI(s.name, colorHex(CE_COLORS, s.armorColor)) }),
+			ce: { color: s.armorColor },
+			h2: { appearance: mockAppearance(s.index) }
+		};
+	}
+	return out;
 }

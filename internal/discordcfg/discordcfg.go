@@ -1,8 +1,18 @@
-// Package discordcfg is the M17a per-guild Discord config layer: where each
-// guild wants results/tournament posts and which series categories it opted
-// into. The category-filter logic is pure (unit-tested without a DB); Get /
-// Upsert / All wrap the discord_guilds collection. Consumed by the
-// /cartographer config slash command (write) and the game-end post hook (read).
+// Package discordcfg is cartographer's Discord config layer. It owns two things:
+//
+//   - The canonical guild→channel→hook ROUTING table (`discord_routes`) — see
+//     bindings.go (GetBinding/SetBinding/DeleteBinding + the hook constants).
+//   - The per-guild results-posting CONFIG built on top of it: which channel
+//     game/series results post to (the `announcements` hook) and which series
+//     categories a guild opted into (the `posted_categories` filter, stored in
+//     `discord_guild_settings`).
+//
+// Post-migration (Discord bot spec): the old flat `discord_guilds` collection is
+// retired. Results routing now reads the `announcements` route; the category
+// filter reads `discord_guild_settings`. The category-filter logic below stays
+// pure (unit-tested without a DB); Get / All / Upsert wrap the two collections.
+// Consumed by the `/cartographer config` slash command (write) and the game-end
+// post hook (read).
 package discordcfg
 
 import (
@@ -10,7 +20,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// GuildConfig is one guild's posting config.
+const settingsCollection = "discord_guild_settings"
+
+// GuildConfig is one guild's results-posting config, projected from the routing
+// table (`announcements`/`tournament` hooks) + the category filter.
 type GuildConfig struct {
 	GuildID           string
 	ResultsChannel    string
@@ -51,51 +64,96 @@ func ResultsTargets(configs []GuildConfig, category string) []string {
 	return out
 }
 
-func fromRecord(r *core.Record) GuildConfig {
-	return GuildConfig{
-		GuildID:           r.GetString("guild_id"),
-		ResultsChannel:    r.GetString("results_channel"),
-		TournamentChannel: r.GetString("tournament_channel"),
-		PostedCategories:  r.GetStringSlice("posted_categories"),
-	}
-}
-
-// Get returns a guild's config, or (zero, false) when unconfigured.
+// Get returns a guild's config, or (zero, false) when unconfigured. Sources the
+// channels from the routing table and the category filter from settings.
 func Get(app core.App, guildID string) (GuildConfig, bool) {
-	r, err := app.FindFirstRecordByFilter("discord_guilds", "guild_id = {:g}", dbx.Params{"g": guildID})
-	if err != nil || r == nil {
-		return GuildConfig{}, false
-	}
-	return fromRecord(r), true
+	cfg := buildConfig(app, guildID)
+	configured := cfg.ResultsChannel != "" || cfg.TournamentChannel != "" || len(cfg.PostedCategories) > 0
+	return cfg, configured
 }
 
-// All returns every configured guild (the post-hook fan-out source).
+// buildConfig projects the routing table + settings into a GuildConfig.
+func buildConfig(app core.App, guildID string) GuildConfig {
+	cfg := GuildConfig{GuildID: guildID}
+	if ch, ok := GetBinding(app, guildID, HookAnnouncements); ok {
+		cfg.ResultsChannel = ch
+	}
+	if ch, ok := GetBinding(app, guildID, HookTournament); ok {
+		cfg.TournamentChannel = ch
+	}
+	if r, err := app.FindFirstRecordByFilter(settingsCollection,
+		"guild_id = {:g}", dbx.Params{"g": guildID}); err == nil && r != nil {
+		cfg.PostedCategories = r.GetStringSlice("posted_categories")
+	}
+	return cfg
+}
+
+// All returns every configured guild (the post-hook fan-out source): the union
+// of guilds that have any route or any settings row.
 func All(app core.App) ([]GuildConfig, error) {
-	rows, err := app.FindAllRecords("discord_guilds")
+	ids, err := configuredGuildIDs(app)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]GuildConfig, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, fromRecord(r))
+	out := make([]GuildConfig, 0, len(ids))
+	for id := range ids {
+		out = append(out, buildConfig(app, id))
 	}
 	return out, nil
 }
 
-// Upsert writes (or updates) a guild's config — used by the /cartographer config
-// slash command via app.Save (which bypasses the collection's nil rules).
+// configuredGuildIDs collects the distinct guild ids across discord_routes +
+// discord_guild_settings.
+func configuredGuildIDs(app core.App) (map[string]struct{}, error) {
+	ids := map[string]struct{}{}
+	routes, err := app.FindAllRecords(RoutesCollection)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range routes {
+		ids[r.GetString("guild_id")] = struct{}{}
+	}
+	settings, err := app.FindAllRecords(settingsCollection)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range settings {
+		ids[r.GetString("guild_id")] = struct{}{}
+	}
+	delete(ids, "")
+	return ids, nil
+}
+
+// Upsert writes (or updates) a guild's results-posting config — used by the
+// `/cartographer config` slash command via app.Save (bypasses the collections'
+// nil rules). The results channel folds into the `announcements` route; the
+// category filter into discord_guild_settings.
 func Upsert(app core.App, cfg GuildConfig) error {
-	r, err := app.FindFirstRecordByFilter("discord_guilds", "guild_id = {:g}", dbx.Params{"g": cfg.GuildID})
+	if cfg.ResultsChannel != "" {
+		if err := SetBinding(app, cfg.GuildID, HookAnnouncements, cfg.ResultsChannel); err != nil {
+			return err
+		}
+	}
+	if cfg.TournamentChannel != "" {
+		if err := SetBinding(app, cfg.GuildID, HookTournament, cfg.TournamentChannel); err != nil {
+			return err
+		}
+	}
+	return setGuildCategories(app, cfg.GuildID, cfg.PostedCategories)
+}
+
+// setGuildCategories upserts a guild's posted-category filter.
+func setGuildCategories(app core.App, guildID string, categories []string) error {
+	r, err := app.FindFirstRecordByFilter(settingsCollection,
+		"guild_id = {:g}", dbx.Params{"g": guildID})
 	if err != nil || r == nil {
-		col, cerr := app.FindCollectionByNameOrId("discord_guilds")
+		col, cerr := app.FindCollectionByNameOrId(settingsCollection)
 		if cerr != nil {
 			return cerr
 		}
 		r = core.NewRecord(col)
-		r.Set("guild_id", cfg.GuildID)
+		r.Set("guild_id", guildID)
 	}
-	r.Set("results_channel", cfg.ResultsChannel)
-	r.Set("tournament_channel", cfg.TournamentChannel)
-	r.Set("posted_categories", cfg.PostedCategories)
+	r.Set("posted_categories", categories)
 	return app.Save(r)
 }

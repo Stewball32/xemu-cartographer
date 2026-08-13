@@ -65,6 +65,18 @@ func (r *Reader) OnStateChange(prev, next scraper.GameState) error {
 		r.tagNameCache = make(map[int16]string)
 		r.weaponTagDataCache = make(map[int16]*scraper.StaticWeaponTagData)
 		r.bipedTagCache = make(map[int16]*scraper.StaticBipedTagData)
+		// The UI cache reloads on entry to the front-end, so the SELECT MAP /
+		// SELECT GAMETYPE widget-def handles must be re-resolved (see widget.go),
+		// as must the front-end menu-item handles (see menustate.go).
+		r.lobbyCursorHandles = nil
+		r.menuItemHandles = nil
+		r.sysLinkGamesHandles = nil
+		// Screen-record resolve caches (screenrec.go): tag ids are per loaded tag
+		// cache, and the dynamic page translations can go stale across an XBE
+		// swap — both re-resolve cheaply on the next front-end read.
+		r.screenTagPaths = nil
+		r.lowPageHVAs = nil
+		r.lowPageFails = nil
 	}
 	return nil
 }
@@ -84,7 +96,7 @@ func (r *Reader) ensureScenarioStatic() {
 		r.scenarioCache = &scenarioStaticCache{}
 	}
 
-	scenarioBase, err := r.inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	scenarioBase, err := r.inst.DerefLowPtr(r.off.AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
 		return
 	}
@@ -171,7 +183,7 @@ func (r *Reader) fillLocalsStatic(m *matchStaticCache) {
 	m.LookPitchRate = make([]float32, n)
 	for i := 0; i < n; i++ {
 		m.UI[i] = r.readUIGlobals(i)
-		m.LookYawRate[i] = r.readLookRate(RefAddrLookYawRate, i)
-		m.LookPitchRate[i] = r.readLookRate(RefAddrLookPitchRate, i)
+		m.LookYawRate[i] = r.readLookRate(r.off.RefAddrLookYawRate, i)
+		m.LookPitchRate[i] = r.readLookRate(r.off.RefAddrLookPitchRate, i)
 	}
 }

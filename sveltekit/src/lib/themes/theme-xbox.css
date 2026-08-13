@@ -1,0 +1,273 @@
+/*
+ * xbox-original — original Xbox dashboard / Xemu theme.
+ *
+ * Inspiration: OG Xbox dashboard (lime-green wireframe, yellow-green X jewel,
+ * jet-black backdrop with green grid), Xbox LIVE flame logo. The whole UI
+ * lived in one neon-green register on near-black, with orange flame accents.
+ *
+ * Lime-green primary, yellow-green secondary, deep emerald tertiary, LIVE
+ * flame orange warning. Y2K geometric headings (Jura). Soft blade-end radii.
+ */
+[data-theme='xbox'] {
+	--spacing: 0.25rem;
+	--text-scaling: 1.067;
+	--typo-base--font-family: system-ui;
+	--typo-base--font-size: inherit;
+	--typo-base--color-light: var(--color-surface-950);
+	--typo-base--color-dark: var(--color-surface-50);
+	--typo-base--line-height: inherit;
+	--typo-base--font-weight: 400;
+	--typo-base--font-style: normal;
+	--typo-base--letter-spacing: 0em;
+	--typo-base--font-stretch: inherit;
+	--typo-base--font-kerning: inherit;
+	--typo-base--text-shadow: inherit;
+	--typo-base--word-spacing: inherit;
+	--typo-base--hyphens: inherit;
+	--typo-base--text-transform: inherit;
+	--typo-heading--font-family: 'Jura', system-ui, sans-serif;
+	--typo-heading--color-light: inherit;
+	--typo-heading--color-dark: inherit;
+	--typo-heading--font-weight: 700;
+	--typo-heading--font-style: normal;
+	--typo-heading--letter-spacing: 0.04em;
+	--typo-heading--font-stretch: inherit;
+	--typo-heading--font-kerning: inherit;
+	--typo-heading--text-shadow: inherit;
+	--typo-heading--word-spacing: inherit;
+	--typo-heading--hyphens: inherit;
+	--typo-heading--text-transform: inherit;
+	--typo-anchor--font-family: inherit;
+	--typo-anchor--font-size: inherit;
+	--typo-anchor--color-light: var(--color-primary-700);
+	--typo-anchor--color-dark: var(--color-primary-300);
+	--typo-anchor--line-height: inherit;
+	--typo-anchor--font-weight: inherit;
+	--typo-anchor--font-style: inherit;
+	--typo-anchor--letter-spacing: inherit;
+	--typo-anchor--font-stretch: inherit;
+	--typo-anchor--font-kerning: inherit;
+	--typo-anchor--text-shadow: inherit;
+	--typo-anchor--word-spacing: inherit;
+	--typo-anchor--hyphens: inherit;
+	--typo-anchor--text-transform: inherit;
+	--typo-anchor--text-decoration-line: none;
+	--typo-anchor--text-decoration-color: inherit;
+	--typo-anchor--text-decoration-style: inherit;
+	--typo-anchor--text-decoration-thickness: inherit;
+	--typo-anchor--text-underline-offset: inherit;
+	--typo-anchor--text-underline-position: inherit;
+	--typo-anchor--hover--text-decoration-line: underline;
+	--typo-anchor--hover--text-decoration-color: inherit;
+	--typo-anchor--hover--text-decoration-style: inherit;
+	--typo-anchor--hover--text-decoration-thickness: inherit;
+	--typo-anchor--hover--text-underline-offset: inherit;
+	--typo-anchor--hover--text-underline-position: inherit;
+	--typo-anchor--active--text-decoration-line: none;
+	--typo-anchor--active--text-decoration-color: inherit;
+	--typo-anchor--active--text-decoration-style: inherit;
+	--typo-anchor--active--text-decoration-thickness: inherit;
+	--typo-anchor--active--text-underline-offset: inherit;
+	--typo-anchor--active--text-underline-position: inherit;
+	--typo-anchor--focus--text-decoration-line: none;
+	--typo-anchor--focus--text-decoration-color: inherit;
+	--typo-anchor--focus--text-decoration-style: inherit;
+	--typo-anchor--focus--text-decoration-thickness: inherit;
+	--typo-anchor--focus--text-underline-offset: inherit;
+	--typo-anchor--focus--text-underline-position: inherit;
+	--radius-base: 0.75rem;
+	--radius-container: 1rem;
+	--default-border-width: 1px;
+	--default-outline-width: 1px;
+	--default-ring-width: 1px;
+	--corner-shape-base: initial;
+	--corner-shape-container: initial;
+	--color-root-bg-light: var(--color-surface-50);
+	--color-root-bg-dark: var(--color-surface-950);
+	--color-brand-light: var(--color-primary-500);
+	--color-brand-contrast-light: var(--color-primary-contrast-500);
+	--color-brand-dark: var(--color-primary-500);
+	--color-brand-contrast-dark: var(--color-primary-contrast-500);
+
+	/* Primary — vivid lime green (Xbox jewel core) */
+	--color-primary-50: oklch(0.96 0.05 135);
+	--color-primary-100: oklch(0.92 0.1 135);
+	--color-primary-200: oklch(0.88 0.16 135);
+	--color-primary-300: oklch(0.84 0.21 135);
+	--color-primary-400: oklch(0.8 0.24 135);
+	--color-primary-500: oklch(0.76 0.25 135);
+	--color-primary-600: oklch(0.66 0.22 135);
+	--color-primary-700: oklch(0.55 0.18 135);
+	--color-primary-800: oklch(0.44 0.15 135);
+	--color-primary-900: oklch(0.33 0.11 135);
+	--color-primary-950: oklch(0.22 0.07 135);
+	--color-primary-contrast-dark: var(--color-primary-950);
+	--color-primary-contrast-light: var(--color-primary-50);
+	--color-primary-contrast-50: var(--color-primary-contrast-dark);
+	--color-primary-contrast-100: var(--color-primary-contrast-dark);
+	--color-primary-contrast-200: var(--color-primary-contrast-dark);
+	--color-primary-contrast-300: var(--color-primary-contrast-dark);
+	--color-primary-contrast-400: var(--color-primary-contrast-dark);
+	--color-primary-contrast-500: var(--color-primary-contrast-dark);
+	--color-primary-contrast-600: var(--color-primary-contrast-dark);
+	--color-primary-contrast-700: var(--color-primary-contrast-light);
+	--color-primary-contrast-800: var(--color-primary-contrast-light);
+	--color-primary-contrast-900: var(--color-primary-contrast-light);
+	--color-primary-contrast-950: var(--color-primary-contrast-light);
+
+	/* Secondary — yellow-green (jewel highlight) */
+	--color-secondary-50: oklch(0.97 0.05 115);
+	--color-secondary-100: oklch(0.94 0.1 115);
+	--color-secondary-200: oklch(0.91 0.16 113);
+	--color-secondary-300: oklch(0.88 0.2 112);
+	--color-secondary-400: oklch(0.85 0.22 110);
+	--color-secondary-500: oklch(0.81 0.22 108);
+	--color-secondary-600: oklch(0.71 0.2 108);
+	--color-secondary-700: oklch(0.6 0.17 110);
+	--color-secondary-800: oklch(0.49 0.14 112);
+	--color-secondary-900: oklch(0.38 0.1 114);
+	--color-secondary-950: oklch(0.27 0.07 116);
+	--color-secondary-contrast-dark: var(--color-secondary-950);
+	--color-secondary-contrast-light: var(--color-secondary-50);
+	--color-secondary-contrast-50: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-100: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-200: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-300: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-400: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-500: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-600: var(--color-secondary-contrast-dark);
+	--color-secondary-contrast-700: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-800: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-900: var(--color-secondary-contrast-light);
+	--color-secondary-contrast-950: var(--color-secondary-contrast-light);
+
+	/* Tertiary — deep emerald (wireframe shadow) */
+	--color-tertiary-50: oklch(0.94 0.04 150);
+	--color-tertiary-100: oklch(0.88 0.08 150);
+	--color-tertiary-200: oklch(0.79 0.12 150);
+	--color-tertiary-300: oklch(0.7 0.14 150);
+	--color-tertiary-400: oklch(0.6 0.15 150);
+	--color-tertiary-500: oklch(0.5 0.15 150);
+	--color-tertiary-600: oklch(0.42 0.13 150);
+	--color-tertiary-700: oklch(0.35 0.11 150);
+	--color-tertiary-800: oklch(0.28 0.09 150);
+	--color-tertiary-900: oklch(0.21 0.07 150);
+	--color-tertiary-950: oklch(0.15 0.05 150);
+	--color-tertiary-contrast-dark: var(--color-tertiary-950);
+	--color-tertiary-contrast-light: var(--color-tertiary-50);
+	--color-tertiary-contrast-50: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-100: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-200: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-300: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-400: var(--color-tertiary-contrast-dark);
+	--color-tertiary-contrast-500: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-600: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-700: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-800: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-900: var(--color-tertiary-contrast-light);
+	--color-tertiary-contrast-950: var(--color-tertiary-contrast-light);
+
+	/* Success — standard green */
+	--color-success-50: oklch(0.95 0.05 145);
+	--color-success-100: oklch(0.91 0.09 145);
+	--color-success-200: oklch(0.85 0.13 145);
+	--color-success-300: oklch(0.79 0.15 145);
+	--color-success-400: oklch(0.72 0.17 145);
+	--color-success-500: oklch(0.65 0.18 145);
+	--color-success-600: oklch(0.56 0.16 145);
+	--color-success-700: oklch(0.47 0.14 145);
+	--color-success-800: oklch(0.39 0.11 145);
+	--color-success-900: oklch(0.32 0.09 145);
+	--color-success-950: oklch(0.24 0.06 145);
+	--color-success-contrast-dark: var(--color-success-950);
+	--color-success-contrast-light: var(--color-success-50);
+	--color-success-contrast-50: var(--color-success-contrast-dark);
+	--color-success-contrast-100: var(--color-success-contrast-dark);
+	--color-success-contrast-200: var(--color-success-contrast-dark);
+	--color-success-contrast-300: var(--color-success-contrast-dark);
+	--color-success-contrast-400: var(--color-success-contrast-dark);
+	--color-success-contrast-500: var(--color-success-contrast-light);
+	--color-success-contrast-600: var(--color-success-contrast-light);
+	--color-success-contrast-700: var(--color-success-contrast-light);
+	--color-success-contrast-800: var(--color-success-contrast-light);
+	--color-success-contrast-900: var(--color-success-contrast-light);
+	--color-success-contrast-950: var(--color-success-contrast-light);
+
+	/* Warning — Xbox LIVE flame orange */
+	--color-warning-50: oklch(0.96 0.05 50);
+	--color-warning-100: oklch(0.92 0.1 48);
+	--color-warning-200: oklch(0.86 0.15 46);
+	--color-warning-300: oklch(0.8 0.18 44);
+	--color-warning-400: oklch(0.74 0.2 42);
+	--color-warning-500: oklch(0.68 0.21 40);
+	--color-warning-600: oklch(0.6 0.19 38);
+	--color-warning-700: oklch(0.51 0.17 36);
+	--color-warning-800: oklch(0.43 0.14 34);
+	--color-warning-900: oklch(0.34 0.12 32);
+	--color-warning-950: oklch(0.26 0.09 30);
+	--color-warning-contrast-dark: var(--color-warning-950);
+	--color-warning-contrast-light: var(--color-warning-50);
+	--color-warning-contrast-50: var(--color-warning-contrast-dark);
+	--color-warning-contrast-100: var(--color-warning-contrast-dark);
+	--color-warning-contrast-200: var(--color-warning-contrast-dark);
+	--color-warning-contrast-300: var(--color-warning-contrast-dark);
+	--color-warning-contrast-400: var(--color-warning-contrast-dark);
+	--color-warning-contrast-500: var(--color-warning-contrast-light);
+	--color-warning-contrast-600: var(--color-warning-contrast-light);
+	--color-warning-contrast-700: var(--color-warning-contrast-light);
+	--color-warning-contrast-800: var(--color-warning-contrast-light);
+	--color-warning-contrast-900: var(--color-warning-contrast-light);
+	--color-warning-contrast-950: var(--color-warning-contrast-light);
+
+	/* Error — red */
+	--color-error-50: oklch(0.93 0.04 25);
+	--color-error-100: oklch(0.86 0.08 25);
+	--color-error-200: oklch(0.79 0.13 25);
+	--color-error-300: oklch(0.72 0.17 25);
+	--color-error-400: oklch(0.66 0.2 25);
+	--color-error-500: oklch(0.6 0.22 25);
+	--color-error-600: oklch(0.53 0.21 25);
+	--color-error-700: oklch(0.46 0.19 25);
+	--color-error-800: oklch(0.39 0.17 25);
+	--color-error-900: oklch(0.32 0.15 25);
+	--color-error-950: oklch(0.25 0.12 25);
+	--color-error-contrast-dark: var(--color-error-950);
+	--color-error-contrast-light: var(--color-error-50);
+	--color-error-contrast-50: var(--color-error-contrast-dark);
+	--color-error-contrast-100: var(--color-error-contrast-dark);
+	--color-error-contrast-200: var(--color-error-contrast-dark);
+	--color-error-contrast-300: var(--color-error-contrast-dark);
+	--color-error-contrast-400: var(--color-error-contrast-light);
+	--color-error-contrast-500: var(--color-error-contrast-light);
+	--color-error-contrast-600: var(--color-error-contrast-light);
+	--color-error-contrast-700: var(--color-error-contrast-light);
+	--color-error-contrast-800: var(--color-error-contrast-light);
+	--color-error-contrast-900: var(--color-error-contrast-light);
+	--color-error-contrast-950: var(--color-error-contrast-light);
+
+	/* Surface — green-tinted near-black (dashboard backdrop) -> pale green wash */
+	--color-surface-50: oklch(0.98 0.01 140);
+	--color-surface-100: oklch(0.93 0.015 140);
+	--color-surface-200: oklch(0.84 0.02 140);
+	--color-surface-300: oklch(0.73 0.025 140);
+	--color-surface-400: oklch(0.61 0.03 140);
+	--color-surface-500: oklch(0.48 0.035 140);
+	--color-surface-600: oklch(0.38 0.04 140);
+	--color-surface-700: oklch(0.29 0.04 140);
+	--color-surface-800: oklch(0.21 0.038 140);
+	--color-surface-900: oklch(0.14 0.032 140);
+	--color-surface-950: oklch(0.08 0.022 140);
+	--color-surface-contrast-dark: var(--color-surface-950);
+	--color-surface-contrast-light: var(--color-surface-50);
+	--color-surface-contrast-50: var(--color-surface-contrast-dark);
+	--color-surface-contrast-100: var(--color-surface-contrast-dark);
+	--color-surface-contrast-200: var(--color-surface-contrast-dark);
+	--color-surface-contrast-300: var(--color-surface-contrast-dark);
+	--color-surface-contrast-400: var(--color-surface-contrast-light);
+	--color-surface-contrast-500: var(--color-surface-contrast-light);
+	--color-surface-contrast-600: var(--color-surface-contrast-light);
+	--color-surface-contrast-700: var(--color-surface-contrast-light);
+	--color-surface-contrast-800: var(--color-surface-contrast-light);
+	--color-surface-contrast-900: var(--color-surface-contrast-light);
+	--color-surface-contrast-950: var(--color-surface-contrast-light);
+}

@@ -1,8 +1,53 @@
 # Status
 
-> **Last updated:** 2026-06-23 (Stream Studio — stream-asset hub + game-timer & kill-feed overlays on `feat/stream-assets-studio`, mock-verified; live match pass pending. Prior: 2026-06-20 M25 OBS overlay render pages, mock-verified)
+> **Last updated:** 2026-07-02 (live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below; findings in `../halo-offset-mapper`). Prior 2026-07-01 patchwork/backup pass — every worktree committed + all branches pushed to origin; see **Repo housekeeping** below. M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
+
+## Live offset verification (2026-07-02) — CE + H2, unblocks M19/M20
+
+Ran a live xemu offset-verification session on the `scripts/3way-systemlink/` rig
+(branch `feat/halo2-scraper`) + the `../halo-offset-mapper` runtime tooling. Findings +
+provenance committed & pushed in **halo-offset-mapper** (`docs/ce-offset-mapping-2026-07-02.md`,
+`docs/h2-offset-confirm-2026-07-02.md`).
+
+- **Rig proven from cold:** `udp_reflector.py` + `launch-instance.sh {1,2}` → 2 CE
+  instances → **system link confirmed end-to-end** (host game discovered across the
+  reflector, join, START) → live 2-player Blood Gulch Slayer FFA match. `launch-h2.sh`
+  → H2 boots + drives to a live splitscreen match.
+- **CE:** foundation/player/biped/weapon/object + system-link network layer offsets all
+  re-verified live (zero corrections). NEW: `OffBipedCrouchScale 0x464` static-derived →
+  **runtime-verified** (crouch induced); `AddrScoreSlayer 0x276710` **FFA per-player
+  indexing confirmed** (prior open item); attributed cross-player kill reconfirmed on
+  Blood Gulch (client stayed connected — no desync on open FFA).
+- **H2:** phase-1 GameReader offsets **runtime-verified live** in an H2 match (Turf) —
+  players/objects arrays, biped health/shield/max(45/70)/pos/frags(2), Battle Rifle
+  mag 36/reserve 72, title id `0x4D530064`. This is the H2 scraper read-path piece that
+  was "unverified without xemu".
+- **Reusable tooling added** (halo-offset-mapper): `scripts/runtime/ce_lobby.sh`
+  (system-link lobby driver — gated building blocks; menu nav must be screenshot-verified,
+  not reliably hands-free) + a `tag-handle` schema-kind fix (unblocked `offsetmap validate`).
+- **Remaining:** multi-instance **H2 system link** (reflector recipe applies; needs a
+  2-console H2 match) + H2 combat-stat induction; CE objective-tick values (CTF capture /
+  Oddball possession — physics enter-edge wall); vehicle-seat / overshield / FFA-leader /
+  friendly-fire / time-limit. Robust hands-free menu nav would need screenshot/OCR gating.
+
+## Repo housekeeping (2026-07-01)
+
+Patchwork/backup pass over the 6-worktree working set. **Nothing was merged into `main`**; all changes are committed on their own branches and pushed.
+
+- **Backup (was the top risk):** `main` (74 commits ahead of origin, unpushed) + all 17 local feature/chore branches are now pushed to `origin` and tracking. Previously only an old `main` existed on the remote.
+- **In-progress work committed:**
+  - `chore/xemu-test-harness` — harness now uses xemu 0.8.136's native `xemu` display backend instead of stock-QEMU `sdl` (which that build doesn't compile), fixing the visible-window launch.
+  - `feat/spartan-skinfix-ce-markv` + `feat/spartan-real-poses` — added `tools/h2-model/.gitignore` (mirrors `tools/ce-model/`) so `__pycache__/` + `out/mcc/composite_cmp/` render artifacts stop showing as untracked.
+- **Build/test:** green on `feat/broadcast-graphics` (= `main` + M28) — Go `build`/`vet`/all tests; frontend `lint`/`check` (0 err)/`test` (282)/`build`.
+- **Stashes triaged — all preserved, none applied:**
+  - `stash@{0}` (orphaned, ex-`feat/stream-assets-studio`) — **obsolete**: the visualizer `?map=` demo-mode WIP was finished + merged as `223c718` and has since evolved (`mockStagedModel`). Safe to drop; left in place.
+  - `stash@{1}` (`feat/json-seeder`) — its `02-patch-toml.sh` netif fix is **already on `main`** (functionally identical); the only real delta is a `seed.example.json` credential change → **Stewart's call**.
+  - `stash@{2}` (`chore/align-dev-seed-creds`) — `data.go` seed-credential approach → **Stewart's call** (competes with json-seeder; deliberately left, per the deferred-seeder decision).
+- **TODO/FIXME:** only 3 in source (Halo:CE offset provenance + an M7 live-verify note) — none quick/safe (all need live xemu). Left as-is.
+
+**⚠️ Directory move:** this repo drives 6 git worktrees under `/home/stew/repos/` (`xemu-cartographer`, `xemu-cart-markv`, `xemu-cartographer-emblem-fix`, `-harness`, `-overlay`, `-spartan-poses`). After moving the parent dir, run `git worktree repair` from the main checkout (passing the moved worktree paths) to fix the absolute gitdir links — otherwise the linked worktrees detach.
 
 ## Goals
 
@@ -18,6 +63,7 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 - [ ] [M10 — Overlay revamp + new browser sources](milestones/M10-overlay-revamp.md) — **in progress** (`wip/milestone-10`; overlay-token auth on `wip/m10-overlay-auth`). Data foundation (10d filter + schema) + the **overlay/spectator auth layer** (read-only revocable tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI) landed. The first **render surfaces** (scoreboard + status strip) landed under M25; remaining render surfaces (10a POV routing / 10c events / 10e POV pass) deferred — need live data + OBS.
 - [ ] [M25 — OBS spectator overlays](milestones/M25-obs-overlays.md) — **in progress** (`wip/obs-spectator-overlays`). Scoreboard/roster (`/overlays/[instance]/`) + match-status strip (`/overlays/[instance]/status/`) render pages on the shipped M10 overlay-token contract, with `?mock=1` sample mode; mint page emits both URLs. Pure builders unit-tested; check/lint/test/build + headless mock render green. Remaining: live match pass (K/D/A + team-score correctness) + wiring the M10d dummy filter into the broadcast.
 - [ ] **Stream Studio — stream-asset hub** (`feat/stream-assets-studio`, off `feat/visualizer-3d`). New `/studio/` gallery maps every browser-source asset (scoreboard, status strip, players, 2D/3D visualizers) with a live `?mock=1` inline preview + one-click scoped-token "Copy OBS URL" per asset, driven by a registry (`stream-assets.ts`) where adding an asset = a route + an entry. Seeds two new transparent overlays — **game timer** (`/overlays/[instance]/timer/`) + **kill feed** (`/overlays/[instance]/killfeed/`). Pure builders unit-tested; check/lint/test/build + headless mock renders green. Carries the overlay-token `host:*` room auth fix so copy-link minting works. Docs: [STREAM-ASSETS.md](STREAM-ASSETS.md). Remaining: live-match pass (kill-feed events + token URLs against a real game).
+- [ ] [M28 — Broadcast graphics](milestones/M28-broadcast-graphics.md) — **in progress** (`feat/broadcast-graphics`). Two themed "hero" OBS sources on the M25/Studio plumbing: **broadcast scoreboard** (`/overlays/[instance]/scoreboard/`) + **player cards** (`/overlays/[instance]/cards/`, plus `card/[slot]/` spotlight), using the real Spartan/Elite busts + H2 emblems + exact armor palettes. A `?game=ce|h2` switch (`--bc-*` theme layer) renders CE amber/green vs H2 blue from the same data. New pure helpers unit-tested (theme + params, +12); check/lint/test (273)/build + headless mock renders in both themes green. **CE live-capable now; H2 theme preview-only** until the H2 scraper (M20) provides live roster/scores/emblems.
 - [ ] [M11 — Game minimaps](milestones/M11-game-minimaps.md) — **in progress** (`wip/milestone-11`). Projection + height math landed (`minimap.ts`, unit-tested). Traced map assets + renderer + flares deferred — need assets + live data + OBS.
 - [ ] [M12 — POV marker overlay (stretch)](milestones/M12-pov-marker-overlay.md) — **foundation parked** (`wip/milestone-12`). Perspective-projection kernel landed (`pov-projection.ts`, unit-tested). Rest blocked on the 12a camera-offset audit (needs live xemu); may defer to M21+ per the stretch flag.
 - [ ] [M13 — PocketBase persistence foundation](milestones/M13-pb-persistence-games-series.md) — **in progress** (`wip/milestone-13`; chain wired on `wip/game-end-chain`). Schema + writer + heuristic landed. **`game_events` fork resolved (option a)** + full game-end chain wired (events stamping + series advance + rating) with the Live→Ready trigger; integration-tested. Remaining: live verification, 13d durable queue.

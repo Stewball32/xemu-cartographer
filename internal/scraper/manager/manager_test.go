@@ -71,7 +71,7 @@ func TestInstanceState(t *testing.T) {
 	// instanceCache rather than on the runner directly, populated by the
 	// loop when it binds a reader. Simulate that here by writing to the
 	// cache directly so InstanceState has data to surface.
-	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil)
+	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil, nil)
 	defer r.cancel()
 	r.cache.TitleID = 0x4D530004
 	r.cache.Title = "Halo: Combat Evolved"

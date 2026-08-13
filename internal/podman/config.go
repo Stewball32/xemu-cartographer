@@ -3,6 +3,7 @@ package podman
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // LoadFromEnv builds a Config from CONTAINERS_* environment variables, falling
@@ -19,27 +20,45 @@ func LoadFromEnv() Config {
 		PortBase:       envInt("CONTAINERS_PORT_BASE", 3100),
 		PortStride:     envInt("CONTAINERS_PORT_STRIDE", 10),
 		HostIP:         envStr("CONTAINERS_HOST_IP", "localhost"),
-		PodmanCmd:      envStr("CONTAINERS_PODMAN_CMD", "podman"),
+		// NamePrefix namespaces every container this deployment creates. Empty in
+		// prod. A beta/preview sharing the host's rootful podman daemon sets e.g.
+		// "beta-" so its container names can never collide with prod's — even the
+		// auto-generated per-player "play-<uid>" boxes become "beta-play-<uid>".
+		// The prefix is baked into the logical name at creation and flows through
+		// the store / podman name / socket / dirs unchanged (no double-prefixing).
+		NamePrefix: envStr("CONTAINERS_NAME_PREFIX", ""),
+		DVDPath:    envStr("CONTAINERS_DVD_PATH", ""),
+		// Shared game ISO library. A per-instance ISO named in
+		// CreateOptions.GameISO resolves against this dir; ISOs are bind-mounted
+		// read-only into their instance, never copied onto the overlay.
+		ISODir:    envStr("CONTAINERS_ISO_DIR", "./containers/xemu/shared/isos"),
+		PodmanCmd: envStr("CONTAINERS_PODMAN_CMD", "podman"),
 		// Canonical read-only root qcow2 (the Halo-installed disk) that every
 		// per-instance overlay backs onto. Lives in SharedDir/hdds/. Keep this
 		// in sync with DEFAULT_HDD_NAME in containers/xemu/init/.env.
 		RootHDD:    envStr("CONTAINERS_ROOT_HDD", "_default.qcow2"),
 		QemuImgCmd: envStr("CONTAINERS_QEMU_IMG_CMD", "qemu-img"),
+		// Liveness-probe timeout for the kiosk proxy's pre-dial `podman inspect`.
+		KioskLiveTimeout: time.Duration(envInt("CONTAINERS_KIOSK_LIVE_TIMEOUT_MS", 2000)) * time.Millisecond,
 		// Write the container name into the instance's Xbox console name
 		// (E:\UDATA\NICKNAME.XBN) inside its overlay at create time.
 		SetConsoleName:       envBool("CONTAINERS_SET_CONSOLE_NAME", true),
 		QemuStorageDaemonCmd: envStr("CONTAINERS_QEMU_STORAGE_DAEMON_CMD", "qemu-storage-daemon"),
 		PythonCmd:            envStr("CONTAINERS_PYTHON_CMD", "python3"),
 		FatxToolPath:         envStr("CONTAINERS_FATX_TOOL", ""),
-		Encoder:              envStr("CONTAINERS_ENCODER", "x264enc"),
-		Framerate:            envInt("CONTAINERS_FRAMERATE", 60),
-		CRF:                  envInt("CONTAINERS_CRF", 20),
-		Width:                envInt("CONTAINERS_WIDTH", 960),
-		Height:               envInt("CONTAINERS_HEIGHT", 720),
-		PixelfluxWayland:     envBool("CONTAINERS_PIXELFLUX_WAYLAND", true),
-		DRINode:              envStr("CONTAINERS_DRINODE", "/dev/dri/renderD128"),
-		ShmSize:              envStr("CONTAINERS_SHM_SIZE", "1g"),
-		BrowserShmSize:       envStr("CONTAINERS_BROWSER_SHM_SIZE", "2gb"),
+		// Pre-seed the firefox kiosk profile's NSS trust store with the instance
+		// CA at create time so the kiosk loads xemu's HTTPS view without a warning.
+		SetBrowserTrust:  envBool("CONTAINERS_SET_BROWSER_TRUST", true),
+		CertutilCmd:      envStr("CONTAINERS_CERTUTIL_CMD", "certutil"),
+		Encoder:          envStr("CONTAINERS_ENCODER", "x264enc"),
+		Framerate:        envInt("CONTAINERS_FRAMERATE", 60),
+		CRF:              envInt("CONTAINERS_CRF", 20),
+		Width:            envInt("CONTAINERS_WIDTH", 960),
+		Height:           envInt("CONTAINERS_HEIGHT", 720),
+		PixelfluxWayland: envBool("CONTAINERS_PIXELFLUX_WAYLAND", true),
+		DRINode:          envStr("CONTAINERS_DRINODE", "/dev/dri/renderD128"),
+		ShmSize:          envStr("CONTAINERS_SHM_SIZE", "1g"),
+		BrowserShmSize:   envStr("CONTAINERS_BROWSER_SHM_SIZE", "2gb"),
 	}
 }
 

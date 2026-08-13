@@ -1,14 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import {
-		ActivityIcon,
-		BoxIcon,
-		DatabaseIcon,
-		KeyIcon,
-		UserIcon,
-		UsersIcon
-	} from '@lucide/svelte';
+	import { ActivityIcon, BoxIcon, KeyIcon, UserIcon, UsersIcon } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 	import pb from '$lib/pocketbase';
 	import { adminGet } from '$lib/utils/admin-api';
@@ -27,7 +20,12 @@
 		]);
 		if (pods.status === 'fulfilled') podCount = (pods.value ?? []).length;
 		if (scrapers.status === 'fulfilled') scraperCount = (scrapers.value ?? []).length;
-		if (users.status === 'fulfilled') userCount = users.value.totalItems;
+		// `totalItems` is typed `number`, but the SDK falls back to `{}` on a
+		// non-JSON body, so a 200 can land here undefined — which fmt() would
+		// print as "undefined" since it only special-cases null. Same guard as
+		// the unread count in notifications.svelte.ts.
+		if (users.status === 'fulfilled')
+			userCount = Number.isFinite(users.value.totalItems) ? users.value.totalItems : null;
 	}
 
 	onMount(loadStats);
@@ -72,14 +70,6 @@
 			href: resolve('/admin/roles/'),
 			status: 'live',
 			milestone: 'M08'
-		},
-		{
-			title: 'Games',
-			description: 'Captured games + series persistence.',
-			icon: DatabaseIcon,
-			href: resolve('/admin/games/'),
-			status: 'placeholder',
-			milestone: 'M13'
 		}
 	];
 

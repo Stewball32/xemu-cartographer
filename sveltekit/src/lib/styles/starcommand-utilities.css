@@ -1,0 +1,35 @@
+/* Star Command surface utilities — pair with theme-starcommand.css.
+   Import in layout.css after the theme imports (like motion.css). */
+
+/* CRT scanlines over hero/retro surfaces (STAR-COMMAND SS4) */
+.sc-scanlines {
+	position: relative;
+}
+.sc-scanlines::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	border-radius: inherit;
+	background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.12) 0 1px, transparent 1px 3px);
+}
+
+/* Edge vignette on full-bleed art */
+.sc-vignette {
+	position: relative;
+}
+.sc-vignette::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	border-radius: inherit;
+	background: radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.35) 100%);
+}
+
+/* Telemetry mono — coords, IPs, file paths. Data only, never headings. */
+.sc-mono {
+	font-family: 'Lucida Console', 'Courier New', monospace;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.08em;
+}

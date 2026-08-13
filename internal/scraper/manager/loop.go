@@ -43,6 +43,67 @@ const readyTitleCheckInterval = 10
 // still being validated against real Halo CE → dashboard transitions.
 const liveReadFailureLimit = 30
 
+// readyReadRefreshAt is the consecutive-Ready-failure count at which the loop
+// re-translates the low GVAs (RefreshLowHVA over the reader's LowGVAs). Ready
+// polls at 500ms, so 3 ≈ 1.5s of solid failure before a refresh — long enough
+// to ignore a one-off missed read, short enough that a box that auto-attached
+// mid-boot self-heals within a couple of seconds instead of sitting blind
+// forever. Reset after each refresh attempt so it retries on the next window.
+const readyReadRefreshAt = 3
+
+// readyStaleRefreshAt / readyStaleRefreshMax gate the SILENT-staleness refresh
+// (see lowReadsLookStale). More conservative than the error gate — all-zero low
+// reads are legitimately transient while the guest is still bringing the
+// front-end up — and it BACKS OFF, because unlike the error path this condition
+// can persist indefinitely and each refresh costs one QMP round trip per low
+// GVA (~65 of them). 6 ≈ 3s at the 500ms Ready cadence, backing off to ~60s.
+const (
+	readyStaleRefreshAt  = 6
+	readyStaleRefreshMax = 120
+)
+
+// consecutiveFailureGate counts consecutive failures and reports when a
+// recovery action is due. fail() returns true on the `at`-th consecutive
+// failure and resets the count so the action re-arms for the next run; ok()
+// clears the count on a success. Pure + synchronous — the Ready loop uses it to
+// decide when to re-translate stale low mappings, and it's unit-tested apart
+// from the loop. Zero value never fires; construct with a positive `at`.
+//
+// When built via newBackoffGate, the threshold DOUBLES after each firing up to
+// max, so a condition that never clears degrades to an occasional retry instead
+// of a hot loop; ok() restores the original threshold.
+type consecutiveFailureGate struct {
+	n    int
+	at   int
+	base int // 0 = no backoff restore (plain literal construction)
+	max  int // 0 = no backoff
+}
+
+func newBackoffGate(at, max int) consecutiveFailureGate {
+	return consecutiveFailureGate{at: at, base: at, max: max}
+}
+
+func (g *consecutiveFailureGate) fail() bool {
+	g.n++
+	if g.at > 0 && g.n >= g.at {
+		g.n = 0
+		if g.max > 0 && g.at < g.max {
+			if g.at *= 2; g.at > g.max {
+				g.at = g.max
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func (g *consecutiveFailureGate) ok() {
+	g.n = 0
+	if g.base > 0 {
+		g.at = g.base
+	}
+}
+
 // loop is the per-runner tick goroutine. Started by Manager.Start, exits when
 // ctx is cancelled (Manager.Stop). Always closes the xemu instance and
 // signals done on exit, even on panic, so Manager.Stop's <-r.done unblocks.
@@ -134,8 +195,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	// other unrecognised titles still surface xbox_name in the snapshot.
 	r.runSystemSnapshot()
 
-	factory := scraper.Lookup(titleID)
-	if factory == nil {
+	if scraper.Lookup(titleID) == nil {
 		// Unknown title — stay idle and re-poll. The TitleID is already
 		// surfaced in the cache so the debug page can show "phase=idle,
 		// title_id=0x...".
@@ -144,11 +204,24 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		return PhaseIdle
 	}
 
-	// Title recognised — bind a reader. Re-init the xemu instance with the
-	// reader's required low GVAs (xemu.Instance.Init is idempotent for
-	// already-translated addresses, so the detection-only init done at
-	// Start time is preserved).
-	reader := factory(r.inst, r.name)
+	// Title recognised — bind a reader through the version-level offset
+	// layer: the instance's assigned offset set when the catalog names one,
+	// else the game's baseline (identical values to the old hardcoded
+	// constants — see internal/scraper/offsets). Then re-init the xemu
+	// instance with the reader's required low GVAs (xemu.Instance.Init is
+	// idempotent for already-translated addresses, so the detection-only
+	// init done at Start time is preserved).
+	setID := ""
+	if r.offsetSetFor != nil {
+		setID = r.offsetSetFor()
+	}
+	reader, err := scraper.NewReaderForTitle(titleID, r.inst, r.name, setID)
+	if err != nil {
+		log.Printf("scraper[%s]: bind reader: %v — staying idle", r.name, err)
+		r.broadcastPoll(svc)
+		r.sleepOrCancel(idlePollInterval)
+		return PhaseIdle
+	}
 	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
 	if err := r.inst.Init(allGVAs); err != nil {
 		log.Printf("scraper[%s]: bind reader (init low GVAs): %v — staying idle", r.name, err)
@@ -187,6 +260,8 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 func (r *runner) runReady(svc *guards.Services) Phase {
 	prevState := scraper.GameState("")
 	titleCheckCount := 0
+	readGate := consecutiveFailureGate{at: readyReadRefreshAt}
+	staleGate := newBackoffGate(readyStaleRefreshAt, readyStaleRefreshMax)
 
 	for {
 		select {
@@ -218,10 +293,32 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 		gs, tick, err := r.reader.ReadGameState()
 		if err != nil {
 			log.Printf("scraper[%s]: ready ReadGameState: %v", r.name, err)
+			// A run of failures on the low game-.data reads means the cached
+			// host-VA translations are stale (e.g. attached seconds into boot
+			// before the guest's page tables settled). Re-translate against the
+			// current layout so the box self-heals instead of sitting blind.
+			if readGate.fail() {
+				r.refreshLowTranslations()
+			}
 			r.broadcastPoll(svc)
 			r.sleepOrCancel(readyPollInterval)
 			continue
 		}
+		readGate.ok()
+
+		// The read SUCCEEDED — but success isn't proof the translation is
+		// pointing at real memory. If every low global reads back zero, the
+		// cached mappings are stale (see lowReadsLookStale) and no error will
+		// ever surface to trigger the refresh above, so check explicitly.
+		if r.lowReadsLookStale() {
+			if staleGate.fail() {
+				log.Printf("scraper[%s]: all low globals read zero — cached translations look stale", r.name)
+				r.refreshLowTranslations()
+			}
+		} else {
+			staleGate.ok()
+		}
+
 		r.recordIteration(tick)
 		r.publishGameState(gs)
 
@@ -285,9 +382,86 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			r.maybeEmitScenario(svc)
 		}
 
+		// Refresh the create-game map/gametype carousel enumeration (throttled)
+		// so /api/play/options serves the real per-instance lists. Runs in Ready
+		// because the source UI tags are only loaded while the front-end is up;
+		// keeps the last-known set when unavailable (mid-match).
+		r.enumerateLobby()
+
+		// Drive the player-hosting runner: navigate the CE menu → system-link
+		// host lobby, gated on the just-read state. The lobby flow lives entirely
+		// in Ready (menu / pregame / postgame), so this is where auto-hosting
+		// happens. Throttled internally; a no-op when host-running is disabled.
+		r.tickHost(gs, tick)
+
 		r.broadcastPoll(svc)
-		r.sleepOrCancel(readyPollInterval)
+		// Sleep in host-tick slices: with a host runner attached the box
+		// re-reads state + ticks the runner every hostTickMinInterval (~100ms)
+		// so the nav's closed-loop confirmations land promptly; without one
+		// this is a plain readyPollInterval sleep.
+		r.hostSubTicks(readyPollInterval)
 	}
+}
+
+// refreshLowTranslations re-resolves every low guest VA the reader depends on
+// against the instance's current page tables, in place, so a stale boot-time
+// mapping recovers without tearing down the runner. RefreshLowHVA is atomic
+// per address — a translate that still fails (page not yet mapped) leaves that
+// entry's prior value intact and simply retries on the next refresh window —
+// so a partial success never leaves the reader with holes. Best-effort: the
+// count is logged; failures are expected while the guest is still settling.
+// lowStaleKeys are the ReadGameState values that come from LOW guest VAs — the
+// ones resolved through the cached gva2gpa translations. High-GVA reads (heap /
+// menu widgets) don't use that cache and are unaffected.
+var lowStaleKeys = []string{
+	"main_menu", "game_connection",
+	"game_engine_globals_ptr", "game_time_globals_ptr", "game_can_score",
+}
+
+// lowReadsLookStale reports the SILENT failure mode: every low-GVA global reads
+// back as zero while the title is up and high-GVA reads are returning real data.
+//
+// This is what a stale translation actually looks like in practice — not an
+// error. The scraper can attach seconds into container boot, translate the low
+// GVAs before the guest's page tables are settled, and cache host addresses that
+// point at unbacked zero pages. Every later read then SUCCEEDS and returns 0, so
+// the error-driven refresh never fires, main_menu is forever 0, Classify can
+// never reach ScreenMainMenu, and the host runner sits blocked at "unknown".
+//
+// An all-zero set is implausible for a running game: at a real front-end menu
+// main_menu is 1, and in a game the engine pointers are non-nil. It IS legitimate
+// transiently during boot, which is why the caller gates + backs off rather than
+// refreshing on the first sighting. A plugin that doesn't report these keys opts
+// out entirely (no guessing).
+func (r *runner) lowReadsLookStale() bool {
+	if r.reader == nil {
+		return false
+	}
+	si := r.reader.LastStateInputs()
+	if len(si) == 0 {
+		return false
+	}
+	for _, k := range lowStaleKeys {
+		if _, ok := si[k]; !ok {
+			return false
+		}
+		if stateInputInt(si, k) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *runner) refreshLowTranslations() {
+	gvas := r.reader.LowGVAs()
+	refreshed := 0
+	for _, gva := range gvas {
+		if _, err := r.inst.RefreshLowHVA(gva); err == nil {
+			refreshed++
+		}
+	}
+	log.Printf("scraper[%s]: ready reads failing — re-translated %d/%d low GVAs against current layout",
+		r.name, refreshed, len(gvas))
 }
 
 // runLive runs the Live phase loop: 30Hz tick reads, event detection, and
@@ -303,6 +477,12 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 	// cache.PreviousGame is populated when it reads it (M13 game-end trigger).
 	defer r.persistFinishedGame(svc)
 	defer r.captureLiveAsPrevious()
+
+	// Fresh match → fresh stat accumulator + activity latches. The cache's
+	// previous-match snapshot is cleared here (not on Live→Ready) so the
+	// postgame graphic keeps the finished match's stats until a new one starts.
+	r.accum = scraper.NewMatchAccum()
+	r.publishAccum(nil)
 
 	var lastBroadcastTick uint32
 
@@ -368,6 +548,11 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 		}
 		r.publishTick(tickResult.Payload)
 
+		// Accumulate match stats + activity latches off this tick (HaloCaster
+		// extract_events port) and publish the snapshot for the wire/filter.
+		r.accum.Observe(tickResult)
+		r.publishAccum(r.accum.Snapshot())
+
 		// Refresh cached game data so the next state_update / current_state
 		// carries current scoreboard / roster data. Not broadcast separately
 		// — state_update below carries the tick payload, current_state on
@@ -378,6 +563,11 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			r.publishGameData(snap)
 			r.maybeEmitScenario(svc)
 		}
+
+		// Tick the host runner during a live match too (throttled). In-game it
+		// just reports "match live" on the observable stream — the auto-host loop
+		// re-engages once the match ends and the loop returns to Ready.
+		r.tickHost(gs, tick)
 
 		// One state_update per fresh engine tick (~30Hz).
 		r.broadcastPoll(svc)

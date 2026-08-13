@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
@@ -26,19 +27,15 @@ func handleJoinRoom(e *Event) {
 		return
 	}
 
-	// M10 overlay-token fix: an overlay-token connection carries no user JWT
-	// (e.User is nil), so the host room's RequireAuth guard would reject it
-	// here — before authorizeHostRoom's overlay-scope bypass below ever runs —
-	// and minted overlay tokens (OBS overlays + the ?token= visualizer URL)
-	// could never join a host room. For such a connection the overlay token IS
-	// the credential, and authorizeHostRoom is the sole authority: it validates
-	// the token's room scope and bars the admin-only summary feed. Skip the
-	// generic guard list ONLY in that case. Every other connection — and every
-	// non-host room — still runs CheckGuards unchanged, so auth isn't weakened
-	// elsewhere (a missing/invalid token leaves OverlayRoom == "" and falls
-	// through to RequireAuth, which rejects the nil user).
-	overlayHostJoin := e.OverlayRoom != "" && isHostRoom(e.Room)
-	if !overlayHostJoin {
+	// A tokenless console-overlay connection (?console=) carries no user JWT,
+	// so the host room's RequireAuth guard would reject it here — before
+	// authorizeHostRoom's console branch ever runs. Skip the generic guard list
+	// ONLY for a console connection joining a host room — authorizeHostRoom is
+	// then the sole authority (it validates the console is in that instance's
+	// live roster and bars the summary feed). Every other connection — and
+	// every non-host room — still runs CheckGuards unchanged.
+	consoleHostJoin := e.ConsoleName != "" && isHostRoom(e.Room)
+	if !consoleHostJoin {
 		if err := rt.CheckGuards(e.Services, e.User); err != nil {
 			e.SendError("forbidden", err.Error())
 			return
@@ -100,21 +97,29 @@ func authorizeHostRoom(e *Event) error {
 		return nil // not a host room — leave it to the room type's guards
 	}
 
-	// M10 overlay-token connection: scoped to its bound instance, read-only.
-	// It bypasses the user/admin/roster path (the overlay token IS the grant)
-	// and can never reach the admin-only summary feed. The Hub already limits
-	// it to join/leave message types.
-	if e.OverlayRoom != "" {
+	svc := e.Services
+
+	// Tokenless console-overlay connection (?console=NAME): admit to the
+	// host:<instance> room whose LIVE roster currently includes that console
+	// (resolved via Membership() — the same identity view the M09 roster gate
+	// uses). Read-only (enforced in the Hub). Never the summary feed. This is
+	// the deliberately loosened, view-only overlay door. Migration is automatic:
+	// the same socket re-joins the new instance's room and this re-checks.
+	if e.ConsoleName != "" {
 		if isSummary {
-			return errors.New("overlay tokens cannot join the summary feed")
+			return errors.New("console overlays cannot join the summary feed")
 		}
-		if hostRoomInstance(e.Room) == hostRoomInstance(e.OverlayRoom) {
+		instance := hostRoomInstance(e.Room)
+		if svc == nil || svc.Scraper == nil || instance == "" {
+			return errors.New("console not in any live match")
+		}
+		want := scraperiface.SanitizeIdentity(e.ConsoleName)
+		if scraperiface.ContainerHasGamertag(svc.Scraper.Membership(), instance, []string{want}) {
 			return nil
 		}
-		return errors.New("overlay token is scoped to a different room")
+		return errors.New("console not in this match")
 	}
 
-	svc := e.Services
 	// Admins (superuser or admin role) always get in — any host room,
 	// regardless of roster membership.
 	if svc != nil && svc.App != nil && roles.IsAdminAuth(svc.App, e.User) {

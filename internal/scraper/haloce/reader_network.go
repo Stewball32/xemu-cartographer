@@ -32,7 +32,7 @@ func (r *Reader) readNetworkClient() *scraper.TickNetworkClient {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrNetworkGameClient)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (r *Reader) readNetworkServer() *scraper.TickNetworkServer {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrNetworkGameServer)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrNetworkGameServer)
 	if err != nil {
 		return nil
 	}
@@ -74,7 +74,7 @@ func (r *Reader) readNetworkGameData() (*scraper.TickNetworkGameData, []scraper.
 	inst := r.inst
 	mem := inst.Mem
 
-	clientHVA, err := inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil, nil, nil
 	}

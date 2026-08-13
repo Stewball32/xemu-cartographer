@@ -26,6 +26,10 @@ export type EnvelopeTypeV2 =
 	| 'xbox'
 	| 'scenario'
 	| 'game'
+	// game_filtered: the viewer-facing game class, dummy-filtered server-side.
+	// Same GamePayload shape as 'game'; overlays subscribe to this room and the
+	// client stores it in the normal `game` slot (see scraper-ws-v2 handleEnvelope).
+	| 'game_filtered'
 	| 'tick'
 	| 'objects'
 	| 'debug'
@@ -253,7 +257,13 @@ export interface GamePayload {
 	phase: PhaseV2;
 	started_at: string;
 	last_read_at: string;
+	/** The real match clock (GTG 0x0C): 30Hz count-up, re-inits to 0 at match
+	 * start — the scorebug renders this as M:SS while phase==='live'. (At the
+	 * menu it free-runs, hence the phase gate.) LIVE-VERIFIED it ticks 30/s. */
 	engine_tick: number;
+	/** GTG 0x10 (offset-mapper's inferred match-elapsed) — LIVE-VERIFIED STUCK at
+	 * ~1, does NOT tick during play, so NOT used for the clock. Kept for now. */
+	game_elapsed_ticks?: number;
 	iterations: number;
 
 	config: GameConfig | null;
@@ -296,6 +306,18 @@ export interface GameRosterPlayer {
 	local_index: number | null;
 	machine_index: number | null;
 	controller_index: number | null;
+	/** Accumulated match stats (HaloCaster extract_events port, server-side).
+	 * The engine's shots_fired/shots_hit above read 0 live — acc_* are the
+	 * working tick-delta equivalents; best_kill_streak is the match PEAK.
+	 * Optional: absent from pre-accumulator servers; consumers default to 0. */
+	acc_shots_fired?: number;
+	acc_grenade_throws?: number;
+	acc_melees?: number;
+	acc_damage_dealt?: number;
+	acc_damage_received?: number;
+	acc_camo_pickups?: number;
+	acc_overshield_pickups?: number;
+	best_kill_streak?: number;
 }
 
 export interface GameMachine {
@@ -774,6 +796,12 @@ export function isScenarioEnv(
 }
 export function isGameEnv(e: EnvelopeV2): e is EnvelopeV2<GamePayload> & { type: 'game' } {
 	return e.type === 'game';
+}
+/** game_filtered carries a GamePayload just like game (dummy-filtered server-side). */
+export function isGameFilteredEnv(
+	e: EnvelopeV2
+): e is EnvelopeV2<GamePayload> & { type: 'game_filtered' } {
+	return e.type === 'game_filtered';
 }
 export function isTickEnv(e: EnvelopeV2): e is EnvelopeV2<TickPayloadV2> & { type: 'tick' } {
 	return e.type === 'tick';

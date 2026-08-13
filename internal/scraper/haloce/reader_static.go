@@ -15,7 +15,7 @@ func (r *Reader) readPlayerSpawns() []scraper.StaticPlayerSpawn {
 	inst := r.inst
 	mem := inst.Mem
 
-	scenarioBase, err := inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	scenarioBase, err := inst.DerefLowPtr(r.off.AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
 		return nil
 	}
@@ -70,7 +70,7 @@ func (r *Reader) readFog() *scraper.StaticFog {
 	inst := r.inst
 	mem := inst.Mem
 
-	base, err := inst.LowHVA(RefAddrFogParams)
+	base, err := inst.LowHVA(r.off.RefAddrFogParams)
 	if err != nil {
 		return nil
 	}
@@ -137,7 +137,7 @@ func (r *Reader) readObjectTypes() []scraper.StaticObjectType {
 	inst := r.inst
 	mem := inst.Mem
 
-	count := int((RefAddrObjectTypeDefRangeHi - RefAddrObjectTypeDefArray) / 4)
+	count := int((r.off.RefAddrObjectTypeDefRangeHi - r.off.RefAddrObjectTypeDefArray) / 4)
 	if count > objectTypeDefMaxScan {
 		count = objectTypeDefMaxScan
 	}
@@ -152,7 +152,7 @@ func (r *Reader) readObjectTypes() []scraper.StaticObjectType {
 			r.name, gate, count, filteredByPtr, kept)
 	}()
 
-	arrayHVA, err := inst.LowHVA(RefAddrObjectTypeDefArray)
+	arrayHVA, err := inst.LowHVA(r.off.RefAddrObjectTypeDefArray)
 	if err != nil {
 		gate = "LowHVA(Array)"
 		return nil
@@ -222,14 +222,14 @@ func (r *Reader) readCachePtrs() *scraper.StaticCachePtrs {
 	}
 
 	return &scraper.StaticCachePtrs{
-		GameStateBase:    read(RefAddrGameStateBasePtr),
-		GameStateSize:    read(RefAddrGameStateSize),
-		TagCacheBase:     read(RefAddrTagCacheBasePtr),
-		TagCacheSize:     read(RefAddrTagCacheSize),
-		TextureCacheBase: read(RefAddrTextureCacheBasePtr),
-		TextureCacheSize: read(RefAddrTextureCacheSize),
-		SoundCacheBase:   read(RefAddrSoundCacheBasePtr),
-		SoundCacheSize:   read(RefAddrSoundCacheSize),
+		GameStateBase:    read(r.off.RefAddrGameStateBasePtr),
+		GameStateSize:    read(r.off.RefAddrGameStateSize),
+		TagCacheBase:     read(r.off.RefAddrTagCacheBasePtr),
+		TagCacheSize:     read(r.off.RefAddrTagCacheSize),
+		TextureCacheBase: read(r.off.RefAddrTextureCacheBasePtr),
+		TextureCacheSize: read(r.off.RefAddrTextureCacheSize),
+		SoundCacheBase:   read(r.off.RefAddrSoundCacheBasePtr),
+		SoundCacheSize:   read(r.off.RefAddrSoundCacheSize),
 	}
 }
 
@@ -237,7 +237,7 @@ func (r *Reader) readCachePtrs() *scraper.StaticCachePtrs {
 // Returns 0 when game_globals isn't yet allocated.
 func (r *Reader) readGameDifficulty() uint8 {
 	inst := r.inst
-	ggPtr, err := inst.DerefLowPtr(AddrGameGlobalsPtr)
+	ggPtr, err := inst.DerefLowPtr(r.off.AddrGameGlobalsPtr)
 	if err != nil || ggPtr < HighGVAThreshold {
 		return 0
 	}

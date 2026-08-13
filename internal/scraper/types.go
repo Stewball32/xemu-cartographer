@@ -135,6 +135,13 @@ type GameData struct {
 	Fog            *StaticFog          `json:"fog,omitempty"`
 	ObjectTypes    []StaticObjectType  `json:"object_types,omitempty"`
 	TagCache       *StaticCachePtrs    `json:"tag_cache,omitempty"`
+
+	// ElapsedTicks is the MATCH-ELAPSED clock: game_time_globals + OffGTGElapsed
+	// (0x10), a 30Hz count-UP from 0 at match start. CE has no countdown — the
+	// scorebug renders M:SS by counting up from this. Distinct from EngineTick
+	// (OffGTGGameTime 0x0C), which the probe documents as a free-running frame
+	// counter; 0 outside a match / while the game-time clock is paused.
+	ElapsedTicks uint32 `json:"elapsed_ticks"`
 }
 
 // StaticPlayerSpawn describes one scenario player-spawn point. Static for the

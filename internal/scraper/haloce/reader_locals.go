@@ -58,14 +58,14 @@ func (r *Reader) cachedLookYaw(idx int) float32 {
 	if r.matchCache != nil && idx < len(r.matchCache.LookYawRate) {
 		return r.matchCache.LookYawRate[idx]
 	}
-	return r.readLookRate(RefAddrLookYawRate, idx)
+	return r.readLookRate(r.off.RefAddrLookYawRate, idx)
 }
 
 func (r *Reader) cachedLookPitch(idx int) float32 {
 	if r.matchCache != nil && idx < len(r.matchCache.LookPitchRate) {
 		return r.matchCache.LookPitchRate[idx]
 	}
-	return r.readLookRate(RefAddrLookPitchRate, idx)
+	return r.readLookRate(r.off.RefAddrLookPitchRate, idx)
 }
 
 // readFPWeapon reads the first-person weapon record for one local player.
@@ -74,7 +74,7 @@ func (r *Reader) readFPWeapon(local int) *scraper.TickFPWeapon {
 	inst := r.inst
 	mem := inst.Mem
 
-	base, err := inst.DerefLowPtr(RefAddrFPWeaponPtr)
+	base, err := inst.DerefLowPtr(r.off.RefAddrFPWeaponPtr)
 	if err != nil || base < HighGVAThreshold {
 		return nil
 	}
@@ -107,7 +107,7 @@ func (r *Reader) readObserverCam(local int) *scraper.TickObserverCam {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrObserverCameraBase)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrObserverCameraBase)
 	if err != nil {
 		return nil
 	}
@@ -139,7 +139,7 @@ func (r *Reader) readInputAbstract(local int) *scraper.TickInputAbstract {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrInputAbstractInputState)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrInputAbstractInputState)
 	if err != nil {
 		return nil
 	}
@@ -171,7 +171,7 @@ func (r *Reader) readGamepad(player int) *scraper.TickGamepad {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrGamepadState)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrGamepadState)
 	if err != nil {
 		return nil
 	}
@@ -213,7 +213,7 @@ func (r *Reader) readUIGlobals(local int) *scraper.TickUIGlobals {
 	inst := r.inst
 	mem := inst.Mem
 
-	baseHVA, err := inst.LowHVA(RefAddrPerLocalUIGlobals)
+	baseHVA, err := inst.LowHVA(r.off.RefAddrPerLocalUIGlobals)
 	if err != nil {
 		return nil
 	}
@@ -239,7 +239,7 @@ func (r *Reader) readPlayerControl(local int) *scraper.TickPlayerControl {
 	inst := r.inst
 	mem := inst.Mem
 
-	base, err := inst.DerefLowPtr(RefAddrPlayerControlPtr)
+	base, err := inst.DerefLowPtr(r.off.RefAddrPlayerControlPtr)
 	if err != nil || base < HighGVAThreshold {
 		return nil
 	}

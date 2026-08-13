@@ -8,6 +8,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
 
@@ -16,7 +17,7 @@ import (
 // or aggregator. Tests prepare the cache directly under r.cacheMu (or
 // via withCache), then call the v2 build/broadcast methods.
 func newTestRunner(name string) *runner {
-	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil)
+	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil, nil)
 }
 
 // decodeClassEnvelope unwraps a marshaled websocket.Message to the inner
@@ -46,7 +47,7 @@ func TestClassEnvelopeMessagesIdle(t *testing.T) {
 		c.TitleID = 0x9E115330
 	})
 
-	msgs := r.classEnvelopeMessages()
+	msgs := r.classEnvelopeMessages(roster.Config{})
 	got := map[string]bool{}
 	for _, m := range msgs {
 		got[m.Class] = true
@@ -81,7 +82,7 @@ func TestClassEnvelopeMessagesLive(t *testing.T) {
 		}
 	})
 
-	msgs := r.classEnvelopeMessages()
+	msgs := r.classEnvelopeMessages(roster.Config{})
 	got := map[string]bool{}
 	for _, m := range msgs {
 		got[m.Class] = true
@@ -132,7 +133,7 @@ func TestClassEnvelopeMessagesWithPreviousGame(t *testing.T) {
 	})
 
 	got := map[string]bool{}
-	for _, m := range r.classEnvelopeMessages() {
+	for _, m := range r.classEnvelopeMessages(roster.Config{}) {
 		got[m.Class] = true
 	}
 	if !got["previous_game"] {

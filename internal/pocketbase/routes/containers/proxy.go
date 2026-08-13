@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -37,12 +38,31 @@ func init() {
 	register(registerKioskProxy)
 }
 
+// Kiosk dial-retry tuning, read once at register time (OnServe, after any .env
+// is in the process environment). kioskDialBudget bounds the total time the
+// reverse proxy spends retrying the TCP dial to a *running-but-booting* browser
+// container (nginx/s6-overlay take a few seconds to accept connections after
+// `podman start`). kioskPerDialTimeout bounds each individual attempt so a
+// filtered/silently-dropped port can't stall a single dial past the budget.
+// Defaults preserve the historical ~10s boot-race window.
+var (
+	kioskDialBudget     = 10 * time.Second
+	kioskPerDialTimeout = 3 * time.Second
+)
+
 func registerKioskProxy() {
 	// Mounted directly on se.Router (NOT on Group) so we can authenticate
 	// via ?token= rather than the Authorization header — iframes cannot
 	// set headers on their own requests.
 	if Router == nil {
 		return
+	}
+
+	if d := envDurationMS("CONTAINERS_KIOSK_DIAL_TIMEOUT_MS"); d > 0 {
+		kioskDialBudget = d
+	}
+	if d := envDurationMS("CONTAINERS_KIOSK_PER_DIAL_TIMEOUT_MS"); d > 0 {
+		kioskPerDialTimeout = d
 	}
 
 	Router.GET("/api/admin/containers/{name}/kiosk/{path...}", handleKioskProxy)
@@ -71,6 +91,17 @@ func handleKioskProxy(e *core.RequestEvent) error {
 	info, ok := Manager.Get(name)
 	if !ok {
 		return e.JSON(http.StatusNotFound, map[string]string{"error": "container not found"})
+	}
+
+	// Gate on live podman status before entering the dial-retry loop. A
+	// container that is *recorded* but *not running* passes the Get() existence
+	// check (existence ≠ liveness); without this gate it would get dialed on a
+	// dead port and hang the full ~10s dial-retry budget before surfacing as a
+	// 502. KioskLive fast-fails that case with a clean 503 the browser can
+	// render immediately; a running-but-still-booting container reads as live
+	// and the dial retry below covers its nginx warm-up.
+	if !Manager.KioskLive(name) {
+		return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "container not running"})
 	}
 
 	// When the request brought a fresh ?token=, persist it as a path-scoped
@@ -108,7 +139,7 @@ func handleKioskProxy(e *core.RequestEvent) error {
 		// several seconds to come up after `podman start`. Without a retry,
 		// the user's first iframe load races that boot and gets a 502.
 		Transport: &http.Transport{
-			DialContext: dialWithRetry,
+			DialContext: newDialWithRetry(kioskDialBudget, kioskPerDialTimeout),
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			// Drop framing restrictions from upstream too — same reason as
@@ -128,27 +159,50 @@ func handleKioskProxy(e *core.RequestEvent) error {
 	return nil
 }
 
-// dialWithRetry retries a TCP dial for up to ~10s when the upstream refuses
-// the connection — covers the gap between `podman start` returning and the
-// browser container's HTTP listener actually accepting connections. Once the
-// listener is up, the first attempt succeeds with no measurable overhead.
-func dialWithRetry(ctx context.Context, network, addr string) (net.Conn, error) {
-	deadline := time.Now().Add(10 * time.Second)
-	var d net.Dialer
-	for {
-		conn, err := d.DialContext(ctx, network, addr)
-		if err == nil {
-			return conn, nil
-		}
-		if ctx.Err() != nil || time.Now().After(deadline) {
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(250 * time.Millisecond):
+// newDialWithRetry builds a DialContext that retries a TCP dial for up to
+// `budget` when the upstream refuses the connection — covering the gap between
+// `podman start` returning and the browser container's HTTP listener actually
+// accepting connections. Each individual attempt is bounded by `perDial` so a
+// filtered (silently-dropped) port can't stall a single dial past the budget.
+// Once the listener is up, the first attempt succeeds with no measurable
+// overhead.
+//
+// The liveness gate in handleKioskProxy means we only reach here for a
+// container podman reports as running, so this retry now only ever smooths a
+// genuine boot race — never a recorded-but-dead container.
+func newDialWithRetry(budget, perDial time.Duration) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		deadline := time.Now().Add(budget)
+		d := net.Dialer{Timeout: perDial}
+		for {
+			conn, err := d.DialContext(ctx, network, addr)
+			if err == nil {
+				return conn, nil
+			}
+			if ctx.Err() != nil || time.Now().After(deadline) {
+				return nil, err
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(250 * time.Millisecond):
+			}
 		}
 	}
+}
+
+// envDurationMS reads an integer-milliseconds env var into a time.Duration,
+// returning 0 when unset/empty/invalid so callers keep their default.
+func envDurationMS(key string) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Millisecond
 }
 
 // permissionsPolyfillScript wraps navigator.permissions.query so Firefox stops

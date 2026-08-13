@@ -38,8 +38,8 @@ func TestCESurgicalEdit(t *testing.T) {
 	tmpl := readFile(t, "testdata/ce/G-TS 50/blam.lst")
 	name := "TS 25"
 	score := uint32(25)
-	time := CEMinutesToRaw(7)
-	edited, err := CEBuild(tmpl, CEPatch{Name: &name, ScoreLimit: &score, TimeLimit: &time}, false)
+	respawn := CESecondsToRaw(7) // 0x30 respawn time, 7 s -> 210
+	edited, err := CEBuild(tmpl, CEPatch{Name: &name, ScoreLimit: &score, RespawnTime: &respawn}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,14 +50,14 @@ func TestCESurgicalEdit(t *testing.T) {
 	if g.ScoreLimit != 25 {
 		t.Errorf("score = %d, want 25", g.ScoreLimit)
 	}
-	if g.TimeLimit != 210 {
-		t.Errorf("time = %d, want 210 (7min×30)", g.TimeLimit)
+	if g.RespawnTime != 210 {
+		t.Errorf("respawn = %d, want 210 (7s×30)", g.RespawnTime)
 	}
 	base, _ := CEParse(tmpl)
 	if !bytes.Equal(g.Digest, base.Digest) {
 		t.Errorf("digest changed under template-patch (should be preserved)")
 	}
-	// Only name (0x00..0x17), time (0x30..0x33), score (0x40..0x43) may change.
+	// Only name (0x00..0x17), respawn (0x30..0x33), score (0x40..0x43) may change.
 	allowed := map[int]bool{}
 	for i := 0x00; i < 0x18; i++ {
 		allowed[i] = true
@@ -170,7 +170,7 @@ func TestBuildCEGametype(t *testing.T) {
 	teams := true
 	set, err := Build(BuildRequest{
 		Title: TitleCE, Kind: KindGametype, Name: "TS 25",
-		Engine: "slayer", Teams: &teams, ScoreLimit: &score, TimeMinutes: f64ptr(7),
+		Engine: "slayer", Teams: &teams, ScoreLimit: &score, RespawnSeconds: f64ptr(7),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -185,8 +185,8 @@ func TestBuildCEGametype(t *testing.T) {
 		t.Fatalf("files = %+v", set.Files)
 	}
 	g := set.Parsed.(*CEGametype)
-	if g.Name != "TS 25" || g.ScoreLimit != 25 || g.TimeLimit != 210 {
-		t.Errorf("parsed: name=%q score=%d time=%d", g.Name, g.ScoreLimit, g.TimeLimit)
+	if g.Name != "TS 25" || g.ScoreLimit != 25 || g.RespawnTime != 210 {
+		t.Errorf("parsed: name=%q score=%d respawn=%d", g.Name, g.ScoreLimit, g.RespawnTime)
 	}
 	if !set.Digest.Edited {
 		t.Errorf("expected Digest.Edited=true for an edited gametype")

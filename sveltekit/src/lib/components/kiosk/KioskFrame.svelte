@@ -52,7 +52,7 @@
 				href={externalHref}
 				target="_blank"
 				rel="noopener"
-				class="btn-icon btn-icon-sm preset-tonal"
+				class="btn-icon preset-tonal btn-icon-sm"
 				aria-label="Open in new tab"
 				title="Open in new tab"
 			>
@@ -91,7 +91,7 @@
 			{#if onReset}
 				<button
 					type="button"
-					class="btn-icon btn-icon-sm preset-tonal-warning"
+					class="btn-icon preset-tonal-warning btn-icon-sm"
 					aria-label="Reset"
 					title="Reset"
 					disabled={!vncConnected}

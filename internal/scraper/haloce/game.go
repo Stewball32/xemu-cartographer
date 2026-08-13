@@ -3,6 +3,7 @@ package haloce
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/haloce/events"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
 
@@ -37,12 +38,27 @@ type Game struct {
 	reader *Reader
 }
 
-// New creates a Halo CE GameReader for the given instance.
-func New(inst *xemu.Instance, instanceName string) *Game {
-	return &Game{reader: NewReader(inst, instanceName)}
+// Compile-time proof that the factory's concrete type (*Game — see init below)
+// satisfies BOTH the base GameReader AND the OPTIONAL lobby interfaces the
+// manager type-asserts on r.reader. These asserts are the ONLY reason the
+// map/gametype picker + host-runner card navigation get live data; a *Game that
+// forwards ReadGameState but silently drops EnumerateLobby/ReadLobbyCursor
+// compiles fine yet fails those runtime asserts (the exact bug that left the
+// picker as a type-in box). Keep these lines so the build breaks if a forward
+// is removed. Also exercised by TestGameSatisfiesLobbyInterfaces.
+var (
+	_ scraper.GameReader        = (*Game)(nil)
+	_ scraper.LobbyEnumerator   = (*Game)(nil)
+	_ scraper.LobbyCursorReader = (*Game)(nil)
+)
+
+// New creates a Halo CE GameReader for the given instance, reading all address
+// anchors through the given versioned offset set binding.
+func New(inst *xemu.Instance, instanceName string, off Offsets) *Game {
+	return &Game{reader: NewReader(inst, instanceName, off)}
 }
 
-func (g *Game) LowGVAs() []uint32 { return AllLowGVAs }
+func (g *Game) LowGVAs() []uint32 { return g.reader.off.AllLowGVAs() }
 
 func (g *Game) ReadGameState() (scraper.GameState, uint32, error) {
 	return g.reader.ReadGameState()
@@ -64,6 +80,22 @@ func (g *Game) ReadReadyState() (scraper.GameData, error) {
 	return g.reader.ReadReadyState()
 }
 
+// EnumerateLobby forwards to the reader so *Game satisfies scraper.LobbyEnumerator.
+// This is what the manager's enumerateLobby type-asserts on r.reader to populate
+// the create-game map/gametype carousel cache that /api/play/options serves. The
+// factory (init below) returns a *Game, NOT a bare *Reader, so WITHOUT this
+// forward the assertion fails, the cache is never filled, and the player-picker
+// degrades to free-text entry (available=false) even though the read works.
+func (g *Game) EnumerateLobby() scraper.LobbyOptions { return g.reader.EnumerateLobby() }
+
+// ReadLobbyCursor forwards to the reader so *Game satisfies scraper.LobbyCursorReader
+// — the live SELECT MAP / SELECT GAMETYPE +0x4C cursor the host-runner's closed-loop
+// card navigation reads (via fillLobbyCursor). WITHOUT this forward the assertion
+// fails, MapCursorValid/GametypeCursorValid stay false, and the runner's select
+// steps hold forever ("awaiting live cursor read") — so a submitted pick never
+// drives the box.
+func (g *Game) ReadLobbyCursor() scraper.LobbyCursor { return g.reader.ReadLobbyCursor() }
+
 func (g *Game) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickState) (scraper.TickResult, error) {
 	return g.reader.ReadTick(spawns, state)
 }
@@ -84,7 +116,11 @@ func (g *Game) NewTickState() *scraper.TickState {
 func (g *Game) Title() string { return "Halo: Combat Evolved" }
 
 func init() {
-	scraper.Register(TitleID, func(inst *xemu.Instance, instanceName string) scraper.GameReader {
-		return New(inst, instanceName)
+	scraper.Register(TitleID, "haloce", func(inst *xemu.Instance, instanceName string, set *offsets.Set) (scraper.GameReader, error) {
+		off, err := OffsetsFromSet(set)
+		if err != nil {
+			return nil, err
+		}
+		return New(inst, instanceName, off), nil
 	})
 }

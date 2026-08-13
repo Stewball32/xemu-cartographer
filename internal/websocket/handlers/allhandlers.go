@@ -15,10 +15,10 @@ type Event struct {
 	App      core.App         // PocketBase app for DB queries in guards/handlers.
 	UserID   string           // Authenticated user ID, "" for anonymous.
 	User     *core.Record     // Full PocketBase user record, nil for anonymous.
-	// OverlayRoom is the room a read-only M10 overlay-token connection is bound
-	// to ("host:<name>"); "" for normal user/anonymous connections. join_room
-	// admits such a client only to its bound instance.
-	OverlayRoom string
+	// ConsoleName is a tokenless console-overlay connection's target console
+	// (from ?console=<name>); "" for normal connections. join_room admits such a
+	// client to the host:<instance> room currently rostering that console.
+	ConsoleName string
 	Type        string          // Message type that triggered this handler.
 	Room        string          // Target room (if applicable).
 	Target      string          // Target user ID (if applicable).

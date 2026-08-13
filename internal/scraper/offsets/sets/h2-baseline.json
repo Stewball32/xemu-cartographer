@@ -1,0 +1,187 @@
+{
+  "game": "halo2",
+  "id": "h2-baseline",
+  "description": "Baseline for stock Halo 2 (NTSC retail, h2-stock map) - extracted verbatim from the previously hardcoded constants in internal/scraper/halo2/offsets.go.",
+  "offsets": {
+    "AddrH2ObjectArrayPtr": {
+      "value": "0x4E78D0",
+      "type": "uint32"
+    },
+    "AddrH2PlayersArrayPtr": {
+      "value": "0x4F01F4",
+      "type": "uint32"
+    },
+    "AddrH2ScenarioNamePoolPtr": {
+      "value": "0x4EDA3C",
+      "type": "uint32"
+    },
+    "AddrH2TagHeaderPtr": {
+      "value": "0x54F24C",
+      "type": "uint32"
+    },
+    "OffH2BipedAirborne": {
+      "value": "0x348",
+      "type": "uint32"
+    },
+    "OffH2BipedCurWeaponSlot": {
+      "value": "0x212",
+      "type": "uint32"
+    },
+    "OffH2BipedFragGrenades": {
+      "value": "0x23E",
+      "type": "uint32"
+    },
+    "OffH2BipedHealth": {
+      "value": "0x84",
+      "type": "uint32"
+    },
+    "OffH2BipedHeldWeapon": {
+      "value": "0x10",
+      "type": "uint32"
+    },
+    "OffH2BipedMaxHealth": {
+      "value": "0xE4",
+      "type": "uint32"
+    },
+    "OffH2BipedMaxShield": {
+      "value": "0xE8",
+      "type": "uint32"
+    },
+    "OffH2BipedPlasmaGrenades": {
+      "value": "0x23F",
+      "type": "uint32"
+    },
+    "OffH2BipedShield": {
+      "value": "0xA0",
+      "type": "uint32"
+    },
+    "OffH2BipedWeaponSlots": {
+      "value": "0x218",
+      "type": "uint32"
+    },
+    "OffH2BipedZoomLevel": {
+      "value": "0x240",
+      "type": "uint32"
+    },
+    "OffH2DataArrayActiveCount": {
+      "value": "0x38",
+      "type": "uint32"
+    },
+    "OffH2DataArrayBlockEnd": {
+      "value": "0x48",
+      "type": "uint32"
+    },
+    "OffH2DataArrayBlockPtr": {
+      "value": "0x44",
+      "type": "uint32"
+    },
+    "OffH2DataArrayElemSize": {
+      "value": "0x24",
+      "type": "uint32"
+    },
+    "OffH2DataArrayMax": {
+      "value": "0x20",
+      "type": "uint32"
+    },
+    "OffH2DataArraySignature": {
+      "value": "0x2C",
+      "type": "uint32"
+    },
+    "OffH2ObjAim": {
+      "value": "0x150",
+      "type": "uint32"
+    },
+    "OffH2ObjEntryDataPtr": {
+      "value": "0x8",
+      "type": "uint32"
+    },
+    "OffH2ObjEntrySalt": {
+      "value": "0x0",
+      "type": "uint32"
+    },
+    "OffH2ObjForward": {
+      "value": "0x70",
+      "type": "uint32"
+    },
+    "OffH2ObjParent": {
+      "value": "0x14",
+      "type": "uint32"
+    },
+    "OffH2ObjPosition": {
+      "value": "0x34",
+      "type": "uint32"
+    },
+    "OffH2ObjTagId": {
+      "value": "0x0",
+      "type": "uint32"
+    },
+    "OffH2ObjType": {
+      "value": "0xAA",
+      "type": "uint32"
+    },
+    "OffH2ObjVelocity": {
+      "value": "0x88",
+      "type": "uint32"
+    },
+    "OffH2PlrDatumId": {
+      "value": "0x0",
+      "type": "uint32"
+    },
+    "OffH2PlrIndex": {
+      "value": "0x1C",
+      "type": "uint32"
+    },
+    "OffH2PlrName": {
+      "value": "0x44",
+      "type": "uint32"
+    },
+    "OffH2PlrPlayerId": {
+      "value": "0x4",
+      "type": "uint32"
+    },
+    "OffH2PlrTeam": {
+      "value": "0x20",
+      "type": "uint32"
+    },
+    "OffH2PlrUnitHandle": {
+      "value": "0x2C",
+      "type": "uint32"
+    },
+    "OffH2TagHdrCount": {
+      "value": "0x18",
+      "type": "uint32"
+    },
+    "OffH2TagHdrGlobalsId": {
+      "value": "0x10",
+      "type": "uint32"
+    },
+    "OffH2TagHdrInstanceArrayPtr": {
+      "value": "0x8",
+      "type": "uint32"
+    },
+    "OffH2TagHdrScenarioId": {
+      "value": "0xC",
+      "type": "uint32"
+    },
+    "OffH2TagInstDataPtr": {
+      "value": "0x8",
+      "type": "uint32"
+    },
+    "OffH2TagInstGroup": {
+      "value": "0x0",
+      "type": "uint32"
+    },
+    "OffH2TagInstId": {
+      "value": "0x4",
+      "type": "uint32"
+    },
+    "OffH2WepMag": {
+      "value": "0x22C",
+      "type": "uint32"
+    },
+    "OffH2WepReserve": {
+      "value": "0x22A",
+      "type": "uint32"
+    }
+  }
+}

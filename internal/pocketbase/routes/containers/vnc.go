@@ -44,6 +44,13 @@ func handleVNCRelay(e *core.RequestEvent) error {
 		return e.JSON(http.StatusNotFound, map[string]string{"error": "container not found"})
 	}
 
+	// Same liveness gate as the kiosk HTTP proxy: fast-fail a recorded-but-dead
+	// container with a clean 503 instead of accepting the WS upgrade and then
+	// failing the upstream dial.
+	if !Manager.KioskLive(name) {
+		return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "container not running"})
+	}
+
 	clientConn, err := websocket.Accept(e.Response, e.Request, &websocket.AcceptOptions{
 		Subprotocols:       []string{"binary"},
 		InsecureSkipVerify: true,

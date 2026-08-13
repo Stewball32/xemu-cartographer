@@ -5,6 +5,7 @@ package seed
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -31,6 +32,14 @@ func Run(app *pocketbase.PocketBase) error {
 
 	if err := ensureContainersFromSnapshot(app); err != nil {
 		return fmt.Errorf("seed containers: %w", err)
+	}
+
+	// LAN-sync E2E scenario — opt-in (SEED_LAN_SYNC=true) so it only runs on the
+	// dedicated test server, not every `task dev`.
+	if os.Getenv("SEED_LAN_SYNC") == "true" {
+		if err := SeedLanSync(app); err != nil {
+			return fmt.Errorf("seed lan-sync: %w", err)
+		}
 	}
 
 	log.Println("Seeding complete.")

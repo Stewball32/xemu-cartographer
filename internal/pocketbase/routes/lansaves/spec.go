@@ -35,11 +35,18 @@ type jsonBody struct {
 // the GET form (the nxdk LAN client). Unknown params are ignored.
 //
 //	title, kind, name, internal_name, dir_name, engine    (strings)
-//	teams, radar, recompute                                (bools: 1/true/yes/on)
-//	options, scoring_subtype, time_limit, time_limit2,
-//	  score_limit, option2, respawn, engine_union          (uint32)
-//	time_minutes                                           (float)
-//	app_<key>=<int>                                        (H2 appearance bytes)
+//	teams, radar, friend_indicators, infinite_grenades,
+//	  shields_off, invisible_players, generic_equipment,
+//	  odd_man_out, death_bonus_off, kill_penalty_off,
+//	  kill_in_order, assault, flag_must_reset, flag_at_home,
+//	  moving_hill, random_start, race_any_order, recompute   (bools: 1/true/yes/on)
+//	objectives_indicator, lives, weapon_set, nhe_toggles,
+//	  score_limit, oddball_speed, oddball_trait_with,
+//	  oddball_trait_without, oddball_ball_type, ball_spawn_count,
+//	  race_scoring, options, engine_union                    (uint32)
+//	respawn_seconds, respawn_growth_seconds, suicide_seconds,
+//	  max_health, ctf_single_flag_minutes                    (float)
+//	app_<key>=<int>                                          (H2 appearance bytes)
 //	free_bytes (uint64), format, file, cluster_size (int)
 func specFromQuery(q url.Values) (halosave.BuildRequest, transport) {
 	req := halosave.BuildRequest{
@@ -50,20 +57,61 @@ func specFromQuery(q url.Values) (halosave.BuildRequest, transport) {
 		DirName:      q.Get("dir_name"),
 		Engine:       q.Get("engine"),
 	}
-	req.Teams = boolPtr(q, "teams")
-	req.Radar = boolPtr(q, "radar")
 	if b := boolPtr(q, "recompute"); b != nil {
 		req.Recompute = *b
 	}
+	req.Teams = boolPtr(q, "teams")
+	req.Radar = boolPtr(q, "radar")
+	req.FriendIndicators = boolPtr(q, "friend_indicators")
+	req.InfiniteGrenades = boolPtr(q, "infinite_grenades")
+	req.ShieldsOff = boolPtr(q, "shields_off")
+	req.InvisiblePlayers = boolPtr(q, "invisible_players")
+	req.GenericEquipment = boolPtr(q, "generic_equipment")
 	req.Options = u32Ptr(q, "options")
-	req.ScoringSubtype = u32Ptr(q, "scoring_subtype")
-	req.TimeLimit = u32Ptr(q, "time_limit")
-	req.TimeLimit2 = u32Ptr(q, "time_limit2")
+
+	req.ObjectivesIndicator = u32Ptr(q, "objectives_indicator")
+	req.OddManOut = boolPtr(q, "odd_man_out")
+	req.RespawnSeconds = floatPtr(q, "respawn_seconds")
+	req.RespawnGrowthSeconds = floatPtr(q, "respawn_growth_seconds")
+	req.SuicideSeconds = floatPtr(q, "suicide_seconds")
+	req.Lives = u32Ptr(q, "lives")
+	req.MaxHealth = float32Ptr(q, "max_health")
 	req.ScoreLimit = u32Ptr(q, "score_limit")
-	req.Option2 = u32Ptr(q, "option2")
-	req.Respawn = u32Ptr(q, "respawn")
+	req.WeaponSet = u32Ptr(q, "weapon_set")
+	req.NHEToggles = u32Ptr(q, "nhe_toggles")
 	req.EngineUnion = u32Ptr(q, "engine_union")
-	req.TimeMinutes = floatPtr(q, "time_minutes")
+
+	req.DeathBonusOff = boolPtr(q, "death_bonus_off")
+	req.KillPenaltyOff = boolPtr(q, "kill_penalty_off")
+	req.KillInOrder = boolPtr(q, "kill_in_order")
+	req.Assault = boolPtr(q, "assault")
+	req.FlagMustReset = boolPtr(q, "flag_must_reset")
+	req.FlagAtHome = boolPtr(q, "flag_at_home")
+	req.MovingHill = boolPtr(q, "moving_hill")
+	req.RandomStart = boolPtr(q, "random_start")
+	req.RaceAnyOrder = boolPtr(q, "race_any_order")
+
+	req.CTFSingleFlagMinutes = floatPtr(q, "ctf_single_flag_minutes")
+	req.OddballSpeed = u32Ptr(q, "oddball_speed")
+	req.OddballTraitWith = u32Ptr(q, "oddball_trait_with")
+	req.OddballTraitWithout = u32Ptr(q, "oddball_trait_without")
+	req.OddballBallType = u32Ptr(q, "oddball_ball_type")
+	req.BallSpawnCount = u32Ptr(q, "ball_spawn_count")
+	req.RaceScoring = u32Ptr(q, "race_scoring")
+
+	// CE profile
+	req.Color = u32Ptr(q, "color")
+	req.Button = u32Ptr(q, "button")
+	req.Thumbstick = u32Ptr(q, "thumbstick")
+	req.HSens = floatPtr(q, "h_sens")
+	req.VMult = floatPtr(q, "v_mult")
+	req.Invert = boolPtr(q, "invert")
+	req.Vibration = boolPtr(q, "vibration")
+	req.RSDeadzone = u32Ptr(q, "rs_deadzone")
+	req.LSDeadzone = u32Ptr(q, "ls_deadzone")
+	req.OuterDeadzone = u32Ptr(q, "outer_deadzone")
+	req.DeadzoneType = u32Ptr(q, "deadzone_type")
+	req.Response = u32Ptr(q, "response")
 
 	for key := range q {
 		if strings.HasPrefix(key, "app_") {
@@ -145,6 +193,18 @@ func floatPtr(q url.Values, key string) *float64 {
 		return nil
 	}
 	return &v
+}
+
+func float32Ptr(q url.Values, key string) *float32 {
+	if !q.Has(key) {
+		return nil
+	}
+	v, err := strconv.ParseFloat(q.Get(key), 32)
+	if err != nil {
+		return nil
+	}
+	f := float32(v)
+	return &f
 }
 
 func atoiDefault(s string, def int) int {

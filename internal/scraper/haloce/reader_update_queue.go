@@ -12,7 +12,7 @@ func (r *Reader) readDataQueue() *scraper.TickDataQueue {
 	inst := r.inst
 	mem := inst.Mem
 
-	base, err := inst.DerefLowPtr(RefAddrUpdateQueueCounterLo)
+	base, err := inst.DerefLowPtr(r.off.RefAddrUpdateQueueCounterLo)
 	if err != nil || base < HighGVAThreshold {
 		return nil
 	}
@@ -41,7 +41,7 @@ func (r *Reader) readPlayerUpdateQueue(playerIndex int) *scraper.TickUpdateQueue
 	inst := r.inst
 	mem := inst.Mem
 
-	hdrBase, err := inst.DerefLowPtr(RefAddrUpdateClientPlayerPtr)
+	hdrBase, err := inst.DerefLowPtr(r.off.RefAddrUpdateClientPlayerPtr)
 	if err != nil || hdrBase < HighGVAThreshold {
 		return nil
 	}

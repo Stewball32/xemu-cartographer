@@ -30,15 +30,21 @@ func TestCEProfileSigningMatchesRealSample(t *testing.T) {
 }
 
 func TestCEProfileBuildAndParse(t *testing.T) {
-	color := uint32(2) // red
-	thumb := byte(1)   // southpaw
-	button := byte(0)  // default
+	color := uint32(8) // purple
+	button := byte(3)  // Boxer
+	thumb := byte(2)   // Legacy
 	name := "CARTOG"
+	adv := CEAdvanced{
+		HSens: 7, VMult: 0.75, Invert: true, Vibration: false,
+		RSDeadzone: 10, LSDeadzone: 20, OuterDeadzone: 8,
+		DeadzoneType: 0 /* radial */, Response: CEResponseSharp,
+	}
 	payload, err := CEProfileBuild(CEProfilePatch{
 		Name:       &name,
 		Color:      &color,
-		Thumbstick: &thumb,
 		Button:     &button,
+		Thumbstick: &thumb,
+		Advanced:   &adv,
 	}, true)
 	if err != nil {
 		t.Fatalf("CEProfileBuild: %v", err)
@@ -46,21 +52,26 @@ func TestCEProfileBuildAndParse(t *testing.T) {
 	if len(payload) != cepSize {
 		t.Fatalf("payload %d bytes, want %d", len(payload), cepSize)
 	}
+	// Lock the 0x28=button / 0x29=thumbstick fix at the byte level.
+	if payload[0x28] != button {
+		t.Errorf("0x28 (button) = %#x, want %#x", payload[0x28], button)
+	}
+	if payload[0x29] != thumb {
+		t.Errorf("0x29 (thumbstick) = %#x, want %#x", payload[0x29], thumb)
+	}
 	p, err := CEProfileParse(payload)
 	if err != nil {
 		t.Fatalf("CEProfileParse: %v", err)
 	}
-	if p.Name != name {
-		t.Errorf("name = %q, want %q", p.Name, name)
+	if p.Name != name || p.Color != color {
+		t.Errorf("name/color = %q/%d, want %q/%d", p.Name, p.Color, name, color)
 	}
-	if p.Color != color {
-		t.Errorf("color = %d, want %d", p.Color, color)
+	if p.Button != button || p.Thumbstick != thumb {
+		t.Errorf("button/thumb = %d/%d, want %d/%d", p.Button, p.Thumbstick, button, thumb)
 	}
-	if p.Thumbstick != thumb || p.Button != button {
-		t.Errorf("presets = %d/%d, want %d/%d", p.Thumbstick, p.Button, thumb, button)
-	}
-	if payload[cepOffAdv2A] != cepDefaultAdv2A {
-		t.Errorf("0x2A = %#x, want fresh-MP default %#x", payload[cepOffAdv2A], cepDefaultAdv2A)
+	// Advanced controls must round-trip exactly.
+	if p.Advanced != adv {
+		t.Errorf("advanced round-trip:\n got  %+v\n want %+v", p.Advanced, adv)
 	}
 	// The generated file must self-verify: digest == HMAC over [0:0x30].
 	want, _ := RecomputeDigest(payload, cepOffDigest, cepDigestLen, "ce")
@@ -76,10 +87,27 @@ func TestCEProfileBuildAndParse(t *testing.T) {
 	}
 }
 
+// TestCEProfileFactoryDefaults verifies a no-advanced build encodes the
+// documented fresh-MP factory Advanced Controls and they decode back.
+func TestCEProfileFactoryDefaults(t *testing.T) {
+	name := "FRESH"
+	payload, err := CEProfileBuild(CEProfilePatch{Name: &name}, true)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	p, _ := CEProfileParse(payload)
+	def := ceAdvancedDefault()
+	if p.Advanced != def {
+		t.Errorf("factory advanced:\n got  %+v\n want %+v", p.Advanced, def)
+	}
+}
+
 func TestBuildCEProfileViaDispatch(t *testing.T) {
+	color, button, thumb := uint32(3), uint32(1), uint32(1)
+	hsens := 5.0
 	set, err := Build(BuildRequest{
 		Title: TitleCE, Kind: KindProfile, Name: "CARTOG",
-		Appearance: map[string]int{"color": 3, "thumbstick": 1, "button": 1},
+		Color: &color, Button: &button, Thumbstick: &thumb, HSens: &hsens,
 	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)

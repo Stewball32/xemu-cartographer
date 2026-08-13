@@ -15,7 +15,7 @@ type ContainerMembership struct {
 }
 
 // Membership exposes the cross-instance roster identity view. The per-user
-// "my match" resolver (/api/me/match), the WS room guard, and the kiosk/VNC
+// play ownership/roster resolver, the WS room guard, and the kiosk/VNC
 // proxy all read it to decide whether a given user belongs to a given
 // container.
 type Membership interface {

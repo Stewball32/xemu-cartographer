@@ -1,9 +1,11 @@
 package haloce
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
@@ -16,8 +18,12 @@ import (
 // OnStateChange clears them on entry to GameStateMenu — the only path by
 // which a different scenario can be loaded. See reader_cache.go.
 type Reader struct {
-	inst         *xemu.Instance
-	name         string
+	inst *xemu.Instance
+	name string
+	// off is the instance's versioned address layer (baseline for stock CE,
+	// or the offset set the catalog row assigns for a modded build). All
+	// runtime address anchors are read through it; game behavior stays code.
+	off          Offsets
 	tagNameCache map[int16]string
 	tagInstBase  uint32 // cached; 0 = not yet read
 	ohdBase      uint32 // cached; 0 = not yet read
@@ -39,6 +45,73 @@ type Reader struct {
 	// debug inspect endpoint.
 	lastStateInputs scraper.StateInputs
 
+	// lastNavFP / lastNavFPAt gate the HOSTRUNNER_NAV_DEBUG diagnostic — one line
+	// per fingerprint CHANGE plus a slow heartbeat, not per tick (which would be
+	// ~10 lines/sec at the host sub-tick cadence). See menustate_debug.go.
+	lastNavFP   string
+	lastNavFPAt time.Time
+
+	// lastMenuDela is the raw highlighted-widget DeLa path from the most recent
+	// ReadMenuItem (the navfp `dela=`), surfaced via LastStateInputs["menu_dela"] for
+	// the admin diagnostics panel. "" off the front-end / on a read failure.
+	lastMenuDela string
+
+	// lastUIStats is the most recent UI-widget-heap census (live block count,
+	// highlighted count, max activation tick) — cold-boot / menu-state candidate
+	// signals for the admin diagnostics panel. See uiHeapStats in menustate.go.
+	lastUIStats UIHeapStats
+
+	// lastRecStamp is the current screen record's activation stamp (rec+0x18)
+	// from the most recent readUiScreen. The highlight pick gates widget blocks
+	// on tick(+0x28)==stamp — the "belongs to the ACTIVE screen" invariant — so
+	// stale prior-screen blocks can't win. StampOK false = record unreadable
+	// this tick (the pick then falls back to max-tick).
+	lastRecStamp   uint32
+	lastRecStampOK bool
+
+	// gameOverStreak debounces the PROVISIONAL game-over flag (AddrGameOverFlag,
+	// observed once): consecutive in-context reads of the exact 0xFFFFFFFF
+	// sentinel before ReadGameState reports postgame. A transient misread must
+	// not end a live match — the postgame transition exits the Live loop and
+	// fires game persistence.
+	gameOverStreak int
+
+	// lobbyCursorHandles caches the SELECT MAP / SELECT GAMETYPE list widgets'
+	// resolved 'DeLa' tag handles keyed by tag path. The handles are stable within
+	// a loaded UI cache (front-end session) but the heap block's absolute address
+	// is allocation-order-dependent, so ReadLobbyCursor caches the handle and
+	// re-scans the heap by handle each call. Cleared on entry to menu (front-end
+	// reload) by OnStateChange; nil until the first successful resolve. See widget.go.
+	lobbyCursorHandles map[string]uint32
+
+	// menuItemHandles caches the FRONT-END menu item widgets' 'DeLa' tag handles
+	// (main_menu items + Multiplayer submenu + SELECT PROFILE), keyed by tag path.
+	// Used by ReadMenuItem to classify the highlighted item for the host-runner's
+	// state-aware nav. Same lifecycle as lobbyCursorHandles (cleared on menu entry).
+	// See menustate.go.
+	menuItemHandles map[string]uint32
+
+	// sysLinkGamesHandles caches the 'DeLa' tag handles of the System Link games-
+	// browser widgets (every tag path containing \connected\server_list — the list
+	// container + its per-server items). Used to detect that screen by PRESENCE of
+	// its list widget in the UI heap (robust vs the stale highlighted-item read).
+	// nil until resolved; cleared on menu entry with the other handle caches.
+	sysLinkGamesHandles map[uint32]bool
+
+	// screenTagPaths caches widget_definition tag id → DeLa path for the
+	// screen-record classifier (screenrec.go). Keyed by TAG ID, never by record
+	// address — the record pool reuses slots. Cleared on menu entry with the
+	// other UI-session caches.
+	screenTagPaths map[uint32]string
+
+	// lowPageHVAs / lowPageFails back lowHVADynamic (screenrec.go): per-page
+	// host-VA translations for low GVAs outside the Init list (screen-record
+	// slots, the fade pair), plus a negative cache so an unmapped page can't
+	// become a per-tick QMP hammer. Cleared on menu entry so a post-XBE-swap
+	// stale mapping self-heals.
+	lowPageHVAs  map[uint32]int64
+	lowPageFails map[uint32]time.Time
+
 	// Diagnostic one-shot flags for the two readers under offset investigation
 	// (M19 2026-05-18 entry: readObjectTypes / readPowerSpawnScenarios return
 	// empty on Xbox builds). Set true after the first call logs its raw
@@ -49,10 +122,11 @@ type Reader struct {
 
 // NewReader creates a Reader for the given instance.
 // inst.Init(AllLowGVAs) must have been called before use.
-func NewReader(inst *xemu.Instance, instanceName string) *Reader {
+func NewReader(inst *xemu.Instance, instanceName string, off Offsets) *Reader {
 	return &Reader{
 		inst:               inst,
 		name:               instanceName,
+		off:                off,
 		tagNameCache:       make(map[int16]string),
 		weaponTagDataCache: make(map[int16]*scraper.StaticWeaponTagData),
 		bipedTagCache:      make(map[int16]*scraper.StaticBipedTagData),
@@ -68,26 +142,96 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 	inst := r.inst
 	mem := inst.Mem
 
-	geGlobalsPtr, err := inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
+	// MENU-CLASSIFICATION fields FIRST. These drive the host-runner's front-end
+	// detection (main_menu + game_connection) and MUST land in lastStateInputs so
+	// the runner can classify the main menu — even when the game-engine state
+	// below isn't present/readable at the front end. main_menu is the CRITICAL
+	// read: if it fails, the translation is unusable (e.g. a stale boot-time
+	// mapping), and we signal the loop to re-translate. A failed game-engine read
+	// (region not resident at the menu) must NOT abort before we get here.
+	mainMenu, mmErr := readLowU8(inst, r.off.AddrMainMenuActive)
+
+	// game_connection (0 menu/SP, 1 system-link, 2 hosting, 3 film) — best-effort;
+	// a failed read leaves it 0 (menu), never a false lobby.
+	var gameConnection uint16
+	if hva, e := inst.LowHVA(r.off.AddrGameConnection); e == nil {
+		gameConnection, _ = mem.ReadU16At(hva)
 	}
+
+	// menu_focus (AddrUiWidgetFocusPtr 0x2F9B38) — the CE front-end menu's live
+	// widget-focus pointer. Its VALUE (a heap ptr) is not a stable index (CE
+	// relinks the widget list), but it reliably CHANGES when the highlighted
+	// menu item moves and stays put when a press dropped. The host-runner's nav
+	// phase uses that change as a per-press "the move landed" confirmation so a
+	// dropped d-pad press can't leave it on the wrong item (e.g. firing A on
+	// Single Player → Campaign). Best-effort: a failed read leaves it 0.
+	var menuFocus uint32
+	if hva, e := inst.LowHVA(r.off.AddrUiWidgetFocusPtr); e == nil {
+		menuFocus, _ = mem.ReadU32At(hva)
+	}
+
+	// GAME-ENGINE / GAME-TIME state — BEST-EFFORT. At the front-end menu these
+	// regions may not be resident (the game engine isn't running); a miss here
+	// leaves the field zero, which determineGameState reads as Menu — the correct
+	// result. In a live game these translations are valid, so behavior is
+	// unchanged. Never abort menu detection on one of these. Read BEFORE menu_item
+	// so the heap-read gate keys off the engine-running signal rather than the
+	// stale-prone low main_menu global.
+	geGlobalsPtr, _ := inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
 	gameEngineRunning := geGlobalsPtr != 0
 
-	mainMenuHVA, err := inst.LowHVA(AddrMainMenuActive)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
-	}
-	mainMenu, err := mem.ReadU8At(mainMenuHVA)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
+	// menu_item: WHICH front-end menu item is highlighted (MenuItem* enum), read
+	// from the UI widget heap — the host-runner routes its state-aware nav on it
+	// AND (stall-fix) derives "at the front-end menu" from it. This is a HIGH-GVA
+	// read (physical 0x80000000-window, stable across screen transitions), so gate
+	// it on the ENGINE not running — i.e. any menu/front-end screen — NOT on the
+	// low main_menu global. main_menu can read stale-zero (a drifted low-GVA cached
+	// translation); gating this reliable heap read behind it is exactly what let a
+	// stale main_menu blank the runner's "where am I" and stall it at "unknown".
+	// Off the front-end (engine running) we skip the ~2MB heap read as before.
+	menuItem := MenuItemUnknown
+	menuDela := ""
+	pregameSentinel := false
+	uiScreen := ""
+	var uiScreenRec, uiBackRec, uiMsClock, slotProfile uint32
+	var uiFadeState uint16
+	oskActive := false
+	slotClaimed := false
+	if !gameEngineRunning {
+		// SCREEN-RECORD classifier (screenrec.go): 2 fixed low reads + a cached
+		// tag resolve → the CURRENT screen's canonical DeLa path, plus the
+		// back-screen record (0 exactly at the root main menu) and the record's
+		// activation stamp (the highlight pick's tick gate). This is the cheap,
+		// authoritative "which screen" signal the host runner's Classify prefers;
+		// the heap-based menu_item below stays for ITEM routing (which entry is
+		// highlighted), which no fixed global carries.
+		uiScreen, uiScreenRec, uiBackRec, r.lastRecStamp, r.lastRecStampOK = r.readUiScreen()
+		uiMsClock = r.readLowU32(r.off.AddrUiMsClock) // UI-liveness heartbeat (ms-scale, free-running)
+		if v, err := readLowU8(inst, r.off.AddrUiOskActive); err == nil {
+			oskActive = v != 0 // on-screen keyboard is capturing input
+		}
+		uiFadeState = r.readLowU16Dynamic(r.off.AddrUiFadeState) // D5/49 root ↔ D4/48 sub-screen
+		// System Link entry-flow slot fields (port 0): the per-A effect confirms
+		// for join → select → commit. PERSISTENT across flow exits — consumers
+		// gate on the 4way screen record.
+		if v, err := readLowU8(inst, r.off.AddrUiSlotClaimed); err == nil {
+			slotClaimed = v != 0
+		}
+		slotProfile = r.readLowU32(r.off.AddrUiSlotProfile)
+
+		menuItem = r.ReadMenuItem()
+		menuDela = r.lastMenuDela                 // raw highlighted DeLa path (navfp dela=)
+		pregameSentinel = r.readPregameSentinel() // game_globals+0x10 == 0xDEADBEEF
+		// PHASE-1 nav diagnostic (HOSTRUNNER_NAV_DEBUG): dump the RAW highlighted
+		// DeLa path per screen so an operator can capture the fingerprint of the
+		// System Link screens (Select Profile vs System Link Games) live on a
+		// networked box, where the classifier otherwise collapses both to Unknown.
+		if navDebug {
+			r.logNavFingerprint(gameConnection, mainMenu, menuItem, menuFocus, uiScreen, uiBackRec)
+		}
 	}
 
-	gtgPtr, err := inst.DerefLowPtr(AddrGameTimeGlobalsPtr)
-	if err != nil {
-		return scraper.GameStateMenu, 0, err
-	}
-
+	gtgPtr, _ := inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr)
 	var initialized, active, paused uint8
 	if gtgPtr >= HighGVAThreshold {
 		initialized, _ = mem.ReadU8(gtgPtr + OffGTGInitialized)
@@ -96,15 +240,34 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		tick, _ = mem.ReadU32(gtgPtr + OffGTGGameTime)
 	}
 
-	gameCanScoreHVA, err := inst.LowHVA(AddrGameCanScore)
-	if err != nil {
-		return scraper.GameStateMenu, tick, err
+	var gameCanScore uint32
+	if hva, e := inst.LowHVA(r.off.AddrGameCanScore); e == nil {
+		gameCanScore, _ = mem.ReadU32At(hva)
 	}
-	gameCanScore, _ := mem.ReadU32At(gameCanScoreHVA)
 
-	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore)
+	// GAME-OVER flag (AddrGameOverFlag — PROVISIONAL, see offsets.go). On the
+	// Server build the postgame scoreboard is invisible to every classic gate
+	// (gc/mma/record/engine-ptr all keep their in-match values), so this is the
+	// signal that ends a hosted match. Defences, in order: read only in the
+	// netgame-hosting in-match context (gc==2 + engine running); exact-sentinel
+	// match; and a consecutive-read debounce before it counts. Unreadable (page
+	// translate failed) degrades to "no signal".
+	gameOver := false
+	if gameConnection == 2 && gameEngineRunning {
+		if v, ok := r.readLowU32Dynamic(r.off.AddrGameOverFlag); ok && v == 0xFFFFFFFF {
+			r.gameOverStreak++
+		} else {
+			r.gameOverStreak = 0
+		}
+		gameOver = r.gameOverStreak >= gameOverDebounceReads
+	} else {
+		r.gameOverStreak = 0
+	}
+
+	state = determineGameState(mainMenu, initialized, active, paused, gameEngineRunning, gameCanScore, gameOver)
 	r.lastStateInputs = scraper.StateInputs{
 		"main_menu":               mainMenu,
+		"game_connection":         gameConnection,
 		"initialized":             initialized,
 		"active":                  active,
 		"paused":                  paused,
@@ -112,8 +275,48 @@ func (r *Reader) ReadGameState() (state scraper.GameState, tick uint32, err erro
 		"game_can_score":          gameCanScore,
 		"game_engine_globals_ptr": geGlobalsPtr,
 		"game_time_globals_ptr":   gtgPtr,
+		"menu_focus":              menuFocus,
+		"menu_item":               uint32(menuItem),
+		"menu_dela":               menuDela,        // admin diagnostics: raw navfp dela=
+		"pregame_sentinel":        pregameSentinel, // admin diagnostics: 0xDEADBEEF present?
+		"nav_candidates":          r.readNavCandidates(),
+		"ui_widget_blocks":        uint32(r.lastUIStats.Blocks),
+		"ui_highlighted":          uint32(r.lastUIStats.Highlighted),
+		"ui_max_tick":             r.lastUIStats.MaxTick,
+		// Screen-record classifier + support reads (screenrec.go). ui_screen is
+		// the CURRENT screen's resolved DeLa path ("" = no signal → heap
+		// fallback); ui_back_screen_rec == 0 exactly at the root main menu.
+		"ui_screen":          uiScreen,
+		"ui_screen_rec":      uiScreenRec,
+		"ui_back_screen_rec": uiBackRec,
+		"ui_osk_active":      oskActive,
+		"ui_ms_clock":        uiMsClock,
+		"ui_fade_state":      uint32(uiFadeState),
+		// Entry-flow slot fields (gate on the 4way record before trusting them).
+		"ui_slot_claimed": slotClaimed,
+		"ui_slot_profile": slotProfile,
+		// Debounced provisional game-over flag (the Server-build postgame signal).
+		"game_over": gameOver,
+	}
+	// A failed main_menu read means the low translation is broken (not merely a
+	// game region absent at the menu) — surface it so the ready loop re-translates.
+	// state_inputs is already populated above, so a later successful read (or a
+	// refresh) recovers menu classification without any special-casing here.
+	if mmErr != nil {
+		return state, tick, fmt.Errorf("main_menu read: %w", mmErr)
 	}
 	return state, tick, nil
+}
+
+// readLowU8 reads a single byte at a low guest VA through the instance's cached
+// translation, folding the LowHVA + ReadU8At two-step into one call so the menu
+// reads at the top of ReadGameState stay terse.
+func readLowU8(inst *xemu.Instance, gva uint32) (uint8, error) {
+	hva, err := inst.LowHVA(gva)
+	if err != nil {
+		return 0, err
+	}
+	return inst.Mem.ReadU8At(hva)
 }
 
 // LastStateInputs returns the raw values from the most recent ReadGameState
@@ -122,7 +325,13 @@ func (r *Reader) LastStateInputs() scraper.StateInputs {
 	return r.lastStateInputs
 }
 
-func determineGameState(mainMenu, initialized, active, paused uint8, engineRunning bool, gameCanScore uint32) scraper.GameState {
+// gameOverDebounceReads is how many consecutive in-context sentinel reads the
+// provisional game-over flag needs before it flips the state — ~30ms at the
+// Live loop's 10ms poll, well under the ≥3s the scoreboard is up, but enough
+// that a single torn/garbage read can't end a live match.
+const gameOverDebounceReads = 3
+
+func determineGameState(mainMenu, initialized, active, paused uint8, engineRunning bool, gameCanScore uint32, gameOver bool) scraper.GameState {
 	if mainMenu != 0 || initialized == 0 {
 		return scraper.GameStateMenu
 	}
@@ -130,7 +339,10 @@ func determineGameState(mainMenu, initialized, active, paused uint8, engineRunni
 		return scraper.GameStatePreGame
 	}
 	if initialized == 1 && active == 1 && paused == 0 {
-		if engineRunning && gameCanScore != 0 {
+		// gameOver is the Server-build postgame signal (the debounced
+		// AddrGameOverFlag): the scoreboard phase keeps every classic gate at
+		// its in-match value, so game_can_score alone never fires there.
+		if engineRunning && (gameCanScore != 0 || gameOver) {
 			return scraper.GameStatePostGame
 		}
 		return scraper.GameStateInGame
@@ -169,12 +381,23 @@ func (r *Reader) ReadReadyState() (scraper.GameData, error) {
 func (r *Reader) composeGameData() scraper.GameData {
 	out := scraper.GameData{}
 
+	// MATCH-ELAPSED clock (game_time_globals + OffGTGElapsed 0x10) — a 30Hz count-UP
+	// from 0 at match start, which the scorebug renders as M:SS. It was defined in
+	// offsets.go but never read anywhere, which is why the overlay clock sat at 0.
+	// Read via the low-GVA translation (DerefLowPtr) like the other GTG reads; 0 in
+	// the lobby/menus, where game_time_globals is paused or not yet re-initialised.
+	if gtgPtr, err := r.inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
+		if v, err := r.inst.Mem.ReadU32(gtgPtr + OffGTGElapsed); err == nil {
+			out.ElapsedTicks = v
+		}
+	}
+
 	// Live match-config fields. Cheap; the host can still change these in
 	// pregame, so read every call rather than caching. Sourced from the
 	// host's network_game_server variant settings (NGS+0xC8) — the legacy
 	// AddrIsTeamGame at 0x2F90C4 is only written at match-start and reads 0
 	// in the lobby.
-	if hva, err := r.inst.LowHVA(RefAddrNetworkGameServer); err == nil {
+	if hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer); err == nil {
 		if v, err := r.inst.Mem.ReadU32At(hva + int64(OffNGSVariantTeamPlay)); err == nil {
 			out.IsTeamGame = v != 0
 		}
@@ -284,7 +507,7 @@ func (r *Reader) composePowerItemSpawns() []scraper.PowerItemSpawn {
 // The GlobalVariant struct (0x2F90A8) holds the same data only after
 // match-start.
 func (r *Reader) readVariantName() string {
-	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
+	hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer)
 	if err != nil {
 		return ""
 	}
@@ -302,7 +525,7 @@ func (r *Reader) readVariantName() string {
 // lobby-reliable; the legacy read from RefAddrGlobalVariant+OffGVGametype
 // only carries the running gametype once a match has started.
 func (r *Reader) readGametypeID() (uint32, error) {
-	hva, err := r.inst.LowHVA(RefAddrNetworkGameServer)
+	hva, err := r.inst.LowHVA(r.off.RefAddrNetworkGameServer)
 	if err != nil {
 		return 0, err
 	}
@@ -329,13 +552,13 @@ func (r *Reader) fillPlayerScores(players []scraper.GamePlayer, gametypeID uint3
 	var baseAddr uint32
 	switch gametypeID {
 	case 2:
-		baseAddr = AddrScoreSlayer
+		baseAddr = r.off.AddrScoreSlayer
 	case 3:
-		baseAddr = AddrScoreOddball
+		baseAddr = r.off.AddrScoreOddball
 	case 4:
-		baseAddr = AddrScoreKing
+		baseAddr = r.off.AddrScoreKing
 	case 5:
-		baseAddr = AddrScoreRace
+		baseAddr = r.off.AddrScoreRace
 	default:
 		return
 	}
@@ -363,9 +586,9 @@ func (r *Reader) readScoreLimit(gametypeID uint32) (int32, error) {
 		addr     uint32
 	}
 	addrs := []entry{
-		{1, AddrScoreLimitCTF},
-		{2, AddrScoreLimitSlayer},
-		{3, AddrScoreLimitOddball},
+		{1, r.off.AddrScoreLimitCTF},
+		{2, r.off.AddrScoreLimitSlayer},
+		{3, r.off.AddrScoreLimitOddball},
 	}
 	values := make(map[uint32]int32, len(addrs))
 	for _, a := range addrs {
@@ -400,15 +623,15 @@ func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.T
 	var baseAddr uint32
 	switch gametypeID {
 	case 1:
-		baseAddr = AddrScoreCTF
+		baseAddr = r.off.AddrScoreCTF
 	case 2:
-		baseAddr = AddrScoreSlayer
+		baseAddr = r.off.AddrScoreSlayer
 	case 3:
-		baseAddr = AddrScoreOddball
+		baseAddr = r.off.AddrScoreOddball
 	case 4:
-		baseAddr = AddrScoreKing
+		baseAddr = r.off.AddrScoreKing
 	case 5:
-		baseAddr = AddrScoreRace
+		baseAddr = r.off.AddrScoreRace
 	default:
 		return nil, nil
 	}
@@ -445,7 +668,7 @@ func (r *Reader) readTeamScores(isTeamGame bool, gametypeID uint32) ([]scraper.T
 // Kill/death/score fields stay zero — they don't exist pre-match.
 func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +720,7 @@ func (r *Reader) readNetworkRosterPlayers() ([]scraper.GamePlayer, error) {
 // Returns nil when no network game is active.
 func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return nil
 	}
@@ -539,7 +762,7 @@ func (r *Reader) readNetworkMachines() []scraper.GameMachine {
 // dashboard UI strips for display.
 func (r *Reader) LocalMachineName() (string, bool) {
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return "", false
 	}
@@ -575,7 +798,7 @@ func (r *Reader) attributeMachines(players []scraper.GamePlayer) {
 		return
 	}
 	mem := r.inst.Mem
-	clientHVA, err := r.inst.LowHVA(RefAddrNetworkGameClient)
+	clientHVA, err := r.inst.LowHVA(r.off.RefAddrNetworkGameClient)
 	if err != nil {
 		return
 	}
@@ -625,7 +848,7 @@ func (r *Reader) readGamePlayers() ([]scraper.GamePlayer, error) {
 	inst := r.inst
 	mem := inst.Mem
 
-	pdaBase, err := inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return nil, err
 	}
@@ -728,7 +951,7 @@ func (r *Reader) ReadTick(spawns []scraper.PowerItemSpawn, state *scraper.TickSt
 	}
 
 	// Read player datum array.
-	pdaBase, err := inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return scraper.TickResult{}, err
 	}
@@ -1185,7 +1408,7 @@ func (r *Reader) readPowerSpawnScenarios() []scenarioPowerSpawn {
 	}()
 
 	var err error
-	scenarioBase, err = inst.DerefLowPtr(AddrGlobalScenarioPtr)
+	scenarioBase, err = inst.DerefLowPtr(r.off.AddrGlobalScenarioPtr)
 	if err != nil || scenarioBase < HighGVAThreshold {
 		gate = "scenarioBase"
 		return nil
@@ -1405,7 +1628,7 @@ func (r *Reader) readTagName(tagIdx int16) (string, error) {
 // Returns "" when the header or any link in the chain isn't reachable yet
 // (early pregame / between scenarios).
 func (r *Reader) readScenarioTagName() string {
-	tagHeader, err := r.inst.DerefLowPtr(AddrTagHeaderPtr)
+	tagHeader, err := r.inst.DerefLowPtr(r.off.AddrTagHeaderPtr)
 	if err != nil || tagHeader < HighGVAThreshold {
 		return ""
 	}
@@ -1432,7 +1655,7 @@ func (r *Reader) readScenarioTagName() string {
 // so a failed read never falsely claims a map is in play. Consumed by
 // resolveMapName as the in-map gate.
 func (r *Reader) readMainMenuActive() uint8 {
-	hva, err := r.inst.LowHVA(AddrMainMenuActive)
+	hva, err := r.inst.LowHVA(r.off.AddrMainMenuActive)
 	if err != nil {
 		return 1
 	}
@@ -1449,7 +1672,7 @@ func (r *Reader) readMainMenuActive() uint8 {
 // lives at the low GVA itself, so it's read via LowHVA, not the high-GVA
 // readHighString path.
 func (r *Reader) readStageName() string {
-	hva, err := r.inst.LowHVA(AddrGlobalStageName)
+	hva, err := r.inst.LowHVA(r.off.AddrGlobalStageName)
 	if err != nil {
 		return ""
 	}
@@ -1487,14 +1710,14 @@ func (r *Reader) readHighString(gva uint32) string {
 
 func (r *Reader) ensureBases() error {
 	if r.tagInstBase == 0 {
-		base, err := r.inst.DerefLowPtr(AddrGlobalTagInstancesPtr)
+		base, err := r.inst.DerefLowPtr(r.off.AddrGlobalTagInstancesPtr)
 		if err != nil {
 			return err
 		}
 		r.tagInstBase = base
 	}
 	if r.ohdBase == 0 {
-		base, err := r.inst.DerefLowPtr(AddrObjectHeaderDatumPtr)
+		base, err := r.inst.DerefLowPtr(r.off.AddrObjectHeaderDatumPtr)
 		if err != nil {
 			return err
 		}

@@ -1,8 +1,13 @@
 export const HIDDEN_LAYOUT_PATHS: readonly string[] = [
-	// Overlays render in OBS Browser Source — header/nav/toaster chrome must be
+	// OBS browser sources render standalone — header/nav/toaster chrome must be
 	// suppressed so the route is the only thing on screen, with a transparent
-	// background for compositing.
-	'/overlays/'
+	// background for compositing. One entry per route in the
+	// LAN_OBS_Browser_Sources pack (the /studio page is the catalog that lists
+	// them and DOES keep app chrome).
+	'/overlay/',
+	'/scorebug/',
+	'/leaderboard/',
+	'/postgame/'
 ];
 
 export function isLayoutHidden(pathname: string): boolean {

@@ -22,15 +22,20 @@
 package manager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"sync"
 
+	"github.com/pocketbase/pocketbase/core"
+
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
 )
@@ -54,6 +59,14 @@ type Manager struct {
 
 	agg *aggregator
 
+	// offsetSetResolver maps an instance name to its assigned offset-set id
+	// ("" = the detected game's baseline). Injected via SetOffsetSetResolver
+	// from main.go, where the instance→ISO-record linkage lives (podman
+	// GameISO basename = the isos record id under the managed ingest model).
+	// Read at reader bind time — a box provisioned from a catalog row with an
+	// explicit offset_set rides that set; everything else rides the baseline.
+	offsetSetResolver func(instance string) string
+
 	// policyMu guards policies. Held separately from mu so the loader
 	// can update the Manager-level snapshot without contending with
 	// Start/Stop on the runners map. reloadMu serialises full reloads
@@ -63,6 +76,27 @@ type Manager struct {
 	policyMu sync.RWMutex
 	policies []capture.Policy
 	reloadMu sync.Mutex
+
+	// Host-runner wiring (player-hosting, ADR-0003). Set once at boot via
+	// SetHostRunner before any Start. When hostEnabled, each Start attaches a
+	// state-aware hostrunner.Runner (ticked from the scraper loop goroutine) and
+	// dials a per-instance vncinput.Pump as its input channel, resolving the
+	// container's websockify URL via hostURL. All three are read-only after boot
+	// so no lock is needed. hostReg may be non-nil while hostEnabled is false —
+	// the control/play endpoints then just report "no runner attached".
+	hostReg     *hostrunner.Registry
+	hostURL     func(name string) (wsURL string, ok bool)
+	hostEnabled bool
+	// hostDrive is the host/client scoping gate: it decides whether a freshly
+	// attached runner AUTO-DRIVES its box (AuthRunner) or attaches observe-only
+	// (AuthDisabled). nil drives every box (pre-scoping behavior). Read-only
+	// after boot (set via SetHostDrivePolicy before any Start), so no lock.
+	hostDrive func(name string) bool
+
+	// overlayResolver maps an instance name to its overlay qcow2 path (host-side),
+	// so a runner can read the box's saved custom gametype variants off disk. nil
+	// disables custom-variant enumeration (built-ins only). Read-only after boot.
+	overlayResolver func(name string) (string, bool)
 }
 
 // New constructs a Manager that broadcasts via svc.WS and starts a host:all
@@ -86,6 +120,107 @@ func (m *Manager) Close() {
 	if m.agg != nil {
 		m.agg.stop()
 	}
+}
+
+// AvailableMaps returns the LIVE per-instance map/gametype carousel for the
+// player-hosting map picker (refinement 2). It reads the runner's cache — which
+// is filled by the carousel enumeration (SetAvailableMaps) — and NEVER a stock
+// table: an instance with no enumeration yet reports Available=false with empty
+// lists, so a modded disc's custom maps are never masked by a hardcoded set.
+// Returns a zero (unavailable) MapList for an unknown instance.
+func (m *Manager) AvailableMaps(name string) scraperiface.MapList {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return scraperiface.MapList{}
+	}
+	c := r.readCache()
+	available := len(c.AvailableMaps) > 0 || len(c.AvailableGametypes) > 0
+	return scraperiface.MapList{
+		Available: available,
+		Maps:      c.AvailableMaps,
+		Gametypes: c.AvailableGametypes,
+		// Pending only while the custom-variant feature is active (overlay resolver
+		// wired) and its one-time read hasn't finished — so a box without the
+		// feature never gets stuck "reading gametypes…".
+		GametypesPending: available && m.overlayResolver != nil && !c.CustomLoadDone,
+	}
+}
+
+// Readout returns the instance's MOST RECENT per-tick ScraperReadout — the same
+// live readout the host runner ticks on and the navfp diagnostic logs from. It is
+// published every tick regardless of whether a host runner is attached, so the admin
+// diagnostics panel stays live on an observed-only box too. ok=false for an unknown
+// instance or before the first tick.
+func (m *Manager) Readout(name string) (hostrunner.ScraperReadout, bool) {
+	m.mu.Lock()
+	r, exists := m.runners[name]
+	m.mu.Unlock()
+	if !exists {
+		return hostrunner.ScraperReadout{}, false
+	}
+	return r.readout()
+}
+
+// SetAvailableMaps records the live-enumerated map/gametype carousel for an
+// instance. The enumeration itself — a guest-memory read of the CE map-select
+// carousel while the runner is parked there, and/or a parse of the instance's
+// disc / HDD `.map` files — is the remaining per-instance live read (it needs
+// offset/disc work + a live box to verify); this is the seam it writes into, so
+// nothing downstream assumes a fixed map set. No-op for an unknown instance.
+func (m *Manager) SetAvailableMaps(name string, maps, gametypes []scraperiface.MapOption) {
+	m.mu.Lock()
+	r, ok := m.runners[name]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	r.withCache(func(c *instanceCache) {
+		c.AvailableMaps = maps
+		c.AvailableGametypes = gametypes
+	})
+}
+
+// SetHostRunner wires the player-hosting subsystem (ADR-0003). reg owns the
+// per-instance runners + fans the observable stream to the admin WS room;
+// urlForInstance resolves a container name to its websockify URL (nil / not-ok →
+// the runner attaches with no input channel, ticking + emitting state but
+// pressing nothing); enabled gates whether runners are attached at all. Call
+// once before any Start (i.e. before the discovery watcher runs). Passing a
+// non-nil reg with enabled=false keeps the control/play endpoints functional
+// (they report "no runner attached") without auto-driving any instance.
+func (m *Manager) SetHostRunner(reg *hostrunner.Registry, urlForInstance func(name string) (string, bool), enabled bool) {
+	m.hostReg = reg
+	m.hostURL = urlForInstance
+	m.hostEnabled = enabled
+}
+
+// SetHostDrivePolicy installs the host/client scoping predicate. drive(name)
+// reports whether a box should be AUTO-DRIVEN by its runner: true → the runner
+// attaches AuthRunner and navigates the host create-game sequence (today's
+// every-box behavior); false → it attaches observe-only (AuthDisabled), so it
+// still ticks, enumerates its lobby for /api/play/options, and emits state to
+// the admin stream, but CanEmit()==false and it presses NOTHING.
+//
+// This is the fix for the pod-hijack: without it, every discovered box with a
+// detected game gets driven, so an admin-created client pod meant to JOIN a
+// System Link lobby is yanked into hosting its own create-game flow. With a
+// policy that drives only player-provisioned "play-<uid>" boxes, client/admin
+// boxes are left alone until an admin promotes one via the host control
+// endpoint (Registry.SetAuthority). nil (the default) drives every box.
+// Read-only after boot — call once before any Start.
+func (m *Manager) SetHostDrivePolicy(drive func(name string) bool) {
+	m.hostDrive = drive
+}
+
+// SetOverlayResolver wires the host-side overlay-path lookup used to read a box's
+// saved custom gametype variants (customvariants). resolver(name) returns the
+// overlay qcow2 path + true when readable. nil (the default) disables custom-
+// variant enumeration — the play list then carries built-in gametypes only. Call
+// once before any Start; read-only afterward.
+func (m *Manager) SetOverlayResolver(resolver func(name string) (string, bool)) {
+	m.overlayResolver = resolver
 }
 
 // Start spins up a runner for the named instance. It opens the xemu instance
@@ -119,12 +254,21 @@ func (m *Manager) Start(name, sock string) error {
 	}
 	m.mu.Unlock()
 
+	// InitWait, not Init: discovery fires the moment the QMP socket appears,
+	// which is seconds before the guest has page tables. Init would either fail
+	// outright (no scraper for the life of the box) or bind translations against
+	// unsettled memory. The gate waits for the guest instead — see InitWait.
 	inst := &xemu.Instance{Name: name, QMPSock: sock}
-	if err := inst.Init(scraper.DetectionGVAs()); err != nil {
+	if err := inst.InitWait(context.Background(), scraper.DetectionGVAs()); err != nil {
 		return fmt.Errorf("scraper: init xemu instance: %w", err)
 	}
 
-	r := newRunner(name, sock, hostRoom, m.agg, inst)
+	r := newRunner(name, sock, hostRoom, m.agg, inst, func() string {
+		if m.offsetSetResolver == nil {
+			return ""
+		}
+		return m.offsetSetResolver(name)
+	})
 
 	m.mu.Lock()
 	// Re-check under lock — guards against two concurrent Start calls racing.
@@ -150,8 +294,57 @@ func (m *Manager) Start(name, sock string) error {
 		Snapshot: &hostSummary{Instance: name, Phase: PhaseIdle},
 	})
 
+	// Overlay resolver for host-side custom gametype variant reads (part C).
+	// Visible to the loop goroutine before it starts (happens-before via go).
+	r.overlayFor = m.overlayResolver
+
+	// Attach the player-hosting runner (ADR-0003). Created before the loop
+	// goroutine starts so r.host / r.hostPump are visible to it without a race
+	// (goroutine start is a happens-before edge). The runner is TICKED from the
+	// scraper loop goroutine (see tickHost in loop.go) so it never touches a
+	// GameReader from another goroutine; its input pump does the blocking RFB
+	// writes off the loop goroutine.
+	m.attachHostRunner(r)
+
 	go r.loop(m.svc)
 	return nil
+}
+
+// attachHostRunner builds and registers the per-instance host runner + its
+// vncinput input pump when host-running is enabled. No-op when disabled or
+// unwired. Called from Start before the loop goroutine launches.
+func (m *Manager) attachHostRunner(r *runner) {
+	if !m.hostEnabled || m.hostReg == nil {
+		return
+	}
+	var input hostrunner.Input
+	if m.hostURL != nil {
+		if url, ok := m.hostURL(r.name); ok && url != "" {
+			// Pump lifetime is bound to the runner's context (cancelled on Stop);
+			// Stop also Closes it explicitly so teardown blocks on the goroutine.
+			pump := vncinput.NewPump(r.ctx, url)
+			r.hostPump = pump
+			input = pump // *vncinput.Pump satisfies hostrunner.Input
+		}
+	}
+	hr := hostrunner.New(hostrunner.Config{
+		Instance: r.name,
+		// Empty selector → the runner parks at map-select until a player picks
+		// (refinement 1); it never auto-hosts a default map.
+		Selector: hostrunner.NewAtomicSelector(),
+	}, input, m.hostReg)
+	// Host/client scoping (pod-hijack fix). Only a DESIGNATED host box is
+	// auto-driven. A non-designated box — e.g. an admin-created client pod that
+	// will JOIN the host's System Link lobby — attaches observe-only: its arbiter
+	// starts AuthDisabled so CanEmit()==false and the runner never presses a key,
+	// yet it still ticks, enumerates its lobby (for /api/play/options), and emits
+	// state. An admin can promote it at runtime via the host control endpoint
+	// (Registry.SetAuthority). nil policy = drive every box (pre-scoping default).
+	if m.hostDrive != nil && !m.hostDrive(r.name) {
+		hr.Arbiter().Set(hostrunner.AuthDisabled)
+	}
+	r.host = hr
+	m.hostReg.Register(r.name, hr)
 }
 
 // Stop cancels the named runner's context, closes its xemu.Instance, and
@@ -171,6 +364,17 @@ func (m *Manager) Stop(name string) error {
 	}
 	r.cancel()
 	<-r.done
+
+	// Tear down the host runner + input pump after the loop goroutine has
+	// exited (so no in-flight tickHost touches r.host). Registry.Remove drops the
+	// runner + its last event; pump.Close blocks until its goroutine stops.
+	if m.hostReg != nil {
+		m.hostReg.Remove(name)
+	}
+	if r.hostPump != nil {
+		_ = r.hostPump.Close()
+	}
+
 	m.agg.post(summaryUpdate{Instance: name, Removed: true})
 	return nil
 }
@@ -249,6 +453,7 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 		LatestTick:   c.LatestTick,
 		RecentEvents: c.Events,
 		PreviousGame: prev,
+		PlayerAccum:  c.PlayerAccum,
 	}, true
 }
 
@@ -265,6 +470,15 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 // instanceCache snapshot, not just GameData — so a late-joining client
 // gets phase, identity, freshness, current game data, recent events, and
 // previous_game in a single message.
+// cfgApp returns the core.App for dummy-filter config loads, nil-safe for test
+// Managers built without a Services (dummyConfig treats nil as no-filter).
+func (m *Manager) cfgApp() core.App {
+	if m.svc == nil {
+		return nil
+	}
+	return m.svc.App
+}
+
 func (m *Manager) JoinReplayMessages() [][]byte {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
@@ -275,8 +489,8 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners)*4)
 	for _, r := range runners {
-		for _, m := range r.classEnvelopeMessages() {
-			out = append(out, m.Bytes)
+		for _, cm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
+			out = append(out, cm.Bytes)
 		}
 	}
 	return out
@@ -294,7 +508,7 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	msgs := r.classEnvelopeMessages()
+	msgs := r.classEnvelopeMessages(r.dummyConfig(m.cfgApp()))
 	out := make([][]byte, 0, len(msgs))
 	for _, mm := range msgs {
 		out = append(out, mm.Bytes)
@@ -314,7 +528,7 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 	if !ok {
 		return nil
 	}
-	for _, mm := range r.classEnvelopeMessages() {
+	for _, mm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
 		if mm.Class == class {
 			return [][]byte{mm.Bytes}
 		}
@@ -328,4 +542,12 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 // without waiting for the next aggregator coalesce tick.
 func (m *Manager) JoinReplayForHostAll() [][]byte {
 	return m.agg.joinReplay()
+}
+
+// SetOffsetSetResolver injects the instance→offset-set-id resolver consulted
+// when a runner binds its GameReader (see Manager.offsetSetResolver). Call
+// before Start; nil (or never calling) means every instance uses its game's
+// baseline offsets.
+func (m *Manager) SetOffsetSetResolver(fn func(instance string) string) {
+	m.offsetSetResolver = fn
 }

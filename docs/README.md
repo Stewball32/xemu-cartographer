@@ -11,6 +11,7 @@ docs/
 ├── README.md          ← you are here (the convention itself)
 ├── STATUS.md          ← current state: Goals / Now / Next / Maybe
 ├── XEMU-TEST-SETUP.md ← runbook: spin up a live xemu instance for scraper/visualizer testing
+├── BSP-EDITOR.md      ← dev-tool doc: the /bsp-editor load→auto-tag→fix→export→visualizer loop
 ├── milestones/
 │   ├── README.md      ← summary table of all milestones
 │   └── _template.md   ← copy this when starting a new milestone

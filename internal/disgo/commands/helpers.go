@@ -22,3 +22,13 @@ func replyEmbed(e *handler.CommandEvent, embed discord.Embed) error {
 func replyText(e *handler.CommandEvent, text string) error {
 	return e.CreateMessage(discord.MessageCreate{Content: text})
 }
+
+// Ephemeral variants — only the invoking user sees the reply. Used by /mybox
+// (personal container info).
+func replyEphemeral(e *handler.CommandEvent, text string) error {
+	return e.CreateMessage(discord.MessageCreate{Content: text, Flags: discord.MessageFlagEphemeral})
+}
+
+func replyEmbedEphemeral(e *handler.CommandEvent, embed discord.Embed) error {
+	return e.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}, Flags: discord.MessageFlagEphemeral})
+}

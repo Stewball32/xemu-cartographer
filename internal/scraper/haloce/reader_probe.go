@@ -49,7 +49,7 @@ func (r *Reader) BuildScoreProbe() scraper.ScoreProbe {
 // Both regions are returned as parsed scalars *and* hex bytes so the user
 // can sanity-check the parser against the raw memory.
 func (r *Reader) probePerPlayerBipedRegions() any {
-	pdaBase, err := r.inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := r.inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return nil
 	}
@@ -63,7 +63,7 @@ func (r *Reader) probePerPlayerBipedRegions() any {
 		return nil
 	}
 
-	objHeaderBase, err := r.inst.DerefLowPtr(AddrObjectHeaderDatumPtr)
+	objHeaderBase, err := r.inst.DerefLowPtr(r.off.AddrObjectHeaderDatumPtr)
 	if err != nil || objHeaderBase < HighGVAThreshold {
 		return nil
 	}
@@ -181,7 +181,7 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 	out := map[string]any{}
 
 	// Original (wrong) approach — variant byte at AddrVariant.
-	if hva, err := r.inst.LowHVA(AddrVariant); err == nil {
+	if hva, err := r.inst.LowHVA(r.off.AddrVariant); err == nil {
 		if v, err := r.inst.Mem.ReadU8At(hva); err == nil {
 			out["variant_u8_at_2f90f4"] = v
 		}
@@ -190,7 +190,7 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 	// Engine-globals pointer + a sweep of nearby offsets read as both u32
 	// and u8 — the gametype field is supposedly at +0x04 per legacy, but
 	// reading 0 there suggests we should look elsewhere.
-	gePtr, err := r.inst.DerefLowPtr(AddrGameEngineGlobalsPtr)
+	gePtr, err := r.inst.DerefLowPtr(r.off.AddrGameEngineGlobalsPtr)
 	if err == nil {
 		out["ge_globals_ptr"] = fmt.Sprintf("0x%08x", gePtr)
 		out["ge_globals_ptr_valid"] = gePtr >= HighGVAThreshold
@@ -253,8 +253,8 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 	// in lockstep is the gametype offset. The "u8_as_gametype" and
 	// "u32_as_gametype" columns auto-decode any value 1–7 into its name so it's
 	// scannable.
-	dumpA := r.dumpVariantStruct(RefAddrGlobalVariant)
-	dumpB := r.dumpVariantStruct(AddrGameVariantGlobalPtr)
+	dumpA := r.dumpVariantStruct(r.off.RefAddrGlobalVariant)
+	dumpB := r.dumpVariantStruct(r.off.AddrGameVariantGlobalPtr)
 	out["variant_struct_at_2f90a8"] = dumpA
 	out["variant_struct_at_2fab60"] = dumpB
 
@@ -271,12 +271,12 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 	// across two consecutive captures: if seed and/or tick differ, the bytes
 	// below are definitely fresh from emulator memory at this moment.
 	fmt.Fprintf(&paste, "host_clock_utc: %s\n", time.Now().UTC().Format(time.RFC3339Nano))
-	if hva, err := r.inst.LowHVA(RefAddrGlobalRandomSeed); err == nil {
+	if hva, err := r.inst.LowHVA(r.off.RefAddrGlobalRandomSeed); err == nil {
 		if v, err := r.inst.Mem.ReadU32At(hva); err == nil {
 			fmt.Fprintf(&paste, "xbox_random_seed @0x2E3648: 0x%08x (%d)\n", v, v)
 		}
 	}
-	if gtgPtr, err := r.inst.DerefLowPtr(AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
+	if gtgPtr, err := r.inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
 		if v, err := r.inst.Mem.ReadU32(gtgPtr + OffGTGGameTime); err == nil {
 			fmt.Fprintf(&paste, "xbox_game_tick: %d\n", v)
 		}
@@ -400,11 +400,11 @@ func (r *Reader) probeTeamScoresRaw() map[string]any {
 		addr  uint32
 		count int
 	}{
-		{"ctf_at_2762b4_u32_x2", AddrScoreCTF, 2},
-		{"slayer_at_276710_u32_x16", AddrScoreSlayer, 16},
-		{"oddball_at_27653c_u32_x2", AddrScoreOddball, 2},
-		{"king_at_2762d8_u32_x2", AddrScoreKing, 2},
-		{"race_at_2766c8_u32_x2", AddrScoreRace, 2},
+		{"ctf_at_2762b4_u32_x2", r.off.AddrScoreCTF, 2},
+		{"slayer_at_276710_u32_x16", r.off.AddrScoreSlayer, 16},
+		{"oddball_at_27653c_u32_x2", r.off.AddrScoreOddball, 2},
+		{"king_at_2762d8_u32_x2", r.off.AddrScoreKing, 2},
+		{"race_at_2766c8_u32_x2", r.off.AddrScoreRace, 2},
 	}
 	for _, b := range bases {
 		hva, err := r.inst.LowHVA(b.addr)
@@ -430,9 +430,9 @@ func (r *Reader) probeScoreLimitsRaw() map[string]any {
 		label string
 		addr  uint32
 	}{
-		{"ctf_limit_at_2762bc_u32", AddrScoreLimitCTF},
-		{"slayer_limit_at_2f90e8_u32", AddrScoreLimitSlayer},
-		{"oddball_limit_at_276538_u32", AddrScoreLimitOddball},
+		{"ctf_limit_at_2762bc_u32", r.off.AddrScoreLimitCTF},
+		{"slayer_limit_at_2f90e8_u32", r.off.AddrScoreLimitSlayer},
+		{"oddball_limit_at_276538_u32", r.off.AddrScoreLimitOddball},
 	}
 	for _, lm := range limits {
 		hva, err := r.inst.LowHVA(lm.addr)
@@ -454,10 +454,10 @@ func (r *Reader) probePerPlayerScoreTables() map[string]any {
 		label string
 		addr  uint32
 	}{
-		{"slayer_table_at_276710_plus_64_s32_x16", AddrScoreSlayer},
-		{"oddball_table_at_27653c_plus_64_s32_x16", AddrScoreOddball},
-		{"king_table_at_2762d8_plus_64_s32_x16", AddrScoreKing},
-		{"race_table_at_2766c8_plus_64_s32_x16", AddrScoreRace},
+		{"slayer_table_at_276710_plus_64_s32_x16", r.off.AddrScoreSlayer},
+		{"oddball_table_at_27653c_plus_64_s32_x16", r.off.AddrScoreOddball},
+		{"king_table_at_2762d8_plus_64_s32_x16", r.off.AddrScoreKing},
+		{"race_table_at_2766c8_plus_64_s32_x16", r.off.AddrScoreRace},
 	}
 	for _, b := range bases {
 		hva, err := r.inst.LowHVA(b.addr)
@@ -483,7 +483,7 @@ func (r *Reader) probePerPlayerScoreTables() map[string]any {
 // holds the slayer score in slayer matches as well, so it's the most
 // gametype-agnostic per-player score we have today.
 func (r *Reader) probePerPlayerStaticStruct() any {
-	pdaBase, err := r.inst.DerefLowPtr(AddrPlayerDatumArrayPtr)
+	pdaBase, err := r.inst.DerefLowPtr(r.off.AddrPlayerDatumArrayPtr)
 	if err != nil || pdaBase < HighGVAThreshold {
 		return nil
 	}

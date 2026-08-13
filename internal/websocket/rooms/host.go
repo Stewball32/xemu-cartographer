@@ -46,9 +46,15 @@ var reservedInstanceNames = map[string]bool{
 // messages ("hello", "error"), and "events_reply" (request-reply, not
 // subscribed).
 var scraperClasses = map[string]bool{
-	"xbox":          true,
-	"scenario":      true,
-	"game":          true,
+	"xbox":     true,
+	"scenario": true,
+	"game":     true,
+	// game_filtered is the viewer-facing variant of the game class: identical
+	// GamePayload shape, but with the neutral-host dummy + allowlisted dummy
+	// gamertags removed server-side (roster.FilterRoster) before broadcast. The
+	// raw `game` room stays unfiltered for the debug page; overlays subscribe to
+	// this one so dummy filtering stays server-side. See manager broadcastPoll.
+	"game_filtered": true,
 	"tick":          true,
 	"objects":       true,
 	"debug":         true,

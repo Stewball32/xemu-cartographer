@@ -117,10 +117,31 @@ const (
 // Active read path — direct value globals (low GVA, value-at-address)
 // ----------------------------------------------------------------------
 const (
-	AddrGameConnection  uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
-	AddrIsTeamGame      uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
-	AddrMainMenuActive  uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
-	AddrGameCanScore    uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
+	AddrGameConnection uint32 = 0x2E3684 // u16 — halocaster.py:568,1449 (0=menu/SP, 1=syslink, 2=hosting, 3=film)
+	AddrIsTeamGame     uint32 = 0x2F90C4 // u8  — halocaster.py:569,1899
+	AddrMainMenuActive uint32 = 0x2E4068 // u8  — halocaster.py:1428 (0x2E4004 in HC:573 was unused; ignored)
+	// AddrUiWidgetFocusPtr — CE front-end menu widget-focus pointer (runbook
+	// AddrUiWidgetFocusPtr). Its VALUE is a per-boot/relinking heap ptr used only
+	// for change-detection (the host-runner nav phase confirms a menu press
+	// landed when this pointer moves); the ADDRESS is versioned like everything
+	// else. This constant is the baseline literal the set is extracted from —
+	// read sites go through r.off (TestBaselineOffsetsMatchConstants pins them
+	// equal).
+	AddrUiWidgetFocusPtr uint32 = 0x2F9B38 // u32 ptr — runbook; changes on menu navigation
+	AddrGameCanScore     uint32 = 0x2FABF0 // u32 — halocaster.py:1901 (0=can score, non-zero=game over)
+	// AddrGameOverFlag — PROVISIONAL (halo-offset-mapper scrape-side findings
+	// 2026-08-11, OBSERVED ONCE on the H1 Perf 1.1 Server build; not yet in the
+	// committed offset maps). u32 in the score-globals neighborhood: 0 in-match,
+	// 0xFFFFFFFF from "game over decided" (≤4s after the final kill) until the
+	// host leaves the postgame scoreboard, then 0 again. It is the ONLY readable
+	// game-end signal on that build — gc/mma/screen-record/engine-ptr all hold
+	// their in-match values through the whole scoreboard phase ("postgame is
+	// invisible to every classic gate"). Read DYNAMICALLY (its page carries no
+	// other global — a translate failure must degrade, never block attach), with
+	// an exact-sentinel match, a netgame-hosting context gate, and a consecutive-
+	// read debounce (see ReadGameState) since a false positive would end a live
+	// match (Live→Ready + game persistence fire on the postgame transition).
+	AddrGameOverFlag    uint32 = 0x277B94
 	AddrGlobalStageName uint32 = 0x2FAC20 // null-term ASCII — MP-host hint ONLY (empty in menu/SP). RUNTIME 2026-06-21: populated only while MP-hosting; use AddrTagHeaderPtr for map identity — halocaster.py:1891
 	AddrVariant         uint32 = 0x2F90F4 // u8 variant/mode index — halocaster.py:1890
 )
@@ -177,6 +198,21 @@ var AllLowGVAs = []uint32{
 	AddrGameCanScore,
 	AddrGlobalStageName,
 	AddrVariant,
+	// Front-end UI globals (menu-nav pacing pass, 2026-08-10). All on pages the
+	// list above already translates (0x2E3xxx / 0x2E4xxx / 0x2F9xxx), so they add
+	// no new Init-failure surface. AddrUiWidgetFocusPtr was previously read
+	// best-effort WITHOUT ever being translated — menu_focus silently read 0 and
+	// the nav's per-press focus-change confirmation never fired; pre-translating
+	// it is what makes the closed loop actually close. AddrUiFadeState and
+	// AddrGameOverFlag are deliberately NOT here (their pages carry no other
+	// global — see screenrec.go's dynamic translation).
+	AddrUiWidgetFocusPtr,
+	AddrUiCurrentScreenRec,
+	AddrUiBackScreenRec,
+	AddrUiOskActive,
+	AddrUiMsClock,
+	AddrUiSlotClaimed,
+	AddrUiSlotProfile,
 	// Score bases
 	AddrScoreCTF,
 	AddrScoreSlayer,
@@ -473,7 +509,128 @@ const (
 	OffTagHeaderTagArray      uint32 = 0x00     // u32 → cache tag entry array
 	OffTagHeaderScenarioTagID uint32 = 0x04     // u32; scenario tag idx = value & 0xFFFF
 	OffTagHeaderTagCount      uint32 = 0x0C     // u32 → loaded tag count
+	OffTagGroupFourCC         uint32 = 0x00     // 4-byte tag group, stored byte-REVERSED (ustr → 'r','t','s','u')
+	OffTagHandle              uint32 = 0x0C     // u32 cache-tag-entry tag HANDLE (what a widget block stores at +0x10)
 	ConstTagEntrySize         uint32 = 0x20     // cache tag entry stride (= TagInstStride)
+)
+
+// ----------------------------------------------------------------------
+// unicode_string_list ('ustr') tag layout — the create-game MAP / GAMETYPE
+// carousel NAME source. Reached via the cache tag header (AddrTagHeaderPtr) by
+// walking the tag array for a 'ustr'-group entry whose name path matches
+// (TagPathMPMapList / TagPathGameSettingNames / TagPathMPMapDescriptions), then
+// following OffTagDataPtr (0x14) to the tag meta below.
+//
+// The tag meta is the 'strings' tag_block header {count@0x00, array_ptr@0x04};
+// each element is a 20-byte tag_data reference {byte_size@0x00, …, text_ptr@0x0C}
+// whose text_ptr targets inline UTF-16LE display text of byte_size bytes.
+//
+// RUNTIME-VERIFIED 2026-07-10 (halo-offset-mapper docs/ce-mapselect-2026-07-10.md;
+// ce-nav split-screen, xemu 0.8.136): mp_map_list → 13 stock maps in carousel
+// order (Battle Creek … Longest, default cursor Blood Gulch) cross-checked against
+// the on-screen SELECT MAP carousel; default_multiplayer_game_setting_names → the
+// 26 built-in gametype variants in SELECT GAMETYPE carousel order.
+const (
+	OffUstrCount       uint32 = 0x00 // u32 element count (strings tag_block header)
+	OffUstrArrayPtr    uint32 = 0x04 // u32 → element array base
+	ConstUstrElemSize  uint32 = 0x14 // 20-byte tag_data element stride
+	OffUstrElemSize    uint32 = 0x00 // u32 inline-text byte size
+	OffUstrElemTextPtr uint32 = 0x0C // u32 → inline UTF-16LE text
+
+	// Guards against a mis-resolved pointer producing a huge/garbage read.
+	MaxUstrElemCount = 256 // upper bound on carousel entries
+	MaxUstrTextBytes = 512 // upper bound on one name's UTF-16LE byte size
+)
+
+// ----------------------------------------------------------------------
+// CE UI WIDGET-INSTANCE model — the LIVE menu-list cursor.
+//
+// Every on-screen menu widget (list / spinner / vertical menu) is a heap block
+// in the per-screen UI heap (guest-physical ~0x1E00000..0x2000000, i.e. high
+// GVA 0x81E00000..0x82000000). Each block stores its highlighted item as a plain
+// int32 at a fixed offset, so "which map/gametype is highlighted" is one field
+// read — resolvable from a non-deterministic carousel start.
+//
+// Block layout (widgets stride 0x68, screen containers 0x20):
+//
+//	+0x00 u32  block header  = ConstUiWidgetHeaderFlag | block_size
+//	                           (validate a hit with hdr&0xFFFF0000 == 0x80000000)
+//	+0x04 u32  alloc serial  (not a stable identity)
+//	+0x10 u32  DeLa tag handle → the widget's IDENTITY (resolve by name via tags)
+//	+0x14 u32  def-tag data ptr (0xFFFFFFFF when the block is freed/inactive)
+//	+0x4C i32  SELECTED index (0-based, carousel order) — UNIVERSAL across lists
+//	+0x50 u32  item-list ptr (populated only while the widget's screen is ACTIVE)
+//	+0x54 i32  item COUNT (>0 only while a scrolling list is ACTIVE → live flag)
+//
+// The general "current selection of list X" read: resolve X's DeLa
+// widget-definition tag by NAME via the cache tag header (AddrTagHeaderPtr) →
+// handle; scan the UI heap for the block whose +0x10 == handle (prefer +0x54>0 =
+// the live instance); read +0x4C.
+//
+// READ PATH: the UI heap (0x81E.../0x81F...) is NOT reachable by QMP memsave
+// (its GVA is absent from the current page tables) but the physical pages ARE
+// backed — cartographer's Mem.HighGVA already reads /proc/<pid>/mem at
+// base(gpa2hva 0)+(gva-0x80000000), which is exactly that physical read, so a
+// plain mem.ReadBytes(ConstUiWidgetHeapGVALo, …) reaches it with no new plumbing.
+//
+// RUNTIME-VERIFIED 2026-07-11 (halo-offset-mapper docs/ce-menu-system-2026-07-11.md;
+// ce-nav split-screen, xemu 0.8.136): mp_map_select_list +0x4C tracked the
+// highlighted map's mp_map_list index from an arbitrary start (Derelict=7 with the
+// highlight at the LEFT window edge — window-position-independent); +0x54==13 on
+// the map screen, 0 off it. gametype_select_list +0x4C = carousel index INCLUDING
+// user-saved variants (Race=16, right×2 → CTF=18); +0x54==27 on this HDD.
+const (
+	OffUiWidgetBlockHeader    uint32 = 0x00 // u32 heap header = flag|size; validate hit
+	OffUiWidgetAllocSerial    uint32 = 0x04 // u32 per-alloc serial (not stable identity)
+	OffUiWidgetDefTagHandle   uint32 = 0x10 // u32 'DeLa' tag handle = the widget identity
+	OffUiWidgetDefDataPtr     uint32 = 0x14 // u32 def-tag data ptr (0xFFFFFFFF when freed)
+	OffUiWidgetActivationTick uint32 = 0x28 // u32 per-SCREEN activation tick: all widgets of a screen share one value, stamped when that screen is (re)activated. The ACTIVE screen's widgets carry the HIGHEST tick; stale prior-screen blocks keep an older (lower) one. RUNTIME-VERIFIED 2026-08-07 on H1 Perf: on the main menu, main_menu_item_* blocks read 0x14d949 while leftover multiplayer_type_* blocks read 0x14d136 — so max-tick disambiguates the live highlight from a stale one that never cleared its +0x60.
+	OffUiWidgetSelectedIndex  uint32 = 0x4C // i32 SELECTED item index (0-based, carousel)
+	OffUiWidgetItemListPtr    uint32 = 0x50 // u32 item-list ptr (nonzero only when active)
+	OffUiWidgetItemCount      uint32 = 0x54 // i32 item count (>0 only when list is active)
+	OffUiWidgetHighlightFlag  uint32 = 0x60 // u32 == 1 on the currently-HIGHLIGHTED front-end menu item widget (0 otherwise). RUNTIME-VERIFIED 2026-08-07 on H1 Perf: main_menu_item_multiplayer +0x60 flips 1↔0 as the highlight moves; identifies the selected item build-independently (by its DeLa path) instead of a wrap-prone key count.
+
+	// OffUiWidgetKindFlags (+0x64) carries the widget KIND bits; the item bit
+	// (0x20000) is set on EVERY selectable *_item widget observed (16 across
+	// root / MP submenu / map select / server list, all exactly 0x20000) and on
+	// NO decoration (pics 0x250000/0x130000/0x40000, headers/screens 0x10000,
+	// text 0) — the deterministic discriminator that replaced the lexicographic
+	// highlight tie-break (docs/MENU-ENTRYFLOW-2026-08-11.md §7).
+	OffUiWidgetKindFlags     uint32 = 0x64
+	ConstUiWidgetItemKindBit uint32 = 0x20000
+
+	ConstUiWidgetHeaderFlag uint32 = 0x80000000 // header allocated-flag; hdr&0xFFFF0000 == this
+	ConstUiWidgetHeaderMask uint32 = 0xFFFF0000 // mask applied before the flag compare
+	ConstUiWidgetBlockSize  uint32 = 0x68       // widget block size (screen containers = 0x20)
+
+	// Per-screen UI heap scan window as HIGH GVAs (guest-physical 0x1E00000 +
+	// 0x80000000). Read directly via Mem.ReadBytes — see the READ PATH note above.
+	ConstUiWidgetHeapGVALo uint32 = 0x81E00000
+	ConstUiWidgetHeapGVAHi uint32 = 0x82000000
+
+	// tagGroupDela is the 'DeLa' (ui_widget_definition) tag group as stored in a
+	// tag entry — the 4-char code is written byte-REVERSED, so the walk compares
+	// the reversed bytes (mirrors tagGroupUstr in enumerate.go).
+	tagGroupDela = "DeLa"
+)
+
+// Create-game SELECT MAP / SELECT GAMETYPE list-widget tag paths. These DeLa
+// (ui_widget_definition) tags name the two carousels whose live +0x4C cursor the
+// host-runner navigates. Matching by path keeps the read build-agnostic (the tag
+// names come from ui.map and are stable across builds/mods). The system-link
+// create path uses the identical widget tags, so the split-screen-mapped reads
+// transfer.
+const (
+	// TagPathMPMapSelectList is the SELECT MAP list widget; +0x4C == the
+	// highlighted map's mp_map_list carousel index (see TagPathMPMapList).
+	TagPathMPMapSelectList = `ui\shell\main_menu\multiplayer_type_select\mp_map_select\mp_map_select_list`
+	// TagPathGametypeSelectList is the create-game SELECT GAMETYPE list widget;
+	// +0x4C == the highlighted gametype's carousel index, INCLUDING user-saved
+	// variants that prepend the built-ins (so it can exceed the ustr-tag name
+	// count). NOTE the exact path: there is a SECOND gametype_select_list under the
+	// playlist editor (…\settings_select\multiplayer_setup\playlist_edit\…), so the
+	// match must be the full path, not the leaf (RUNTIME-VERIFIED 2026-07-11 live).
+	TagPathGametypeSelectList = `ui\shell\main_menu\gametype_select\gametype_select_list`
 )
 
 // ----------------------------------------------------------------------

@@ -3,6 +3,7 @@ package halosave
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"unicode/utf16"
 )
 
@@ -15,6 +16,17 @@ func getU32(b []byte, off int) uint32 {
 // masks to 32 bits).
 func putU32(b []byte, off int, v uint32) {
 	binary.LittleEndian.PutUint32(b[off:off+4], v)
+}
+
+// getF32 reads a little-endian IEEE-754 float32 at off (e.g. CE max-health
+// multiplier @0x3C).
+func getF32(b []byte, off int) float32 {
+	return math.Float32frombits(binary.LittleEndian.Uint32(b[off : off+4]))
+}
+
+// putF32 writes a little-endian float32 at off.
+func putF32(b []byte, off int, v float32) {
+	binary.LittleEndian.PutUint32(b[off:off+4], math.Float32bits(v))
 }
 
 // readUTF16z reads a NUL-terminated UTF-16LE string from b[off:off+maxBytes].

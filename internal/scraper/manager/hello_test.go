@@ -59,11 +59,11 @@ func TestBuildHelloPayloadWithRunners(t *testing.T) {
 	started := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
 
 	// Names chosen so insertion order ≠ sort order — proves the sort.
-	rZ := newRunner("zulu", "/tmp/z", "host:zulu", nil, nil)
+	rZ := newRunner("zulu", "/tmp/z", "host:zulu", nil, nil, nil)
 	defer rZ.cancel()
 	rZ.cache.StartedAt = started.Add(2 * time.Hour)
 
-	rA := newRunner("alpha", "/tmp/a", "host:alpha", nil, nil)
+	rA := newRunner("alpha", "/tmp/a", "host:alpha", nil, nil, nil)
 	defer rA.cancel()
 	rA.cache.StartedAt = started
 
@@ -93,7 +93,7 @@ func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 	m := New(nil)
 	defer m.Close()
 
-	r := newRunner("alpha", "/tmp/a", "host:alpha", nil, nil)
+	r := newRunner("alpha", "/tmp/a", "host:alpha", nil, nil, nil)
 	defer r.cancel()
 	r.cache.StartedAt = time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)
 	m.runners["alpha"] = r

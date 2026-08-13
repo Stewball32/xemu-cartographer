@@ -1,0 +1,1157 @@
+{
+  "target_build": "ce-h1og-default",
+  "source_map": "ce-h1og-default",
+  "offsets": {
+    "RefAddrObjectTypeDefArray": {
+      "value": "0x1FCB78",
+      "type": "uint32",
+      "kind": "ref-addr",
+      "confidence": "runtime-verified",
+      "notes": "Array of 11 type-def pointers in .data. STATIC CORROBORATION in this build: read 11 consecutive u32 at 0x1FCB78 = [0x1FC228,0x1FC2D0,0x1FC420,0x1FC4D0,0x1FC578,0x1FC628,0x1FC6D0,0x1FC8D0,0x1FC978,0x1FCA28,0x1FCAD8] \u2014 all 11 are plausible low-GVA pointers into the image, and (HiBound 0x1FCBA4 - 0x1FCB78)/4 = 11, matching the M19 retail result to the byte. Pointers resolve in low-GVA engine .data; translate per-pointer via QMP at runtime, NOT HighGVA arithmetic. Not runtime-verified on THIS build. || RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on the layout-identical sibling ce-lowdetail-30 (byte-identical at this offset per the overlap check; values match this baseline's static prediction exactly): live read of 11 consecutive u32 @0x1FCB78 = [0x1FC228,0x1FC2D0,0x1FC420,0x1FC4D0,0x1FC578,0x1FC628,0x1FC6D0,0x1FC8D0,0x1FC978,0x1FCA28,0x1FCAD8], byte-for-byte identical to the static prediction.",
+      "source": [
+        "cartographer:M19@2026-05-19",
+        "ghidra:ce-h1og-default",
+        "static-corroborated:ce-h1og-default@0x1FCB78",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP memsave)"
+      ]
+    },
+    "RefAddrObjectTypeDefArrayHi": {
+      "value": "0x1FCBA4",
+      "type": "uint32",
+      "kind": "ref-addr",
+      "confidence": "runtime-verified",
+      "notes": "Upper bound of the object-type-def array, used by the engine as the array-end pointer. (Hi - Array) = 0x2C = 44 bytes = 11 entries. Recorded so the count is derivable without hardcoding 11. || RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on the layout-identical sibling ce-lowdetail-30 (byte-identical at this offset per the overlap check; values match this baseline's static prediction exactly): the 11-entry array ends exactly at 0x1FCBA4 (=0x1FCB78+0x2C), confirmed live by the matching 11-pointer read.",
+      "source": [
+        "cartographer:M19@2026-05-19",
+        "static-corroborated:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP memsave)"
+      ]
+    },
+    "ConstObjectTypeDefCount": {
+      "value": "11",
+      "type": "uint32",
+      "kind": "constant",
+      "confidence": "runtime-verified",
+      "notes": "Derived count = (RefAddrObjectTypeDefArrayHi - RefAddrObjectTypeDefArray)/4 = 11. Matches M19. A constant (not an address), so it is layout-relative and passes through export unchanged. || RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on the layout-identical sibling ce-lowdetail-30 (byte-identical at this offset per the overlap check; values match this baseline's static prediction exactly): (0x1FCBA4-0x1FCB78)/4 = 11, confirmed live by the matching 11-pointer read.",
+      "source": [
+        "cartographer:M19@2026-05-19",
+        "static-corroborated:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP memsave)"
+      ]
+    },
+    "AddrPlayerDatumArrayPtr": {
+      "value": "0x2FAD28",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "Low-GVA pointer global; deref u32 -> player datum array struct addr. In this build 0x2FAD28 lands in the .data BSS tail (beyond raw_size 0x25F67C), i.e. zero-initialized in-file \u2014 exactly what a runtime-populated pointer global should look like, so the location is consistent but the live value cannot be read statically. Needs xemu confirmation that the engine writes/reads the datum-array base here in THIS build. || RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on the layout-identical sibling ce-lowdetail-30 (byte-identical at this offset per the overlap check; values match this baseline's static prediction exactly): deref u32 @0x2FAD28 -> 0x80213C50, a Halo data_array with name[32]='players', max_count=16, datum_size=212, signature 'd@t@' (0x64407440); valid at the main menu and during active gameplay.",
+      "source": [
+        "halocaster.py:558",
+        "legacy-offsets.go",
+        "static-placement:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP memsave)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrMainMenuActive": {
+      "value": "0x2E4068",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Main-menu-active global used in HC's actual logic. Lands in the .data BSS tail in this build (runtime state, zero in-file). The alternate 0x2E4004 (HC:573) is an unused exploratory read; ignored. Needs xemu confirmation. || RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on the layout-identical sibling ce-lowdetail-30 (byte-identical at this offset per the overlap check; values match this baseline's static prediction exactly): u8 @0x2E4068 read = 1 at the Halo main menu and = 0 during active gameplay (loaded scenario 'Prisoner Bots') \u2014 confirms the main-menu-active semantic.",
+      "source": [
+        "halocaster.py:1428",
+        "legacy-offsets.go",
+        "static-placement:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP memsave)"
+      ]
+    },
+    "OffTagRespawnInterval": {
+      "value": "0xC",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "itmc_tag_data",
+      "confidence": "runtime-verified",
+      "notes": "itmc respawn time at tag_data+0x0C as s16 seconds, read directly. Struct-field offset is layout-relative and build-independent; all CE builds here share the identical .text/.data layout, so it carries unchanged. The PC-style +0x14 -> ptr -> +0x0C indirection (halocaster.py:655) is wrong for Xbox. Not runtime-verified on this build. || 2026-06-19 xemu pass: reached in-match state (scenario loaded) but this struct-field still needs the LIVE itmc_tag_data base address to read, which is not yet a global in this map; derive it via the globals\\\\globals / tag-system xref leads first. Not yet runtime-verified. || RUNTIME-VERIFIED 2026-06-19 on Downrush: read +0x0C (int16 seconds) across 12 live itmc tags \u2014 rocket launcher=120, powerup super shield/invisibility & plasma grenades=60, default weapons (pistol/AR/shotgun/sniper/...)=0. Plausible respawn intervals; confirms itmc_tag_data+0x0C. (run build ce-lowdetail-30; baseline shares this layout).",
+      "source": [
+        "cartographer:M19@2026-05-19",
+        "legacy-offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)"
+      ]
+    },
+    "OffScenarioItemCount": {
+      "value": "900",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "scenario_item_array",
+      "confidence": "runtime-verified",
+      "notes": "Decimal offset (0x384) of the scenario item-array count. Layout-relative struct field; carries across CE builds unchanged. Needs xemu confirmation on this build. || 2026-06-19 xemu pass: reached in-match state (scenario loaded) but this struct-field still needs the LIVE scenario_item_array base address to read, which is not yet a global in this map; derive it via the <no scenario loaded> / scenario-globals xref leads first. Not yet runtime-verified. || RUNTIME-VERIFIED 2026-06-19 on the Downrush split-screen MP map: scenario_tag_data+0x384 = 34 (netgame-equipment reflexive count; ptr 0x8042522C). Reads 0 on campaign maps (no netgame equipment), 34 here \u2014 confirms 0x384 is the live scenario item/equipment count. (run build ce-lowdetail-30; baseline shares this layout).",
+      "source": [
+        "halocaster.py:631",
+        "legacy-offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)"
+      ]
+    },
+    "AnchorStrGlobalsGlobals": {
+      "value": "0x1F84D0",
+      "type": "uint32",
+      "kind": "string",
+      "confidence": "static-derived",
+      "notes": "Anchor string \"globals\\globals\" (the game-globals tag path) in .rdata/.data. LEAD: xref this in the Ghidra GUI to locate the game_globals tag-pointer global (a known cartographer target not yet in the seed). Recorded as a documented derivation lead, not an offset.",
+      "source": [
+        "ghidra:ce-h1og-default@0x1F84D0"
+      ]
+    },
+    "AnchorStrPlayerFormat": {
+      "value": "0x1F8568",
+      "type": "uint32",
+      "kind": "string",
+      "confidence": "static-derived",
+      "notes": "Anchor string \"player 0x%08x\". LEAD: xref to the player-debug/format path; can corroborate the player datum-array read site. Not an offset.",
+      "source": [
+        "ghidra:ce-h1og-default@0x1F8568"
+      ]
+    },
+    "AnchorStrNoScenarioLoaded": {
+      "value": "0x1F85AC",
+      "type": "uint32",
+      "kind": "string",
+      "confidence": "static-derived",
+      "notes": "Anchor string \"<no scenario loaded>\". LEAD: xref to the scenario-globals load/print path to locate the scenario tag pointer. Not an offset.",
+      "source": [
+        "ghidra:ce-h1og-default@0x1F85AC"
+      ]
+    },
+    "AddrTagHeaderPtr": {
+      "value": "0x2DF1C4",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Pointer global -> cache tag header. deref 0x2DF1C4 -> 0x803A6000: +0x00 tag_array, +0x04 scenario_tag_id, +0x0C tag_count(=1189), +0x20 'tags' signature. Entry point for walking all tags.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "AddrTeamDatumArrayPtr": {
+      "value": "0x2FAD24",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Pointer global -> 'teams' datum array (max 16, datum 64, sig 'd@t@'). Sits 4 bytes before AddrPlayerDatumArrayPtr.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrObjectDatumArrayPtr": {
+      "value": "0x2FC6AC",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Pointer global -> 'object' master object table (max 2048, datum 12, sig 'd@t@'). Each entry -> object data (position etc.). Core for live object/player/vehicle positions.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffObjectPosition": {
+      "value": "0xC",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_data",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): World position (x,y,z) within object_data. Verified dynamically: a moving bot's +0x0C changed coherently while Z stayed on the floor plane.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffPlayerControlledUnit": {
+      "value": "0x34",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Datum handle of the player's controlled unit/biped (low16=object index into the object table, high16=salt). Verified: player[0]+0x34 = 0xE2900021 -> object[0x21], salt-matched.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffObjectEntryData": {
+      "value": "0x8",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_table_entry",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Within a 12-byte object-table entry: pointer to the object data. (salt@0x00 u16, type@0x02 u16, data@0x08).",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDataArrayMaxCount": {
+      "value": "0x20",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "data_array",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): s_data_array max element count. Verified across 51 live datum arrays.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffDataArrayDatumSize": {
+      "value": "0x22",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "data_array",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): s_data_array bytes-per-element. Verified across 51 live datum arrays.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffDataArraySignature": {
+      "value": "0x28",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "data_array",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): s_data_array signature 'd@t@' (0x64407440). Verified across 51 live datum arrays.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffDataArrayDataPtr": {
+      "value": "0x34",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "data_array",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): s_data_array pointer to the element block; element[i] = *(data_ptr)+i*datum_size. Verified live.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffTagEntryPath": {
+      "value": "0x10",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "tag_entry",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Tag entry -> tag path string pointer. Verified: tag[0] path 'levels\\test\\prisbots\\a10'.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffTagEntryData": {
+      "value": "0x14",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "tag_entry",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Tag entry -> tag data pointer. Verified live (scenario/globals tag data reached).",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffTagHeaderTagArray": {
+      "value": "0x0",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "tag_header",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Cache tag header -> tag entry array. Verified live.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffTagHeaderTagCount": {
+      "value": "0xC",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "tag_header",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Cache tag header tag count (1189 observed). Verified live.",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "ConstTagEntrySize": {
+      "value": "0x20",
+      "type": "uint32",
+      "kind": "constant",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 in xemu 0.8.136 via QMP on layout-identical sibling ce-lowdetail-30 (this global/field is outside the build's .data patch; identical to baseline): Size of one cache tag entry = 32 bytes (stride). Verified live (group sigs at 0x20 stride).",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffPlayerName": {
+      "value": "0x4",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 on Downrush MP (2 players, 2 teams): Player display name (UTF-16, up to 12 chars). Verified: player[0]='LD50 II', player[1]='Hollywood' \u2014 matched the lobby names. (A second copy sits at +0x48.) [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffPlayerTeam": {
+      "value": "0x20",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 on Downrush MP (2 players, 2 teams): Player team index. Verified: Red-team player read 0, Blue-team player read 1. (Player slot/index is the separate field at +0x02, also 0/1 with one player per team here; +0x20 is the canonical team field.) [run build ce-lowdetail-30; baseline shares layout] || CONFIRMED 2026-06-21 in Team Slayer: P0=0 (red), P1=1 (blue) on opposite teams.",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(Team Slayer, opposite teams)"
+      ]
+    },
+    "OffPlayerIndex": {
+      "value": "0x2",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "RUNTIME-VERIFIED 2026-06-19 on Downrush MP (2 players, 2 teams): Player slot/number (0..3). Verified: player[0]=0, player[1]=1. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)"
+      ]
+    },
+    "OffObjectTagHandle": {
+      "value": "0x0",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_data",
+      "confidence": "runtime-verified",
+      "notes": "Object's tag (datum handle) at object_data+0x00. Verified: player biped -> tag[0x62D] group 'bipd' path 'characters\\cyborg_mp\\cyborg_mp'. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30(QMP)"
+      ]
+    },
+    "OffObjectVelocity": {
+      "value": "0x18",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_data",
+      "confidence": "runtime-verified",
+      "notes": "Transitional velocity (x,y,z) in object_data. Verified: 0,0,0 when still, Y-component -0.04 while the biped moved in -Y; returns to 0 on stop. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)"
+      ]
+    },
+    "OffObjectForward": {
+      "value": "0x24",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_data",
+      "confidence": "runtime-verified",
+      "notes": "Forward/facing unit vector (x,y,z). Verified: components changed on turn (0.71->-0.09, -0.71->1.0); |v|=1. [run build ce-lowdetail-30; baseline shares layout] || VIEW-CONTROL 2026-06-21 (stock): this is a per-frame OUTPUT \u2014 a gdb write to +0x24 does NOT cleanly turn the view (wrote (0,1,0); it drifted back to control-driven values within a frame). To TURN the view, use the right-analog-stick INPUT (see OffBipedAimVector). The writable orientation is the player-control yaw (PlayerControlPtr 0x276794 struct), not this output.",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)"
+      ]
+    },
+    "OffObjectUp": {
+      "value": "0x30",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "object_data",
+      "confidence": "static-derived",
+      "notes": "Up unit vector (x,y,z) \u2014 standard Halo object_data layout (position 0x0C/velocity 0x18/forward 0x24/up 0x30); |v|=1 observed. Candidate (not perturb-isolated). [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default"
+      ]
+    },
+    "OffWeaponRoundsLoaded": {
+      "value": "0x260",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "weapon_object",
+      "confidence": "runtime-verified",
+      "notes": "Magazine ammo (rounds loaded) in a weapon object's data. Verified: player 2's assault rifle at obj+0x260 dropped 60->40 after ~1.3s of firing (~15 rounds/s). weapon_object = object_data subtype. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-19:ce-lowdetail-30:downrush-MP(QMP)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffNetgameEquipmentPosition": {
+      "value": "0x40",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "netgame_equipment_item",
+      "confidence": "static-derived",
+      "notes": "World position (x,y,z) of a scenario netgame-equipment item (weapon/powerup spawn). Element ~0x90 bytes in the scenario_item_array. Read live on Downrush (e.g. (10.3,-14.8,3.6)); not perturb-verified. Candidate. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default"
+      ]
+    },
+    "AddrGameTimeTickGlobal": {
+      "value": "0x2F8CA0",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "static-derived",
+      "notes": "Candidate: .data global -> a structure whose +0xC field is a 30 Hz game tick (counts up while in-match). Alternate candidate global 0x2E4588 (same +0xC tick). Multiple 30 Hz timers exist; not uniquely confirmed as the master game_time_globals. [run build ce-lowdetail-30; baseline shares layout]",
+      "source": [
+        "runtime-discovery:xemu:downrush-MP",
+        "ghidra:ce-h1og-default",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "FuncMenuActiveWriteA": {
+      "value": "0xBCE20",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "writes AddrMainMenuActive (0x2E4068) \u2014 sets front-end/menu-active state",
+      "source": [
+        "ghidra:ce-h1og-default@0xBCE20",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuActiveWriteB": {
+      "value": "0xBBF70",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "writes AddrMainMenuActive (0x2E4068) twice \u2014 menu/connection state transition",
+      "source": [
+        "ghidra:ce-h1og-default@0xBBF70",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateInputD2550": {
+      "value": "0xD2550",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "front-end menu/input handler: reads AddrMainMenuActive 3x, manages indexed input-state array DAT_002E404C gated on the menu flag. Primary RE lead for the nav/focus path.",
+      "source": [
+        "ghidra:ce-h1og-default@0xD2550",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD2B70": {
+      "value": "0xD2B70",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive 2x)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD2B70",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD04E0": {
+      "value": "0xD04E0",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD04E0",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD0B20": {
+      "value": "0xD0B20",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD0B20",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD15B0": {
+      "value": "0xD15B0",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD15B0",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD35A0": {
+      "value": "0xD35A0",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD35A0",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateD3740": {
+      "value": "0xD3740",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xD3740",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "FuncMenuUpdateCEC30": {
+      "value": "0xCEC30",
+      "type": "uint32",
+      "kind": "function",
+      "confidence": "static-derived",
+      "notes": "menu update cluster (reads AddrMainMenuActive)",
+      "source": [
+        "ghidra:ce-h1og-default@0xCEC30",
+        "runtime-discovery:xemu@2026-06-20"
+      ]
+    },
+    "RefMenuInputStateArray": {
+      "value": "0x2E404C",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "static-derived",
+      "notes": "Indexed input-state array (DAT_002E404C, stride 2/4) managed by FuncMenuUpdateInputD2550 alongside AddrMainMenuActive. Real Halo menu/input data region (vs the XAPI 0x2F9Bxx region). LEAD for write-based nav.",
+      "source": [
+        "ghidra:ce-h1og-default@0x2E404C"
+      ]
+    },
+    "RefMenuGateGlobalD2F9138": {
+      "value": "0x2F9138",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "static-derived",
+      "notes": "DAT_002F9138(+9) gates FuncMenuUpdateInputD2550's two code paths (queued-input vs live). Menu/input subsystem flag. LEAD.",
+      "source": [
+        "ghidra:ce-h1og-default@0x2F9138"
+      ]
+    },
+    "OffPlrKills": {
+      "value": "0x98",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Per-player kill count. RUNTIME-VERIFIED 2026-06-21: incremented 0->4 across 4 credited P0->King kills in live 2-player splitscreen Slayer (Prisoner).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffPlrDeaths": {
+      "value": "0xAA",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Per-player death count. RUNTIME-VERIFIED 2026-06-21: 0->1 on death (campaign) and victim 0->4 across 4 kills (MP).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffPlrAssists": {
+      "value": "0xA0",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "static-derived",
+      "notes": "Per-player assists. Structurally read live (=0); increment path not exercised (needs 3rd-party assist).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffPlrObjectHandle": {
+      "value": "0x34",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Controlled-unit object handle. RUNTIME-VERIFIED 2026-06-21: valid handle alive, 0xFFFFFFFF when dead; low16 = object-array index (resolves to player biped).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynHealth": {
+      "value": "0x90",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped health (1.0=full of max@0x88). RUNTIME-VERIFIED 2026-06-21: 1.0->0.625->0.437 under fire.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynShields": {
+      "value": "0x94",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped shield (1.0=full of max@0x8C). RUNTIME-VERIFIED 2026-06-21: 1.0->0.0 depleted under fire.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynMaxHealth": {
+      "value": "0x88",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped max health. RUNTIME-VERIFIED 2026-06-21: =75.0.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynMaxShields": {
+      "value": "0x8C",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped max shield. RUNTIME-VERIFIED 2026-06-21: =75.0.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynFrags": {
+      "value": "0x2CE",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Frag grenade count. RUNTIME-VERIFIED 2026-06-21: 4->3 on throw (LT).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynPlasmas": {
+      "value": "0x2CF",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "static-derived",
+      "notes": "Plasma grenade count. Read live =0 (none carried).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynCamo": {
+      "value": "0x1B4",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped camo state. RUNTIME-VERIFIED 2026-06-21: =0x41 (no camo), matching cartographer CamoStateNo.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynZoomLevel": {
+      "value": "0x2D0",
+      "type": "int8",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "static-derived",
+      "notes": "Zoom level (-1=none). Read live =-1 with AR (no scope).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynCrouchScale": {
+      "value": "0x464",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "static-derived",
+      "notes": "Crouch scale (0=standing,1=crouched). Read live =0.0 standing.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynSelectedSlot": {
+      "value": "0x2A2",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "static-derived",
+      "notes": "Selected weapon slot. Read live =0 (primary).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynWeaponSlot0": {
+      "value": "0x2A8",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Held weapon-0 object handle. RUNTIME-VERIFIED 2026-06-21: resolves to held weapon object (AR).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffWepAmmoPack": {
+      "value": "0x25E",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "weapon_object",
+      "confidence": "runtime-verified",
+      "notes": "Weapon reserve (carried) ammo. RUNTIME-VERIFIED 2026-06-21: =240 for AR, stable on fire (drops only on reload).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrScoreSlayer": {
+      "value": "0x276710",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Slayer score base (FFA per-player u32[16] / team u32[2]). RUNTIME-VERIFIED 2026-06-21: FFA index0 0->4 with P0 kills. || TEAM MODE CONFIRMED 2026-06-21: Team Slayer on Prisoner, P0(red) killed P1(blue) x3 -> array=[3,0,0,0] i.e. [0]=red=3, [1]=blue=0. Per-team score (u32[2]) in team mode / per-player (u32[16]) in FFA; increments for the KILLER'S TEAM. On-screen 'Red leads Blue 3 to 0'.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(Team Slayer, opposite teams)"
+      ]
+    },
+    "AddrScoreLimitSlayer": {
+      "value": "0x2F90E8",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Slayer score limit. RUNTIME-VERIFIED 2026-06-21: =25.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrGameConnection": {
+      "value": "0x2E3684",
+      "type": "uint16",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Game connection/network state (0=menu/SP,2=hosting). RUNTIME-VERIFIED 2026-06-21: 0 in menu/campaign, 2 when hosting MP. (Was previously unverified.)",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrIsTeamGame": {
+      "value": "0x2F90C4",
+      "type": "uint8",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Team-game flag. Read live =0 (FFA). || CONFIRMED 2026-06-21: =1 in Team Slayer, =0 in FFA Slayer.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(Team Slayer, opposite teams)"
+      ]
+    },
+    "AddrGameEngineGlobalsPtr": {
+      "value": "0x2F9110",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "Game-engine globals pointer (deref +0x04 = gametype). RUNTIME-VERIFIED 2026-06-21: gametype=2 (Slayer).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrPlayersGlobalsPtr": {
+      "value": "0x2FAD20",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "Players globals pointer (deref +0x24 = local player count). RUNTIME-VERIFIED 2026-06-21: local count=2 in splitscreen.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrGlobalTagInstancesPtr": {
+      "value": "0x39CE24",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "Tag instance array pointer. RUNTIME-VERIFIED 2026-06-21: +0x10 name ptr resolves correct tag paths (e.g. characters\\\\cyborg\\\\cyborg, weapons\\\\assault rifle).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffTagNamePtr": {
+      "value": "0x10",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "tag_instance",
+      "confidence": "runtime-verified",
+      "notes": "Tag instance -> name string pointer (stride 32). RUNTIME-VERIFIED 2026-06-21.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "AddrGlobalStageName": {
+      "value": "0x2FAC20",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "BUG (map-loaded detection): cartographer's only map identifier. RUNTIME 2026-06-21: EMPTY ('') at the map-select menu and during campaign play; only populated when HOSTING MP (game_connection==2). The highlighted map at map-select is NOT reflected here. RELIABLE map identity is the scenario tag path via cache tag header 0x2DF1C4 -> scenario_tag_id&0xFFFF -> tag_array[idx]+0x10. Cartographer should switch.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP memsave, live)"
+      ]
+    },
+    "OffDynCurrentAction": {
+      "value": "0x1B8",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped current-action bitfield. RUNTIME-VERIFIED 2026-06-21: read 0x00000800 (shooting bit) while firing, 0 idle. Same layout on player + AI bipeds.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffDynAirborne": {
+      "value": "0x424",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped airborne flag (&1=airborne). RUNTIME-VERIFIED 2026-06-21: 0x00 grounded -> 0x01 on jump.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffDynAimX": {
+      "value": "0x1EC",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Biped aiming unit vector (x,y,z). RUNTIME-VERIFIED 2026-06-21: valid unit vectors on player + 2 AI bipeds (e.g. (0.085,-0.996,0)); equals looking vector @0x210. || AIM-TRACKS-LOOK CONFIRMED 2026-06-21: after look-up input aim -> (-0.02,0.07,0.997) (straight up). || VIEW-TURN CONFIRMED 2026-06-21 (stock): the RIGHT-ANALOG-STICK turns the view \u2014 `lookr` (uinput ABS_RX+) drove this vector from (1,0,0) to (-1,-0.03,0), a ~180 deg turn, visible on-screen. This is a read-only OUTPUT (gdb writes to it revert); the R-stick INPUT is the control. Used in a closed-loop (read aim yaw -> nudge R-stick toward target) to TURN P0 onto a stationary P1 (131 deg turn in 13 nudges, err 2 deg) and land a credited kill (kills 0x98 ++, kill-feed 'King was killed by Stew') WITHOUT moving the target. See docs/VIEW-AIM-CONTROL-2026-06-21.md.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(stable MP, Pass E)"
+      ]
+    },
+    "OffDynParentObject": {
+      "value": "0xCC",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "dynamic_biped",
+      "confidence": "runtime-verified",
+      "notes": "Parent/vehicle object handle; 0xFFFFFFFF = on foot. RUNTIME-VERIFIED 2026-06-21: 0xFFFFFFFF for all on-foot bipeds.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffProjTargetObjectIndex": {
+      "value": "0x1C",
+      "type": "float32",
+      "kind": "struct-field",
+      "struct": "projectile",
+      "confidence": "runtime-verified",
+      "notes": "RESOLVES HaloCaster M7 ambiguity at projectile+0x1C. RUNTIME-VERIFIED 2026-06-21 on a live frag-grenade projectile: raw 0xBEAA0BA8 = -0.3321 as f32 (plausible) vs -1096152152 as s32 (garbage, not a valid object index). Field is **arming_time (f32)**; the target_object_index(s32) reading is WRONG. Cartographer should use f32.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffProjDetonationTimer": {
+      "value": "0x14",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "projectile",
+      "confidence": "runtime-verified",
+      "notes": "Projectile detonation timer (f32). RUNTIME-VERIFIED 2026-06-21 on live frag projectile.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "RefAddrObserverCameraBase": {
+      "value": "0x271550",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "Observer camera base (stride 668/local); +0x00 cam pos xyz, +0x38 FOV rad. RUNTIME-VERIFIED 2026-06-21: pos (-9.74,5.04,3.54) tracks player, FOV 1.2217.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "RefAddrFPWeaponPtr": {
+      "value": "0x276B48",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "First-person weapon array pointer (stride 7840/local). RUNTIME-VERIFIED 2026-06-21: derefs to 0x80063F18; state field @0x0C present.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "RefAddrPlayerControlPtr": {
+      "value": "0x276794",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "Per-local player-control struct pointer. RUNTIME-VERIFIED 2026-06-21: derefs to 0x80214EB0 (desired yaw@0x1C/pitch@0x20). || desiredYaw@0x1C/pitch@0x20 live (e.g. yaw 3.916, pitch -0.078).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(stable MP, Pass E)"
+      ]
+    },
+    "OffScenarioPlayerSpawnCount": {
+      "value": "0x354",
+      "type": "int32",
+      "kind": "struct-field",
+      "struct": "scenario_tag_data",
+      "confidence": "runtime-verified",
+      "notes": "Scenario player-spawn count (decimal 852). RUNTIME-VERIFIED 2026-06-21: =2 on Prisoner Bots; first@0x358 (856) -> spawn array stride 52.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffScenarioPlayerSpawnFirst": {
+      "value": "0x358",
+      "type": "uint32",
+      "kind": "struct-field",
+      "struct": "scenario_tag_data",
+      "confidence": "runtime-verified",
+      "notes": "Scenario player-spawn array pointer (decimal 856). RUNTIME-VERIFIED 2026-06-21: 0x80418B2C, 2 entries stride 52 (xyz@0x00, team@0x10).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "ConstObjectTypeVehicle": {
+      "value": "0x1",
+      "type": "uint32",
+      "kind": "constant",
+      "confidence": "runtime-verified",
+      "notes": "Object type id 1 = vehicle. RUNTIME-VERIFIED 2026-06-21: ghost_mp object type@0x64=1, same object-data layout (pos/vel/wslot0=ghost-gun); biped-only camo@0x1B4 reads 0x00 on the vehicle (generic-object semantic).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(QMP, PrisonerBots live)"
+      ]
+    },
+    "OffPlrKillStreak": {
+      "value": "0x92",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Kill streak (resets on death). RUNTIME-VERIFIED 2026-06-21: =3 after 3 consecutive kills.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(stable MP, Pass E)"
+      ]
+    },
+    "OffPlrMultikill": {
+      "value": "0x94",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Multikill counter. RUNTIME-VERIFIED 2026-06-21: =1 during kill spree.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(stable MP, Pass E)"
+      ]
+    },
+    "RefAddrCTFFlag0Ptr": {
+      "value": "0x2762A4",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "CTF flag-0 (red) base position pointer -> float[3]. RUNTIME-VERIFIED 2026-06-21 (CTF on Prisoner): deref 0x804220F4 = (-9.37,-4.95,5.70), matches the red flag_base scenery object.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(CTF, Prisoner)"
+      ]
+    },
+    "RefAddrCTFFlag1Ptr": {
+      "value": "0x2762A8",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "CTF flag-1 (blue) base position pointer -> float[3]. RUNTIME-VERIFIED 2026-06-21: deref 0x80422188 = (9.37,5.12,5.70), matches the blue flag_base scenery object.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(CTF, Prisoner)"
+      ]
+    },
+    "AddrScoreCTF": {
+      "value": "0x2762B4",
+      "type": "uint32",
+      "kind": "abs-addr",
+      "confidence": "runtime-verified",
+      "notes": "CTF team score array (u32[2] red/blue). RUNTIME-VERIFIED 2026-06-21: present =[0,0] in a live CTF game (is_team=1); capture not exercised (needs a flag carry).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(CTF, Prisoner)"
+      ]
+    },
+    "OffPlrCTFScore": {
+      "value": "0xC4",
+      "type": "int16",
+      "kind": "struct-field",
+      "struct": "player_datum",
+      "confidence": "runtime-verified",
+      "notes": "Per-player CTF score. RUNTIME-VERIFIED 2026-06-21: present =0 in a live CTF game.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(CTF, Prisoner)"
+      ]
+    },
+    "RefAddrObjectDatumSize": {
+      "value": "0x1FC0E0",
+      "type": "uint16",
+      "kind": "ref-addr",
+      "confidence": "runtime-verified",
+      "notes": "Base object datum size. RUNTIME-VERIFIED 2026-06-21 in-match: =420.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    },
+    "RefAddrUnitDatumSize": {
+      "value": "0x1FC188",
+      "type": "uint16",
+      "kind": "ref-addr",
+      "confidence": "runtime-verified",
+      "notes": "Unit (biped) subclass datum size. RUNTIME-VERIFIED 2026-06-21: =1060.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    },
+    "RefAddrItemDatumSize": {
+      "value": "0x1FC380",
+      "type": "uint16",
+      "kind": "ref-addr",
+      "confidence": "runtime-verified",
+      "notes": "Item subclass datum size. RUNTIME-VERIFIED 2026-06-21: =476.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    },
+    "AddrGameGlobalsPtr": {
+      "value": "0x27629C",
+      "type": "uint32",
+      "kind": "ptr-global",
+      "confidence": "runtime-verified",
+      "notes": "game_globals pointer. RUNTIME-VERIFIED 2026-06-21 in-match: deref 0x800611D4; map_loaded@0x00=1, active@0x01=1, difficulty@0x0E=1, stored_global_random@0x10 (0xdeadbeef pregame, real value in-match).",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    },
+    "OffGGMapLoaded": {
+      "value": "0x0",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "game_globals",
+      "confidence": "runtime-verified",
+      "notes": "game_globals map-loaded flag. RUNTIME-VERIFIED 2026-06-21: =1 in-match.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    },
+    "OffGGActive": {
+      "value": "0x1",
+      "type": "uint8",
+      "kind": "struct-field",
+      "struct": "game_globals",
+      "confidence": "runtime-verified",
+      "notes": "game_globals active flag. RUNTIME-VERIFIED 2026-06-21: =1 in-match.",
+      "source": [
+        "cartographer:haloce/offsets.go",
+        "runtime-verified:xemu 0.8.136@2026-06-21:ce-lowdetail-30(in-match final sweep)"
+      ]
+    }
+  },
+  "unresolved": []
+}

@@ -2,7 +2,6 @@
 package podman
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -27,6 +26,25 @@ type Config struct {
 	PortStride     int
 	HostIP         string // IP/hostname for remote access; defaults to "localhost"
 
+	// NamePrefix namespaces every container this deployment creates (empty in
+	// prod). Callers that generate names (the admin create route + the per-player
+	// play flow) prepend it, so a beta sharing the host podman daemon can't share
+	// a container name with prod. See LoadFromEnv / Manager.NamePrefix.
+	NamePrefix string
+
+	// DVDPath is an optional host path to a game ISO mounted read-only into each
+	// xemu container (at containerDVDPath). Empty = no DVD. Acts as the GLOBAL
+	// default disc when a Create doesn't specify a per-instance ISO. Needed for
+	// root HDDs that boot a game from disc rather than from the HDD install.
+	DVDPath string
+
+	// ISODir is the shared host directory holding the game ISO library. A
+	// per-instance ISO named (not absolute) in CreateOptions.GameISO resolves
+	// against this dir. Default SharedDir/isos. ISOs are bind-mounted read-only
+	// into their instance (at containerDVDPath); they are never copied onto the
+	// per-instance overlay, which stays lean.
+	ISODir string
+
 	// PodmanCmd is the command (with optional leading args) used to invoke
 	// podman. Default "podman" runs rootless under the server user.
 	// Set to e.g. "sudo -n podman" to escalate when device passthrough is
@@ -42,6 +60,12 @@ type Config struct {
 	// Default "qemu-img"; must be installed on the host running the server.
 	QemuImgCmd string
 
+	// KioskLiveTimeout bounds the `podman inspect` liveness probe that the
+	// kiosk reverse-proxy runs (Manager.KioskLive) before dialing a container's
+	// browser port. Keeps a hung podman from stalling a kiosk request. Zero
+	// falls back to defaultKioskLiveTimeout (2s).
+	KioskLiveTimeout time.Duration
+
 	// SetConsoleName, when true (default), writes the container name into the
 	// instance's Xbox console name (E:\UDATA\NICKNAME.XBN) inside its overlay at
 	// create time, so instances are distinguishable on system link / the
@@ -53,6 +77,17 @@ type Config struct {
 	QemuStorageDaemonCmd string // default "qemu-storage-daemon"
 	PythonCmd            string // default "python3"
 	FatxToolPath         string // default <InitDir>/../tools/fatx_console_name.py
+
+	// SetBrowserTrust, when true (default), pre-seeds the firefox kiosk profile's
+	// NSS trust store with the instance CA at create time (host certutil), so the
+	// kiosk loads xemu's HTTPS noVNC view without a "risky connection" warning on
+	// first boot. Best-effort: skipped with a warning if certutil is unavailable
+	// on the host, in which case the bind-mounted policies.json belt
+	// (containers/browser/init/60-trust-xemu-cert.sh) is the fallback.
+	SetBrowserTrust bool
+	// CertutilCmd is the NSS certutil binary used to pre-seed the firefox trust
+	// store. Default "certutil" (the nss / nss-tools package on the host).
+	CertutilCmd string
 
 	// Defaults for container environment variables.
 	Encoder          string
@@ -69,7 +104,36 @@ type Config struct {
 const (
 	xemuImage    = "lscr.io/linuxserver/xemu:latest"
 	browserImage = "docker.io/jlesage/firefox"
+
+	// containerDVDPath is where a per-instance DVD/ISO is bind-mounted inside the
+	// xemu container. The instance toml's dvd_path is patched to this path by the
+	// init script (containers/xemu/init/02-patch-toml.sh) so xemu attaches the
+	// disc at boot. Keep the two in sync.
+	containerDVDPath = "/game.iso"
 )
+
+// CreateOptions configures a new instance beyond its name.
+type CreateOptions struct {
+	// GameISO optionally attaches a game XISO as this instance's DVD. It may be
+	// an absolute host path or a name resolved against Config.ISODir (the shared
+	// ISO library). Empty falls back to Config.DVDPath (the global default disc).
+	//
+	// The ISO is bind-mounted read-only at containerDVDPath; the game is never
+	// copied onto the per-instance overlay, which stays lean. A game disc present
+	// at cold boot is auto-launched by the master image (Cerbios/Xbox boot path),
+	// so an instance created with a GameISO boots STRAIGHT into that game — no
+	// HDD-installed game, no dashboard step, no per-container config. Verified
+	// live (see ADR-0004): with no ISO the instance sits on the UnleashX
+	// dashboard; with an ISO it boots that disc's game.
+	GameISO string
+
+	// DisplayName is the canonical PRETTY name (printable ASCII, ≤15) that the
+	// container name was slugified from. When set, it — not the mangled podman
+	// name — is written as the Xbox console nickname and persisted as the
+	// instance's canonical identity. Empty falls back to the container name (the
+	// pre-decoupling behavior).
+	DisplayName string
+}
 
 // Manager creates and controls podman containers.
 type Manager struct {
@@ -91,8 +155,17 @@ func NewManager(cfg Config, store Store) (*Manager, error) {
 	return &Manager{cfg: cfg, store: store, containers: containers}, nil
 }
 
-// Create provisions a new xemu + browser container pair without starting them.
+// Create provisions a new xemu + browser container pair without starting them,
+// using the global default disc (Config.DVDPath, if any). See CreateWithOptions
+// to attach a per-instance game ISO.
 func (m *Manager) Create(name string) (*ContainerInfo, error) {
+	return m.CreateWithOptions(name, CreateOptions{})
+}
+
+// CreateWithOptions provisions a new xemu + browser container pair without
+// starting them, optionally attaching a per-instance game ISO as the DVD (see
+// CreateOptions.GameISO).
+func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -100,13 +173,22 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		return nil, fmt.Errorf("container %q already exists", name)
 	}
 
+	// Resolve the per-instance disc BEFORE provisioning anything, so a bad ISO
+	// path aborts cleanly (no orphan overlay/config/containers).
+	dvdPath, err := m.resolveGameISO(opts.GameISO)
+	if err != nil {
+		return nil, err
+	}
+
 	idx := nextIndex(m.containers)
 	ports := AllocatePorts(m.cfg.PortBase, m.cfg.PortStride, idx)
 	info := &ContainerInfo{
-		Name:    name,
-		Index:   idx,
-		Ports:   ports,
-		Created: time.Now(),
+		Name:        name,
+		DisplayName: opts.DisplayName,
+		Index:       idx,
+		Ports:       ports,
+		GameISO:     dvdPath,
+		Created:     time.Now(),
 	}
 
 	// Provision the instance's copy-on-write HDD overlay (thin layer over the
@@ -116,12 +198,14 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		return nil, fmt.Errorf("provision hdd overlay: %w", err)
 	}
 
-	// Stamp the container name into the instance's Xbox console name inside its
-	// overlay (before first boot), so instances are distinguishable on system
-	// link / the dashboard. Best-effort: a missing FATX toolchain just means the
-	// instance keeps the Xbox's random default name.
+	// Stamp the PRETTY display name (if given, else the container name) into the
+	// instance's Xbox console name inside its overlay (before first boot), so
+	// instances are distinguishable on system link / the dashboard. The display
+	// name is the canonical identity; the container name is a slug derived from
+	// it. Best-effort: a missing FATX toolchain just means the instance keeps the
+	// Xbox's random default name.
 	if m.consoleNamingEnabled() {
-		if err := m.writeConsoleName(m.overlayPath(name), name); err != nil {
+		if err := m.writeConsoleName(m.overlayPath(name), consoleNameFor(name, opts.DisplayName)); err != nil {
 			log.Printf("podman: warning: set console name for %q failed (instance will use the Xbox random default): %v", name, err)
 		}
 	}
@@ -145,22 +229,27 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 		return nil, fmt.Errorf("generate ssl certs: %w", err)
 	}
 
-	// Generate labwc autostart with QMP enabled (only if it doesn't exist).
-	autostartDir := filepath.Join(configDir, ".config", "labwc")
-	autostartPath := filepath.Join(autostartDir, "autostart")
-	if _, err := os.Stat(autostartPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(autostartDir, 0o755); err != nil {
-			return nil, fmt.Errorf("mkdir %s: %w", autostartDir, err)
-		}
-		qmpArg := fmt.Sprintf("-qmp unix:/qmp/%s.sock,server,nowait", name)
-		autostart := fmt.Sprintf("#!/bin/bash\nfoot -e /opt/xemu/AppRun %s -full-screen\n", qmpArg)
-		if err := os.WriteFile(autostartPath, []byte(autostart), 0o755); err != nil {
-			return nil, fmt.Errorf("write autostart: %w", err)
+	// Pre-seed the firefox kiosk profile's NSS trust store with the instance CA
+	// on the host (certutil), so the kiosk loads xemu's HTTPS noVNC view without a
+	// "risky connection" warning on first boot — the durable, verifiable trust
+	// path. Best-effort: a missing host certutil just falls back to the
+	// in-container policies.json belt (60-trust-xemu-cert.sh). See browser_cert.go.
+	if m.browserTrustEnabled() {
+		if err := m.provisionBrowserTrust(browserCfgDir, filepath.Join(sslDir, "ca.pem")); err != nil {
+			log.Printf("podman: warning: pre-seed firefox trust for %q failed (kiosk may show a TLS warning until the in-container policy applies): %v", name, err)
 		}
 	}
 
+	// Write the xemu launch (carrying the -qmp the scraper needs) into the WM
+	// autostart. The image runs openbox (X11) or labwc (Wayland) depending on
+	// PIXELFLUX_WAYLAND, reading DIFFERENT autostart files — so we write BOTH.
+	// See writeXemuAutostart + WaitForQMP (the loud assert).
+	if err := writeXemuAutostart(configDir, name); err != nil {
+		return nil, err
+	}
+
 	// --- xemu container ---
-	if err := m.createXemu(name, ports, configDir); err != nil {
+	if err := m.createXemu(name, ports, configDir, dvdPath); err != nil {
 		return nil, fmt.Errorf("create xemu container: %w", err)
 	}
 
@@ -178,7 +267,67 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 	return info, nil
 }
 
-func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
+// xemuAutostartScript returns the WM autostart that launches xemu with the QMP
+// socket the scraper reads. wayland=true wraps it in foot (labwc/Wayland);
+// wayland=false runs the app directly (openbox/X11).
+func xemuAutostartScript(name string, wayland bool) string {
+	launch := fmt.Sprintf("/opt/xemu/AppRun -qmp unix:/qmp/%s.sock,server,nowait -full-screen", name)
+	if wayland {
+		launch = "foot -e " + launch
+	}
+	return "#!/bin/bash\n" + launch + "\n"
+}
+
+// writeXemuAutostart writes the xemu launch (carrying -qmp) into BOTH the openbox
+// (X11) and labwc (Wayland) autostart locations, so whichever WM the current
+// lscr.io/linuxserver/xemu image runs, -qmp fires and the scraper gets a QMP
+// socket. The image only seeds these from /defaults when absent, so pre-writing
+// wins. Robust to a future image flipping WMs; if a THIRD mechanism ever appears,
+// WaitForQMP fails loudly at Start.
+func writeXemuAutostart(configDir, name string) error {
+	for _, t := range []struct {
+		subdir  string
+		wayland bool
+	}{
+		{"openbox", false},
+		{"labwc", true},
+	} {
+		dir := filepath.Join(configDir, ".config", t.subdir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
+		p := filepath.Join(dir, "autostart")
+		if err := os.WriteFile(p, []byte(xemuAutostartScript(name, t.wayland)), 0o755); err != nil {
+			return fmt.Errorf("write %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// qmpStartTimeout bounds how long Start waits for xemu's QMP socket to appear.
+// Covers container start + WM launch + xemu opening the monitor (well before
+// the guest boots).
+const qmpStartTimeout = 75 * time.Second
+
+// WaitForQMP polls for the instance's bind-mounted QMP socket to appear. It's
+// the loud assert that xemu actually launched with -qmp — if the WM/autostart
+// mechanism drifts and drops the flag, this fails instead of leaving the scraper
+// silently unable to read the container's memory.
+func (m *Manager) WaitForQMP(name string, timeout time.Duration) error {
+	sock := abs(filepath.Join(m.cfg.SocketDir, name+".sock"))
+	deadline := time.Now().Add(timeout)
+	for {
+		if fi, err := os.Stat(sock); err == nil && fi.Mode()&os.ModeSocket != 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("QMP socket %s did not appear within %s — xemu likely launched without -qmp (WM/autostart drift?)", sock, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func (m *Manager) createXemu(name string, ports Ports, configDir, dvdPath string) error {
 	encoder := m.cfg.Encoder
 	if encoder == "" {
 		encoder = "x264enc"
@@ -251,8 +400,16 @@ func (m *Manager) createXemu(name string, ports Ports, configDir string) error {
 		"-v", fmt.Sprintf("%s:/custom-cont-init.d:ro", abs(m.cfg.InitDir)),
 		"-v", fmt.Sprintf("%s:/qmp", abs(m.cfg.SocketDir)),
 		"-v", fmt.Sprintf("%s:/shared", abs(m.cfg.SharedDir)),
-		xemuImage,
 	}
+	// Per-instance read-only DVD/ISO. When set, the game boots off this disc
+	// (a game disc present at cold boot auto-launches — see ADR-0004) with no
+	// HDD-installed game needed. dvdPath is already resolved to an absolute host
+	// path by resolveGameISO. The instance toml's dvd_path (patched by
+	// 02-patch-toml.sh) points xemu at containerDVDPath inside the container.
+	if dvdPath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", dvdPath, containerDVDPath))
+	}
+	args = append(args, xemuImage)
 
 	out, err := m.run(args...)
 	if err != nil {
@@ -380,21 +537,27 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 	return nil
 }
 
-// Start starts both the xemu and browser containers.
+// Start starts both the xemu and browser containers, then asserts xemu came up
+// with QMP (WaitForQMP) so a dropped -qmp fails loudly instead of leaving the
+// scraper unable to read the instance's memory.
 func (m *Manager) Start(name string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, ok := m.containers[name]; !ok {
+		m.mu.Unlock()
 		return fmt.Errorf("container %q not found", name)
 	}
 	if out, err := m.run("start", name); err != nil {
+		m.mu.Unlock()
 		return fmt.Errorf("start %s: %s: %s", name, err, out)
 	}
 	if out, err := m.run("start", name+"-browser"); err != nil {
+		m.mu.Unlock()
 		return fmt.Errorf("start %s-browser: %s: %s", name, err, out)
 	}
-	return nil
+	m.mu.Unlock()
+
+	// Assert QMP outside the lock (it polls for up to qmpStartTimeout).
+	return m.WaitForQMP(name, qmpStartTimeout)
 }
 
 // Stop stops both the browser and xemu containers.
@@ -585,7 +748,14 @@ func (m *Manager) CleanupOrphans() ([]string, error) {
 	return orphans, nil
 }
 
-// List returns all managed containers enriched with live podman status.
+// NamePrefix is the configured container-name namespace (empty in prod). Name-
+// generating callers prepend it so this deployment's container names can't
+// collide with another deployment's on a shared podman daemon.
+func (m *Manager) NamePrefix() string { return m.cfg.NamePrefix }
+
+// List returns all managed containers from the persisted store. Note: this is
+// the recorded state only — it does NOT reflect live podman status. Callers
+// that need liveness must consult Status / KioskLive per container.
 func (m *Manager) List() ([]ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -611,18 +781,7 @@ func (m *Manager) Status(name string) (string, error) {
 	if err != nil {
 		return "unknown", nil
 	}
-
-	// podman inspect --format returns JSON-escaped string; try to unquote.
-	s := string(out)
-	var unquoted string
-	if json.Unmarshal(out, &unquoted) == nil {
-		s = unquoted
-	}
-	// Trim whitespace/newlines.
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
-		s = s[:len(s)-1]
-	}
-	return s, nil
+	return parsePodmanStatus(out), nil
 }
 
 // Logs shells `podman logs --tail N` against either the xemu (which="xemu") or
@@ -691,15 +850,29 @@ func (m *Manager) runSudo(args ...string) ([]byte, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("runSudo: no command")
 	}
-	parts := strings.Fields(m.cfg.PodmanCmd)
-	if len(parts) > 0 && filepath.Base(parts[len(parts)-1]) == "podman" {
-		parts = parts[:len(parts)-1]
-	}
-	full := make([]string, 0, len(parts)+len(args))
-	full = append(full, parts...)
-	full = append(full, args...)
+	full := append(sudoPrefix(m.cfg.PodmanCmd), args...)
 	cmd := exec.Command(full[0], full[1:]...)
 	return cmd.CombinedOutput()
+}
+
+// sudoPrefix extracts the privilege prefix from PodmanCmd: everything BEFORE the
+// "podman" element. It drops "podman" AND any podman-specific flags that follow
+// it (e.g. --runtime=crun), so a non-podman command (rm) isn't handed to podman.
+// A bare "podman" (rootless) yields no prefix — the command runs directly, which
+// is correct since rootless podman doesn't produce root-owned files.
+//
+// Fixes a bug where the previous "drop only a trailing podman" logic left
+// `--runtime=crun` in place for the default PodmanCmd "sudo -n podman
+// --runtime=crun", causing runSudo to invoke `sudo podman --runtime=crun rm -rf`
+// (podman rejects `rm -rf`) and orphan every removed instance's bind-mount files.
+func sudoPrefix(podmanCmd string) []string {
+	parts := strings.Fields(podmanCmd)
+	for i, p := range parts {
+		if filepath.Base(p) == "podman" {
+			return parts[:i:i]
+		}
+	}
+	return parts
 }
 
 // containerOwnedPaths returns every host-side path that podman + container

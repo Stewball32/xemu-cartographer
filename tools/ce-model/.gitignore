@@ -1,0 +1,6 @@
+__pycache__/
+out/mcc/render/
+out/mcc/_*.png
+out/_bind*.png
+out/mcc/composite_cmp/
+out/tex/_*.png

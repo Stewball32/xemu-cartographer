@@ -1,0 +1,209 @@
+package manager
+
+import (
+	"strings"
+	"testing"
+
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+)
+
+// The live map source is per-instance and never falls back to a stock table: an
+// un-enumerated instance reports available=false/empty; once enumerated (incl. a
+// modded disc's custom map) it reflects exactly what was read.
+func TestManagerAvailableMaps(t *testing.T) {
+	m := &Manager{runners: map[string]*runner{}}
+	m.runners["pod1"] = &runner{name: "pod1"}
+
+	if l := m.AvailableMaps("nope"); l.Available || len(l.Maps) != 0 {
+		t.Fatalf("unknown instance must be unavailable+empty, got %+v", l)
+	}
+	if l := m.AvailableMaps("pod1"); l.Available || len(l.Maps) != 0 {
+		t.Fatalf("un-enumerated instance must report available=false (no stock table), got %+v", l)
+	}
+
+	m.SetAvailableMaps("pod1",
+		[]scraperiface.MapOption{{Name: "battlecreek", Steps: 0}, {Name: "custom_modded_map", Steps: 1}},
+		[]scraperiface.MapOption{{Name: "slayer", Steps: 0}})
+	l := m.AvailableMaps("pod1")
+	if !l.Available || len(l.Maps) != 2 || l.Maps[1].Name != "custom_modded_map" {
+		t.Fatalf("enumerated maps should surface live (incl. modded), got %+v", l)
+	}
+	if len(l.Gametypes) != 1 || l.Gametypes[0].Name != "slayer" {
+		t.Fatalf("enumerated gametypes should surface, got %+v", l.Gametypes)
+	}
+}
+
+// Host/client scoping: with a drive policy installed, only boxes the policy
+// approves (here the "play-" player-box marker) attach AuthRunner; every other
+// box attaches observe-only (AuthDisabled) so its runner never presses a key —
+// the pod-hijack fix. A nil policy preserves the drive-every-box default.
+func TestAttachHostRunnerScoping(t *testing.T) {
+	newMgr := func(policy func(string) bool) *Manager {
+		return &Manager{
+			runners:     map[string]*runner{},
+			hostReg:     hostrunner.NewRegistry(nil),
+			hostEnabled: true, // hostURL nil → no input pump, ctx untouched
+			hostDrive:   policy,
+		}
+	}
+	authOf := func(m *Manager, name string) hostrunner.Authority {
+		r := &runner{name: name}
+		m.attachHostRunner(r)
+		if r.host == nil {
+			t.Fatalf("%s: expected a runner attached", name)
+		}
+		return r.host.Arbiter().Authority()
+	}
+
+	drivePlay := func(name string) bool { return strings.Contains(name, "play-") }
+	m := newMgr(drivePlay)
+	if got := authOf(m, "beta-play-abc123"); got != hostrunner.AuthRunner {
+		t.Errorf("player box must auto-drive (AuthRunner), got %v", got)
+	}
+	if got := authOf(m, "beta-client"); got != hostrunner.AuthDisabled {
+		t.Errorf("non-player (client/admin) box must attach observe-only (AuthDisabled), got %v", got)
+	}
+
+	// nil policy → drive every box (pre-scoping default preserved).
+	if got := authOf(newMgr(nil), "any-box"); got != hostrunner.AuthRunner {
+		t.Errorf("nil policy must drive every box (AuthRunner), got %v", got)
+	}
+}
+
+// prependCustomGametypes must produce a list == the live carousel 1:1: customs
+// first in carousel order, then built-ins, with every Steps == its ABSOLUTE
+// carousel index. That makes gametypeCustomPrefix (liveCount − listLen) compute 0
+// and a pick's Steps land on the right widget card for BOTH custom and built-in.
+func TestPrependCustomGametypes(t *testing.T) {
+	builtins := []scraperiface.MapOption{
+		{Name: "Team Slayer", Steps: 0}, {Name: "CTF", Steps: 1}, {Name: "Oddball", Steps: 2},
+	}
+	// empty customs → built-ins pass through unchanged
+	if got := prependCustomGametypes(nil, builtins); len(got) != 3 || got[0].Name != "Team Slayer" || got[0].Steps != 0 {
+		t.Fatalf("empty customs must pass built-ins through unchanged, got %+v", got)
+	}
+	// customs prepended + absolute Steps
+	customs := []string{"BALL 5M 10S", "CTF WIZARD"}
+	got := prependCustomGametypes(customs, builtins)
+	want := []struct {
+		name  string
+		steps int
+	}{
+		{"BALL 5M 10S", 0}, {"CTF WIZARD", 1},
+		{"Team Slayer", 2}, {"CTF", 3}, {"Oddball", 4},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("want %d entries, got %d", len(want), len(got))
+	}
+	for i, w := range want {
+		if got[i].Name != w.name || got[i].Steps != w.steps {
+			t.Errorf("[%d] = {%q,%d}, want {%q,%d}", i, got[i].Name, got[i].Steps, w.name, w.steps)
+		}
+	}
+	// prefix reconciliation: with customs enumerated, listLen == liveCount ⇒ prefix 0
+	liveCount := 5 // 2 custom + 3 built-in on the live widget
+	if prefix := liveCount - len(got); prefix != 0 {
+		t.Errorf("gametypeCustomPrefix should reconcile to 0, got %d", prefix)
+	}
+}
+
+func TestStateInputInt(t *testing.T) {
+	si := scraper.StateInputs{
+		"main_menu":       uint8(1),
+		"game_connection": uint16(2),
+		"wide":            uint32(3),
+		"signed":          int32(-4),
+		"str":             "nope",
+	}
+	cases := map[string]int{
+		"main_menu":       1,
+		"game_connection": 2,
+		"wide":            3,
+		"signed":          -4,
+		"str":             0, // non-integer → 0
+		"missing":         0, // absent → 0
+	}
+	for key, want := range cases {
+		if got := stateInputInt(si, key); got != want {
+			t.Errorf("stateInputInt(%q) = %d, want %d", key, got, want)
+		}
+	}
+}
+
+func TestDistinctTeams(t *testing.T) {
+	// Roster present → distinct Team values.
+	gd := scraper.GameData{Players: []scraper.GamePlayer{
+		{Team: 0}, {Team: 1}, {Team: 0},
+	}}
+	if got := distinctTeams(gd); got != 2 {
+		t.Errorf("distinctTeams(players 0,1,0) = %d, want 2", got)
+	}
+	// Empty roster → fall back to team-score slot count.
+	gd = scraper.GameData{TeamScores: []scraper.TeamScore{{}, {}}}
+	if got := distinctTeams(gd); got != 2 {
+		t.Errorf("distinctTeams(2 team scores, no roster) = %d, want 2", got)
+	}
+	if got := distinctTeams(scraper.GameData{}); got != 0 {
+		t.Errorf("distinctTeams(empty) = %d, want 0", got)
+	}
+}
+
+// fakeReader is a minimal GameReader whose only meaningful method is
+// LastStateInputs, so buildHostReadout's reader→observation wiring (main_menu /
+// game_connection) is testable with no live container.
+type fakeReader struct{ si scraper.StateInputs }
+
+func (f *fakeReader) LowGVAs() []uint32                                 { return nil }
+func (f *fakeReader) ReadGameState() (scraper.GameState, uint32, error) { return "", 0, nil }
+func (f *fakeReader) LastStateInputs() scraper.StateInputs              { return f.si }
+func (f *fakeReader) BuildScoreProbe() scraper.ScoreProbe               { return nil }
+func (f *fakeReader) ReadGameData() (scraper.GameData, error)           { return scraper.GameData{}, nil }
+func (f *fakeReader) ReadReadyState() (scraper.GameData, error)         { return scraper.GameData{}, nil }
+func (f *fakeReader) ReadTick([]scraper.PowerItemSpawn, *scraper.TickState) (scraper.TickResult, error) {
+	return scraper.TickResult{}, nil
+}
+func (f *fakeReader) DetectEvents(uint32, string, scraper.GameData, scraper.TickResult, *scraper.TickState) []scraper.Envelope {
+	return nil
+}
+func (f *fakeReader) OnStateChange(prev, next scraper.GameState) error { return nil }
+func (f *fakeReader) NewTickState() *scraper.TickState                 { return nil }
+func (f *fakeReader) Title() string                                    { return "Halo: CE" }
+
+// buildHostReadout projects the loop's reader state + GameData into the runner
+// Observation. With game_connection=2 (hosting) and a readable system-link lobby
+// (2 boxes, 2 teams) the classified screen is a lobby that is ready to start.
+func TestBuildHostReadoutLobby(t *testing.T) {
+	r := &runner{name: "pod1"}
+	r.reader = &fakeReader{si: scraper.StateInputs{
+		"main_menu":       uint8(0),
+		"game_connection": uint16(2), // hosting
+	}}
+	r.gameData = scraper.GameData{
+		Map:      "Blood Gulch",
+		Gametype: "Team Slayer",
+		Machines: []scraper.GameMachine{{Index: 0}, {Index: 1}},
+		Players:  []scraper.GamePlayer{{Team: 0}, {Team: 1}},
+	}
+	ro := r.buildHostReadout(scraper.GameStatePreGame, 42)
+	if !ro.Fresh || ro.Tick != 42 {
+		t.Fatalf("readout freshness/tick wrong: %+v", ro)
+	}
+	if ro.Map != "Blood Gulch" || ro.Gametype != "Team Slayer" {
+		t.Fatalf("map/gametype = %q/%q", ro.Map, ro.Gametype)
+	}
+	if ro.GameConnection != 2 || ro.MenuActive {
+		t.Fatalf("game_connection/menu_active wrong: conn=%d menu=%v", ro.GameConnection, ro.MenuActive)
+	}
+	if ro.MachineCount != 2 || ro.TeamCount != 2 || ro.PlayerCount != 2 {
+		t.Fatalf("counts wrong: machines=%d teams=%d players=%d", ro.MachineCount, ro.TeamCount, ro.PlayerCount)
+	}
+	obs := ro.Observation()
+	if !obs.ReadyToStart() {
+		t.Fatalf("2 boxes + 2 teams should be ReadyToStart: %+v", obs)
+	}
+	if s := hostrunner.Classify(obs); s != hostrunner.ScreenLobby {
+		t.Fatalf("hosting + readable map/machines should classify as lobby, got %s", s)
+	}
+}

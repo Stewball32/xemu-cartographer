@@ -28,6 +28,17 @@ func buildNicknameXBN(name string) []byte    { return consolename.BuildXBN(name)
 
 func (m *Manager) consoleNamingEnabled() bool { return m.cfg.SetConsoleName }
 
+// consoleNameFor picks the name stamped as the Xbox console nickname: the pretty
+// canonical DISPLAY name when set, else the (slugified) container name — the
+// pre-decoupling fallback for legacy/unnamed instances. Sanitize (≤15,
+// printable ASCII) is applied downstream by the writer regardless.
+func consoleNameFor(container, display string) string {
+	if display != "" {
+		return display
+	}
+	return container
+}
+
 func (m *Manager) qemuStorageDaemonCmd() string {
 	if m.cfg.QemuStorageDaemonCmd != "" {
 		return m.cfg.QemuStorageDaemonCmd

@@ -1,0 +1,249 @@
+package hostrunner
+
+import (
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+)
+
+// Status is the arbitration + last-activity view returned by the control
+// endpoint (routes/scraper). It's built from the last observable event, so it
+// needs no extra locking on the single-goroutine runner state.
+type Status struct {
+	Instance   string   `json:"instance"`
+	Present    bool     `json:"present"`
+	Authority  string   `json:"authority"`
+	Screen     string   `json:"screen,omitempty"`
+	LastKind   string   `json:"last_kind,omitempty"`
+	LastIntent string   `json:"last_intent,omitempty"`
+	LastKeys   []string `json:"last_keys,omitempty"`
+	// LastReason is the runner's short gating explanation for its last decision —
+	// e.g. "parked at map-select — awaiting player map/gametype pick" or "card
+	// select-map: awaiting live cursor read". Surfaced so /api/play/current shows
+	// WHY the runner is holding (a wait/blocked with no reason is undiagnosable).
+	LastReason      string `json:"last_reason,omitempty"`
+	Tick            uint32 `json:"tick"`
+	MachineCount    int    `json:"machine_count"`
+	TeamCount       int    `json:"team_count"`
+	CountdownActive bool   `json:"countdown_active"`
+	ReadyToStart    bool   `json:"ready_to_start"`
+
+	// Map / Gametype are the READ (currently-loaded) values from the last
+	// observation; SelectedMap / SelectedGametype are the player's picked intent
+	// off the runner's selector; Selected is whether a pick has been made (false =
+	// the runner is parked at map-select awaiting a choice); Ready is the player's
+	// arm+start request.
+	Map              string `json:"map,omitempty"`
+	Gametype         string `json:"gametype,omitempty"`
+	SelectedMap      string `json:"selected_map,omitempty"`
+	SelectedGametype string `json:"selected_gametype,omitempty"`
+	Selected         bool   `json:"selected"`
+	Ready            bool   `json:"ready"`
+}
+
+// Registry owns the per-instance runners and is itself the runners' EventSink:
+// it captures the last event per instance (for Status) and fans out to a
+// downstream sink (the WS admin-room broadcaster). Concurrency-safe so control
+// endpoints (a request goroutine) and the scraper loop (the tick goroutine)
+// share it. This is the seam the control endpoints call (routes/scraper).
+type Registry struct {
+	mu         sync.RWMutex
+	runners    map[string]*Runner
+	last       map[string]RunnerEvent
+	downstream EventSink
+}
+
+// NewRegistry creates a registry that fans observable events out to downstream
+// (nil = drop after capturing for Status).
+func NewRegistry(downstream EventSink) *Registry {
+	return &Registry{
+		runners:    map[string]*Runner{},
+		last:       map[string]RunnerEvent{},
+		downstream: downstream,
+	}
+}
+
+// Register adds (or replaces) an instance's runner. Create the runner with this
+// Registry as its EventSink so its events flow through Emit.
+func (reg *Registry) Register(instance string, r *Runner) {
+	reg.mu.Lock()
+	reg.runners[instance] = r
+	reg.mu.Unlock()
+}
+
+// Remove drops an instance's runner + last event (on scraper Stop).
+func (reg *Registry) Remove(instance string) {
+	reg.mu.Lock()
+	delete(reg.runners, instance)
+	delete(reg.last, instance)
+	reg.mu.Unlock()
+}
+
+// Get returns an instance's runner.
+func (reg *Registry) Get(instance string) (*Runner, bool) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	r, ok := reg.runners[instance]
+	return r, ok
+}
+
+// Emit is the EventSink: capture the last event, then fan out downstream.
+func (reg *Registry) Emit(ev RunnerEvent) {
+	reg.mu.Lock()
+	prev, had := reg.last[ev.Instance]
+	reg.last[ev.Instance] = ev
+	down := reg.downstream
+	reg.mu.Unlock()
+	// One line per DECISION-CHANGE to the server log, so the runner's behavior on
+	// a live box is visible (it was previously a black box — only the admin WS
+	// room saw these events). On-change only: the runner ticks a few Hz and mostly
+	// repeats "wait", so logging every tick would flood; a line prints when the
+	// screen, action, intent, reason, or authority actually changes. This is the
+	// grep seam ("hostrunner[") for diagnosing a held runner — e.g. a box stuck at
+	// screen=unknown means its menu-state globals aren't being read (stale low-GVA
+	// translations), not that the nav logic is wrong.
+	if !had || decisionChanged(prev, ev) {
+		log.Print(formatDecision(ev))
+	}
+	if down != nil {
+		down.Emit(ev)
+	}
+}
+
+// decisionChanged reports whether the runner's observable decision differs from
+// the previous event in a way worth logging — the fields that describe WHAT it
+// decided and WHY, not the continuously-varying readouts (tick, counts).
+func decisionChanged(a, b RunnerEvent) bool {
+	return a.Screen != b.Screen ||
+		a.Kind != b.Kind ||
+		a.Intent != b.Intent ||
+		a.Reason != b.Reason ||
+		a.Authority != b.Authority ||
+		strings.Join(a.Keys, ",") != strings.Join(b.Keys, ",")
+}
+
+// formatDecision renders a compact one-line summary of a runner decision for the
+// server log, e.g.
+//
+//	hostrunner[beta-play-abc]: screen=main_menu auth=runner tap[nav:system-link] keys=[A] — advancing to System Link
+//	hostrunner[beta-play-abc]: screen=unknown auth=runner wait — main_menu global reads 0 (menu state unreadable)
+func formatDecision(ev RunnerEvent) string {
+	screen := ev.Screen
+	if screen == "" {
+		screen = "unknown"
+	}
+	act := ev.Kind
+	if ev.Intent != "" {
+		act += "[" + ev.Intent + "]"
+	}
+	line := fmt.Sprintf("hostrunner[%s]: screen=%s auth=%s %s", ev.Instance, screen, ev.Authority, act)
+	if len(ev.Keys) > 0 {
+		line += " keys=[" + strings.Join(ev.Keys, ",") + "]"
+	}
+	if ev.Reason != "" {
+		line += " — " + ev.Reason
+	}
+	return line
+}
+
+// Status returns the control view for an instance.
+func (reg *Registry) Status(instance string) Status {
+	reg.mu.RLock()
+	r, present := reg.runners[instance]
+	ev, hasEv := reg.last[instance]
+	reg.mu.RUnlock()
+
+	st := Status{Instance: instance, Present: present}
+	if present {
+		st.Authority = r.Arbiter().Authority().String()
+		st.Ready = r.Ready()
+		st.Selected = r.HasSelection()
+		mp, gt := r.Selection()
+		st.SelectedMap = mp.Name
+		st.SelectedGametype = gt.Name
+	}
+	if hasEv {
+		st.Screen = ev.Screen
+		st.LastKind = ev.Kind
+		st.LastIntent = ev.Intent
+		st.LastKeys = ev.Keys
+		st.LastReason = ev.Reason
+		st.Tick = ev.Tick
+		st.Map = ev.Map
+		st.Gametype = ev.Gametype
+		st.MachineCount = ev.MachineCount
+		st.TeamCount = ev.TeamCount
+		st.CountdownActive = ev.CountdownActive
+		st.ReadyToStart = ev.ReadyToStart
+		if !present {
+			st.Authority = ev.Authority
+		}
+	}
+	return st
+}
+
+// SetReady sets an instance's player-scoped start request. Returns false when no
+// runner is attached.
+func (reg *Registry) SetReady(instance string, ready bool) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	r.SetReady(ready)
+	return true
+}
+
+// SetSelection records the player's map / gametype picks for an instance, with
+// the D-pad Steps the runner navigates to each chosen card (computed by the play
+// API from the live map carousel index; 0 = default-highlighted card). Setting a
+// selection un-parks the runner. Returns false when no runner is attached or its
+// selector isn't mutable.
+func (reg *Registry) SetSelection(instance, mapName string, mapSteps int, gametypeName string, gametypeSteps int) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	return r.SetSelection(Pick{Name: mapName, Steps: mapSteps}, Pick{Name: gametypeName, Steps: gametypeSteps})
+}
+
+// ClearSelection resets an instance's selection so the runner re-parks at
+// map-select. Returns false when no runner is attached or its selector isn't
+// mutable.
+func (reg *Registry) ClearSelection(instance string) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	return r.ClearSelection()
+}
+
+// SetAuthority sets an instance's arbitration state. Returns false if there's no
+// runner for the instance.
+func (reg *Registry) SetAuthority(instance string, auth Authority) bool {
+	r, ok := reg.Get(instance)
+	if !ok {
+		return false
+	}
+	r.Arbiter().Set(auth)
+	return true
+}
+
+// SinkFunc adapts a plain function to an EventSink (the WS broadcaster wiring).
+type SinkFunc func(RunnerEvent)
+
+func (f SinkFunc) Emit(e RunnerEvent) { f(e) }
+
+// ParseAuthority maps the control endpoint's string to an Authority.
+func ParseAuthority(s string) (Authority, bool) {
+	switch s {
+	case "runner":
+		return AuthRunner, true
+	case "admin":
+		return AuthAdmin, true
+	case "disabled":
+		return AuthDisabled, true
+	default:
+		return AuthRunner, false
+	}
+}

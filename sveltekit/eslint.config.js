@@ -13,6 +13,18 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	{ ignores: ['src/lib/types/pocketbase-types.ts'] },
+	// Vendored OBS overlay pack (LAN_OBS_Browser_Sources) — plain-JS Svelte
+	// authored outside this repo's strict TS/eslint conventions. Kept as-is
+	// (@ts-nocheck for svelte-check); excluded from eslint rather than rewritten.
+	{
+		ignores: [
+			'src/lib/overlay/**',
+			'src/routes/overlay/**',
+			'src/routes/scorebug/**',
+			'src/routes/leaderboard/**',
+			'src/routes/postgame/**'
+		]
+	},
 	js.configs.recommended,
 	ts.configs.recommended,
 	svelte.configs.recommended,

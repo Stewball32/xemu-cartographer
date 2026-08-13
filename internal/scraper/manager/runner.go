@@ -9,8 +9,11 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/Stewball32/xemu-cartographer/internal/xemu"
@@ -96,10 +99,38 @@ type instanceCache struct {
 	LatestTick *scraper.TickPayload
 	Events     []scraper.Envelope // newest-first; bounded by recentEventsCap
 
+	// PlayerAccum is the per-player accumulated match stats + activity latch
+	// (HaloCaster extract_events port — see internal/scraper/accum.go).
+	// Replaced WHOLESALE each tick with a fresh Snapshot() map (never mutated
+	// in place), so the shallow instanceCache copy readCache() hands out is
+	// race-free. Persists through Live→Ready so the postgame graphic keeps
+	// the finished match's stats; reset at the next match start (runLive).
+	PlayerAccum map[int]scraper.PlayerAccum
+
 	// Just-ended match. Populated on Live→Ready transition (deferred so a
 	// panic / ctx-cancel mid-match still moves the data); dropped on
 	// Ready→Idle.
 	PreviousGame *previousGame
+
+	// Live map/gametype carousel enumeration for the player-hosting map picker
+	// (refinement 2 — the list is READ LIVE per instance, never a stock table).
+	// Populated via Manager.SetAvailableMaps by the carousel enumeration when the
+	// runner parks at map-select; empty means "not enumerable for this instance"
+	// and the play API returns available:false rather than a fixed set.
+	AvailableMaps      []scraperiface.MapOption
+	AvailableGametypes []scraperiface.MapOption
+
+	// CustomGametypes are the box's user-saved custom variant DISPLAY names, read
+	// host-side off its overlay (customvariants), in live-carousel order. Loaded
+	// once, async; empty until then (and if the read fails → built-ins only).
+	// enumerateLobby PREPENDS these ahead of the built-in gametypes so the served
+	// list == the live SELECT GAMETYPE carousel 1:1.
+	CustomGametypes []string
+	// CustomLoadDone is set true once the one-time async custom-variant read has
+	// FINISHED (success, empty, or error) — so the play API can show "reading
+	// gametypes…" until the list is complete rather than the built-ins-only
+	// intermediate. Set under cacheMu by the load goroutine.
+	CustomLoadDone bool
 }
 
 // previousGame is the just-ended match captured on Live→Ready. Serialised as
@@ -126,6 +157,12 @@ type runner struct {
 	sock string
 	inst *xemu.Instance
 
+	// offsetSetFor resolves the instance's assigned offset-set id at reader
+	// bind time (empty = the game's baseline). Injected from the Manager's
+	// resolver so a modded build's catalog assignment picks the right
+	// address layer without any game-specific coupling here. Nil-safe.
+	offsetSetFor func() string
+
 	// hostRoom is the per-instance WebSocket room name ("host:<name>")
 	// scraper broadcasts target. Pre-validated at Manager.Start by the
 	// rooms.RoomForInstance chokepoint and passed in here; the broadcast
@@ -149,6 +186,12 @@ type runner struct {
 	// Mirrored into cache.GameData so the loop avoids round-tripping
 	// through cacheMu on every tick read of e.g. PowerItemSpawns.
 	gameData scraper.GameData
+
+	// accum is the per-match stat accumulator + activity latch (HaloCaster
+	// extract_events port, internal/scraper/accum.go). Fresh at each runLive
+	// entry (match start); Observe'd once per fresh engine tick; snapshots
+	// published into cache.PlayerAccum. Loop-goroutine only.
+	accum *scraper.MatchAccum
 
 	// powerItemsInitialised gates state.InitPowerItems so it only fires
 	// once per match — and only after the game data's PowerItemSpawns
@@ -196,6 +239,15 @@ type runner struct {
 	cacheMu sync.Mutex
 	cache   instanceCache
 
+	// dummy-filter config cache for the game_filtered class. Loaded from the DB
+	// (roster.LoadConfig) and refreshed after dummyCfgTTL so a live
+	// is_neutral_host / dummy_gamertags change applies without a restart. Read
+	// from the loop goroutine (broadcastPoll) AND request goroutines (join
+	// replay via classEnvelopeMessages), so it's mutex-guarded. See game_filtered.go.
+	dummyMu    sync.RWMutex
+	dummyCfg   roster.Config
+	dummyCfgAt time.Time
+
 	// seqMu guards seqByClass. Each envelope class has its own
 	// monotonically-increasing per-(instance, class) sequence number so
 	// clients can detect drops / out-of-order delivery / retransmits.
@@ -226,20 +278,58 @@ type runner struct {
 	// Owned for the runner's lifetime; closed in the loop's shutdown
 	// defer.
 	sinks *sinkManager
+
+	// Host-runner (player-hosting, ADR-0003). host is the state-aware auto-host
+	// runner, ticked from the loop goroutine (tickHost in hostrunner.go); nil
+	// when host-running is disabled. hostPump is its vncinput input channel
+	// (nil when no websockify URL resolved). lastHostTickAt throttles ticks so
+	// the observable stream + input re-evaluation stay bounded. All three are
+	// set at Start before the loop launches and read only from the loop
+	// goroutine (hostPump also closed from Stop after the loop exits).
+	host           *hostrunner.Runner
+	hostPump       *vncinput.Pump
+	lastHostTickAt time.Time
+
+	// lastEnumAt throttles the create-game map/gametype carousel enumeration
+	// (enumerateLobby in hostrunner.go), decoupling it from the Ready poll cadence.
+	// Loop-goroutine only.
+	lastEnumAt time.Time
+
+	// lastReadout is the MOST RECENT per-tick ScraperReadout, stored on EVERY tick
+	// regardless of whether a host runner is attached — it powers the admin
+	// diagnostics panel. Previously the panel read the host Registry's last
+	// RunnerEvent, which is only emitted when a runner is attached AND ticking; on a
+	// box with host-running disabled (r.host == nil) tickHost returned before
+	// building anything, so the panel sat frozen at tick 0 while the navfp log (which
+	// comes from the reader itself) updated fine. Guarded by readoutMu: written on
+	// the loop goroutine, read by request goroutines.
+	readoutSeq  uint64 // advances every tick; the panel's unambiguous liveness signal
+	readoutMu   sync.RWMutex
+	lastReadout hostrunner.ScraperReadout
+	hasReadout  bool
+
+	// Custom gametype variant loading (part C). overlayFor resolves this box's
+	// overlay qcow2 path (host-side) so customvariants can read its saved variant
+	// names; nil disables the feature. customOnce fires the one-time async read
+	// (kicked from enumerateLobby, off the hot path); results land in
+	// cache.CustomGametypes under cacheMu.
+	overlayFor func(string) (string, bool)
+	customOnce sync.Once
 }
 
-func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance) *runner {
+func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance, offsetSetFor func() string) *runner {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 	return &runner{
-		name:     name,
-		sock:     sock,
-		hostRoom: hostRoom,
-		agg:      agg,
-		inst:     inst,
-		ctx:      ctx,
-		cancel:   cancel,
-		done:     make(chan struct{}),
+		name:         name,
+		sock:         sock,
+		hostRoom:     hostRoom,
+		agg:          agg,
+		inst:         inst,
+		offsetSetFor: offsetSetFor,
+		ctx:          ctx,
+		cancel:       cancel,
+		done:         make(chan struct{}),
 		cache: instanceCache{
 			Phase:     PhaseIdle,
 			StartedAt: now,
@@ -388,6 +478,14 @@ func (r *runner) publishTick(tp scraper.TickPayload) {
 	r.cacheMu.Unlock()
 }
 
+// publishAccum swaps in a fresh accumulated-stats snapshot (see
+// instanceCache.PlayerAccum for the wholesale-replacement contract).
+func (r *runner) publishAccum(snap map[int]scraper.PlayerAccum) {
+	r.cacheMu.Lock()
+	r.cache.PlayerAccum = snap
+	r.cacheMu.Unlock()
+}
+
 // summaryHeartbeatInterval bounds how often a runner pushes a fresh
 // hostSummary to the aggregator just to refresh LastSuccessfulReadAt. Real
 // state changes (phase / map / gametype / score) push immediately; this
@@ -503,9 +601,9 @@ func (r *runner) emitClass(svc *guards.Services, class string, tick uint32, payl
 // broadcast and by per-class join replay.
 //
 // Returns (class-name, bytes) pairs so callers can route or filter.
-func (r *runner) classEnvelopeMessages() []classMessage {
+func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 	c := r.readCache()
-	out := make([]classMessage, 0, 7)
+	out := make([]classMessage, 0, 8)
 	add := func(class string, payload any) {
 		if payload == nil {
 			return
@@ -521,6 +619,7 @@ func (r *runner) classEnvelopeMessages() []classMessage {
 		add("scenario", *sp)
 	}
 	add("game", buildGamePayload(&c))
+	add("game_filtered", buildGameFilteredPayload(&c, cfg))
 	if pg := buildPreviousGamePayload(&c); pg != nil {
 		add("previous_game", *pg)
 	}
@@ -562,7 +661,7 @@ func (r *runner) broadcastSnapshot(svc *guards.Services) {
 	}
 	c := r.readCache()
 	r.lastScenarioFingerprint = computeScenarioFingerprint(c.GameData)
-	for _, m := range r.classEnvelopeMessages() {
+	for _, m := range r.classEnvelopeMessages(r.dummyConfig(svc.App)) {
 		room, err := rooms.RoomForInstanceClass(r.name, m.Class)
 		if err != nil {
 			continue
@@ -588,6 +687,13 @@ func (r *runner) broadcastPoll(svc *guards.Services) {
 	pol := r.getPolicies()
 	if shouldRead(r.name, "game", pol, svc.WS) {
 		r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	}
+	// Viewer-facing filtered variant: only built + sent when an overlay is
+	// actually subscribed to host:<inst>:game_filtered (shouldRead gates on room
+	// membership), so this is zero-cost when nobody's watching. Dummy filtering
+	// stays server-side here.
+	if shouldRead(r.name, "game_filtered", pol, svc.WS) {
+		r.emitClass(svc, "game_filtered", c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig(svc.App)))
 	}
 	if c.LatestTick == nil {
 		return
