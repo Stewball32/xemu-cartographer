@@ -29,33 +29,109 @@ fi
 # Ensures netif is set under [net.pcap], appending the full block if needed.
 # -----------------------------------------------------------------------------
 # Resolve a real interface for the pcap backend. xemu aborts when [net] is enabled
-# with backend='pcap' and netif is empty. Read /sys/class/net directly (don't
-# depend on `ip`), skipping loopback + virtual devices to land on the physical NIC
-# (container shares host netns via --network host).
+# with backend='pcap' and netif is empty, and binds the WRONG network (breaking
+# System Link with real Xboxes) when it's set to an interface that isn't on the
+# console subnet. Read /sys/class/net directly (don't depend on `ip`).
+#
+# Precedence: an explicit NETIF from the sourced .env wins outright. It's the only
+# way to be correct on a host with several plausible physical NICs — autodetect
+# cannot know which one the Xboxes are on. Otherwise autodetect below.
+#
+# NETIF may already be set in the environment by $ENV_FILE (sourced at the top of
+# this script), so capture it BEFORE the detection loop overwrites the variable.
+NETIF_OVERRIDE="${NETIF:-}"
 NETIF=""
-for cand in /sys/class/net/*; do
-    [ -e "$cand" ] || continue
-    name=$(basename "$cand")
-    case "$name" in
-        lo | docker* | cni* | veth* | br-* | virbr* | podman* | tap* | tun* | kube*) continue ;;
+
+# netif_class: classify a candidate as skip / fallback / preferred.
+#
+# Interfaces are iterated in glob (i.e. alphabetical) order, so anything sorting
+# before the real NIC wins by default — `bond0`, `br0`, and `eno1` all sort
+# before `enp191s0`. The old list only matched `br-*` (docker's bridge naming)
+# and missed plain `br0` entirely.
+#
+# skip — never valid for pcap System Link:
+#   lo/docker/cni/veth/br/virbr/podman/tap/tun/kube — virtual or container plumbing
+#   bond/dummy/ifb/sit/gre/ip6tnl                   — aggregates + tunnels
+#   wl*/ww*                                         — wireless (wlan0, wlp*, wwan*)
+#   tailscale*/wg*/zt*/nebula*/utun*                — overlay VPNs
+#
+# fallback — `eno*` is a REAL onboard NIC, not virtual plumbing, so excluding it
+# outright would strand any host whose ONLY interface is eno1 (the common case on
+# server hardware). It is merely DEPRIORITISED, so on a multi-NIC box it can no
+# longer beat enp*/ens* by alphabetical accident. Which physical NIC is on the
+# Xbox subnet is genuinely unknowable here — that ambiguity is what NETIF is for.
+netif_class() {
+    case "$1" in
+        lo | docker* | cni* | veth* | br-* | br[0-9]* | virbr* | podman* | tap* | tun* | kube*) echo skip ;;
+        bond* | dummy* | ifb* | sit* | gre* | ip6tnl*) echo skip ;;
+        wl* | ww*) echo skip ;;
+        tailscale* | wg* | zt* | nebula* | utun*) echo skip ;;
+        eno*) echo fallback ;;
+        *) echo preferred ;;
     esac
-    NETIF="$name"
-    break
-done
-if [ -z "$NETIF" ]; then
-    for cand in /sys/class/net/*; do
-        [ -e "$cand" ] || continue
-        name=$(basename "$cand")
-        [ "$name" = "lo" ] && continue
-        NETIF="$name"
-        break
+}
+
+# has_carrier: the NIC must have a link partner. A cabled-but-unplugged port, or
+# a wired NIC on a host whose real uplink is wireless, reports carrier 0 (or
+# ENODEV on read) and is useless for System Link. This is what keeps autodetect
+# off a NO-CARRIER interface that merely sorts first.
+has_carrier() {
+    [ "$(cat "/sys/class/net/$1/carrier" 2>/dev/null)" = "1" ]
+}
+
+if [ -n "$NETIF_OVERRIDE" ]; then
+    NETIF="$NETIF_OVERRIDE"
+    # Warn but obey: the operator set this deliberately, and a NIC can come up
+    # after this script runs (xemu opens the pcap handle later).
+    if [ ! -e "/sys/class/net/$NETIF" ]; then
+        echo "[02-patch-toml] WARNING: NETIF override '$NETIF' does not exist on this host; using it anyway."
+    elif ! has_carrier "$NETIF"; then
+        echo "[02-patch-toml] WARNING: NETIF override '$NETIF' has no carrier; using it anyway."
+    fi
+    echo "[02-patch-toml] Using NETIF override '$NETIF' from $ENV_FILE."
+else
+    # Two passes: take a preferred physical NIC if one has carrier, otherwise
+    # accept a deprioritised onboard eno*.
+    for tier in preferred fallback; do
+        [ -n "$NETIF" ] && break
+        for cand in /sys/class/net/*; do
+            [ -e "$cand" ] || continue
+            name=$(basename "$cand")
+            [ "$(netif_class "$name")" = "$tier" ] || continue
+            has_carrier "$name" || continue
+            NETIF="$name"
+            break
+        done
     done
+    if [ -n "$NETIF" ]; then
+        echo "[02-patch-toml] Autodetected carrier-up interface '$NETIF'."
+    else
+        # Nothing qualified. Rather than silently binding pcap to a virtual
+        # interface (the old behaviour — it took ANY non-lo interface, which on
+        # this host class means a podman bridge and a dead System Link), leave
+        # netif alone and say so. A wrong netif looks like "Halo is laggy"; an
+        # absent one is a clear xemu-side error.
+        echo "[02-patch-toml] WARNING: No carrier-up physical interface found." >&2
+        echo "[02-patch-toml]          Set NETIF=<iface> in $ENV_FILE to override." >&2
+    fi
 fi
 
+# Compare-and-rewrite, NOT skip-if-present. The old code skipped whenever any
+# netif line existed, so a value baked in on a different machine (or from a NIC
+# that has since been renamed/removed) survived forever and silently bound xemu
+# to the wrong network. The toml is a persistent per-instance bind mount, so
+# that state is real and long-lived.
+CURRENT_NETIF=$(sed -n "s/^netif[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" "$CURRENT_TOML" | head -n1)
+
 if [ -z "$NETIF" ]; then
-    echo "[02-patch-toml] WARNING: No network interface found, skipping netif patch."
-elif grep -q "^netif\s*=" "$CURRENT_TOML"; then
-    echo "[02-patch-toml] Network interface already set, skipping."
+    echo "[02-patch-toml] Skipping netif patch (nothing resolved; leaving existing value '$CURRENT_NETIF')."
+elif [ -n "$CURRENT_NETIF" ] && [ "$CURRENT_NETIF" = "$NETIF" ]; then
+    echo "[02-patch-toml] Network interface already '$NETIF', no change."
+elif [ -n "$CURRENT_NETIF" ]; then
+    # Rewrite in place; keeps the line where it is so the surrounding table
+    # structure is untouched.
+    sed -i "s/^netif[[:space:]]*=.*/netif = '$NETIF'/" "$CURRENT_TOML"
+    echo "[02-patch-toml] Corrected stale netif '$CURRENT_NETIF' -> '$NETIF'."
 elif grep -q "^\[net\.pcap\]" "$CURRENT_TOML"; then
     sed -i "/^\[net\.pcap\]/a netif = '$NETIF'" "$CURRENT_TOML"
     echo "[02-patch-toml] Injected netif = '$NETIF' under existing [net.pcap]."

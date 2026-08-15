@@ -32,6 +32,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
@@ -161,6 +162,22 @@ func (m *Manager) Readout(name string) (hostrunner.ScraperReadout, bool) {
 		return hostrunner.ScraperReadout{}, false
 	}
 	return r.readout()
+}
+
+// HostHealth returns the instance's rolling observed-vs-expected engine tick
+// rate — "is this box actually sustaining 30Hz?". Sampled on every successful
+// read in every phase (see runner.recordIteration), so it's meaningful on an
+// observed-only box and at a menu, not just mid-match. ok=false for an unknown
+// instance; a known instance that hasn't accumulated enough samples yet returns
+// a zero-ish Health with StatusUnknown rather than ok=false.
+func (m *Manager) HostHealth(name string) (hosthealth.Health, bool) {
+	m.mu.Lock()
+	r, exists := m.runners[name]
+	m.mu.Unlock()
+	if !exists {
+		return hosthealth.Health{}, false
+	}
+	return r.readCache().HostHealth, true
 }
 
 // SetAvailableMaps records the live-enumerated map/gametype carousel for an

@@ -83,6 +83,27 @@
 		readout_seq: number;
 		readout_age_ms: number;
 		nav_candidates: Record<string, number> | null;
+		// HOST HEALTH — observed engine ticks/sec vs the expected 30Hz. Answers
+		// "is this box actually keeping up?", which tick alone cannot: tick is a
+		// raw counter, so a host at 24Hz looks identical to one at 30Hz, it just
+		// climbs slower. Null when the source isn't wired / no runner attached.
+		host_health: HostHealth | null;
+		host_health_age_ms: number;
+	};
+
+	// Mirrors internal/hosthealth.Health. `status` carries the verdict —
+	// 'stalled' specifically means the tick has STOPPED (menu, paused, idle
+	// runner), which is deliberately distinct from 'degraded' so a guest sitting
+	// in the front end never reads as a struggling host.
+	type HostHealth = {
+		status: 'unknown' | 'stalled' | 'ok' | 'degraded';
+		observed_hz: number;
+		expected_hz: number;
+		ratio: number;
+		window_seconds: number;
+		samples: number;
+		measured_at: string;
+		confident: boolean;
 	};
 
 	// CHANGE TRACKING. The whole point of this panel is answering "which signal
@@ -108,6 +129,55 @@
 
 	const cur = (c: { index: number; count: number; valid: boolean }) =>
 		`${c.count ? c.index + 1 : 0}/${c.count}${c.valid ? '' : ' (invalid)'}`;
+
+	// Host-health rows for the liveness group. Spelled out rather than dumping
+	// the raw numbers because the failure this diagnoses — "System Link works but
+	// gameplay is laggy" — is one an operator reads off in a hurry, and the
+	// stalled-vs-degraded distinction is the whole point: a guest at a menu has a
+	// tick of 0 forever and must not look like a struggling host.
+	const HEALTH_VERDICT: Record<string, string> = {
+		ok: 'OK — host sustaining rate',
+		degraded: 'DEGRADED — host below rate',
+		stalled: 'stalled — tick not advancing (menu / paused / idle)',
+		unknown: 'sampling…'
+	};
+	function healthSignals(d: Diagnostics): Array<{ label: string; value: string; group: string }> {
+		const h = d.host_health;
+		if (!h) return [{ group: 'live', label: 'engine rate', value: 'unavailable' }];
+		const measured = h.status === 'stalled' || h.status === 'unknown';
+		return [
+			{
+				group: 'live',
+				label: 'engine rate',
+				value: measured
+					? `— / ${h.expected_hz} Hz expected`
+					: `${h.observed_hz.toFixed(2)} Hz / ${h.expected_hz} Hz expected` +
+						` (${Math.round(h.ratio * 100)}%)`
+			},
+			{
+				group: 'live',
+				label: 'engine rate status',
+				value: HEALTH_VERDICT[h.status] ?? h.status
+			},
+			{
+				// Sample window + confidence, so a reading taken off a sliver of data
+				// is never mistaken for a verdict.
+				group: 'live',
+				label: 'rate sample window',
+				value:
+					`${h.window_seconds.toFixed(1)}s · ${h.samples} samples` +
+					(h.confident ? '' : ' · LOW CONFIDENCE')
+			},
+			{
+				// Staleness, same idiom as readout age: the reading is a snapshot, and
+				// a wedged runner stops refreshing it while its last values keep
+				// looking healthy.
+				group: 'live',
+				label: 'rate reading age',
+				value: `${d.host_health_age_ms} ms`
+			}
+		];
+	}
 
 	// Every live read, grouped. Order = most useful first for nav debugging.
 	const signals = $derived.by<Sig[]>(() => {
@@ -167,6 +237,9 @@
 			// panel live means the front end itself is wedged, not the scraper.
 			{ group: 'live', label: 'ui ms clock', value: String(d.ui_ms_clock) },
 			{ group: 'live', label: 'tick (game — 0 in menus)', value: String(d.tick) },
+			// HOST HEALTH. The rows above prove the PANEL is live; these prove the
+			// HOST is keeping up, which nothing on this page could previously say.
+			...healthSignals(d),
 			{
 				group: 'cold',
 				label: 'tree built?',
