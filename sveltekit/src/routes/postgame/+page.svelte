@@ -1,15 +1,142 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
-	// Rewired to cartographer's native live feed, mapped to the pack's
-	// match/players shape by overlay-state. Stats come from the server-side
-	// match accumulator (acc_* wire fields — the HaloCaster extract_events
-	// port): DMG (damage dealt, replacing the dead ACC column), SPREE (peak
-	// streak), MELEE, NADE (throws), CAMO/OS pickups, and the footer's shots
-	// fired. Headshots (HS) remains a genuine gap and renders 0.
+	// @ts-nocheck — OBS overlay graphic (plain JS); not strict-TS checked.
+	//
+	// Post-game carnage report. Ported from the obs-handoff pack's postgame.html,
+	// wired to cartographer's native live feed via overlay-state.
+	//
+	// OBS browser source: 900 wide; height scales with the roster (≈620 for an
+	// 8-player FFA, ≈700 for a 4v4).
+	//
+	// Leave "Shutdown source when not visible" OFF: the match duration is latched
+	// from the last LIVE tick (engine_tick free-runs once the game returns to the
+	// menu), so a source that only wakes up after the match ends has nothing to
+	// latch and shows an em dash.
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
-	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
-	import { ORANGE, TEAM_HEX, tint } from '$lib/overlay/themes.js';
+	import {
+		createClockLatch,
+		matchState,
+		matchTotals,
+		overlayPlayers,
+		rankPlayers
+	} from '$lib/utils/overlay-state';
+	import { damageRatioOf } from '$lib/utils/overlay-split';
+	import starUrl from '$lib/assets/star.png';
+	import wordmarkUrl from '$lib/assets/norcal-halo.png';
+	import '$lib/styles/overlay-base.css';
+
+	const DASH = '—';
+	const INFINITY = '∞';
+
+	// Column order is shared by the header, the player rows and the team
+	// aggregate chips — change it in one place.
+	//   best:  'high' | 'low' — which end of the column wins the orange highlight
+	//   shame: nonzero is bad, always red, never "best"
+	//   dp:    decimal places; mult: render as ×N
+	//   agg:   how the team chip rolls the column up ('sum' | 'max' | 'mean')
+	//   n/a:   not derivable from the scrape — renders as an em dash everywhere.
+	//          ACC needs shots_HIT (reads 0 live; only shots_fired is counted) and
+	//          headshots are not on the wire at all. Kept as columns so the layout
+	//          matches the rest of the pack and they light up for free once the
+	//          offsets are hunted — see the field-availability note in
+	//          overlay-state.ts.
+	const COLS = [
+		{ key: 'score', label: 'SCORE', w: 40, best: 'high', agg: 'sum', get: (p) => p.score },
+		{ key: 'k', label: 'K', w: 30, best: 'high', agg: 'sum', get: (p) => p.kills },
+		{ key: 'd', label: 'D', w: 30, best: 'low', agg: 'sum', get: (p) => p.deaths },
+		{ key: 'a', label: 'A', w: 30, best: 'high', agg: 'sum', get: (p) => p.assists },
+		{ key: 'kd', label: 'K/D', w: 42, best: 'high', dp: 2, agg: 'kd', get: (p) => kd(p) },
+		{ key: 'acc', label: 'ACC', w: 42, dp: 1, na: true },
+		{
+			key: 'dmg',
+			label: 'DMG',
+			w: 42,
+			best: 'high',
+			dp: 2,
+			agg: 'ratio',
+			get: (p) => p.damageRatio
+		},
+		{
+			key: 'spree',
+			label: 'SPREE',
+			w: 42,
+			best: 'high',
+			mult: true,
+			agg: 'max',
+			get: (p) => p.bestSpree
+		},
+		{ key: 'hs', label: 'HS', w: 30, na: true },
+		{ key: 'melee', label: 'MELEE', w: 36, best: 'high', agg: 'sum', get: (p) => p.meleeKills },
+		{ key: 'nade', label: 'NADE', w: 36, best: 'high', agg: 'sum', get: (p) => p.grenadeThrows },
+		{ key: 'camo', label: 'CAMO', w: 38, best: 'high', agg: 'sum', get: (p) => p.camoPickups },
+		{ key: 'os', label: 'OS', w: 28, best: 'high', agg: 'sum', get: (p) => p.osPickups },
+		{ key: 'btrl', label: 'BTRL', w: 34, shame: true, agg: 'sum', get: (p) => p.betrayals },
+		{ key: 'suic', label: 'SUIC', w: 34, shame: true, agg: 'sum', get: (p) => p.suicides }
+	];
+
+	function kd(p) {
+		return p.deaths ? p.kills / p.deaths : p.kills;
+	}
+
+	function fmt(col, v) {
+		if (col.na || v == null) return DASH;
+		if (col.mult) return v > 0 ? `×${v}` : DASH;
+		if (col.dp) {
+			const n = Number(v);
+			// An unbounded ratio (damage dealt, none taken) — see damageRatioOf.
+			return Number.isFinite(n) ? n.toFixed(col.dp) : INFINITY;
+		}
+		return String(v);
+	}
+
+	/** Best-of per column across the WHOLE lobby, so a standout still glows in
+	 * team mode. Columns where everyone sits at zero highlight nobody. */
+	function bestOf(rows) {
+		const out = {};
+		for (const col of COLS) {
+			if (col.shame || col.na || !rows.length) continue;
+			const vals = rows.map((p) => Number(col.get(p)) || 0);
+			out[col.key] = col.best === 'low' ? Math.min(...vals) : Math.max(...vals);
+		}
+		return out;
+	}
+
+	function cellClass(col, v, best) {
+		if (col.na) return 'na';
+		if (col.shame) return Number(v) > 0 ? 'shame' : '';
+		const b = best[col.key];
+		return b != null && Number(v) === b && Number(v) !== 0 ? 'best' : '';
+	}
+
+	/** Team aggregate: sum the counting columns, recompute the ratios off the
+	 * sums, take the peak for spree. Summed client-side per the pack contract —
+	 * the scraper never sends team aggregates.
+	 *
+	 * SCORE is the exception: it comes from the engine's own team_scores, not
+	 * from summing the player rows. The two can disagree (objective gametypes
+	 * score the team, not the scorer), and the scorebug + leaderboard both show
+	 * the engine value — a post-game chip that summed rows instead would put two
+	 * different numbers for the same team on the same broadcast. */
+	function aggregate(rows, teamScore) {
+		const out = {};
+		for (const col of COLS) {
+			if (col.na || col.agg === 'ratio') continue;
+			const vals = rows.map((p) => Number(col.get(p)) || 0);
+			if (col.agg === 'max') out[col.key] = vals.length ? Math.max(...vals) : 0;
+			else if (col.agg !== 'kd') out[col.key] = vals.reduce((a, b) => a + b, 0);
+		}
+		out.kd = out.d ? out.k / out.d : out.k;
+		// Both ratios are recomputed off the SUMS, never averaged across players:
+		// a mean would weight a 3-damage skirmish the same as a 3000-damage one,
+		// and one player with an unbounded ratio would poison the whole row.
+		const sum = (pick) => rows.reduce((n, p) => n + (Number(pick(p)) || 0), 0);
+		out.dmg = damageRatioOf(
+			sum((p) => p.damageDealt),
+			sum((p) => p.damageTaken)
+		);
+		if (teamScore != null) out.score = teamScore;
+		return out;
+	}
 
 	let { data } = $props();
 	const feed = createOverlayFeed();
@@ -17,446 +144,423 @@
 		feed.start({
 			console: data.console,
 			mock: data.mock,
-			consolePoll: data.consolePoll,
 			classes: ['game', 'tick', 'scenario']
 		})
 	);
 	onDestroy(() => feed.stop());
 
+	// Latch the final live clock — see the header note.
+	const latch = createClockLatch();
+	let duration = $state(undefined);
+	$effect(() => {
+		latch.observe(feed.game);
+		duration = latch.duration;
+	});
+
 	const players = $derived(
 		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
 	);
 	const match = $derived(matchState(feed.game, feed.scenario));
+	const isTeam = $derived(match.mode === 'team');
+	const best = $derived(bestOf(players));
+	const totals = $derived(matchTotals(players));
 
-	// VICTORY banner gate: the "who won" callout is meaningful only once a game
-	// has ended. Scraper phase is "live" during active play, "ready"/"idle"
-	// otherwise — so a result exists exactly when the game is NOT live. Hide the
-	// winner callout during live play; the rest of the report (mode/map/columns)
-	// still renders so the graphic can be lined up mid-game.
-	const gameOver = $derived((feed.game?.phase ?? '') !== 'live');
+	const red = $derived(match.teams?.find((t) => t.id === 'red'));
+	const blue = $derived(match.teams?.find((t) => t.id === 'blue'));
+	const redWins = $derived(isTeam && (red?.score ?? 0) >= (blue?.score ?? 0));
 
-	// Column spec: [key, width(px), defaultColor]. Score/K/D/A brighter; ratios dimmer.
-	const cols = [
-		['score', 40, '#e8ecf5'],
-		['k', 30, '#e8ecf5'],
-		['d', 30, '#e8ecf5'],
-		['a', 30, '#e8ecf5'],
-		['kd', 42, '#cdd9ea'],
-		['dmg', 48, '#cdd9ea'],
-		['spree', 42, '#cdd9ea'],
-		['hs', 30, '#cdd9ea'],
-		['melee', 36, '#cdd9ea'],
-		['nade', 36, '#cdd9ea'],
-		['camoP', 38, '#cdd9ea'],
-		['os', 28, '#cdd9ea'],
-		['btrl', 34, '#cdd9ea'],
-		['suic', 34, '#cdd9ea']
-	];
-	const headers = {
-		score: 'SCORE',
-		k: 'K',
-		d: 'D',
-		a: 'A',
-		kd: 'K/D',
-		dmg: 'DMG',
-		spree: 'SPREE',
-		hs: 'HS',
-		melee: 'MELEE',
-		nade: 'NADE',
-		camoP: 'CAMO',
-		os: 'OS',
-		btrl: 'BTRL',
-		suic: 'SUIC'
-	};
-	// Best-of-stat direction: 'hi' = highest wins orange, 'lo' = lowest; shame cols get red-when-nonzero instead.
-	const bestDir = {
-		score: 'hi',
-		k: 'hi',
-		d: 'lo',
-		a: 'hi',
-		kd: 'hi',
-		dmg: 'hi',
-		spree: 'hi',
-		hs: 'hi',
-		melee: 'hi',
-		nade: 'hi',
-		camoP: 'hi',
-		os: 'hi'
-	};
-
-	const toRow = (p) => ({
-		name: p.name,
-		team: p.team,
-		armor: p.armor ?? '#8a93a8',
-		avatar: p.avatar,
-		score: p.score ?? 0,
-		k: p.kills ?? 0,
-		d: p.deaths ?? 0,
-		a: p.assists ?? 0,
-		kdN: (p.kills ?? 0) / Math.max(p.deaths ?? 0, 1),
-		dmgN: p.damageDealt ?? 0,
-		spreeN: p.bestSpree ?? p.spree ?? 0,
-		hs: p.headshots ?? 0,
-		melee: p.meleeKills ?? 0,
-		nade: p.grenadeThrows ?? 0,
-		camoP: p.camoPickups ?? 0,
-		os: p.osPickups ?? 0,
-		btrl: p.betrayals ?? 0,
-		suic: p.suicides ?? 0
-	});
-	const finishRows = (rows) => {
-		rows.forEach((r) => {
-			r.kd = r.kdN.toFixed(2);
-			r.dmg = Math.round(r.dmgN);
-			r.spree = '×' + r.spreeN;
-			r.colors = {};
-		});
-		const numKey = { kd: 'kdN', dmg: 'dmgN', spree: 'spreeN' };
-		for (const [key] of cols) {
-			if (key === 'btrl' || key === 'suic') {
-				rows.forEach((r) => {
-					r.colors[key] = r[key] > 0 ? '#ff8f85' : '#cdd9ea';
-				});
-				continue;
-			}
-			const nk = numKey[key] ?? key;
-			const vals = rows.map((r) => r[nk]);
-			const best = bestDir[key] === 'lo' ? Math.min(...vals) : Math.max(...vals);
-			rows.forEach((r, i) => {
-				r.colors[key] = r[nk] === best ? ORANGE : cols.find((c) => c[0] === key)[2];
-			});
-		}
-		return rows;
-	};
-
-	const teams = $derived(match.teams ?? null);
-	const allRows = $derived(finishRows([...players].sort((a, b) => b.score - a.score).map(toRow)));
-	const winnerTeam = $derived(teams ? [...teams].sort((a, b) => b.score - a.score) : null);
-	const winnerName = $derived(
-		teams
-			? (winnerTeam[0].name ?? winnerTeam[0].id.toUpperCase() + ' TEAM')
-			: (allRows[0]?.name ?? '')
+	const winner = $derived(
+		isTeam ? ((redWins ? red?.name : blue?.name) ?? DASH) : (rankPlayers(players)[0]?.name ?? DASH)
 	);
-	const winnerColor = $derived(teams ? TEAM_HEX[winnerTeam[0].id] : '#3d62e0');
-	const teamRows = (id) => allRows.filter((r) => r.team === id);
-	const agg = (rows) => {
-		const s = (k) => rows.reduce((t, r) => t + r[k], 0);
-		return {
-			score: s('score'),
-			k: s('k'),
-			d: s('d'),
-			a: s('a'),
-			kd: (s('k') / Math.max(s('d'), 1)).toFixed(2),
-			dmg: Math.round(rows.reduce((t, r) => t + r.dmgN, 0)),
-			spree: '×' + Math.max(0, ...rows.map((r) => r.spreeN)),
-			hs: s('hs'),
-			melee: s('melee'),
-			nade: s('nade'),
-			camoP: s('camoP'),
-			os: s('os'),
-			btrl: s('btrl'),
-			suic: s('suic')
-		};
-	};
-	const totals = $derived({
-		kills: players.reduce((t, p) => t + (p.kills ?? 0), 0),
-		shots: players.reduce((t, p) => t + (p.shotsFired ?? 0), 0).toLocaleString('en-US'),
-		nades: players.reduce((t, p) => t + (p.grenadeThrows ?? 0), 0),
-		dmg: Math.round(players.reduce((t, p) => t + (p.damageDealt ?? 0), 0)).toLocaleString('en-US')
-	});
+
+	// Winning block first, so the eye lands on the victors.
+	const blocks = $derived(
+		!isTeam
+			? [{ id: 'ffa', rows: rankPlayers(players) }]
+			: (redWins
+					? [
+							{ id: 'red', team: red, rows: players.filter((p) => p.team === 'red') },
+							{ id: 'blue', team: blue, rows: players.filter((p) => p.team === 'blue') }
+						]
+					: [
+							{ id: 'blue', team: blue, rows: players.filter((p) => p.team === 'blue') },
+							{ id: 'red', team: red, rows: players.filter((p) => p.team === 'red') }
+						]
+				).map((b) => ({ ...b, rows: rankPlayers(b.rows) }))
+	);
 </script>
 
 <svelte:head>
-	<title>Norcal Halo — post-game</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		href="https://fonts.googleapis.com/css2?family=Ultra&family=Inter:wght@400;500;600;700&display=swap"
-		rel="stylesheet"
-	/>
+	<title>NorCal Halo — post-game report</title>
 </svelte:head>
 
-{#snippet statCells(r, mono)}
-	{#each cols as [key, w]}
-		<span
-			class="cell"
-			class:mono
-			style="width:{w}px; color:{r.colors?.[key] ?? 'inherit'}"
-			class:big={key === 'score' && !mono}>{r[key]}</span
-		>
-	{/each}
-{/snippet}
-
-<div class="report">
-	<div class="banner">
-		{#if gameOver}
-			<div class="win">
-				<span
-					class="vic"
-					style="color:{teams ? (winnerTeam[0].id === 'red' ? '#ff8f85' : '#7d9cff') : ORANGE}"
-					>VICTORY</span
-				>
-				<span class="wname">{winnerName} <span style="color:{winnerColor}">✦</span></span>
-			</div>
-		{/if}
-		<div class="meta">
-			<span class="mode"
-				>{match.gametype ?? ''}{match.killLimit ? ' — KILL LIMIT ' + match.killLimit : ''}</span
-			>
-			<span class="map">{match.map ?? ''}</span>
-			<span class="mtime">MATCH TIME {match.matchTime ?? match.clock ?? ''}</span>
-		</div>
-	</div>
-	<div class="colhead">
-		<span style="width:16px"></span><span style="width:34px"></span>
-		<span class="ch player">PLAYER</span>
-		{#each cols as [key, w]}<span class="ch" style="width:{w}px">{headers[key]}</span>{/each}
-	</div>
-	{#if teams}
-		{#each winnerTeam as team, ti (team.id)}
-			{@const rows = teamRows(team.id)}
-			<div class="pad">
-				<div
-					class="row teamhead"
-					style="background:{TEAM_HEX[team.id]}47; border-color:{TEAM_HEX[
-						team.id
-					]}80; animation-delay:{ti * (rows.length + 1) * 0.055 + 0.1}s"
-				>
-					<span class="tname">{team.name ?? team.id.toUpperCase() + ' TEAM'}</span>
-					{@render statCells({ ...agg(rows), colors: {} }, true)}
-				</div>
-			</div>
-			{#each rows as r, i (r.name)}
-				<div class="pad">
-					<div
-						class="row"
-						style="background:{tint(TEAM_HEX[team.id]).bg}; border-color:{tint(TEAM_HEX[team.id])
-							.edge}; animation-delay:{(ti * (rows.length + 1) + i + 1) * 0.055 + 0.1}s"
+<div class="stage" data-anchor={data.anchor}>
+	<div class="report">
+		<div class="head" style="--emblem:url({starUrl})">
+			<div class="col">
+				<span class="verdict" class:is-red={isTeam && redWins}>VICTORY</span>
+				<span class="winner">
+					{winner}
+					<span class="mark" style="color:{isTeam && redWins ? 'var(--nh-red)' : 'var(--nh-blue)'}"
+						>✦</span
 					>
-						<span class="place">{i + 1}</span>
-						<span class="avatar"
-							>{#if r.avatar}<img src={r.avatar} alt={r.name} />{:else}✦{/if}</span
-						>
-						<span class="pname">{r.name}</span>
-						{@render statCells(r, false)}
+				</span>
+			</div>
+			<div class="col right">
+				<span class="rules">{match.rules}</span>
+				<span class="rmap">{match.map}</span>
+				<span class="rtime">MATCH TIME {duration ?? DASH}</span>
+			</div>
+		</div>
+
+		<div class="cols">
+			<span class="c-pad"></span>
+			<span class="c-av"></span>
+			<span class="c-player">PLAYER</span>
+			{#each COLS as col (col.key)}
+				<span style="width:{col.w}px">{col.label}</span>
+			{/each}
+		</div>
+
+		{#each blocks as block, bi (block.id)}
+			{#if block.team}
+				{@const agg = aggregate(block.rows, block.team.score)}
+				<div class="padded">
+					<div class="aggrow is-{block.id}" class:spaced={bi > 0}>
+						<span class="c-name">{block.team.name}</span>
+						{#each COLS as col (col.key)}
+							<span class={col.key === 'score' ? 'c-score' : ''} style="width:{col.w}px"
+								>{fmt(col, col.na ? null : agg[col.key])}</span
+							>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
+			{#each block.rows as p, i (p.name)}
+				<div class="padded">
+					<div
+						class="pgrow"
+						style="background:{p.armor}26; border-color:{p.armor}4D; animation-delay:{(
+							bi * 0.1 +
+							0.15 +
+							i * 0.06
+						).toFixed(2)}s"
+					>
+						<span class="c-rank">{i + 1}</span>
+						<div class="avatar"><img src={starUrl} alt="" /></div>
+						<span class="c-player">{p.name}</span>
+						{#each COLS as col (col.key)}
+							{@const v = col.na ? null : col.get(p)}
+							<span
+								class="{col.key === 'score' ? 'c-score' : ''} {cellClass(col, v, best)}"
+								style="width:{col.w}px">{fmt(col, v)}</span
+							>
+						{/each}
 					</div>
 				</div>
 			{/each}
 		{/each}
-	{:else}
-		{#each allRows as r, i (r.name)}
-			<div class="pad">
-				<div
-					class="row"
-					style="background:{tint(r.armor).bg}; border-color:{tint(r.armor)
-						.edge}; animation-delay:{i * 0.055 + 0.15}s"
-				>
-					<span class="place">{i + 1}</span>
-					<span class="avatar"
-						>{#if r.avatar}<img src={r.avatar} alt={r.name} />{:else}✦{/if}</span
-					>
-					<span class="pname">{r.name}</span>
-					{@render statCells(r, false)}
-				</div>
-			</div>
-		{/each}
-	{/if}
-	<div class="foot">
-		<span>{totals.kills} KILLS</span><i></i>
-		<span>{totals.shots} SHOTS FIRED</span><i></i>
-		<span>{totals.nades} GRENADES THROWN</span><i></i>
-		<span>{totals.dmg} DAMAGE DEALT</span>
+
+		<div class="foot">
+			<img class="wordmark" src={wordmarkUrl} alt="NorCal Halo" />
+			<span>{totals.kills} KILLS</span>
+			<span class="rule"></span>
+			<span>{totals.shots} SHOTS FIRED</span>
+			<span class="rule"></span>
+			<span>{totals.nades} GRENADES THROWN</span>
+			<span class="rule"></span>
+			<span>{totals.damage} DAMAGE DEALT</span>
+			<img class="footstar" src={starUrl} alt="" />
+		</div>
 	</div>
 </div>
 
 <style>
-	/* OBS browser source, transparent; size ~900 × (150 + 46·rows). */
+	/* Transparent canvas — see the scorebug for why both html and body are reset
+	   and why body::before/::after are killed. */
 	:global(html, body) {
 		margin: 0;
-		background: transparent;
+		padding: 0;
+		background: transparent !important;
+		background-image: none !important;
 		overflow: hidden;
 	}
-	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
-	   composites over the OBS feed. Unlayered + !important beats the themed
-	   @layer base rule in routes/layout.css. */
-	:global(body::before) {
+	:global(body::before, body::after) {
 		display: none !important;
+		content: none !important;
 	}
+
+	.stage[data-anchor='center'] {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100vw;
+		height: 100vh;
+	}
+
 	.report {
 		width: 900px;
-		border-radius: 20px;
+		border-radius: 12px;
 		overflow: hidden;
+		border: var(--nh-edge);
+		box-shadow: var(--nh-lift);
+		background: var(--nh-panel);
 		padding-bottom: 6px;
-		border: 1px solid rgba(159, 180, 208, 0.25);
-		box-shadow:
-			0 0 26px rgba(61, 98, 224, 0.28),
-			inset 0 1px 0 rgba(255, 255, 255, 0.14);
-		background: rgba(11, 14, 26, 0.95);
-		font-family: Inter, sans-serif;
+		font-family: Inter, system-ui, sans-serif;
 	}
-	.banner {
+
+	.head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		padding: 18px 22px 15px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-bottom: var(--nh-hairline);
 		animation: row-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+		background:
+			linear-gradient(rgba(11, 14, 26, 0.68), rgba(11, 14, 26, 0.68)),
+			var(--emblem) center / 230px no-repeat;
 	}
-	.win {
+	.col {
 		display: flex;
 		flex-direction: column;
+		gap: 5px;
+	}
+	.col.right {
+		align-items: flex-end;
 		gap: 4px;
 	}
-	.vic {
+	.verdict {
 		font-size: 10px;
 		font-weight: 700;
 		letter-spacing: 0.34em;
+		color: var(--nh-orange);
 	}
-	.wname {
-		font-family: Ultra, serif;
-		font-size: 30px;
+	.verdict.is-red {
+		color: #ff8f85;
+	}
+	.winner {
+		font-family: Orbitron, sans-serif;
+		font-weight: 800;
+		font-size: 24px;
 		line-height: 1;
-		color: #e8ecf5;
-		letter-spacing: 0.03em;
+		color: var(--nh-text);
+		letter-spacing: 0.05em;
 	}
-	.meta {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 3px;
-	}
-	.mode {
+	.rules {
 		font-size: 11px;
 		font-weight: 700;
 		letter-spacing: 0.26em;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 	}
-	.map {
-		font-family: Ultra, serif;
-		font-size: 17px;
+	.rmap {
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 14px;
 		line-height: 1;
-		color: #e8ecf5;
-		letter-spacing: 0.04em;
+		color: var(--nh-text);
+		letter-spacing: 0.06em;
 	}
-	.mtime {
+	.rtime {
 		font-family: 'Lucida Console', monospace;
 		font-size: 12px;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 	}
-	.colhead {
+
+	.cols {
 		display: flex;
 		align-items: center;
 		gap: 9px;
 		padding: 9px 18px 5px 16px;
 	}
-	.ch {
+	.cols span {
+		flex: none;
 		text-align: right;
 		font-size: 8px;
 		font-weight: 700;
 		letter-spacing: 0.18em;
-		color: #7c8496;
-		flex: none;
+		color: var(--nh-mute);
 	}
-	.ch.player {
+	.c-pad {
+		width: 16px;
+	}
+	.c-av {
+		width: 42px;
+	}
+	.cols .c-player {
 		flex: 1;
 		min-width: 0;
 		text-align: left;
 		letter-spacing: 0.22em;
 	}
-	.pad {
+
+	.padded {
 		padding: 3px 8px;
 	}
-	.row {
+
+	.pgrow {
 		display: flex;
 		align-items: center;
 		gap: 9px;
-		padding: 6px 10px 6px 8px;
-		border-radius: 9px;
+		padding: 2px 10px 2px 8px;
+		border-radius: 6px;
 		border: 1px solid;
 		animation: row-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 	}
-	.place {
-		width: 16px;
-		flex: none;
-		text-align: center;
-		font-size: 13px;
-		font-weight: 700;
-		color: #9fb4d0;
-		font-variant-numeric: tabular-nums;
-	}
-	.avatar {
-		width: 34px;
-		height: 34px;
-		flex: none;
-		border-radius: 50%;
-		overflow: hidden;
-		background: repeating-linear-gradient(45deg, #10152a 0 5px, #141a30 5px 10px);
-		border: 1px solid rgba(159, 180, 208, 0.4);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 12px;
-		color: #9fb4d0;
-	}
-	.avatar img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-	.pname,
-	.tname {
-		flex: 1;
-		min-width: 0;
-		font-family: Ultra, serif;
-		font-size: 14px;
-		color: #e8ecf5;
-		letter-spacing: 0.03em;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.tname {
-		font-size: 15px;
-	}
-	.cell {
+	.pgrow > span {
 		flex: none;
 		text-align: right;
 		font-size: 13px;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
+		color: var(--nh-dim);
 	}
-	.cell.big {
+	.pgrow .c-rank {
+		width: 16px;
+		text-align: center;
+		font-size: 13px;
+		font-weight: 700;
+		color: var(--nh-steel);
+	}
+	.pgrow .c-player {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 11px;
+		color: var(--nh-text);
+		letter-spacing: 0.04em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.pgrow .c-score {
+		width: 40px;
 		font-size: 15px;
 		font-weight: 700;
 	}
-	.row.teamhead .cell {
-		font-family: 'Lucida Console', monospace;
-		font-size: 10px;
-		font-weight: 400;
-		color: #e8ecf5;
+	/* Selection Orange means "best" and nothing else. */
+	.pgrow .best {
+		color: var(--nh-orange);
 	}
-	.row.teamhead .cell:first-of-type {
-		font-family: Inter, sans-serif;
-		font-size: 15px;
-		font-weight: 700;
+	.pgrow .shame {
+		color: #ff8f85;
 	}
-	.foot {
+	/* Not derivable from the scrape — muted so it reads as "no data", not zero. */
+	.pgrow .na {
+		color: var(--nh-mute);
+	}
+
+	.avatar {
+		width: 42px;
+		height: 42px;
+		flex: none;
+		border-radius: 50%;
+		background: repeating-linear-gradient(45deg, #10152a 0 5px, #141a30 5px 10px);
+		border: 1px solid rgba(159, 180, 208, 0.4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		overflow: hidden;
+	}
+	.avatar img {
+		width: 46px;
+		flex: none;
+		display: block;
+		opacity: 0.85;
+	}
+
+	/* Aggregate chip rows reuse the post-game column grid. */
+	.aggrow {
+		padding: 8px 10px 8px 8px;
+		border-radius: 6px;
+		display: flex;
+		align-items: center;
+		gap: 9px;
+	}
+	.aggrow.spaced {
+		margin-top: 4px;
+	}
+	.aggrow.is-red {
+		background: rgba(224, 82, 82, 0.28);
+		border: 1px solid rgba(224, 82, 82, 0.5);
+	}
+	.aggrow.is-blue {
+		background: rgba(61, 98, 224, 0.28);
+		border: 1px solid rgba(61, 98, 224, 0.5);
+	}
+	.aggrow > span {
+		flex: none;
+		text-align: right;
+		font-family: 'Lucida Console', monospace;
+		font-size: 10px;
+		font-variant-numeric: tabular-nums;
+	}
+	.aggrow.is-red > span {
+		color: #ffd9d4;
+	}
+	.aggrow.is-blue > span {
+		color: #cfdcff;
+	}
+	.aggrow .c-name {
+		flex: 1;
+		min-width: 0;
+		text-align: left;
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 12px;
+		line-height: 1;
+		color: var(--nh-text);
+		letter-spacing: 0.04em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.aggrow .c-score {
+		width: 40px;
+		font-family: Inter, sans-serif;
+		font-size: 15px;
+		font-weight: 700;
+		color: var(--nh-text);
+	}
+
+	/* Footer carries the wordmark left, totals centre, emblem right. */
+	.foot {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
 		gap: 26px;
 		padding: 12px 18px 8px;
-		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		border-top: var(--nh-hairline);
 		margin-top: 5px;
+	}
+	.foot span {
 		font-family: 'Lucida Console', monospace;
 		font-size: 11px;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 	}
-	.foot i {
+	.foot .rule {
 		width: 1px;
 		height: 12px;
 		background: rgba(255, 255, 255, 0.14);
 	}
+	.wordmark {
+		height: 12px;
+		width: auto;
+		flex: none;
+		opacity: 0.55;
+		display: block;
+	}
+	.footstar {
+		height: 16px;
+		width: 16px;
+		flex: none;
+		opacity: 0.5;
+		display: block;
+		object-fit: contain;
+	}
+
 	@keyframes row-in {
 		from {
 			opacity: 0;
@@ -465,6 +569,13 @@
 		to {
 			opacity: 1;
 			transform: none;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.head,
+		.pgrow {
+			animation: none;
 		}
 	}
 </style>

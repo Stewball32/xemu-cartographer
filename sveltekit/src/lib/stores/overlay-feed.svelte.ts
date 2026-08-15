@@ -1,18 +1,21 @@
-// Per-overlay feed lifecycle. One uniform set of reactive getters over three
+// Per-overlay feed lifecycle. One uniform set of reactive getters over two
 // sources so an overlay page renders the same regardless of where the data
 // comes from:
-//   • console-ws (?console=NAME) — DEFAULT for console targeting. Resolves the
-//     console name → instance ONCE (/api/overlay/console/{name}), opens a
-//     TOKENLESS WS (?console=NAME — the server admits it to that instance's
-//     rooms via Membership()), and subscribes to the SERVER-FILTERED
+//   • console-ws (?console=NAME) — the live path. Resolves the console name →
+//     instance (/api/overlay/console/{name}), opens a TOKENLESS WS
+//     (?console=NAME — the server admits it to that instance's rooms via
+//     Membership()), and subscribes to the SERVER-FILTERED
 //     host:<instance>:game_filtered class (+ tick/scenario) — live PUSH, dummy
 //     filtering stays server-side. machine_index is derived client-side from
 //     each envelope's machines[] (indices shift live). Migration is followed on
 //     the SAME socket: if the console drops out of the current instance's
 //     machines[], re-resolve and re-subscribe to the new instance.
-//   • console-poll (fallback) — the original PoC: poll /api/overlay/console/{name}
-//     @700ms (server-filtered snapshot). Forced via ?transport=poll. Kept intact.
 //   • mock (?mock=1) — animated sample data, no token.
+//
+// The original PoC's HTTP-poll transport (?transport=poll against the resolver
+// @700ms) is GONE — WS push superseded it and nothing minted the param. The
+// resolver endpoint itself stays: the WS path still uses it to map console name
+// → instance and to follow migrations.
 //
 // The WS path deliberately avoids subscribeSummary / requestEvents / requestProbe
 // (the Hub rejects those for an overlay connection).
@@ -35,20 +38,16 @@ export interface OverlayFeedOptions {
 	classes: EnvelopeTypeV2[];
 	/** Target purely by console name (the only live mode). */
 	console?: string;
-	/** Force the HTTP-poll console fallback instead of WS push (?transport=poll). */
-	consolePoll?: boolean;
 }
 
 const MOCK_TICK_MS = 200;
-/** Console poll cadence (fallback path). */
-const CONSOLE_POLL_MS = 700;
 /** console-ws migration/attach check cadence: cheap local machines[] scan; only
  *  re-hits the resolver when the console isn't present or isn't attached yet. */
 const CONSOLE_RESOLVE_MS = 4000;
 
-/** The console resolver's reply — used only to map console→instance (WS path)
- * and as the snapshot for the poll fallback. No token / no filter: the WS door
- * is tokenless and filtering is server-side (game_filtered). */
+/** The console resolver's reply. Only `instance` is consumed — the live payload
+ * arrives over the socket — but the endpoint returns a full snapshot, so the
+ * unused fields are typed for clarity. */
 interface ConsoleSnapshot {
 	instance: string;
 	machine_index: number;
@@ -70,11 +69,6 @@ export function createOverlayFeed() {
 	let opts = $state<OverlayFeedOptions | null>(null);
 	let frame = $state(0);
 	let timer: ReturnType<typeof setInterval> | null = null;
-
-	// console-poll (fallback) state
-	let snap = $state<ConsoleSnapshot | null>(null);
-	let pollOk = $state(false);
-	let pollErr = $state<string | null>(null);
 
 	// console-ws state
 	let wsActive = $state(false); // true once subscribed over WS
@@ -99,25 +93,7 @@ export function createOverlayFeed() {
 		}
 	}
 
-	// ---- console-poll fallback (original PoC path) -------------------------
-	async function pollConsole(name: string): Promise<void> {
-		const s = await resolve(name);
-		if (!s) {
-			pollOk = false;
-			pollErr = resolveErr;
-			return;
-		}
-		snap = s;
-		pollOk = true;
-		pollErr = null;
-	}
-
-	function startConsolePoll(name: string): void {
-		void pollConsole(name);
-		timer = setInterval(() => void pollConsole(name), CONSOLE_POLL_MS);
-	}
-
-	// ---- console-ws (default): tokenless socket + server-filtered class ----
+	// ---- console-ws: tokenless socket + server-filtered class --------------
 	/** True while the subscribed instance's live game still shows this console. */
 	function consolePresent(name: string): boolean {
 		const machines = scraperWSV2.game[wsInstance]?.machines;
@@ -149,8 +125,7 @@ export function createOverlayFeed() {
 	function start(o: OverlayFeedOptions): void {
 		opts = o;
 		if (o.console) {
-			if (o.consolePoll) startConsolePoll(o.console);
-			else startConsoleWS(o.console, o.classes);
+			startConsoleWS(o.console, o.classes);
 			return;
 		}
 		if (o.mock) {
@@ -167,12 +142,9 @@ export function createOverlayFeed() {
 			clearInterval(timer);
 			timer = null;
 		}
-		if (opts) {
-			if (wsActive) {
-				scraperWSV2.unsubscribeInstance(wsInstance, wsClasses);
-				scraperWSV2.disconnect();
-			}
-			// console-poll: only the interval to clear (done above).
+		if (wsActive) {
+			scraperWSV2.unsubscribeInstance(wsInstance, wsClasses);
+			scraperWSV2.disconnect();
 		}
 		wsActive = false;
 		wsInstance = '';
@@ -181,6 +153,8 @@ export function createOverlayFeed() {
 	}
 
 	const isConsole = () => !!opts?.console;
+	/** Live console data is only readable once the socket is subscribed. */
+	const wsLive = () => isConsole() && wsActive;
 
 	return {
 		start,
@@ -190,60 +164,54 @@ export function createOverlayFeed() {
 		},
 		get connected(): boolean {
 			if (!opts) return false;
-			if (opts.console) return wsActive ? scraperWSV2.connected : pollOk;
+			if (opts.console) return wsActive && scraperWSV2.connected;
 			return opts.mock ? true : scraperWSV2.connected;
 		},
 		get lastError(): string | null {
 			if (!opts) return null;
-			if (opts.console) return wsActive ? scraperWSV2.lastError : (pollErr ?? resolveErr);
+			if (opts.console) return wsActive ? scraperWSV2.lastError : resolveErr;
 			return opts.mock ? null : scraperWSV2.lastError;
 		},
 		/** Console mode: which machine (system-link console) the name resolves to,
 		 * for per-console filtering. -1 = the instance's own console / not in the
-		 * live lobby. WS path derives it from the live envelope each read (indices
-		 * shift); poll path uses the resolver's snapshot value. */
+		 * live lobby. Derived from the live envelope each read, since indices shift
+		 * as the lobby changes. */
 		get machineIndex(): number | null {
 			if (!isConsole()) return null;
-			if (wsActive) {
-				const machines = scraperWSV2.game[wsInstance]?.machines;
-				const name = opts?.console ?? '';
-				const m = machines?.find((mm) => sanitize(mm.name) === sanitize(name));
-				return m ? m.index : -1;
-			}
-			return snap?.machine_index ?? null;
+			if (!wsActive) return null;
+			const machines = scraperWSV2.game[wsInstance]?.machines;
+			const name = opts?.console ?? '';
+			const m = machines?.find((mm) => sanitize(mm.name) === sanitize(name));
+			return m ? m.index : -1;
 		},
 		get resolvedInstance(): string | null {
 			if (!isConsole()) return null;
-			return wsActive ? wsInstance : (snap?.instance ?? null);
+			return wsActive ? wsInstance : null;
 		},
 		get game(): GamePayload | null {
 			if (!opts) return null;
-			// console-ws reads the SERVER-FILTERED game slot (fed by game_filtered);
-			// poll fallback uses the server-filtered snapshot.
-			if (opts.console)
-				return wsActive ? (scraperWSV2.game[wsInstance] ?? null) : (snap?.game ?? null);
+			// console-ws reads the SERVER-FILTERED game slot (fed by game_filtered).
+			if (opts.console) return wsLive() ? (scraperWSV2.game[wsInstance] ?? null) : null;
 			return opts.mock ? mockGame(frame) : null;
 		},
 		get tick(): TickPayloadV2 | null {
 			if (!opts) return null;
-			if (opts.console)
-				return wsActive ? (scraperWSV2.tick[wsInstance] ?? null) : (snap?.tick ?? null);
+			if (opts.console) return wsLive() ? (scraperWSV2.tick[wsInstance] ?? null) : null;
 			return opts.mock ? mockTick(frame) : null;
 		},
 		get scenario(): ScenarioPayload | null {
 			if (!opts) return null;
-			if (opts.console)
-				return wsActive ? (scraperWSV2.scenario[wsInstance] ?? null) : (snap?.scenario ?? null);
+			if (opts.console) return wsLive() ? (scraperWSV2.scenario[wsInstance] ?? null) : null;
 			return opts.mock ? mockScenario() : null;
 		},
 		get objects(): ObjectsPayload | null {
 			if (!opts) return null;
-			if (opts.console) return wsActive ? (scraperWSV2.objects[wsInstance] ?? null) : null;
+			if (opts.console) return wsLive() ? (scraperWSV2.objects[wsInstance] ?? null) : null;
 			return opts.mock ? mockObjects() : null;
 		},
 		get events(): AnyEvent[] {
 			if (!opts) return [];
-			if (opts.console) return wsActive ? (scraperWSV2.events[wsInstance] ?? []) : [];
+			if (opts.console) return wsLive() ? (scraperWSV2.events[wsInstance] ?? []) : [];
 			return opts.mock ? mockEvents(frame) : [];
 		}
 	};

@@ -15,12 +15,15 @@
 	let loading = $state(true);
 	let names = $state(''); // optional display-name overrides, applied to every URL
 
-	// The overlay surfaces + their suggested OBS Browser Source sizes.
+	// The overlay surfaces + their suggested OBS Browser Source sizes. Each
+	// graphic renders at its natural size at the top-left of the source; the
+	// board/report heights grow with the roster, so size generously and let the
+	// transparent area fall where it may (or add ?anchor=center to centre it).
 	const OVERLAYS = [
 		{ id: 'overlay', label: 'POV', path: '/overlay/', size: '1440 × 1080' },
-		{ id: 'scorebug', label: 'Scorebug', path: '/scorebug/', size: '~700 × 90' },
-		{ id: 'leaderboard', label: 'Leaderboard', path: '/leaderboard/', size: '340 × rows' },
-		{ id: 'postgame', label: 'Postgame', path: '/postgame/', size: '900 × rows' }
+		{ id: 'scorebug', label: 'Scorebug', path: '/scorebug/', size: '480 × 84' },
+		{ id: 'leaderboard', label: 'Leaderboard', path: '/leaderboard/', size: '340 × 560 (4v4)' },
+		{ id: 'postgame', label: 'Postgame', path: '/postgame/', size: '900 × 700 (4v4)' }
 	];
 
 	function url(console: string, path: string): string {
@@ -132,7 +135,9 @@
 
 		<p class="max-w-prose text-xs text-surface-600-400">
 			Overlays read cartographer's live feed by console name (no token — auth is deferred for now).
-			Fonts currently load from Google Fonts; self-host for a fully offline LAN.
+			Fonts are self-hosted, so the graphics render correctly on an offline LAN. In OBS, leave
+			<em>Shutdown source when not visible</em> off — the post-game report latches the final match time
+			while the game is still live.
 		</p>
 	{/if}
 </div>

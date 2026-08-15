@@ -1,107 +1,118 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked
-	import { ORANGE, TEAM_HEX, tint, pad2 } from './themes.js';
+	// @ts-nocheck — OBS overlay graphic (plain JS); not strict-TS checked.
+	//
+	// One leaderboard row: rank, emblem avatar, name, K/D/A, spree, score, and
+	// the shield/health bar pair. Ported from the obs-handoff pack's
+	// leaderboard.html rowsBlock(). Row pitch is 52px (46px card + 3px padding
+	// top and bottom) — the board positions slots on that pitch, so any change
+	// here must move ROW_PITCH in the board too.
+	import starUrl from '$lib/assets/star.png';
+	import { pad2 } from './themes.js';
 
-	// player: {name, armor, team, score, kills, deaths, assists, spree, shield (0-2), health (0-1), alive, camo}
 	let {
 		player = {},
-		topScore = 0,
-		topSpree = 0,
-		place = 0,
-		avatar = '',
-		forceTint = null
+		/** Rank number to show, or 0/undefined to hide it (team mode ranks within
+		 * the team chip instead, so the column would be noise). */
+		rank = 0,
+		/** Leader of this block — score takes Selection Orange. */
+		leader = false
 	} = $props();
 
-	const armor = $derived(forceTint ?? TEAM_HEX[player.team] ?? player.armor ?? '#8a93a8');
-	const t = $derived(tint(armor));
 	const dead = $derived(player.alive === false);
 	const camo = $derived((player.camo ?? 0) > 0);
-	const kda = $derived(pad2(player.kills) + '/' + pad2(player.deaths) + '/' + pad2(player.assists));
-	const spree = $derived(player.spree ?? 0);
-	const spreeColor = $derived(spree > 0 && spree === topSpree ? ORANGE : '#9fb4d0');
-	const scoreColor = $derived(player.score === topScore ? ORANGE : '#e8ecf5');
-	const shieldPct = $derived(Math.min(player.shield ?? 0, 1) * 100 + '%');
-	const osPct = $derived(Math.max((player.shield ?? 0) - 1, 0) * 100 + '%');
-	const healthPct = $derived((player.health ?? 0) * 100 + '%');
+
+	// Armor colour → row tint + edge, matching the in-game armour colour.
+	const armor = $derived(player.armor || '#9fb4d0');
+	const kda = $derived(`${pad2(player.kills)}/${pad2(player.deaths)}/${pad2(player.assists)}`);
+	const spree = $derived(player.spree > 0 ? `×${player.spree}` : '—');
+
+	const clamp = (v) => `${Math.max(0, Math.min(1, v ?? 0)) * 100}%`;
+	// Shield reads above 1.0 with an overshield — the base bar saturates and the
+	// white pip overlays the excess.
+	const shieldPct = $derived(clamp(Math.min(1, player.shield ?? 0)));
+	const overPct = $derived(clamp(Math.max(0, (player.shield ?? 0) - 1)));
+	const healthPct = $derived(clamp(player.health));
 </script>
 
-<div class="rowpad" class:dead style="opacity: {camo ? 0.32 : dead ? 0.75 : 1}">
-	<div class="chip" style="background:{t.bg}; border-color:{t.edge}">
-		<div class="line">
-			{#if place}<span class="place">{place}</span>{/if}
-			<div class="avatar">
-				{#if avatar}<img src={avatar} alt={player.name} />{:else}<span class="star">✦</span>{/if}
+<div class="row" class:dead style="background:{armor}26; border-color:{armor}4D">
+	<div class="inner">
+		{#if rank}<span class="rank">{rank}</span>{/if}
+
+		<div class="avatar">
+			<img src={starUrl} alt="" />
+		</div>
+
+		<div class="body">
+			<div class="top">
+				<span class="name">{player.name ?? '—'}</span>
+				<span class="kda">{kda}</span>
+				<span class="spree" class:hot={player.spree >= 3}>{spree}</span>
+				<span class="score" class:leader>{player.score ?? 0}</span>
 			</div>
-			<div class="body">
-				<div class="stats">
-					<span class="name">{player.name ?? '—'}</span>
-					<span class="kda">{kda}</span>
-					<span class="spree" style="color:{spreeColor}">×{spree}</span>
-					<span class="score" style="color:{scoreColor}">{player.score ?? 0}</span>
+
+			<div class="bars">
+				<div class="bar is-shield">
+					<i class="fill-shield" style="width:{shieldPct}"></i>
+					<i class="fill-os" style="width:{overPct}"></i>
 				</div>
-				<div class="bars">
-					<div class="bar shield">
-						<div class="fill" style="width:{shieldPct}; background:#6ec8e8"></div>
-						<div class="fill os" style="width:{osPct}"></div>
-					</div>
-					<div class="bar health">
-						<div class="fill" style="width:{healthPct}; background:#e05252"></div>
-					</div>
+				<div class="bar is-health">
+					<i class="fill-health" style="width:{healthPct}"></i>
 				</div>
 			</div>
 		</div>
 	</div>
+
+	{#if camo}<div class="camo"></div>{/if}
 </div>
 
 <style>
-	.rowpad {
-		padding: 3px 8px;
-		font-family: Inter, sans-serif;
-	}
-	.rowpad.dead {
-		filter: grayscale(1) brightness(0.85);
-	}
-	.chip {
-		border-radius: 9px;
-		border: 1px solid;
+	.row {
+		position: relative;
+		border-radius: 6px;
 		overflow: hidden;
+		border: 1px solid;
+		font-family: Inter, system-ui, sans-serif;
 	}
-	.line {
+	.row.dead {
+		opacity: 0.45;
+		filter: grayscale(1);
+	}
+	.inner {
 		display: flex;
 		align-items: center;
 		gap: 9px;
-		padding: 6px 10px 6px 8px;
+		padding: 2px 10px;
 	}
-	.place {
+
+	.rank {
 		width: 16px;
 		flex: none;
 		text-align: center;
 		font-size: 13px;
 		font-weight: 700;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 		font-variant-numeric: tabular-nums;
 	}
+
 	.avatar {
-		width: 34px;
-		height: 34px;
+		width: 42px;
+		height: 42px;
 		flex: none;
 		border-radius: 50%;
-		overflow: hidden;
 		background: repeating-linear-gradient(45deg, #10152a 0 5px, #141a30 5px 10px);
 		border: 1px solid rgba(159, 180, 208, 0.4);
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		overflow: hidden;
 	}
 	.avatar img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
+		width: 46px;
+		flex: none;
+		display: block;
+		opacity: 0.85;
 	}
-	.star {
-		font-size: 12px;
-		color: #9fb4d0;
-	}
+
 	.body {
 		flex: 1;
 		min-width: 0;
@@ -109,29 +120,32 @@
 		flex-direction: column;
 		gap: 4px;
 	}
-	.stats {
+	.top {
 		display: flex;
 		align-items: center;
 		gap: 10px;
 	}
+
 	.name {
-		font-family: Ultra, serif;
-		font-size: 14px;
-		color: #e8ecf5;
-		letter-spacing: 0.03em;
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 12px;
+		color: var(--nh-text);
+		letter-spacing: 0.04em;
 		flex: 1;
 		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+	/* Zero-padded so the column never shifts width as scores climb. */
 	.kda {
 		flex: none;
 		width: 58px;
 		text-align: right;
 		font-family: 'Lucida Console', monospace;
 		font-size: 10px;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 		font-variant-numeric: tabular-nums;
 	}
 	.spree {
@@ -140,7 +154,11 @@
 		text-align: right;
 		font-size: 11px;
 		font-weight: 700;
+		color: var(--nh-steel);
 		font-variant-numeric: tabular-nums;
+	}
+	.spree.hot {
+		color: var(--nh-orange);
 	}
 	.score {
 		flex: none;
@@ -148,8 +166,13 @@
 		text-align: right;
 		font-size: 16px;
 		font-weight: 700;
+		color: var(--nh-text);
 		font-variant-numeric: tabular-nums;
 	}
+	.score.leader {
+		color: var(--nh-orange);
+	}
+
 	.bars {
 		display: flex;
 		flex-direction: column;
@@ -161,20 +184,53 @@
 		background: rgba(11, 14, 26, 0.6);
 		overflow: hidden;
 	}
-	.bar.shield {
+	.bar.is-shield {
 		height: 4px;
 	}
-	.bar.health {
+	.bar.is-health {
 		height: 3px;
 	}
-	.fill {
+	.bar > i {
 		position: absolute;
 		left: 0;
 		top: 0;
 		bottom: 0;
+		display: block;
 	}
-	.fill.os {
-		background: #e8ecf5;
+	.fill-shield {
+		background: #6ec8e8;
+	}
+	.fill-os {
+		background: var(--nh-text);
 		box-shadow: 0 0 6px rgba(232, 236, 245, 0.9);
+	}
+	.fill-health {
+		background: var(--nh-red);
+	}
+
+	/* Camo cloaks the row and solidifies back left-to-right as it drains. The
+	   scraper only exposes a has_camo bool (no timer), so this runs on CE's
+	   nominal 30s cloak rather than the real remaining time. */
+	.camo {
+		position: absolute;
+		inset: 0;
+		background: rgba(11, 14, 26, 0.78);
+		animation: camo-uncloak 30s linear infinite;
+		pointer-events: none;
+	}
+	@keyframes camo-uncloak {
+		0% {
+			clip-path: inset(0 0 0 0 round 6px);
+		}
+		96%,
+		100% {
+			clip-path: inset(0 0 0 100% round 6px);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.camo {
+			animation: none;
+		}
 	}
 </style>

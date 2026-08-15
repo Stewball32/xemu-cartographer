@@ -233,3 +233,149 @@ func TestAccum_ActivityLatch(t *testing.T) {
 		}
 	})
 }
+
+// --- CE accuracy spec (halo-offset-mapper, 2026-08-15) -----------------------
+
+// The damage table's Amount is the ACCUMULATED total from that dealer, not the
+// size of the latest hit. The spec measured 31 pistol rounds climbing
+// 25 → 50 → 75 → … → 800; the accumulator must report 800, not the sum of every
+// intermediate reading (which is what adding the whole Amount per change did).
+func TestAccum_DamageCountsGrowthNotRunningTotal(t *testing.T) {
+	a := NewMatchAccum()
+	victim := alivePlayer(1)
+
+	base := tick(victim)
+	base.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 100, Amount: 0, DealerPlrHandle: 0x0000}
+	a.Observe(base)
+
+	// 32 rounds of exactly 25.0, cumulative, one engine tick apart.
+	for n := 1; n <= 32; n++ {
+		res := tick(victim)
+		res.InternalPlayers[0].DamageTable[0] = DamageEntry{
+			DamageTime:      uint32(100 + n),
+			Amount:          float32(25 * n),
+			DealerPlrHandle: 0x0000,
+		}
+		a.Observe(res)
+	}
+
+	snap := a.Snapshot()
+	if snap[1].DamageReceived != 800 {
+		t.Fatalf("victim DamageReceived = %v, want 800 (the final cumulative total)", snap[1].DamageReceived)
+	}
+	if snap[0].DamageDealt != 800 {
+		t.Fatalf("dealer DamageDealt = %v, want 800", snap[0].DamageDealt)
+	}
+}
+
+// Two rounds landing inside one engine tick advance Amount without advancing
+// DamageTime — keying off the amount (not the timestamp) still counts both.
+func TestAccum_DamageCountsGrowthWithinOneEngineTick(t *testing.T) {
+	a := NewMatchAccum()
+	victim := alivePlayer(1)
+
+	base := tick(victim)
+	base.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 100, Amount: 10, DealerPlrHandle: 0x0000}
+	a.Observe(base)
+
+	same := tick(victim)
+	same.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 100, Amount: 30, DealerPlrHandle: 0x0000}
+	a.Observe(same)
+
+	if got := a.Snapshot()[1].DamageReceived; got != 20 {
+		t.Fatalf("DamageReceived = %v, want 20 (growth within one tick)", got)
+	}
+}
+
+// The 4 slots recycle between attackers: a slot handed to a new dealer starts a
+// fresh running total, so its whole Amount is new damage.
+func TestAccum_DamageSlotRecycledToNewDealerCountsWhole(t *testing.T) {
+	a := NewMatchAccum()
+	victim := alivePlayer(2)
+
+	base := tick(victim)
+	base.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 100, Amount: 50, DealerPlrHandle: 0x0000}
+	a.Observe(base)
+
+	// Player 0 keeps hitting: 50 → 75 is 25 of new damage.
+	res := tick(victim)
+	res.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 130, Amount: 75, DealerPlrHandle: 0x0000}
+	a.Observe(res)
+
+	// Slot now belongs to player 1, whose running total starts at 40.
+	res2 := tick(victim)
+	res2.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 160, Amount: 40, DealerPlrHandle: 0x0001}
+	a.Observe(res2)
+
+	snap := a.Snapshot()
+	if snap[0].DamageDealt != 25 {
+		t.Fatalf("player 0 DamageDealt = %v, want 25 (growth only)", snap[0].DamageDealt)
+	}
+	if snap[1].DamageDealt != 40 {
+		t.Fatalf("player 1 DamageDealt = %v, want 40 (fresh slot counts whole)", snap[1].DamageDealt)
+	}
+	if snap[2].DamageReceived != 65 {
+		t.Fatalf("victim DamageReceived = %v, want 65", snap[2].DamageReceived)
+	}
+}
+
+// An emptied slot drops its baseline, so reusing it later counts from zero
+// rather than diffing against a stale total.
+func TestAccum_DamageEmptiedSlotResetsBaseline(t *testing.T) {
+	a := NewMatchAccum()
+	victim := alivePlayer(1)
+
+	base := tick(victim)
+	base.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 100, Amount: 90, DealerPlrHandle: 0x0000}
+	a.Observe(base)
+
+	empty := tick(victim) // all slots default to 0xFFFFFFFF = empty
+	a.Observe(empty)
+
+	reuse := tick(victim)
+	reuse.InternalPlayers[0].DamageTable[0] = DamageEntry{DamageTime: 200, Amount: 30, DealerPlrHandle: 0x0000}
+	a.Observe(reuse)
+
+	if got := a.Snapshot()[0].DamageDealt; got != 30 {
+		t.Fatalf("DamageDealt = %v, want 30 (reused slot counts whole, not 30-90)", got)
+	}
+}
+
+// Shots come off magazine + reserve, so a reload is invisible and a sample that
+// straddles a full dump-and-reload still counts every round.
+func TestAccum_ShotsFromMagazinePlusReserve(t *testing.T) {
+	a := NewMatchAccum()
+	p := alivePlayer(0)
+	// AR: 60 in the magazine, 240 in reserve.
+	p.Weapons = []WeaponInfo{{Slot: 0, ObjectID: 42, AmmoMag: i16p(60), AmmoPack: i16p(240)}}
+	a.Observe(tick(p))
+
+	// Fire 10: 50 + 240 = 290.
+	p.Weapons = []WeaponInfo{{Slot: 0, ObjectID: 42, AmmoMag: i16p(50), AmmoPack: i16p(240)}}
+	a.Observe(tick(p))
+	if got := a.Snapshot()[0].ShotsFired; got != 10 {
+		t.Fatalf("ShotsFired = %d, want 10", got)
+	}
+
+	// Pure reload — 60 in the mag again, reserve pays for it. Total unchanged.
+	p.Weapons = []WeaponInfo{{Slot: 0, ObjectID: 42, AmmoMag: i16p(60), AmmoPack: i16p(230)}}
+	a.Observe(tick(p))
+	if got := a.Snapshot()[0].ShotsFired; got != 10 {
+		t.Fatalf("reload counted as shots: %d, want 10", got)
+	}
+
+	// The case magazine-only counting lost: one sample straddles a whole
+	// magazine dump AND the reload, so the magazine reads 60 on both sides.
+	p.Weapons = []WeaponInfo{{Slot: 0, ObjectID: 42, AmmoMag: i16p(60), AmmoPack: i16p(170)}}
+	a.Observe(tick(p))
+	if got := a.Snapshot()[0].ShotsFired; got != 70 {
+		t.Fatalf("ShotsFired = %d, want 70 (60 rounds across a reload must not vanish)", got)
+	}
+
+	// Ammo pickup raises the total — never counts as shots.
+	p.Weapons = []WeaponInfo{{Slot: 0, ObjectID: 42, AmmoMag: i16p(60), AmmoPack: i16p(240)}}
+	a.Observe(tick(p))
+	if got := a.Snapshot()[0].ShotsFired; got != 70 {
+		t.Fatalf("pickup counted as shots: %d, want 70", got)
+	}
+}
