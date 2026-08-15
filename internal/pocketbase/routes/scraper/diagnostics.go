@@ -2,10 +2,12 @@ package scraper
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 )
 
@@ -36,6 +38,19 @@ var Readouts ReadoutSource
 // SetReadoutSource wires the live per-tick readout source. Call before RegisterAll.
 func SetReadoutSource(r ReadoutSource) { Readouts = r }
 
+// HealthSource supplies the instance's rolling observed-vs-expected engine tick
+// rate. Injected from cmd/server/main.go (the scraper manager); an interface so this
+// package keeps no compile-time dependency on the manager. Nil until wired — the
+// panel then simply has no host-health rows rather than failing the request.
+type HealthSource interface {
+	HostHealth(name string) (hosthealth.Health, bool)
+}
+
+var Health HealthSource
+
+// SetHealthSource wires the host-health source. Call before RegisterAll.
+func SetHealthSource(h HealthSource) { Health = h }
+
 // diagnosticsResponse is the admin diagnostics-panel payload: the live per-tick
 // scraper reads plus the enumerated map/gametype NAMES and the HIGHLIGHTED (live
 // carousel-selection) names resolved from the cursor index — so the panel can show
@@ -48,6 +63,15 @@ type diagnosticsResponse struct {
 	HighlightedGametype string   `json:"highlighted_gametype"` // enumerated name at the live gametype cursor index
 	EnumeratedMaps      []string `json:"enumerated_maps"`
 	EnumeratedGametypes []string `json:"enumerated_gametypes"`
+
+	// HostHealth answers "is this box sustaining its engine tick rate?" — the
+	// question the panel could not previously answer, since Tick is a raw
+	// counter with nothing comparing it to wall clock. Null when the source
+	// isn't wired or the instance has no runner. HostHealthAgeMs mirrors the
+	// ReadoutAgeMs idiom: the reading is a snapshot, and a wedged runner stops
+	// refreshing it while its last-known values keep looking healthy.
+	HostHealth      *hosthealth.Health `json:"host_health"`
+	HostHealthAgeMs int64              `json:"host_health_age_ms"`
 }
 
 func optionNames(opts []scraperiface.MapOption) []string {
@@ -101,6 +125,12 @@ func init() {
 				if ro, ok := Readouts.Readout(name); ok {
 					resp.Diagnostics.ApplyReadout(ro)
 					resp.Present = true
+				}
+			}
+			if Health != nil {
+				if hh, ok := Health.HostHealth(name); ok {
+					resp.HostHealth = &hh
+					resp.HostHealthAgeMs = hh.Age(time.Now()).Milliseconds()
 				}
 			}
 			if Maps != nil {

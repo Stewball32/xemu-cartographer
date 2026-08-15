@@ -9,6 +9,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
@@ -92,6 +93,14 @@ type instanceCache struct {
 	LastReadAt time.Time
 	EngineTick uint32
 	Iterations uint64
+
+	// HostHealth is the rolling observed-vs-expected engine tick rate — the
+	// answer to "is this host actually sustaining 30Hz?". Recomputed in
+	// recordIteration and stored as a snapshot (a pointer-free value) so the
+	// shallow copy readCache() hands out is race-free like the rest.
+	// Seeded at construction (see newRunner) so a runner that hasn't sampled
+	// anything yet still publishes a well-formed "unknown" reading.
+	HostHealth hosthealth.Health
 
 	// Match data — populated in Ready and Live, dropped on Ready→Idle.
 	GameState  scraper.GameState
@@ -214,6 +223,16 @@ type runner struct {
 	// dashboard pick up live. Loop-goroutine only; no mutex needed.
 	lastSystemSnapshotAt time.Time
 
+	// health measures observed engine ticks/sec against the expected 30Hz so
+	// a host that isn't sustaining its tick rate is visible on the wire
+	// instead of only in a hand-captured stream. Fed from recordIteration —
+	// i.e. once per successful read in EVERY phase — because a box can be
+	// struggling at a menu just as easily as mid-match. All the "don't cry
+	// wolf" logic (match-start counter re-init, stalled-vs-slow, phase-change
+	// jumps) lives in internal/hosthealth; this is just the drive shaft.
+	// Written under cacheMu, never touched outside recordIteration.
+	health *hosthealth.Tracker
+
 	// lastReadyBroadcastAt throttles inclusion of GameData in Live
 	// state_update envelopes (cumulative scoring updates at 1Hz, separate
 	// from the 30Hz Tick stream). Reset to zero on Ready→Live so the first
@@ -320,6 +339,7 @@ type runner struct {
 func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance, offsetSetFor func() string) *runner {
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
+	health := hosthealth.New(hosthealth.Config{})
 	return &runner{
 		name:         name,
 		sock:         sock,
@@ -333,10 +353,15 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 		cache: instanceCache{
 			Phase:     PhaseIdle,
 			StartedAt: now,
+			// Seed from the tracker rather than leaving the zero value: an
+			// un-sampled Health{} marshals status:"" , and a consumer would
+			// have to special-case that instead of just reading "unknown".
+			HostHealth: health.Health(now),
 		},
 		seqByClass: map[string]uint64{},
 		probeReqCh: make(chan probeRequest, 4),
 		sinks:      newSinkManager(name),
+		health:     health,
 	}
 }
 
@@ -409,11 +434,24 @@ func (r *runner) info() scraperiface.Info {
 // timestamp. Called once per successful loop iteration in any phase. Also
 // fires a throttled heartbeat to the host:all aggregator so freshness
 // updates land even when no other field changed.
+//
+// This is also where host-health sampling happens, for the same reason the
+// freshness stamp lives here: it's the one call every phase makes on every
+// successful read, so the tick-rate window stays continuous across Idle →
+// Ready → Live instead of restarting at each transition.
 func (r *runner) recordIteration(tick uint32) {
+	now := time.Now()
 	r.cacheMu.Lock()
 	r.cache.EngineTick = tick
 	r.cache.Iterations++
-	r.cache.LastReadAt = time.Now()
+	r.cache.LastReadAt = now
+	if r.health != nil {
+		r.health.Observe(tick, now)
+		// Snapshot rather than exposing the tracker: readCache() hands out a
+		// shallow copy, and Health is pointer-free, so consumers can read it
+		// off that copy without touching the tracker's mutable window.
+		r.cache.HostHealth = r.health.Health(now)
+	}
 	r.cacheMu.Unlock()
 	r.maybeHeartbeatSummary()
 }

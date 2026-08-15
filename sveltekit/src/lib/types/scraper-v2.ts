@@ -253,6 +253,35 @@ export interface ScenarioTagDef {
 
 export type PhaseV2 = 'idle' | 'ready' | 'live';
 
+/** Host tick-rate health. Mirrors Go `internal/hosthealth.Health`.
+ *
+ * `status` is the verdict to render on. 'stalled' means the engine tick has
+ * STOPPED — a menu, a paused guest, or an idle runner — and is deliberately
+ * distinct from 'degraded' so a box sitting in the front end never reads as a
+ * struggling host. 'unknown' means not enough data yet (freshly attached, or
+ * just reset by the counter re-init at match start).
+ *
+ * Trust `observed_hz` only in proportion to `window_seconds` / `samples` /
+ * `confident`, and treat the whole reading as suspect once `measured_at` is far
+ * behind now — a wedged runner stops refreshing it while the last values keep
+ * looking healthy. */
+export interface HostHealth {
+	status: 'unknown' | 'stalled' | 'ok' | 'degraded';
+	/** Measured tick rate over the window; 0 when unknown/stalled. */
+	observed_hz: number;
+	/** The rate being judged against — 30 for Halo CE. */
+	expected_hz: number;
+	/** observed/expected; 1.0 is on-rate. */
+	ratio: number;
+	/** ACTUAL measured span, not the configured window. */
+	window_seconds: number;
+	samples: number;
+	/** RFC3339 timestamp of the newest observation — compute staleness from it. */
+	measured_at: string;
+	/** False = span/sample count below threshold; indicative at best. */
+	confident: boolean;
+}
+
 export interface GamePayload {
 	phase: PhaseV2;
 	started_at: string;
@@ -265,6 +294,16 @@ export interface GamePayload {
 	 * ~1, does NOT tick during play, so NOT used for the clock. Kept for now. */
 	game_elapsed_ticks?: number;
 	iterations: number;
+	/** Rolling observed-vs-expected engine tick rate for this host — "is the box
+	 * sustaining 30Hz?". `engine_tick` above is a raw counter, so a host running
+	 * at 24Hz is indistinguishable from one at 30Hz without dividing by wall
+	 * clock; this is that division, done server-side. See internal/hosthealth.
+	 *
+	 * Optional: the current server always emits it, but it is purely diagnostic —
+	 * nothing rendered depends on it — so consumers must degrade gracefully
+	 * rather than hard-require it (an overlay browser source can outlive a
+	 * server upgrade, and test fixtures shouldn't have to fabricate a reading). */
+	host_health?: HostHealth;
 
 	config: GameConfig | null;
 	team_scores: GameTeamScore[];

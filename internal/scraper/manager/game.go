@@ -1,6 +1,10 @@
 package manager
 
-import "time"
+import (
+	"time"
+
+	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
+)
 
 // envelopeTypeGame is the wire type for the per-instance game class —
 // phase, freshness counters, config, roster, scores, machines, network.
@@ -22,6 +26,14 @@ type GamePayload struct {
 	// above is the free-running frame counter and is NOT match-relative.
 	GameElapsedTicks uint32 `json:"game_elapsed_ticks"`
 	Iterations       uint64 `json:"iterations"`
+
+	// HostHealth is the rolling observed-vs-expected engine tick rate for
+	// THIS host. EngineTick above is a raw counter — nothing on the wire
+	// previously compared it to wall clock, so a box rendering at 24Hz was
+	// indistinguishable from one at 30Hz. Read `status` for the verdict and
+	// `observed_hz` for the number; `window_seconds` + `confident` +
+	// `measured_at` say how much to trust it. See internal/hosthealth.
+	HostHealth hosthealth.Health `json:"host_health"`
 
 	Config     *GameConfig        `json:"config"`
 	TeamScores []GameTeamScore    `json:"team_scores"`
