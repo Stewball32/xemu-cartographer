@@ -131,6 +131,9 @@ func main() {
 		// an observed-only box.
 		scraperroutes.SetMapSource(scrMgr)
 		scraperroutes.SetReadoutSource(scrMgr)
+		// ...and the rolling observed-vs-expected engine tick rate, so "is this host
+		// keeping up?" is answerable from the panel instead of a manual capture.
+		scraperroutes.SetHealthSource(scrMgr)
 		scrMgr.SetHostRunner(
 			hostReg,
 			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),

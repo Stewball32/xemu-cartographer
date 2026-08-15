@@ -252,6 +252,7 @@ func buildGamePayload(c *instanceCache) GamePayload {
 		LastReadAt: c.LastReadAt,
 		EngineTick: c.EngineTick,
 		Iterations: c.Iterations,
+		HostHealth: c.HostHealth,
 		// Arrays start empty (not nil) so JSON marshals as [].
 		TeamScores: []GameTeamScore{},
 		Players:    []GameRosterPlayer{},
