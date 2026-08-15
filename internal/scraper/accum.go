@@ -54,16 +54,34 @@ type accumPrev struct {
 	kills       int16
 	ammoBySlot  map[int]weaponAmmoPrev // key: weapon slot
 	dmgTimes    [DamageTableSlots]uint32
+	dmgAmounts  [DamageTableSlots]float32 // last seen cumulative amount per slot
+	dmgDealers  [DamageTableSlots]uint32  // last seen dealer per slot (slots recycle)
 	dmgBaseline bool
 }
 
 type weaponAmmoPrev struct {
 	objectID uint32
-	ammoMag  int16
-	isEnergy bool
-	charge   float32
-	hasMag   bool
-	hasCharg bool
+	// ammoTotal is magazine + reserve, NOT the magazine alone — see the
+	// shots-fired block in Observe for why.
+	ammoTotal int32
+	isEnergy  bool
+	charge    float32
+	hasAmmo   bool
+	hasCharg  bool
+}
+
+// weaponAmmoTotal sums magazine + reserve for a conventional weapon, reporting
+// false when the weapon carries no magazine at all (energy weapons, which are
+// counted off their charge instead).
+func weaponAmmoTotal(w *WeaponInfo) (int32, bool) {
+	if w.AmmoMag == nil {
+		return 0, false
+	}
+	total := int32(*w.AmmoMag)
+	if w.AmmoPack != nil {
+		total += int32(*w.AmmoPack)
+	}
+	return total, true
 }
 
 // MatchAccum accumulates one match's per-player stats. Loop-goroutine only —
@@ -114,8 +132,18 @@ func (a *MatchAccum) Observe(res TickResult) {
 		}
 
 		if pv.seen {
-			// --- shots: magazine-ammo decrease; energy weapons count 1 per
-			// charge decrease (halocaster.py:2299-2307) ---
+			// --- shots: (magazine + reserve) decrease; energy weapons count 1
+			// per charge decrease (halocaster.py:2299-2307) ---
+			//
+			// Track the SUM, not the magazine alone. Firing drops the total by
+			// exactly one per round; RELOADING only moves ammo reserve→magazine,
+			// so the total is unchanged; pickups only ever raise it (and are
+			// ignored, since we count decreases). Magazine-only deltas looked
+			// right at 30Hz but silently lost a whole magazine whenever two
+			// samples straddled a dump-and-reload — the magazine reads high on
+			// both sides and the rounds in between vanish. Per the CE accuracy
+			// spec (halo-offset-mapper, 2026-08-15), which calls the sum the
+			// thing that "sidesteps reload bookkeeping entirely".
 			for wi := range tp.Weapons {
 				w := &tp.Weapons[wi]
 				prevW, ok := pv.ammoBySlot[w.Slot]
@@ -125,8 +153,8 @@ func (a *MatchAccum) Observe(res TickResult) {
 							st.ShotsFired++
 							activity = true
 						}
-					} else if prevW.hasMag && w.AmmoMag != nil && *w.AmmoMag < prevW.ammoMag {
-						st.ShotsFired += int32(prevW.ammoMag - *w.AmmoMag)
+					} else if total, has := weaponAmmoTotal(w); prevW.hasAmmo && has && total < prevW.ammoTotal {
+						st.ShotsFired += prevW.ammoTotal - total
 						activity = true
 					}
 				}
@@ -176,16 +204,49 @@ func (a *MatchAccum) Observe(res TickResult) {
 				activity = true
 			}
 
-			// --- damage: victim's damage table; new entry = slot time changed.
+			// --- damage: victim's damage table.
 			// Received credits the victim (self-damage included); Dealt credits
 			// the dealer player, excluding self-splash so DMG means "to others".
+			//
+			// `Amount` is the ACCUMULATED damage from that dealer in that slot,
+			// not the size of the latest hit — the CE accuracy spec measured it
+			// climbing 25 → 50 → 75 → … → 800 across 31 pistol rounds. So the
+			// new damage is the GROWTH since the last sample. Adding the whole
+			// Amount on every change (as this did) re-added the running total
+			// each hit and inflated both stats super-linearly: that same 31-hit
+			// run would have reported ~13,200 instead of 800.
+			//
+			// The 4 slots are recycled between attackers and reset per
+			// engagement, so a slot whose dealer changed — or whose total went
+			// DOWN — is starting fresh and its whole Amount is new damage.
 			for s := 0; s < DamageTableSlots; s++ {
 				e := ip.DamageTable[s]
 				if e.DamageTime == 0xFFFFFFFF {
+					// Empty slot: drop the baseline so a later reuse counts whole.
+					pv.dmgTimes[s], pv.dmgAmounts[s], pv.dmgDealers[s] = 0xFFFFFFFF, 0, 0xFFFFFFFF
 					continue
 				}
-				if pv.dmgBaseline && e.DamageTime != pv.dmgTimes[s] {
-					st.DamageReceived += e.Amount
+
+				var delta float32
+				switch {
+				case !pv.dmgBaseline:
+					// First observation of this player — baseline only, never count.
+				case pv.dmgDealers[s] != e.DealerPlrHandle:
+					// Slot recycled to a different attacker — all of it is new.
+					delta = e.Amount
+				case e.Amount > pv.dmgAmounts[s]:
+					// Same attacker, running total grew — the growth is the new hit.
+					// Keyed on the AMOUNT rather than DamageTime so two rounds
+					// landing inside one engine tick still both count.
+					delta = e.Amount - pv.dmgAmounts[s]
+				case e.DamageTime != pv.dmgTimes[s]:
+					// Same attacker, fresh timestamp, total did not grow → the
+					// engine reset this slot for a new engagement; count it whole.
+					delta = e.Amount
+				}
+
+				if delta > 0 {
+					st.DamageReceived += delta
 					if e.DealerPlrHandle != 0xFFFFFFFF {
 						dealer := int(e.DealerPlrHandle & 0xFFFF)
 						if dealer != tp.Index {
@@ -194,11 +255,12 @@ func (a *MatchAccum) Observe(res TickResult) {
 								ds = &PlayerAccum{}
 								a.stats[dealer] = ds
 							}
-							ds.DamageDealt += e.Amount
+							ds.DamageDealt += delta
 						}
 					}
 				}
-				pv.dmgTimes[s] = e.DamageTime
+
+				pv.dmgTimes[s], pv.dmgAmounts[s], pv.dmgDealers[s] = e.DamageTime, e.Amount, e.DealerPlrHandle
 			}
 			pv.dmgBaseline = true
 			pv.kills = ip.Kills
@@ -218,8 +280,8 @@ func (a *MatchAccum) Observe(res TickResult) {
 		for wi := range tp.Weapons {
 			w := &tp.Weapons[wi]
 			p := weaponAmmoPrev{objectID: w.ObjectID, isEnergy: w.IsEnergy}
-			if w.AmmoMag != nil {
-				p.ammoMag, p.hasMag = *w.AmmoMag, true
+			if total, has := weaponAmmoTotal(w); has {
+				p.ammoTotal, p.hasAmmo = total, true
 			}
 			if w.Charge != nil {
 				p.charge, p.hasCharg = *w.Charge, true
