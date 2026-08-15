@@ -582,27 +582,31 @@ function mockAvatarDataURI(name: string, hex: string): string {
 	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-// Mock profile-avatar table for the broadcast player cards — the ?mock=1 stand-in
-// for the live /api/public/profiles endpoint, keyed by lowercased gamertag so it
-// matches how the card resolves a live player name. Each seed gets a PB avatar
-// image (data-URI stand-in) + a CE armor colour + an H2 emblem/appearance.
-// Deliberate gaps to preview every fallback branch:
-//   - SEED 5 (TartarusX): NO profile at all → generic avatar + plain Spartan.
-//   - SEED 7 (flood_carrier): profile but NO avatar image → generic avatar spot,
-//     emblem still renders.
+// Mock identity table — the ?mock=1 stand-in for the live /api/public/profiles
+// endpoint, keyed by lowercased scraped name exactly as the endpoint keys its
+// reply. Each seed gets a display name (their "default gamertag"), a PB avatar
+// image (data-URI stand-in), a CE armor colour and an H2 emblem/appearance.
+// Deliberate gaps so the preview exercises every fallback branch:
+//   - SEED 5 (TartarusX): NOT identified at all → trimmed scraped name +
+//     placeholder emblem.
+//   - SEED 7 (flood_carrier): identified, but NO avatar image → name swaps,
+//     avatar spot falls back to the placeholder.
 export function mockProfiles(): Record<
 	string,
-	{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+	{ display?: string; avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
 > {
 	const out: Record<
 		string,
-		{ avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+		{ display?: string; avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
 	> = {};
 	for (const s of SEEDS) {
-		if (s.index === 5) continue; // no profile → full fallback demo
+		if (s.index === 5) continue; // unidentified → full fallback demo
 		out[s.name.toLowerCase()] = {
+			// Stand-in for the user's default gamertag: visibly different from the
+			// scraped name so the swap is obvious in a preview.
+			display: `NC ${s.name}`,
 			...(s.index === 7
-				? {} // profile without an avatar image → avatar-spot fallback demo
+				? {} // identified without an avatar image → avatar-spot fallback demo
 				: { avatar: mockAvatarDataURI(s.name, colorHex(CE_COLORS, s.armorColor)) }),
 			ce: { color: s.armorColor },
 			h2: { appearance: mockAppearance(s.index) }

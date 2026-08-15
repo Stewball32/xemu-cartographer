@@ -6,7 +6,8 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { deriveSplitCount, layoutKey, localOverlayPlayers } from '$lib/utils/overlay-split';
-	import { ordinal, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
+	import { applyIdentities, ordinal, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
+	import { createProfileLookup } from '$lib/stores/overlay-profiles.svelte';
 	import { layouts, viewportCenters } from '$lib/overlay/themes.js';
 	import PlayerCard from '$lib/overlay/PlayerCard.svelte';
 	import RespawnRing from '$lib/overlay/RespawnRing.svelte';
@@ -44,17 +45,27 @@
 	const key = $derived(layoutKey(split));
 	const anchors = $derived(layouts[key]);
 	const centers = $derived(viewportCenters[key]);
+	// Identity resolution: ask once per newly-seen scraped name (the store keeps a
+	// negative cache, so the ~30Hz roster re-derive never re-hits the endpoint).
+	// The whole lobby is resolved, not just this source's seats, so a card and the
+	// leaderboard agree on every player's handle.
+	const lookup = createProfileLookup();
+	const lobby = $derived(overlayPlayers(feed.game, feed.tick));
+	$effect(() => {
+		lookup.ensure(
+			lobby.map((p) => p.name),
+			data.mock
+		);
+	});
 	const players = $derived(
-		rawPlayers.slice(0, anchors.length).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
+		applyIdentities(rawPlayers.slice(0, anchors.length), lookup.all, data.names)
 	);
 
 	// Placing is ranked across the WHOLE lobby, not just the seats this source
 	// shows — a split-screen box's 2nd-place player is 2nd in the match, not 2nd
-	// of the two on screen. Names carry the same ?names= override as the cards so
-	// the lookup below matches.
-	const lobbyOrder = $derived(
-		rankPlayers(overlayPlayers(feed.game, feed.tick)).map((p) => data.names[p.name] ?? p.name)
-	);
+	// of the two on screen. Keyed on the raw scraped name, which both sides carry
+	// unchanged (display names never overwrite it), so no override juggling.
+	const lobbyOrder = $derived(rankPlayers(lobby).map((p) => p.name));
 	const placeOf = (name) => {
 		const i = lobbyOrder.indexOf(name);
 		return i < 0 ? '' : ordinal(i);

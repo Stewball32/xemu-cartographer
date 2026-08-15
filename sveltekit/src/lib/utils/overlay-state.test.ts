@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	applyIdentities,
 	compactNumber,
 	createClockLatch,
 	matchState,
@@ -138,6 +139,8 @@ function player(over: Partial<OverlayPlayer> = {}): OverlayPlayer {
 	return {
 		slot: 0,
 		name: 'P',
+		display: 'P',
+		avatar: null,
 		team: 'ffa',
 		armor: '#fff',
 		score: 0,
@@ -328,5 +331,66 @@ describe('damageRatioOf', () => {
 
 	it('is zero before anyone has dealt anything', () => {
 		expect(damageRatioOf(0, 0)).toBe(0);
+	});
+});
+
+describe('applyIdentities', () => {
+	const players = [player({ name: 'Stewball32' }), player({ name: 'CmdrKeyes' })];
+
+	it('identified → default gamertag + avatar', () => {
+		const [a] = applyIdentities(players, {
+			stewball32: { display: 'Stewart', avatar: 'https://pb/av.png' }
+		});
+		expect(a.display).toBe('Stewart');
+		expect(a.avatar).toBe('https://pb/av.png');
+	});
+
+	it('unidentified → trimmed scraped name + placeholder', () => {
+		const [, b] = applyIdentities(players, { stewball32: { display: 'Stewart' } });
+		expect(b.display).toBe('CmdrKeyes');
+		expect(b.avatar).toBeNull();
+	});
+
+	it('identified without an avatar keeps the name swap and the placeholder', () => {
+		const [a] = applyIdentities(players, { stewball32: { display: 'Stewart' } });
+		expect(a.display).toBe('Stewart');
+		expect(a.avatar).toBeNull();
+	});
+
+	it('?names= override beats the resolved identity', () => {
+		const [a] = applyIdentities(
+			players,
+			{ stewball32: { display: 'Stewart', avatar: 'https://pb/av.png' } },
+			{ Stewball32: 'THE HOST' }
+		);
+		expect(a.display).toBe('THE HOST');
+		// The override is a name, not an identity — the avatar still resolves.
+		expect(a.avatar).toBe('https://pb/av.png');
+	});
+
+	it('never rewrites `name` — it is the lookup and animation key', () => {
+		const [a] = applyIdentities(players, { stewball32: { display: 'Stewart' } });
+		expect(a.name).toBe('Stewball32');
+	});
+
+	it('matches case-insensitively on the scraped name', () => {
+		const [a] = applyIdentities([player({ name: 'STEWBALL32' })], {
+			stewball32: { display: 'Stewart' }
+		});
+		expect(a.display).toBe('Stewart');
+	});
+
+	it('is a no-op with no identities', () => {
+		expect(applyIdentities(players).map((p) => p.display)).toEqual(['Stewball32', 'CmdrKeyes']);
+	});
+});
+
+describe('scraped name trimming', () => {
+	it('trims padding CE leaves on profile names', () => {
+		const g = gameWith();
+		g.players[0].name = '  Crazy  ';
+		const [p] = overlayPlayers(g, null);
+		expect(p.name).toBe('Crazy');
+		expect(p.display).toBe('Crazy');
 	});
 });

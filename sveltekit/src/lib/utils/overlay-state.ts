@@ -79,9 +79,14 @@ export function overlayPlayers(
 	return roster.map((p) => {
 		const t = tickByIndex.get(p.index);
 		const respawnTicks = t?.respawn_in_ticks ?? null;
+		// CE pads names out of the profile block, so trim before anything keys off
+		// it — this is the identity-lookup key and the leaderboard's {#each} key.
+		const name = p.name.trim();
 		return {
 			slot: p.local_index ?? p.index,
-			name: p.name,
+			name,
+			display: name,
+			avatar: null,
 			team: teamOf(isTeamGame, p.team),
 			armor: armorHex(p.armor_color),
 			score: p.score,
@@ -109,6 +114,43 @@ export function overlayPlayers(
 			camoMax: CAMO_MAX,
 			shield: t?.shields ?? 1,
 			health: t?.health ?? 1
+		};
+	});
+}
+
+/** One resolved broadcast identity from GET /api/public/profiles. */
+export interface OverlayIdentity {
+	/** The player's default gamertag — the handle to put on air. */
+	display?: string;
+	/** Absolute avatar URL, already origin-resolved by the lookup store. */
+	avatar?: string;
+}
+
+/**
+ * applyIdentities overlays resolved identities (and any manual ?names= override)
+ * onto a mapped roster, setting `display` and `avatar`.
+ *
+ * Precedence, highest first:
+ *   1. ?names=SCRAPED:Display — the operator's manual override always wins, so a
+ *      name can be forced on air regardless of what the lookup says.
+ *   2. The resolved default gamertag.
+ *   3. The trimmed scraped name.
+ *
+ * `name` is never rewritten — see the OverlayPlayer doc comment. Matching is on
+ * the lowercased scraped name, the same key the endpoint returns.
+ */
+export function applyIdentities(
+	players: OverlayPlayer[],
+	identities: Record<string, OverlayIdentity> = {},
+	nameOverrides: Record<string, string> = {}
+): OverlayPlayer[] {
+	return players.map((p) => {
+		const id = identities[p.name.toLowerCase()];
+		const override = nameOverrides[p.name];
+		return {
+			...p,
+			display: override ?? id?.display ?? p.name,
+			avatar: id?.avatar ?? null
 		};
 	});
 }

@@ -38,13 +38,16 @@
 	<div class="inner">
 		{#if rank}<span class="rank">{rank}</span>{/if}
 
-		<div class="avatar">
-			<img src={starUrl} alt="" />
+		<!-- Identified players show their own avatar; everyone else keeps the
+		     placeholder emblem. onerror covers a dead file URL so a broken image
+		     never leaves a hole on stream. -->
+		<div class="avatar" class:is-placeholder={!player.avatar}>
+			<img src={player.avatar || starUrl} alt="" onerror={(e) => (e.currentTarget.src = starUrl)} />
 		</div>
 
 		<div class="body">
 			<div class="top">
-				<span class="name">{player.name ?? '—'}</span>
+				<span class="name">{player.display || player.name || '—'}</span>
 				<span class="kda">{kda}</span>
 				<span class="spree" class:hot={player.spree >= 3}>{spree}</span>
 				<span class="score" class:leader>{player.score ?? 0}</span>
@@ -106,10 +109,19 @@
 		justify-content: center;
 		overflow: hidden;
 	}
+	/* A real avatar fills the circle; the placeholder emblem deliberately
+	   overflows it slightly and sits back at 0.85 so it reads as a placeholder
+	   rather than a photo. */
 	.avatar img {
-		width: 46px;
+		width: 100%;
+		height: 100%;
 		flex: none;
 		display: block;
+		object-fit: cover;
+	}
+	.avatar.is-placeholder img {
+		width: 46px;
+		height: auto;
 		opacity: 0.85;
 	}
 
