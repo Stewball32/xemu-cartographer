@@ -6,10 +6,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { deriveSplitCount, layoutKey, localOverlayPlayers } from '$lib/utils/overlay-split';
-	import { overlayPlayers } from '$lib/utils/overlay-state';
+	import { ordinal, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
 	import { layouts, viewportCenters } from '$lib/overlay/themes.js';
 	import PlayerCard from '$lib/overlay/PlayerCard.svelte';
 	import RespawnRing from '$lib/overlay/RespawnRing.svelte';
+	import '$lib/styles/overlay-base.css';
 
 	let { data } = $props();
 
@@ -19,7 +20,6 @@
 		feed.start({
 			console: data.console,
 			mock: data.mock,
-			consolePoll: data.consolePoll,
 			classes: ['game', 'tick']
 		})
 	);
@@ -48,24 +48,36 @@
 		rawPlayers.slice(0, anchors.length).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
 	);
 
+	// Placing is ranked across the WHOLE lobby, not just the seats this source
+	// shows — a split-screen box's 2nd-place player is 2nd in the match, not 2nd
+	// of the two on screen. Names carry the same ?names= override as the cards so
+	// the lookup below matches.
+	const lobbyOrder = $derived(
+		rankPlayers(overlayPlayers(feed.game, feed.tick)).map((p) => data.names[p.name] ?? p.name)
+	);
+	const placeOf = (name) => {
+		const i = lobbyOrder.indexOf(name);
+		return i < 0 ? '' : ordinal(i);
+	};
+
 	const pos = (a) =>
 		`left:${a.left ?? 'auto'}; top:${a.top ?? 'auto'}; bottom:${a.bottom ?? 'auto'}; transform:${a.tf ?? 'none'};`;
 </script>
 
 <svelte:head>
-	<title>Norcal Halo — POV overlay</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		href="https://fonts.googleapis.com/css2?family=Ultra&family=Inter:wght@400;500;600;700&display=swap"
-		rel="stylesheet"
-	/>
+	<title>NorCal Halo — POV overlay</title>
 </svelte:head>
 
 <div class="canvas">
 	{#each players as player, i (player.slot ?? i)}
 		<div class="anchor" style={pos(anchors[i])}>
-			<PlayerCard {player} scale={anchors[i].scale ?? 1} origin={anchors[i].origin ?? 'center'} />
+			<PlayerCard
+				{player}
+				scale={anchors[i].scale ?? 1}
+				origin={anchors[i].origin ?? 'center'}
+				place={placeOf(player.name)}
+				sheen="{(i * 1.3).toFixed(1)}s"
+			/>
 		</div>
 		{#if player.alive === false && (player.respawn ?? 0) > 0}
 			<div class="ring-anchor" style="left:{centers[i].x}px; top:{centers[i].y}px">
@@ -80,17 +92,22 @@
 </div>
 
 <style>
-	/* OBS browser source: 1440x1080 (4:3, matching the Xbox/CE player view), transparent. */
+	/* OBS browser source: 1440x1080 (4:3, matching the Xbox/CE player view),
+	   transparent. Skeleton v5 paints the root background on `html` (v4 used
+	   `body`), so BOTH must be neutralised — and body::before/::after kill the
+	   themed decorations (xbox's hex mesh, starcommand's vignette) that would
+	   otherwise bake into the capture. Unlayered + !important beats the themed
+	   @layer base rules in routes/layout.css. */
 	:global(html, body) {
 		margin: 0;
-		background: transparent;
+		padding: 0;
+		background: transparent !important;
+		background-image: none !important;
 		overflow: hidden;
 	}
-	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
-	   composites over the OBS feed. Unlayered + !important beats the themed
-	   @layer base rule in routes/layout.css. */
-	:global(body::before) {
+	:global(body::before, body::after) {
 		display: none !important;
+		content: none !important;
 	}
 	.canvas {
 		position: relative;

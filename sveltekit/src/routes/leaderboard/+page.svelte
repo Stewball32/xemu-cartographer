@@ -1,14 +1,26 @@
 <script>
-	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
-	// Rewired to cartographer's native live feed (overlay token + instance),
-	// mapped to the pack's match/players shape by overlay-state.
+	// @ts-nocheck — OBS overlay graphic (plain JS); not strict-TS checked.
+	//
+	// Leaderboard — live standings, FFA (ranked flat list) or team (two chipped
+	// blocks). Ported from the obs-handoff pack's leaderboard.html, wired to
+	// cartographer's native live feed via overlay-state.
+	//
+	// OBS browser source: 340 wide; height scales with the roster at ~52px per
+	// row plus the header (≈330 for a 5-player FFA, ≈560 for a 4v4). Size the
+	// source generously and let the transparent area fall where it may.
+	//
+	// Rows are absolutely positioned and animate their `top`, so a re-sort slides
+	// instead of snapping. Keyed by player name to hold identity across frames.
 	import { onMount, onDestroy } from 'svelte';
-	import { flip } from 'svelte/animate';
-	import { quintOut } from 'svelte/easing';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
-	import { matchState, overlayPlayers } from '$lib/utils/overlay-state';
-	import { TEAM_HEX } from '$lib/overlay/themes.js';
+	import { matchState, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
 	import LeaderboardRow from '$lib/overlay/LeaderboardRow.svelte';
+	import starUrl from '$lib/assets/star.png';
+	import '$lib/styles/overlay-base.css';
+
+	// Row pitch: 46px card + 3px padding top and bottom. Must match the slot
+	// padding in .rowslot below and the row height in LeaderboardRow.
+	const ROW_PITCH = 52;
 
 	let { data } = $props();
 	const feed = createOverlayFeed();
@@ -16,7 +28,6 @@
 		feed.start({
 			console: data.console,
 			mock: data.mock,
-			consolePoll: data.consolePoll,
 			classes: ['game', 'tick', 'scenario']
 		})
 	);
@@ -26,157 +37,205 @@
 		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
 	);
 	const match = $derived(matchState(feed.game, feed.scenario));
+	const isTeam = $derived(match.mode === 'team');
 
-	const teams = $derived(match.teams ?? null);
-	const sorted = $derived([...players].sort((a, b) => b.score - a.score));
-	const topScore = $derived(sorted[0]?.score ?? 0);
-	const topSpree = $derived(Math.max(0, ...players.map((p) => p.spree ?? 0)));
-	// Ties share a place number.
-	const placeOf = $derived(
-		sorted.reduce((m, p, i) => {
-			m[p.name] = p.score === sorted[i - 1]?.score ? m[sorted[i - 1].name] : i + 1;
-			return m;
-		}, {})
-	);
-	const teamPlayers = (id) => sorted.filter((p) => p.team === id);
+	const red = $derived(match.teams?.find((t) => t.id === 'red'));
+	const blue = $derived(match.teams?.find((t) => t.id === 'blue'));
+
+	const ffaRanked = $derived(isTeam ? [] : rankPlayers(players));
+	const redRanked = $derived(isTeam ? rankPlayers(players.filter((p) => p.team === 'red')) : []);
+	const blueRanked = $derived(isTeam ? rankPlayers(players.filter((p) => p.team === 'blue')) : []);
 </script>
 
 <svelte:head>
-	<title>Norcal Halo — leaderboard</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		href="https://fonts.googleapis.com/css2?family=Ultra&family=Inter:wght@400;500;600;700&display=swap"
-		rel="stylesheet"
-	/>
+	<title>NorCal Halo — leaderboard</title>
 </svelte:head>
 
-<div class="board">
-	<div class="head">
-		<div class="gm">
-			<span class="gt">{match.gametype ?? ''}</span>
-			<span class="map">{match.map ?? ''}</span>
+<div class="stage" data-anchor={data.anchor}>
+	<div class="board">
+		<div class="head" class:has-teams={isTeam} style="--emblem:url({starUrl})">
+			<div class="head-id">
+				<span class="gametype">{match.gametype}</span>
+				<span class="map">{match.map}</span>
+			</div>
+			<span class="clock">{match.clock ?? '0:00'}</span>
 		</div>
-		<span class="clock">{match.clock ?? '0:00'}</span>
-	</div>
-	{#if teams}
-		{#each teams as team (team.id)}
-			<div
-				class="teamchip"
-				style="background:{TEAM_HEX[team.id]}47; border-color:{TEAM_HEX[team.id]}80"
-			>
-				<span class="tname">{team.name ?? team.id.toUpperCase() + ' TEAM'}</span>
-				<span class="tscore">{team.score}</span>
-			</div>
-			{#each teamPlayers(team.id) as player (player.name)}
-				<div animate:flip={{ duration: 550, easing: quintOut }}>
-					<LeaderboardRow
-						{player}
-						{topSpree}
-						topScore={-1}
-						forceTint={TEAM_HEX[team.id]}
-						avatar={player.avatar}
-					/>
+
+		{#if isTeam}
+			{#if red}
+				<div class="teamchip is-red">
+					<div>
+						<span class="teamchip-name">{red.name}</span>
+						<span class="teamchip-score">{red.score}</span>
+					</div>
 				</div>
-			{/each}
-		{/each}
-	{:else}
-		{#each sorted as player (player.name)}
-			<div animate:flip={{ duration: 550, easing: quintOut }}>
-				<LeaderboardRow
-					{player}
-					{topScore}
-					{topSpree}
-					place={placeOf[player.name]}
-					avatar={player.avatar}
-				/>
+			{/if}
+			<div class="rows" style="height:{redRanked.length * ROW_PITCH}px">
+				{#each redRanked as p, i (p.name)}
+					<div class="rowslot" style="top:{i * ROW_PITCH}px">
+						<LeaderboardRow player={p} />
+					</div>
+				{/each}
 			</div>
-		{/each}
-	{/if}
-	<div class="footpad"></div>
+
+			{#if blue}
+				<div class="teamchip is-blue">
+					<div>
+						<span class="teamchip-name">{blue.name}</span>
+						<span class="teamchip-score">{blue.score}</span>
+					</div>
+				</div>
+			{/if}
+			<div class="rows" style="height:{blueRanked.length * ROW_PITCH}px">
+				{#each blueRanked as p, i (p.name)}
+					<div class="rowslot" style="top:{i * ROW_PITCH}px">
+						<LeaderboardRow player={p} />
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<div class="rows" style="height:{ffaRanked.length * ROW_PITCH}px">
+				{#each ffaRanked as p, i (p.name)}
+					<div class="rowslot" style="top:{i * ROW_PITCH}px">
+						<LeaderboardRow player={p} rank={i + 1} leader={i === 0} />
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
-	/* OBS browser source, transparent; size ~340 wide × (72 + 52·rows). */
+	/* Transparent canvas — see the scorebug for why both html and body are reset
+	   and why body::before/::after are killed. */
 	:global(html, body) {
 		margin: 0;
-		background: transparent;
+		padding: 0;
+		background: transparent !important;
+		background-image: none !important;
 		overflow: hidden;
 	}
-	/* Kill the app's xbox-theme hex-mesh (body::before) so only the overlay
-	   composites over the OBS feed. Unlayered + !important beats the themed
-	   @layer base rule in routes/layout.css. */
-	:global(body::before) {
+	:global(body::before, body::after) {
 		display: none !important;
+		content: none !important;
 	}
+
+	.stage[data-anchor='center'] {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100vw;
+		height: 100vh;
+	}
+
 	.board {
 		width: 340px;
-		border-radius: 20px;
+		border-radius: 12px;
 		overflow: hidden;
-		border: 1px solid rgba(159, 180, 208, 0.25);
-		box-shadow:
-			0 0 26px rgba(61, 98, 224, 0.28),
-			inset 0 1px 0 rgba(255, 255, 255, 0.14);
-		background: rgba(11, 14, 26, 0.95);
-		font-family: Inter, sans-serif;
+		border: var(--nh-edge);
+		box-shadow: var(--nh-lift);
+		background: var(--nh-panel);
+		padding-bottom: 5px;
+		font-family: Inter, system-ui, sans-serif;
 	}
+
 	.head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		padding: 13px 16px 11px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+		border-bottom: var(--nh-hairline);
+		background:
+			linear-gradient(rgba(11, 14, 26, 0.66), rgba(11, 14, 26, 0.66)),
+			var(--emblem) center / 165px no-repeat;
+	}
+	.head.has-teams {
 		margin-bottom: 5px;
 	}
-	.gm {
+	.head-id {
 		display: flex;
 		flex-direction: column;
-		gap: 3px;
+		gap: 4px;
 	}
-	.gt {
+	.gametype {
 		font-size: 12px;
 		font-weight: 700;
 		letter-spacing: 0.26em;
-		color: #9fb4d0;
+		color: var(--nh-steel);
 	}
 	.map {
-		font-family: Ultra, serif;
-		font-size: 17px;
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 14px;
 		line-height: 1;
-		color: #e8ecf5;
-		letter-spacing: 0.04em;
+		color: var(--nh-text);
+		letter-spacing: 0.06em;
 	}
 	.clock {
 		font-family: 'Lucida Console', monospace;
 		font-size: 24px;
 		font-weight: 700;
-		color: #e8ecf5;
+		color: var(--nh-text);
 		font-variant-numeric: tabular-nums;
 	}
+
+	.rows {
+		position: relative;
+	}
+	.rowslot {
+		position: absolute;
+		left: 0;
+		right: 0;
+		padding: 3px 8px;
+		transition: top 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
 	.teamchip {
+		padding: 3px 8px;
+	}
+	.teamchip.is-blue {
+		margin-top: 4px;
+	}
+	.teamchip > div {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		margin: 4px 8px 3px;
+		gap: 12px;
 		padding: 8px 12px;
-		border-radius: 9px;
-		border: 1px solid;
+		border-radius: 6px;
 	}
-	.tname {
-		font-family: Ultra, serif;
-		font-size: 15px;
-		line-height: 1;
-		color: #e8ecf5;
-		letter-spacing: 0.03em;
+	.teamchip.is-red > div {
+		background: rgba(224, 82, 82, 0.28);
+		border: 1px solid rgba(224, 82, 82, 0.5);
 	}
-	.tscore {
-		font-family: Ultra, serif;
-		font-size: 22px;
+	.teamchip.is-blue > div {
+		background: rgba(61, 98, 224, 0.28);
+		border: 1px solid rgba(61, 98, 224, 0.5);
+	}
+	.teamchip-name {
+		font-family: Orbitron, sans-serif;
+		font-weight: 700;
+		font-size: 12px;
 		line-height: 1;
-		color: #e8ecf5;
+		color: var(--nh-text);
+		letter-spacing: 0.04em;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.teamchip-score {
+		font-family: Orbitron, sans-serif;
+		font-weight: 800;
+		font-size: 20px;
+		line-height: 1;
+		color: var(--nh-text);
 		font-variant-numeric: tabular-nums;
 	}
-	.footpad {
-		height: 6px;
+
+	@media (prefers-reduced-motion: reduce) {
+		.rowslot {
+			transition: none;
+		}
 	}
 </style>

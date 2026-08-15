@@ -43,7 +43,7 @@ export interface OverlayPlayer {
 	spree: number; // CURRENT kill streak (live badge)
 	bestSpree: number; // match PEAK kill streak (postgame SPREE)
 	accuracy: number; // 0..100 — dead upstream (shots offsets read 0); kept for shape
-	damageRatio: number;
+	damageRatio: number; // damage dealt ÷ damage taken; Infinity when none taken
 	betrayals: number; // = scrape team_kills (verified live)
 	suicides: number; // = scrape suicides (verified live)
 	// Accumulated match stats (server-side ammo/damage/pickup deltas — the
@@ -111,6 +111,26 @@ function accuracyOf(shotsFired: number, shotsHit: number): number {
 	return (shotsHit / shotsFired) * 100;
 }
 
+/** DMG column: damage DEALT per unit TAKEN. Both sides come from the server-side
+ * accumulator (acc_damage_dealt / acc_damage_received), so unlike accuracy this
+ * is real data.
+ *
+ * A player who has dealt damage without taking any has a genuinely unbounded
+ * ratio, reported as Infinity for the view layer to render as `∞`. Do NOT fall
+ * back to the dealt total here: damage is in the hundreds-to-thousands while the
+ * ratio sits around 1, so a "900.00" would land next to a teammate's "1.16" and
+ * read as a broken column rather than a dominant player. (The K/D column's
+ * deaths-of-zero convention gets away with showing the kill count only because
+ * kills are bounded at roughly the score limit.)
+ *
+ * Lives here rather than in overlay-state because this module owns the
+ * OverlayPlayer shape and overlay-state already imports from it — the reverse
+ * direction would be an import cycle. */
+export function damageRatioOf(dealt: number, received: number): number {
+	if (received > 0) return dealt / received;
+	return dealt > 0 ? Infinity : 0;
+}
+
 /**
  * localOverlayPlayers maps cartographer's LOCAL roster (joined to the tick by
  * player index for live health/shield/alive/camo/respawn) into the overlay's
@@ -141,7 +161,7 @@ export function localOverlayPlayers(
 			spree: p.kill_streak,
 			bestSpree: p.best_kill_streak ?? 0,
 			accuracy: accuracyOf(p.shots_fired, p.shots_hit),
-			damageRatio: 0,
+			damageRatio: damageRatioOf(p.acc_damage_dealt ?? 0, p.acc_damage_received ?? 0),
 			betrayals: p.team_kills,
 			suicides: p.suicides,
 			shotsFired: p.acc_shots_fired ?? 0,
