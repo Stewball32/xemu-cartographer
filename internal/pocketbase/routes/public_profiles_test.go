@@ -76,3 +76,56 @@ func TestAppearanceFromJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestSanitizedKey(t *testing.T) {
+	cases := []struct{ sanitized, tag, want string }{
+		{"stewball32", "Stewball32", "stewball32"}, // sanitized column wins
+		{"", "  OG50 II  ", "og50 ii"},             // falls back to a normalised tag
+		{"  ", "MixedCase", "mixedcase"},           // blank sanitized is not a match key
+		{"", "", ""},                               // nothing to match on
+		{"  Padded  ", "other", "padded"},          // sanitized is normalised too
+	}
+	for _, c := range cases {
+		if got := sanitizedKey(c.sanitized, c.tag); got != c.want {
+			t.Errorf("sanitizedKey(%q,%q) = %q, want %q", c.sanitized, c.tag, got, c.want)
+		}
+	}
+}
+
+func TestDisplayNameFor(t *testing.T) {
+	cases := []struct {
+		name                             string
+		defTag, defStatus, matched, want string
+	}{
+		{"approved default wins", "Stewart", "approved", "Stewball32", "Stewart"},
+		{"allowed default also wins", "Stewart", "allowed", "Stewball32", "Stewart"},
+		// The whole point of gating: an unreviewed or blocked default must not
+		// reach the stream just because another tag of theirs was approved.
+		{"pending default falls back", "NotYetReviewed", "pending", "Stewball32", "Stewball32"},
+		{"blocked default falls back", "Naughty", "blocked", "Stewball32", "Stewball32"},
+		{"no default at all", "", "", "Stewball32", "Stewball32"},
+		{"blank approved default falls back", "   ", "approved", "Stewball32", "Stewball32"},
+		{"matched tag is trimmed", "", "", "  Stewball32  ", "Stewball32"},
+	}
+	for _, c := range cases {
+		if got := displayNameFor(c.defTag, c.defStatus, c.matched); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestProfileVisibleStatuses(t *testing.T) {
+	// A broadcast shows only affirmatively-reviewed names. `pending` is excluded
+	// deliberately — stricter than the status != "blocked" rule used for matching
+	// and authorization elsewhere.
+	for _, s := range []string{"approved", "allowed"} {
+		if !profileVisibleStatuses[s] {
+			t.Errorf("status %q must be broadcast-visible", s)
+		}
+	}
+	for _, s := range []string{"pending", "blocked", "", "APPROVED"} {
+		if profileVisibleStatuses[s] {
+			t.Errorf("status %q must NOT be broadcast-visible", s)
+		}
+	}
+}

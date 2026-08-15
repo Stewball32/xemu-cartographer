@@ -13,7 +13,13 @@
 	// instead of snapping. Keyed by player name to hold identity across frames.
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
-	import { matchState, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
+	import {
+		applyIdentities,
+		matchState,
+		overlayPlayers,
+		rankPlayers
+	} from '$lib/utils/overlay-state';
+	import { createProfileLookup } from '$lib/stores/overlay-profiles.svelte';
 	import LeaderboardRow from '$lib/overlay/LeaderboardRow.svelte';
 	import starUrl from '$lib/assets/star.png';
 	import '$lib/styles/overlay-base.css';
@@ -33,9 +39,17 @@
 	);
 	onDestroy(() => feed.stop());
 
-	const players = $derived(
-		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
-	);
+	// Identity resolution: ask once per newly-seen scraped name (the store keeps a
+	// negative cache, so the ~30Hz roster re-derive never re-hits the endpoint).
+	const lookup = createProfileLookup();
+	const scraped = $derived(overlayPlayers(feed.game, feed.tick));
+	$effect(() => {
+		lookup.ensure(
+			scraped.map((p) => p.name),
+			data.mock
+		);
+	});
+	const players = $derived(applyIdentities(scraped, lookup.all, data.names));
 	const match = $derived(matchState(feed.game, feed.scenario));
 	const isTeam = $derived(match.mode === 'team');
 

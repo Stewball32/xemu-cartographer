@@ -33,7 +33,16 @@ import { TICKS_PER_SECOND } from '$lib/utils/overlay-view';
 /** The pack PlayerCard's expected shape (a subset of the OBS pack's contract). */
 export interface OverlayPlayer {
 	slot: number; // viewport index (local_index), top→bottom / left→right
+	/** The scraped in-game name, TRIMMED. Stays raw (never the resolved display
+	 * name) because it is both the lookup key for identity resolution and the
+	 * `{#each}` key the leaderboard animates on — swapping it when a profile
+	 * lands would tear down and re-animate the row. */
 	name: string;
+	/** What to actually render: the player's default gamertag once identity
+	 * resolves, a ?names= override, else `name`. Always set. */
+	display: string;
+	/** Resolved avatar URL, or null for the placeholder emblem. */
+	avatar: string | null;
 	team: 'ffa' | 'red' | 'blue';
 	armor: string; // hex tint for the FFA chip
 	score: number;
@@ -149,9 +158,13 @@ export function localOverlayPlayers(
 	return localRoster(game).map((p) => {
 		const t = tickByIndex.get(p.index);
 		const respawnTicks = t?.respawn_in_ticks ?? null;
+		// CE pads names out of the profile block — trim before anything keys off it.
+		const name = p.name.trim();
 		return {
 			slot: p.local_index ?? 0,
-			name: p.name,
+			name,
+			display: name,
+			avatar: null,
 			team: teamOf(isTeamGame, p.team),
 			armor: armorHex(p.armor_color),
 			score: p.score,

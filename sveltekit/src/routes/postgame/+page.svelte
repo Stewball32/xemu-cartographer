@@ -14,12 +14,14 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import {
+		applyIdentities,
 		createClockLatch,
 		matchState,
 		matchTotals,
 		overlayPlayers,
 		rankPlayers
 	} from '$lib/utils/overlay-state';
+	import { createProfileLookup } from '$lib/stores/overlay-profiles.svelte';
 	import { damageRatioOf } from '$lib/utils/overlay-split';
 	import starUrl from '$lib/assets/star.png';
 	import wordmarkUrl from '$lib/assets/norcal-halo.png';
@@ -157,9 +159,17 @@
 		duration = latch.duration;
 	});
 
-	const players = $derived(
-		overlayPlayers(feed.game, feed.tick).map((p) => ({ ...p, name: data.names[p.name] ?? p.name }))
-	);
+	// Identity resolution: ask once per newly-seen scraped name (the store keeps a
+	// negative cache, so the ~30Hz roster re-derive never re-hits the endpoint).
+	const lookup = createProfileLookup();
+	const scraped = $derived(overlayPlayers(feed.game, feed.tick));
+	$effect(() => {
+		lookup.ensure(
+			scraped.map((p) => p.name),
+			data.mock
+		);
+	});
+	const players = $derived(applyIdentities(scraped, lookup.all, data.names));
 	const match = $derived(matchState(feed.game, feed.scenario));
 	const isTeam = $derived(match.mode === 'team');
 	const best = $derived(bestOf(players));
@@ -170,7 +180,9 @@
 	const redWins = $derived(isTeam && (red?.score ?? 0) >= (blue?.score ?? 0));
 
 	const winner = $derived(
-		isTeam ? ((redWins ? red?.name : blue?.name) ?? DASH) : (rankPlayers(players)[0]?.name ?? DASH)
+		isTeam
+			? ((redWins ? red?.name : blue?.name) ?? DASH)
+			: (rankPlayers(players)[0]?.display ?? DASH)
 	);
 
 	// Winning block first, so the eye lands on the victors.
@@ -248,8 +260,14 @@
 						).toFixed(2)}s"
 					>
 						<span class="c-rank">{i + 1}</span>
-						<div class="avatar"><img src={starUrl} alt="" /></div>
-						<span class="c-player">{p.name}</span>
+						<div class="avatar" class:is-placeholder={!p.avatar}>
+							<img
+								src={p.avatar || starUrl}
+								alt=""
+								onerror={(e) => (e.currentTarget.src = starUrl)}
+							/>
+						</div>
+						<span class="c-player">{p.display || p.name}</span>
 						{#each COLS as col (col.key)}
 							{@const v = col.na ? null : col.get(p)}
 							<span
@@ -464,10 +482,18 @@
 		justify-content: center;
 		overflow: hidden;
 	}
+	/* A real avatar fills the circle; the placeholder emblem overflows it and
+	   sits back at 0.85 so it reads as a placeholder rather than a photo. */
 	.avatar img {
-		width: 46px;
+		width: 100%;
+		height: 100%;
 		flex: none;
 		display: block;
+		object-fit: cover;
+	}
+	.avatar.is-placeholder img {
+		width: 46px;
+		height: auto;
 		opacity: 0.85;
 	}
 

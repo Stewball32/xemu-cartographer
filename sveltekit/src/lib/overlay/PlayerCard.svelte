@@ -49,12 +49,18 @@
 	<div class="breathe"></div>
 	<div class="sheenclip"><div class="sheen" style="animation-delay:{sheen}"></div></div>
 
-	<div class="badge" style="border-color:{player.armor || t.accent}">
-		<img src={starUrl} alt="" />
+	<!-- Identified players show their own avatar; everyone else keeps the
+	     placeholder emblem (which twinkles — a photo should not). -->
+	<div
+		class="badge"
+		class:is-placeholder={!player.avatar}
+		style="border-color:{player.armor || t.accent}"
+	>
+		<img src={player.avatar || starUrl} alt="" onerror={(e) => (e.currentTarget.src = starUrl)} />
 	</div>
 
 	<div class="id">
-		<span class="name">{player.name ?? '—'}</span>
+		<span class="name">{player.display || player.name || '—'}</span>
 		<span class="tag" style="color:{t.tagColor}">
 			{t.tagText}
 			{#if place}<em>· {place}</em>{/if}
@@ -138,10 +144,19 @@
 		justify-content: center;
 		overflow: hidden;
 	}
+	/* A real avatar fills the badge and holds still; only the placeholder emblem
+	   overflows, glows and twinkles. */
 	.badge img {
-		width: 58px;
+		width: 100%;
+		height: 100%;
 		flex: none;
 		display: block;
+		object-fit: cover;
+	}
+	.badge.is-placeholder img {
+		width: 58px;
+		height: auto;
+		object-fit: unset;
 		filter: drop-shadow(0 0 6px rgba(61, 98, 224, 0.6));
 		animation: twinkle 5s ease-in-out infinite;
 	}
@@ -248,10 +263,12 @@
 		}
 	}
 
+	/* Must match .badge.is-placeholder img's specificity (0,2,1) or the twinkle
+	   rule wins and reduced-motion is silently ignored. */
 	@media (prefers-reduced-motion: reduce) {
 		.breathe,
 		.sheen,
-		.badge img {
+		.badge.is-placeholder img {
 			animation: none;
 		}
 	}
