@@ -136,11 +136,17 @@ type GameData struct {
 	ObjectTypes    []StaticObjectType  `json:"object_types,omitempty"`
 	TagCache       *StaticCachePtrs    `json:"tag_cache,omitempty"`
 
-	// ElapsedTicks is the MATCH-ELAPSED clock: game_time_globals + OffGTGElapsed
-	// (0x10), a 30Hz count-UP from 0 at match start. CE has no countdown — the
-	// scorebug renders M:SS by counting up from this. Distinct from EngineTick
-	// (OffGTGGameTime 0x0C), which the probe documents as a free-running frame
-	// counter; 0 outside a match / while the game-time clock is paused.
+	// ElapsedTicks is game_time_globals + OffGTGElapsed (0x10).
+	//
+	// DEAD VALUE — do NOT use it as the match clock. VERIFIED on a live 2-box match
+	// (2026-08-08): it stays stuck at ~1 and never climbs. It was added here on the
+	// assumption that the field named "Elapsed" was the match-elapsed counter, which
+	// a single-box rig could not disprove (CE needs 2 players to start a match).
+	//
+	// The REAL count-up match clock is EngineTick / OffGTGGameTime (0x0C), already on
+	// the wire — game_time_globals is re-initialised at match setup, so 0x0C starts ~0
+	// and counts up at 30Hz. Kept (not removed) only because the overlay reads it; it
+	// is not consumed for timing.
 	ElapsedTicks uint32 `json:"elapsed_ticks"`
 }
 

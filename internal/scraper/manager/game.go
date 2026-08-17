@@ -21,9 +21,11 @@ type GamePayload struct {
 	StartedAt  time.Time `json:"started_at"`
 	LastReadAt time.Time `json:"last_read_at"`
 	EngineTick uint32    `json:"engine_tick"`
-	// GameElapsedTicks is the MATCH-ELAPSED clock (game_time_globals+0x10), a 30Hz
-	// count-UP from 0 at match start — what the scorebug renders as M:SS. EngineTick
-	// above is the free-running frame counter and is NOT match-relative.
+	// GameElapsedTicks is game_time_globals+0x10. DEAD VALUE — verified stuck at ~1
+	// on a live 2-box match (2026-08-08); it is NOT the match clock. Use EngineTick
+	// above (0x0C), which starts ~0 at match start and counts UP at 30Hz — that is
+	// what the scorebug renders as M:SS. Retained only for the overlay's existing
+	// read; do not wire timing to it.
 	GameElapsedTicks uint32 `json:"game_elapsed_ticks"`
 	Iterations       uint64 `json:"iterations"`
 

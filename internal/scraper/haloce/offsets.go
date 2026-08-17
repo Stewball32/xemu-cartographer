@@ -26,7 +26,8 @@
 //	                   AddrGameConnection 0x2E3684 (0 menu/SP, 2 hosting),
 //	                   AddrPlayerDatumArrayPtr 0x2FAD28 (datum 212),
 //	                   AddrObjectHeaderDatumPtr 0x2FC6AC, AddrTeamsPtr 0x2FAD24,
-//	                   AddrGameTimeGlobalsPtr 0x2F8CA0 + OffGTGGameTime 0x0C (30Hz),
+//	                   AddrGameTimeGlobalsPtr 0x2F8CA0 + OffGTGGameTime 0x0C (30Hz
+//	                   match clock, counts up from ~0 at match start),
 //	                   AddrGlobalTagInstancesPtr 0x39CE24, AddrTagHeaderPtr 0x2DF1C4.
 //	Player (212 B)   : OffPlrKills 0x98, OffPlrDeaths 0xAA, OffPlrObjectHandle 0x34
 //	                   (0xFFFFFFFF when dead), OffPlrTeam 0x20, OffPlrName 0x04.
@@ -268,13 +269,20 @@ var AllLowGVAs = []uint32{
 // GameTimeGlobals struct (at *AddrGameTimeGlobalsPtr)
 // ----------------------------------------------------------------------
 const (
-	OffGTGInitialized       uint32 = 0x00 // u8  — halocaster.py:701,1419
-	OffGTGActive            uint32 = 0x01 // u8  — halocaster.py:702,1420
-	OffGTGPaused            uint32 = 0x02 // u8  — halocaster.py:703,1421
-	OffGTGMonitorState      uint32 = 0x04 // s16 (diag) — halocaster.py:704
-	OffGTGMonitorCounter    uint32 = 0x06 // s16 (diag) — halocaster.py:705
-	OffGTGMonitorLatency    uint32 = 0x08 // s16 (diag) — halocaster.py:706
-	OffGTGGameTime          uint32 = 0x0C // u32 ticks (30Hz) — halocaster.py:707,1415
+	OffGTGInitialized    uint32 = 0x00 // u8  — halocaster.py:701,1419
+	OffGTGActive         uint32 = 0x01 // u8  — halocaster.py:702,1420
+	OffGTGPaused         uint32 = 0x02 // u8  — halocaster.py:703,1421
+	OffGTGMonitorState   uint32 = 0x04 // s16 (diag) — halocaster.py:704
+	OffGTGMonitorCounter uint32 = 0x06 // s16 (diag) — halocaster.py:705
+	OffGTGMonitorLatency uint32 = 0x08 // s16 (diag) — halocaster.py:706
+	// OffGTGGameTime is the MATCH CLOCK: game_time_globals is re-initialised at match
+	// setup, so this starts ~0 at match start and counts UP at 30Hz. VERIFIED on a
+	// live 2-box match 2026-08-08 (rendered 7:09). Its large value at the front-end
+	// MENU is stale/uninitialised state, not a free-running in-match counter.
+	OffGTGGameTime uint32 = 0x0C // u32 ticks (30Hz) — halocaster.py:707,1415
+	// OffGTGElapsed: DEAD VALUE on H1 Perf — despite the name it stays stuck at ~1
+	// through a live match (verified 2026-08-08 on a 2-box match) and is NOT the
+	// match-elapsed clock. Use OffGTGGameTime (0x0C) above.
 	OffGTGElapsed           uint32 = 0x10 // u32 — halocaster.py:708,1416
 	OffGTGSpeed             uint32 = 0x18 // f32 (1.0 = normal speed) — halocaster.py:709,1422
 	OffGTGLeftoverDeltaTime uint32 = 0x1C // f32 (diag) — halocaster.py:710,1423

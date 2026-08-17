@@ -381,11 +381,12 @@ func (r *Reader) ReadReadyState() (scraper.GameData, error) {
 func (r *Reader) composeGameData() scraper.GameData {
 	out := scraper.GameData{}
 
-	// MATCH-ELAPSED clock (game_time_globals + OffGTGElapsed 0x10) — a 30Hz count-UP
-	// from 0 at match start, which the scorebug renders as M:SS. It was defined in
-	// offsets.go but never read anywhere, which is why the overlay clock sat at 0.
-	// Read via the low-GVA translation (DerefLowPtr) like the other GTG reads; 0 in
-	// the lobby/menus, where game_time_globals is paused or not yet re-initialised.
+	// game_time_globals + OffGTGElapsed (0x10). DEAD VALUE — verified stuck at ~1
+	// on a live 2-box match (2026-08-08); it is NOT the match-elapsed clock. The
+	// real count-up match clock is OffGTGGameTime (0x0C), already read as the
+	// engine tick. Kept on the wire only because the overlay payload carries it;
+	// do not wire timing to it. Read via the low-GVA translation (DerefLowPtr)
+	// like the other GTG reads.
 	if gtgPtr, err := r.inst.DerefLowPtr(r.off.AddrGameTimeGlobalsPtr); err == nil && gtgPtr >= HighGVAThreshold {
 		if v, err := r.inst.Mem.ReadU32(gtgPtr + OffGTGElapsed); err == nil {
 			out.ElapsedTicks = v
