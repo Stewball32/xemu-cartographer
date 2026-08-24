@@ -266,8 +266,13 @@ func (r *Reader) probeGametypeCandidates() map[string]any {
 
 	// Freshness header — proves the read is live. host_clock_utc is wall clock
 	// from the Go side; xbox_random_seed (halocaster.py:1932 — RNG at 0x2E3648)
-	// ticks every game frame even in lobby; xbox_game_tick is GTG.GameTime,
-	// only populated when game-time-globals is allocated (in-match). Compare
+	// ticks every game frame even in lobby; xbox_game_tick is GTG.GameTime
+	// (0x0C) — the MATCH CLOCK: game_time_globals is re-initialised (zeroed) at
+	// match setup, so it starts ~0 at match start and counts UP at 30Hz for the
+	// duration of the match. VERIFIED on a live 2-box match 2026-08-08 (rendered
+	// 7:09 on the scorebug). The large value it shows at the FRONT-END MENU is
+	// stale/uninitialised state, NOT a free-running in-match counter — an earlier
+	// note here called it free-running/wrong-semantic and that was wrong. Compare
 	// across two consecutive captures: if seed and/or tick differ, the bytes
 	// below are definitely fresh from emulator memory at this moment.
 	fmt.Fprintf(&paste, "host_clock_utc: %s\n", time.Now().UTC().Format(time.RFC3339Nano))

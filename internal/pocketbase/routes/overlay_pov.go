@@ -223,9 +223,10 @@ func registerOverlayConsole(se *core.ServeEvent) {
 		cfg := roster.LoadConfig(e.App, instance)
 		cfg.HideInactiveLocals = true
 		cfg.ActiveLocals = activeFromAccum(st.PlayerAccum)
-		// engine_tick (0x0C, free-running) kept alongside game_elapsed_ticks
-		// (0x10, match-elapsed) so the scorebug can render the count-up clock and
-		// both remain comparable on a live match.
+		// engine_tick (0x0C) is the MATCH CLOCK — starts ~0 at match start and
+		// counts up at 30Hz (live-verified 2026-08-08); the scorebug renders it.
+		// game_elapsed_ticks (0x10) is a DEAD VALUE (stuck at ~1), kept on the
+		// wire only for payload-shape compatibility.
 		game := map[string]any{"phase": st.Phase, "engine_tick": st.Tick}
 		scenario := map[string]any{}
 		if gd != nil {
