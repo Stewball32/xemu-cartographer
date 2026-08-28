@@ -1,5 +1,7 @@
 // @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked
 // Norcal Halo overlay themes — one accent per surface; star mark is never recolored.
+// Redesign deltas: layouts[2] puts BOTH bars at their viewport's bottom (was
+// book-ended); ordinals exported for rank labels (CL-15/16).
 export const themes = {
 	ffa: {
 		panel: 'rgba(11, 14, 26, 0.93)',
@@ -36,12 +38,18 @@ export const TEAM_HEX = { red: '#e05252', blue: '#3d62e0' };
 // Armor-color chip tint (row background + edge), e.g. tint('#6ec8e8').
 export const tint = (hex) => ({ bg: hex + '26', edge: hex + '4D' });
 
-// POV card anchor per split layout, canvas 1440x1080. Quadrant cards render at 68%.
+// Ordinal rank labels (CL-15/16) — team chips, FFA rows, post-game.
+const ORDINALS = ['1ST', '2ND', '3RD', '4TH', '5TH', '6TH', '7TH', '8TH'];
+export const ordinal = (i) => ORDINALS[i] ?? '—';
+
+// POV card anchor per split layout, canvas 1440x1080. Bars are 820×72; quadrant
+// cards render at 68%. 2-up: both bars sit at the BOTTOM of their own viewport
+// (top seat just above the split, bottom seat at the screen edge).
 export const layouts = {
 	1: [{ left: '50%', bottom: '24px', tf: 'translateX(-50%)', scale: 1 }],
 	2: [
 		{ left: '50%', bottom: '556px', tf: 'translateX(-50%)', scale: 1 },
-		{ left: '50%', top: '556px', tf: 'translateX(-50%)', scale: 1 }
+		{ left: '50%', bottom: '24px', tf: 'translateX(-50%)', scale: 1 }
 	],
 	3: [
 		{ left: '50%', bottom: '556px', tf: 'translateX(-50%)', scale: 1 },
@@ -88,4 +96,6 @@ export const viewportCenters = {
 	]
 };
 
+// Kept for callers outside the overlay suite; the redesigned graphics no
+// longer zero-pad (CL-08 revised — alignment comes from fixed columns).
 export const pad2 = (n) => String(n ?? 0).padStart(2, '0');

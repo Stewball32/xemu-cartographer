@@ -1,71 +1,51 @@
 <script>
 	// @ts-nocheck — OBS overlay graphic (plain JS); not strict-TS checked.
 	//
-	// One leaderboard row: rank, emblem avatar, name, K/D/A, spree, score, and
-	// the shield/health bar pair. Ported from the obs-handoff pack's
-	// leaderboard.html rowsBlock(). Row pitch is 52px (46px card + 3px padding
-	// top and bottom) — the board positions slots on that pitch, so any change
-	// here must move ROW_PITCH in the board too.
-	import starUrl from '$lib/assets/star.png';
-	import { pad2 } from './themes.js';
+	// One leaderboard row — redesign (CL-01/08/10/12/18). Leads with the shared
+	// NamePlate at 0.63× (240×40, motto shown where set), then unlabeled
+	// K/D/A columns (Inter, no leading zeros, best-of-stat orange) and score.
+	// PLAYER-FACING SURFACE: the board stays in view of players at the LAN,
+	// so it carries NO live tactical state — shield/health bars, spree column,
+	// camo overlay AND the plate's overshield ring are all off here (os is
+	// never passed). Dead rows gray out.
+	//
+	//   ord      ordinal rank label — '' hides the column. The FFA board no
+	//            longer passes it (ordinals live on the page's fixed slot
+	//            rail so labels never travel with a gliding row).
+	//   leader   lobby-best score → Selection Orange.
+	//   best     {k,d,a} lobby bests for the column highlights.
+	//   flat     team-container mode: no armor tint, row sits on the panel.
+	import NamePlate from './NamePlate.svelte';
 
-	let {
-		player = {},
-		/** Rank number to show, or 0/undefined to hide it (team mode ranks within
-		 * the team chip instead, so the column would be noise). */
-		rank = 0,
-		/** Leader of this block — score takes Selection Orange. */
-		leader = false
-	} = $props();
+	let { player = {}, ord = '', leader = false, best = null, flat = false } = $props();
 
 	const dead = $derived(player.alive === false);
-	const camo = $derived((player.camo ?? 0) > 0);
-
-	// Armor colour → row tint + edge, matching the in-game armour colour.
 	const armor = $derived(player.armor || '#9fb4d0');
-	const kda = $derived(`${pad2(player.kills)}/${pad2(player.deaths)}/${pad2(player.assists)}`);
-	const spree = $derived(player.spree > 0 ? `×${player.spree}` : '—');
-
-	const clamp = (v) => `${Math.max(0, Math.min(1, v ?? 0)) * 100}%`;
-	// Shield reads above 1.0 with an overshield — the base bar saturates and the
-	// white pip overlays the excess.
-	const shieldPct = $derived(clamp(Math.min(1, player.shield ?? 0)));
-	const overPct = $derived(clamp(Math.max(0, (player.shield ?? 0) - 1)));
-	const healthPct = $derived(clamp(player.health));
+	const cells = $derived([
+		[player.kills ?? 0, best && (player.kills ?? 0) === best.k],
+		[player.deaths ?? 0, best && (player.deaths ?? 0) === best.d],
+		[player.assists ?? 0, best && (player.assists ?? 0) === best.a]
+	]);
 </script>
 
-<div class="row" class:dead style="background:{armor}26; border-color:{armor}4D">
+<div
+	class="row"
+	class:dead
+	style={flat
+		? 'background:transparent; border-color:transparent'
+		: `background:${armor}26; border-color:${armor}4D`}
+>
 	<div class="inner">
-		{#if rank}<span class="rank">{rank}</span>{/if}
-
-		<!-- Identified players show their own avatar; everyone else keeps the
-		     placeholder emblem. onerror covers a dead file URL so a broken image
-		     never leaves a hole on stream. -->
-		<div class="avatar" class:is-placeholder={!player.avatar}>
-			<img src={player.avatar || starUrl} alt="" onerror={(e) => (e.currentTarget.src = starUrl)} />
+		{#if ord}<span class="rank">{ord}</span>{/if}
+		<NamePlate {player} h={40} bg={player.plateBg} />
+		<div class="grow"></div>
+		<div class="kda">
+			{#each cells as [v, hot], i (i)}
+				<i class:hot>{v}</i>
+			{/each}
 		</div>
-
-		<div class="body">
-			<div class="top">
-				<span class="name">{player.display || player.name || '—'}</span>
-				<span class="kda">{kda}</span>
-				<span class="spree" class:hot={player.spree >= 3}>{spree}</span>
-				<span class="score" class:leader>{player.score ?? 0}</span>
-			</div>
-
-			<div class="bars">
-				<div class="bar is-shield">
-					<i class="fill-shield" style="width:{shieldPct}"></i>
-					<i class="fill-os" style="width:{overPct}"></i>
-				</div>
-				<div class="bar is-health">
-					<i class="fill-health" style="width:{healthPct}"></i>
-				</div>
-			</div>
-		</div>
+		<span class="score" class:leader>{player.score ?? 0}</span>
 	</div>
-
-	{#if camo}<div class="camo"></div>{/if}
 </div>
 
 <style>
@@ -84,92 +64,40 @@
 		display: flex;
 		align-items: center;
 		gap: 9px;
-		padding: 2px 10px;
+		padding: 2px 10px 2px 8px;
 	}
-
 	.rank {
-		width: 16px;
+		width: 26px;
 		flex: none;
 		text-align: center;
-		font-size: 13px;
+		font-size: 9.5px;
 		font-weight: 700;
+		letter-spacing: 0.06em;
 		color: var(--nh-steel);
 		font-variant-numeric: tabular-nums;
 	}
-
-	.avatar {
-		width: 42px;
-		height: 42px;
-		flex: none;
-		border-radius: 50%;
-		background: repeating-linear-gradient(45deg, #10152a 0 5px, #141a30 5px 10px);
-		border: 1px solid rgba(159, 180, 208, 0.4);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		overflow: hidden;
-	}
-	/* A real avatar fills the circle; the placeholder emblem deliberately
-	   overflows it slightly and sits back at 0.85 so it reads as a placeholder
-	   rather than a photo. */
-	.avatar img {
-		width: 100%;
-		height: 100%;
-		flex: none;
-		display: block;
-		object-fit: cover;
-	}
-	.avatar.is-placeholder img {
-		width: 46px;
-		height: auto;
-		opacity: 0.85;
-	}
-
-	.body {
+	.grow {
 		flex: 1;
 		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
 	}
-	.top {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-	}
-
-	.name {
-		font-family: Orbitron, sans-serif;
-		font-weight: 700;
-		font-size: 12px;
-		color: var(--nh-text);
-		letter-spacing: 0.04em;
-		flex: 1;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	/* Zero-padded so the column never shifts width as scores climb. */
+	/* Unlabeled K/D/A — Inter tabular, no leading zeros (CL-08 revised · 12);
+	   best in category takes Selection Orange (CL-01). */
 	.kda {
 		flex: none;
-		width: 58px;
-		text-align: right;
-		font-family: 'Lucida Console', monospace;
-		font-size: 10px;
-		color: var(--nh-steel);
-		font-variant-numeric: tabular-nums;
+		display: flex;
+		gap: 7px;
 	}
-	.spree {
-		flex: none;
-		width: 26px;
-		text-align: right;
-		font-size: 11px;
+	.kda i {
+		font-style: normal;
+		font-size: 12px;
 		font-weight: 700;
-		color: var(--nh-steel);
+		line-height: 1;
+		color: var(--nh-text);
 		font-variant-numeric: tabular-nums;
+		min-width: 16px;
+		text-align: center;
 	}
-	.spree.hot {
+	.kda i.hot {
 		color: var(--nh-orange);
 	}
 	.score {
@@ -183,66 +111,5 @@
 	}
 	.score.leader {
 		color: var(--nh-orange);
-	}
-
-	.bars {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.bar {
-		position: relative;
-		border-radius: 2px;
-		background: rgba(11, 14, 26, 0.6);
-		overflow: hidden;
-	}
-	.bar.is-shield {
-		height: 4px;
-	}
-	.bar.is-health {
-		height: 3px;
-	}
-	.bar > i {
-		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 0;
-		display: block;
-	}
-	.fill-shield {
-		background: #6ec8e8;
-	}
-	.fill-os {
-		background: var(--nh-text);
-		box-shadow: 0 0 6px rgba(232, 236, 245, 0.9);
-	}
-	.fill-health {
-		background: var(--nh-red);
-	}
-
-	/* Camo cloaks the row and solidifies back left-to-right as it drains. The
-	   scraper only exposes a has_camo bool (no timer), so this runs on CE's
-	   nominal 30s cloak rather than the real remaining time. */
-	.camo {
-		position: absolute;
-		inset: 0;
-		background: rgba(11, 14, 26, 0.78);
-		animation: camo-uncloak 30s linear infinite;
-		pointer-events: none;
-	}
-	@keyframes camo-uncloak {
-		0% {
-			clip-path: inset(0 0 0 0 round 6px);
-		}
-		96%,
-		100% {
-			clip-path: inset(0 0 0 100% round 6px);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.camo {
-			animation: none;
-		}
 	}
 </style>
