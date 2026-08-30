@@ -14,7 +14,8 @@ How cartographer is deployed. Three tiers, one interface.
 | Tier | Purpose | Runs from | Command | Env | Bot |
 | --- | --- | --- | --- | --- | --- |
 | **dev** | live-reload coding | this working tree (Air + Vite HMR) | `./run-dev.sh` | `.env.dev` | **off** (forced) |
-| **beta** (test) | the gate before prod | built snapshot in `~/xcarto-beta` | `./deploy-beta.sh` | `~/xcarto-beta/.env` | cart-beta **test** app |
+| **pre** (preview) | merged-branch testing before beta | built snapshot in `/srv/http/xemu-cartographer/pre` | `BETA_DIR=/srv/http/xemu-cartographer/pre ~/xcarto-beta/pull-beta.sh` | `<run-dir>/.env` | off |
+| **beta** (test) | the gate before prod | built snapshot in `~/xcarto-beta` | `~/xcarto-beta/pull-beta.sh`, then start manually | `~/xcarto-beta/.env` | cart-beta **test** app |
 | **prod** | the live site | built snapshot in `/var/lib/xemu-cartographer` | *(manual — not yet scripted)* | prod `.env` | cart **prod** app |
 
 ## This project
@@ -23,6 +24,7 @@ How cartographer is deployed. Three tiers, one interface.
 | --- | --- | --- | --- |
 | dev (vite) | `19099` | `dev.norcal.pro` | any |
 | dev (backend) | `19090` | _internal — proxied by Vite_ | any |
+| pre (preview) | `17099` | _loopback only (no tunnel yet)_ | `beta` |
 | beta (test) | `18099` | `beta.norcal.pro` | `beta` |
 | prod | `8099` | `lan.norcal.pro` | `main` |
 
@@ -38,47 +40,41 @@ How cartographer is deployed. Three tiers, one interface.
 ## Promotion path
 
 ```
-dev (working tree)  ──►  beta (test)  ──►  prod
-   run-dev.sh            deploy-beta.sh     (manual)
+dev (working tree)  ──►  pre / beta (test)  ──►  prod
+   run-dev.sh            pull-beta.sh           (manual)
 ```
 
 Nothing should reach prod without passing through beta. For anything touching the
 schema, beta applies the migration first — see [MIGRATIONS.md](MIGRATIONS.md).
 
-## Deploying
+## Deploying (pull-beta.sh — build + install, start yourself)
+
+The old `deploy-beta.sh` full-cycle wrapper (stop → deploy → start →
+health-check) is retired; the tier owner starts the process. `pull-beta.sh`
+lives IN the run dir (`~/xcarto-beta`), builds from this repo, and installs
+into the dir it lives in — or any dir via `BETA_DIR=`:
 
 ```sh
-./deploy-beta.sh           # guard → build → deploy → health-check
-./deploy-beta.sh logs      # follow logs
-./deploy-beta.sh down      # stop the tier (keeps pb_data)
+~/xcarto-beta/pull-beta.sh              # build local `beta` → install into ~/xcarto-beta
+~/xcarto-beta/pull-beta.sh --fetch      # fast-forward from origin/beta first
+BETA_DIR=/srv/http/xemu-cartographer/pre ~/xcarto-beta/pull-beta.sh   # the pre tier
 ```
 
-**Guards.** It refuses to run unless you're on the tier's branch with a clean
-tree — a deploy builds from the working tree, so a dirty tree ships something
-that isn't committed and can't be reproduced or rolled back to. Override
-deliberately:
+**What it does:**
 
-```sh
-ALLOW_DIRTY=1 ./deploy-beta.sh          # uncommitted changes
-ALLOW_ANY_BRANCH=1 ./deploy-beta.sh     # different branch
-SKIP_BACKUP=1 ./deploy-beta.sh          # don't snapshot pb_data first
-BETA_DIR=/some/other/dir ./deploy-beta.sh
-```
-
-**What a deploy does:**
-
-1. Guards: on branch `beta`, clean tree, required commands/files present.
-2. Backs up the tier's `pb_data` (timestamped, in the run dir).
-3. Stops the running tier **by PID** (looked up from the listening port — never
-   `pkill -f`, whose pattern can match and kill the deploying shell itself).
-4. Builds the static frontend (`PUBLIC_PB_PORT` from the tier `.env`) and the
-   production Go binary (**no `-tags dev`**, so Automigrate stays off).
-5. Copies that snapshot (`server` + `pb_public`) into the run dir — `pb_data` is
-   untouched.
-6. Starts `run-beta.sh`, which sources the tier `.env` and execs the binary.
-7. Polls `/api/health` for ~60s, dumping logs and failing if it never comes up.
-   **Pending migrations apply on boot, so a healthy check also proves the
-   migrations applied.**
+1. Guards: on branch `beta` (`BETA_BRANCH=`/`ALLOW_ANY_BRANCH=1` to override),
+   the target's `.env` present, the tier's port NOT live (it refuses to
+   overwrite the binary of a running process — the kernel keeps the old inode
+   mapped and a later restart is what actually changes behaviour).
+2. Builds the static frontend (`PUBLIC_PB_PORT` from the target `.env`) and the
+   production Go binary (**no `-tags dev`**, so Automigrate + seeding stay off).
+3. Installs `server`, `pb_public/`, and `tools/game-maps/` (the thumbnail
+   renderer) into the run dir; regenerates the run script if missing; writes
+   `BUILD-INFO` and verifies the installed binary's `vcs.revision` against
+   HEAD. `.env`, `pb_data/`, `containers/`, `inbox/` are never touched.
+4. Hands off. Start it yourself (`sudo ./run-beta.sh`, foreground or nohup) and
+   verify `/api/health`. **Pending migrations apply on boot**, so a healthy
+   boot also proves the migrations applied.
 
 ## First-time setup (a new tier)
 
@@ -93,7 +89,7 @@ BETA_DIR=/some/other/dir ./deploy-beta.sh
 
 ```sh
 git checkout <last-good-sha>
-./deploy-beta.sh            # rebuilds and redeploys that revision
+~/xcarto-beta/pull-beta.sh   # rebuilds + reinstalls that revision (tier stopped)
 ```
 
 ⚠️ Code rolls back; **migrations do not**. An applied migration stays applied —
@@ -102,6 +98,7 @@ forward migration.
 
 ## Backups
 
-`deploy-beta.sh` snapshots `pb_data` to `pb_data.bak-<timestamp>` in the run dir
-before every deploy (skip with `SKIP_BACKUP=1`). Prune old ones periodically —
-they are full copies.
+`pull-beta.sh` does **not** snapshot `pb_data` (the retired deploy-beta.sh
+did). Copy `pb_data` yourself before risky migrations:
+`cp -r <run-dir>/pb_data <run-dir>/pb_data.bak-$(date +%Y%m%d)` — and prune old
+ones periodically; they are full copies.
