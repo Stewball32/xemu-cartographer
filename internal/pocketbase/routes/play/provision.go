@@ -32,12 +32,12 @@ type isoOption struct {
 }
 
 // GET /api/play/isos — the games a player may request an instance for: every
-// available (admin-toggled) entry in the ISO library, sorted by name. RequireAuth
-// only (group-bound) — any authed player may browse the catalog to pick from; no
+// play-role entry in the ISO library, sorted by name. RequireAuth only
+// (group-bound) — any authed player may browse the catalog to pick from; no
 // container scoping applies until they actually request one.
 func registerISOs() {
 	Group.GET("/isos", func(e *core.RequestEvent) error {
-		records, err := e.App.FindRecordsByFilter("isos", "available = true", "name", 0, 0, dbx.Params{})
+		records, err := e.App.FindRecordsByFilter("isos", "role = 'play'", "name", 0, 0, dbx.Params{})
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -101,13 +101,14 @@ func registerRequest() {
 
 		// Resolve + validate the chosen game BEFORE the provisioning-capability
 		// check, so a bad request gets a precise 400/404/403 regardless of whether
-		// provisioning happens to be wired. Players may only launch available
-		// entries; an admin toggling one off hides it here too.
+		// provisioning happens to be wired. Players may only launch play-role
+		// entries; an organizer re-roling one (or a drift flag shelving it) hides
+		// it here too.
 		rec, err := e.App.FindRecordById("isos", strings.TrimSpace(body.ISO))
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "game not found in the library"})
 		}
-		if !rec.GetBool("available") {
+		if rec.GetString("role") != "play" {
 			return e.JSON(http.StatusForbidden, map[string]string{"error": "that game is not available to play right now"})
 		}
 		// A xemu-cart HOST instance boots the game's dedicated SERVER build when

@@ -65,12 +65,17 @@ export function createProfileLookup() {
 			if (!res.ok) return;
 			const body = (await res.json()) as { profiles?: Record<string, OverlayIdentity> };
 			if (!body.profiles) return;
-			// The endpoint returns the avatar as a same-origin relative path
-			// (/api/files/...). Resolve it against the PB origin so the <img> works
-			// in dev, where the overlay page runs on Vite's port.
+			// The endpoint returns file paths (avatar, plate art) as same-origin
+			// relative paths (/api/files/...). Resolve them against the PB origin
+			// so the assets load in dev, where the overlay page runs on Vite's
+			// port.
 			const merged: Record<string, OverlayIdentity> = {};
 			for (const [k, p] of Object.entries(body.profiles)) {
-				merged[k] = p.avatar?.startsWith('/') ? { ...p, avatar: base + p.avatar } : p;
+				merged[k] = {
+					...p,
+					avatar: p.avatar?.startsWith('/') ? base + p.avatar : p.avatar,
+					plate: p.plate?.startsWith('/') ? base + p.plate : p.plate
+				};
 			}
 			profiles = { ...profiles, ...merged };
 		} catch {

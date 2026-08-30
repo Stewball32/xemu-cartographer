@@ -1,16 +1,18 @@
 import {
 	BookmarkXIcon,
 	BoxIcon,
-	IdCardIcon,
-	LibraryIcon,
+	DiscIcon,
+	MapIcon,
+	MemoryStickIcon,
 	PlayIcon,
+	ScrollTextIcon,
 	SettingsIcon,
 	ShieldIcon,
 	SwordsIcon,
 	TvIcon,
 	UserIcon,
 	UsersIcon,
-	WandSparklesIcon
+	WallpaperIcon
 } from '@lucide/svelte';
 import type { Component } from 'svelte';
 
@@ -37,18 +39,26 @@ export interface NavGroup {
 export const mainGroups: NavGroup[] = [
 	{
 		links: [
-			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true },
-			{ label: 'Gamertag', href: '/gamertag/', icon: IdCardIcon }
+			// The old Gamertag entry is gone — its page consolidated into the
+			// tabbed /settings/ (Halo 2 / Halo: CE / Stream tabs); /gamertag/
+			// still redirects there.
+			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true }
 		]
 	},
 	{
 		label: 'Organizer',
-		href: '/organizer/creator/',
+		href: '/organizer/discs/',
 		icon: SwordsIcon,
 		organizerOnly: true,
+		// One rail link per organizer page (the redesign replaced the old
+		// in-page tabs). /organizer/games/ + /organizer/creator/ still redirect.
 		links: [
-			{ label: 'Creator', href: '/organizer/creator/', icon: WandSparklesIcon },
-			{ label: 'Games', href: '/organizer/games/', icon: LibraryIcon }
+			{ label: 'Offsets', href: '/organizer/offsets/', icon: MemoryStickIcon },
+			{ label: 'Discs', href: '/organizer/discs/', icon: DiscIcon },
+			{ label: 'Maps', href: '/organizer/maps/', icon: MapIcon },
+			{ label: 'Gametypes', href: '/organizer/gametypes/', icon: SwordsIcon },
+			{ label: 'Rulesets', href: '/organizer/rulesets/', icon: ScrollTextIcon },
+			{ label: 'Nameplates', href: '/organizer/nameplates/', icon: WallpaperIcon }
 		]
 	},
 	{

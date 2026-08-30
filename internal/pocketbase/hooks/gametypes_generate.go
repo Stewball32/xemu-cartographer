@@ -29,7 +29,12 @@ func registerGametypeGenerateHook(app *pocketbase.PocketBase) {
 func generateGametype(e *core.RecordEvent) error {
 	title := e.Record.GetString("title")
 	engine := e.Record.GetString("engine")
-	name := e.Record.GetString("name")
+	// The IN-GAME name (display_name) is what lands in the save + the pregame
+	// lobby; `name` is the library label. Pre-display_name rows fall back.
+	name := e.Record.GetString("display_name")
+	if name == "" {
+		name = e.Record.GetString("name")
+	}
 
 	var settings saveartifact.GametypeSettings
 	if err := e.Record.UnmarshalJSONField("settings", &settings); err != nil {

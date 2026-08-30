@@ -83,7 +83,8 @@ func isosTestCollection(t *testing.T, app core.App) *core.Collection {
 		&core.TextField{Name: "content_hash"},
 		&core.NumberField{Name: "file_size", OnlyInt: true},
 		&core.NumberField{Name: "file_mtime", OnlyInt: true},
-		&core.BoolField{Name: "available"},
+		&core.SelectField{Name: "role", Values: []string{"play", "server", "shelved"}, MaxSelect: 1},
+		&core.BoolField{Name: "allow_on_xbox"},
 		&core.BoolField{Name: "drift_detected"},
 	)
 	if err := app.Save(isos); err != nil {
@@ -112,7 +113,7 @@ func TestResolveBootISO(t *testing.T) {
 	newISO := func(name, serverID string) *core.Record {
 		r := core.NewRecord(isos)
 		r.Set("name", name)
-		r.Set("available", true)
+		r.Set("role", "play")
 		if serverID != "" {
 			r.Set("server_iso", serverID)
 		}
@@ -144,8 +145,8 @@ func TestResolveBootISO(t *testing.T) {
 }
 
 // TestResolveBootISO_DriftRefused proves a disc whose managed bytes no longer
-// match its content-hash anchor is refused (error) and flagged unavailable —
-// bad bytes never boot.
+// match its content-hash anchor is refused (error) and demoted to shelved +
+// flagged — bad bytes never boot.
 func TestResolveBootISO_DriftRefused(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -159,7 +160,7 @@ func TestResolveBootISO_DriftRefused(t *testing.T) {
 
 	game := core.NewRecord(isos)
 	game.Set("name", "Tampered")
-	game.Set("available", true)
+	game.Set("role", "play")
 	game.Set("content_hash", "0000000000000000000000000000000000000000000000000000000000000000")
 	game.Set("file_size", 999999) // wrong → forces a re-hash in VerifyManaged
 	if err := app.Save(game); err != nil {
@@ -174,9 +175,9 @@ func TestResolveBootISO_DriftRefused(t *testing.T) {
 		t.Fatal("expected drift refusal, got nil error")
 	}
 	reloaded, _ := app.FindRecordById("isos", game.Id)
-	if reloaded.GetBool("available") || !reloaded.GetBool("drift_detected") {
-		t.Errorf("drift row should be available=false + drift_detected=true; got available=%v drift=%v",
-			reloaded.GetBool("available"), reloaded.GetBool("drift_detected"))
+	if reloaded.GetString("role") != "shelved" || !reloaded.GetBool("drift_detected") {
+		t.Errorf("drift row should be shelved + drift_detected=true; got role=%q drift=%v",
+			reloaded.GetString("role"), reloaded.GetBool("drift_detected"))
 	}
 }
 

@@ -16,7 +16,6 @@ func init() {
 	register(registerList)
 	register(registerInbox)
 	register(registerIngest)
-	register(registerOffsetSets)
 	register(registerMaps)
 	register(registerGet)
 	register(registerUpdate)
@@ -30,8 +29,10 @@ const collectionName = "isos"
 // Under the ingest model the managed disc is <id>.iso; `filename` holds the
 // ORIGINAL inbox filename (provenance only). content_hash is the drift anchor;
 // drift_detected flags a row whose managed bytes no longer match it (forced
-// unavailable). extracted_* / footprint_bytes are the derived cache status.
-// server_iso optionally links another catalog entry as this game's server build.
+// shelved). role is the three-state visibility (play / server / shelved);
+// allow_on_xbox marks station-HDD eligibility regardless of role. extracted_* /
+// footprint_bytes are the derived cache status. server_iso optionally links
+// another catalog entry as this game's server build.
 func isoView(r *core.Record) map[string]any {
 	return map[string]any{
 		"id":              r.Id,
@@ -39,7 +40,8 @@ func isoView(r *core.Record) map[string]any {
 		"filename":        r.GetString("filename"),
 		"title_id":        r.GetString("title_id"),
 		"description":     r.GetString("description"),
-		"available":       r.GetBool("available"),
+		"role":            r.GetString("role"),
+		"allow_on_xbox":   r.GetBool("allow_on_xbox"),
 		"server_iso":      r.GetString("server_iso"),
 		"offset_set":      r.GetString("offset_set"),
 		"content_hash":    r.GetString("content_hash"),
@@ -57,6 +59,10 @@ func isoView(r *core.Record) map[string]any {
 // record identified by selfID. "" clears the link; a non-empty value must
 // reference an EXISTING catalog entry and may not be the game itself. Returns the
 // id to store (or "") and a human message when it's rejected (400).
+//
+// The target's ROLE is deliberately unchecked: the Discs editor only offers
+// server-role discs, but re-roling a referenced disc later shouldn't strand
+// its dependents — the boot path resolves whatever is linked.
 func resolveServerISO(app core.App, raw, selfID string) (string, string) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
@@ -70,6 +76,9 @@ func resolveServerISO(app core.App, raw, selfID string) (string, string) {
 	}
 	return id, ""
 }
+
+// validRoles are the accepted `role` values (see the isos_role migration).
+var validRoles = map[string]bool{"play": true, "server": true, "shelved": true}
 
 // GET /api/admin/isos — every catalog entry, by name.
 func registerList() {
@@ -114,25 +123,18 @@ func registerIngest() {
 	})
 }
 
-// offsetSetExists reports whether an offset-set id is registered (any game —
-// the game an ISO boots isn't knowable from the record alone; a game-mismatched
-// assignment degrades to the baseline at bind time with a logged warning).
-func offsetSetExists(id string) bool {
+// offsetSetExists reports whether an offset-set id is registered — embedded
+// (compiled-in baseline) or imported (offset_sets collection). Any game: the
+// game an ISO boots isn't knowable from the record alone; a game-mismatched
+// assignment degrades to the baseline at bind time with a logged warning.
+func offsetSetExists(app core.App, id string) bool {
 	for _, s := range offsets.All() {
 		if s.ID == id {
 			return true
 		}
 	}
-	return false
-}
-
-// GET /api/admin/isos/offset-sets — the registered offset sets (per game, with
-// the baseline flagged), for the assignment picker. An ISO with offset_set ""
-// rides the detected game's baseline.
-func registerOffsetSets() {
-	Group.GET("/offset-sets", func(e *core.RequestEvent) error {
-		return e.JSON(http.StatusOK, offsets.All())
-	})
+	rec, _ := app.FindFirstRecordByData("offset_sets", "set_id", id)
+	return rec != nil
 }
 
 // GET /api/admin/isos/{id}/maps — the build's extracted maps (name / type /
@@ -162,7 +164,8 @@ func registerGet() {
 type updateBody struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
-	Available   *bool   `json:"available"`
+	Role        *string `json:"role"`
+	AllowOnXbox *bool   `json:"allow_on_xbox"`
 	ServerISO   *string `json:"server_iso"`
 	OffsetSet   *string `json:"offset_set"`
 }
@@ -188,8 +191,15 @@ func registerUpdate() {
 		if body.Description != nil {
 			rec.Set("description", *body.Description)
 		}
-		if body.Available != nil {
-			rec.Set("available", *body.Available)
+		if body.Role != nil {
+			role := strings.TrimSpace(*body.Role)
+			if !validRoles[role] {
+				return e.JSON(http.StatusBadRequest, map[string]string{"error": "role must be play, server, or shelved"})
+			}
+			rec.Set("role", role)
+		}
+		if body.AllowOnXbox != nil {
+			rec.Set("allow_on_xbox", *body.AllowOnXbox)
 		}
 		if body.ServerISO != nil {
 			serverID, msg := resolveServerISO(e.App, *body.ServerISO, rec.Id)
@@ -200,7 +210,7 @@ func registerUpdate() {
 		}
 		if body.OffsetSet != nil {
 			id := strings.TrimSpace(*body.OffsetSet)
-			if id != "" && !offsetSetExists(id) {
+			if id != "" && !offsetSetExists(e.App, id) {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "unknown offset set: " + id})
 			}
 			rec.Set("offset_set", id)

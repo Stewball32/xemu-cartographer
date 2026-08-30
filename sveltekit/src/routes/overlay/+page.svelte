@@ -1,12 +1,19 @@
 <script>
 	// @ts-nocheck — vendored OBS overlay pack (plain JS); not strict-TS checked.
-	// Rewired to cartographer's live feed: splitscreen is AUTO-detected server-
-	// side (overlay-split), NOT a manual OBS/URL toggle. The layout re-derives
-	// reactively, so the overlay re-lays-out live when the split changes.
+	// POV overlay — redesign: 820×72 plate bars, lobby-best score orange,
+	// KILLED BY respawn rings. Splitscreen is AUTO-detected server-side
+	// (overlay-split); the layout re-derives reactively.
+	// Motion 1a: bars deploy up from the bottom rail on activate, staggered
+	// 120ms in seat order; the leading 120ms is headroom so the scorebug (a
+	// separate browser source) reads first when one scene switch shows both.
+	// All drop away together on `game.over`. Motion 2a: the respawn ring's disc locks on every death
+	// (in RespawnRing.svelte — the plate rises in behind it); this page owns
+	// only the ring's EXIT via the out: transition below.
 	import { onMount, onDestroy } from 'svelte';
+	import { cubicIn } from 'svelte/easing';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { deriveSplitCount, layoutKey, localOverlayPlayers } from '$lib/utils/overlay-split';
-	import { applyIdentities, ordinal, overlayPlayers, rankPlayers } from '$lib/utils/overlay-state';
+	import { applyIdentities, overlayPlayers } from '$lib/utils/overlay-state';
 	import { createProfileLookup } from '$lib/stores/overlay-profiles.svelte';
 	import { layouts, viewportCenters } from '$lib/overlay/themes.js';
 	import PlayerCard from '$lib/overlay/PlayerCard.svelte';
@@ -15,7 +22,6 @@
 
 	let { data } = $props();
 
-	// One subscription to THIS instance's live game + tick classes (or mock).
 	const feed = createOverlayFeed();
 	onMount(() =>
 		feed.start({
@@ -26,12 +32,6 @@
 	);
 	onDestroy(() => feed.stop());
 
-	// Player selection:
-	//  • console mode (?console=NAME): show that ONE console's own seat(s),
-	//    selected by the resolver's live machine index (indices shift as the
-	//    lobby changes, so this re-selects every snapshot — BlueBox always shows
-	//    BlueBox, never RedBox).
-	//  • instance mode: the host's local splitscreen, auto-detected.
 	const consoleMode = $derived(!!data.console);
 	const rawPlayers = $derived(
 		consoleMode
@@ -45,10 +45,9 @@
 	const key = $derived(layoutKey(split));
 	const anchors = $derived(layouts[key]);
 	const centers = $derived(viewportCenters[key]);
-	// Identity resolution: ask once per newly-seen scraped name (the store keeps a
-	// negative cache, so the ~30Hz roster re-derive never re-hits the endpoint).
-	// The whole lobby is resolved, not just this source's seats, so a card and the
-	// leaderboard agree on every player's handle.
+
+	// The whole lobby is resolved (not just this source's seats) so every
+	// surface agrees on handles, mottos and the lobby-best score.
 	const lookup = createProfileLookup();
 	const lobby = $derived(overlayPlayers(feed.game, feed.tick));
 	$effect(() => {
@@ -60,19 +59,34 @@
 	const players = $derived(
 		applyIdentities(rawPlayers.slice(0, anchors.length), lookup.all, data.names)
 	);
+	const lobbyIdentified = $derived(applyIdentities(lobby, lookup.all, data.names));
 
-	// Placing is ranked across the WHOLE lobby, not just the seats this source
-	// shows — a split-screen box's 2nd-place player is 2nd in the match, not 2nd
-	// of the two on screen. Keyed on the raw scraped name, which both sides carry
-	// unchanged (display names never overwrite it), so no override juggling.
-	const lobbyOrder = $derived(rankPlayers(lobby).map((p) => p.name));
-	const placeOf = (name) => {
-		const i = lobbyOrder.indexOf(name);
-		return i < 0 ? '' : ordinal(i);
-	};
+	// Lobby-best score → Selection Orange on the bar (CL-01). Ties: all leaders.
+	const topScore = $derived(Math.max(0, ...lobbyIdentified.map((p) => p.score ?? 0)));
+
+	// Killer identity for the respawn ring (CL-18) — resolved against the lobby
+	// so the plate carries the killer's display name, avatar and motto fields.
+	const killerOf = (p) =>
+		p.killedBy ? (lobbyIdentified.find((q) => q.name === p.killedBy) ?? null) : null;
 
 	const pos = (a) =>
 		`left:${a.left ?? 'auto'}; top:${a.top ?? 'auto'}; bottom:${a.bottom ?? 'auto'}; transform:${a.tf ?? 'none'};`;
+
+	// Optional carnage-report flag (see README) — absent, no out plays and the
+	// source just hides on scene switch.
+	const over = $derived(!!feed.game?.over);
+
+	// Ring release (motion 2a out) — entry lives in RespawnRing.svelte (it
+	// replays each death since the {#if} remounts); removal can only be
+	// animated from here, so the page owns exit like it owns placement.
+	const rm =
+		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const ringOut = () => ({
+		duration: rm ? 0 : 260,
+		easing: cubicIn,
+		css: (t, u) =>
+			`opacity:${t}; transform:scale(${1 - 0.14 * u}); filter:brightness(${1 + 0.8 * u})`
+	});
 </script>
 
 <svelte:head>
@@ -82,33 +96,37 @@
 <div class="canvas">
 	{#each players as player, i (player.slot ?? i)}
 		<div class="anchor" style={pos(anchors[i])}>
-			<PlayerCard
-				{player}
-				scale={anchors[i].scale ?? 1}
-				origin={anchors[i].origin ?? 'center'}
-				place={placeOf(player.name)}
-				sheen="{(i * 1.3).toFixed(1)}s"
-			/>
+			<!-- inner wrapper animates so .anchor's positioning transform stays put -->
+			<div class="deploy" class:out={over} style="--in-delay:{120 + i * 120}ms">
+				<PlayerCard
+					{player}
+					scale={anchors[i].scale ?? 1}
+					origin={anchors[i].origin ?? 'center'}
+					leader={topScore > 0 && (player.score ?? 0) === topScore}
+					sheen="{(i * 1.3).toFixed(1)}s"
+				/>
+			</div>
 		</div>
 		{#if player.alive === false && (player.respawn ?? 0) > 0}
 			<div class="ring-anchor" style="left:{centers[i].x}px; top:{centers[i].y}px">
-				<RespawnRing
-					seconds={player.respawn}
-					max={player.respawnMax ?? 5}
-					theme={player.team ?? 'ffa'}
-				/>
+				<!-- seconds is respawn_in_ticks ÷ 30 UNROUNDED — the disc drains
+				     continuously (CL-17); max is the gametype respawn time (CL-11). -->
+				<div out:ringOut>
+					<RespawnRing
+						seconds={player.respawn}
+						max={player.respawnMax ?? 8}
+						theme={player.team ?? 'ffa'}
+						killer={killerOf(player)}
+					/>
+				</div>
 			</div>
 		{/if}
 	{/each}
 </div>
 
 <style>
-	/* OBS browser source: 1440x1080 (4:3, matching the Xbox/CE player view),
-	   transparent. Skeleton v5 paints the root background on `html` (v4 used
-	   `body`), so BOTH must be neutralised — and body::before/::after kill the
-	   themed decorations (xbox's hex mesh, starcommand's vignette) that would
-	   otherwise bake into the capture. Unlayered + !important beats the themed
-	   @layer base rules in routes/layout.css. */
+	/* OBS browser source: 1440x1080 (4:3), transparent — see the scorebug for
+	   why html + body are reset and body::before/::after are killed. */
 	:global(html, body) {
 		margin: 0;
 		padding: 0;
@@ -127,11 +145,44 @@
 	}
 	.anchor {
 		position: absolute;
-		width: 700px;
-		height: 64px;
+		width: 820px;
+		height: 72px;
 	}
 	.ring-anchor {
 		position: absolute;
 		transform: translate(-50%, -50%);
+	}
+	/* Motion 1a — deploy slide from the bottom rail, staggered per seat. */
+	.deploy {
+		animation: pov-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) var(--in-delay, 0ms) both;
+	}
+	.deploy.out {
+		animation: pov-out 0.32s cubic-bezier(0.5, 0, 0.75, 0.4) both;
+	}
+	@keyframes pov-in {
+		0% {
+			opacity: 0;
+			transform: translateY(32px);
+		}
+		100% {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes pov-out {
+		0% {
+			opacity: 1;
+			transform: none;
+		}
+		100% {
+			opacity: 0;
+			transform: translateY(26px);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.deploy,
+		.deploy.out {
+			animation: none;
+		}
 	}
 </style>

@@ -1,8 +1,37 @@
 # Status
 
-> **Last updated:** 2026-07-02 (live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below; findings in `../halo-offset-mapper`). Prior 2026-07-01 patchwork/backup pass — every worktree committed + all branches pushed to origin; see **Repo housekeeping** below. M28 broadcast graphics — themed scoreboard + player cards on `feat/broadcast-graphics`, CE mock-verified; live CE pass + H2 theme pending the H2 scraper. Prior: 2026-06-23 Stream Studio hub + game-timer & kill-feed overlays, mock-verified; 2026-06-20 M25 OBS overlay render pages)
+> **Last updated:** 2026-08-29 (M30 settings redesign + M29 organizer redesign — see below). Prior: 2026-08-29 CL-01…18 OBS overlay re-skin on `update/overlays` (PR #32); 2026-07-02 live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below.
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
+
+## Now — M30 player settings redesign (2026-08-29)
+
+The `/gamertag/` page and the old `/settings/` layout consolidated into one
+five-tab Settings page (General · Halo: CE (WIP) · Halo 2 (WIP) · Stream ·
+Accounts). New stream identity: `users.motto` + `users.nameplate` (curated
+picker over the M29 nameplates pool, selectable-guard hook), served to overlays
+through `/api/public/profiles` → `player.motto`/`player.plateBg` on the plate.
+Default-gamertag changes now sync `users.gamertag` and regenerate both signed
+profiles. **Parked by decision**: the old Teams/membership settings surface
+(components stay in-tree, awaiting the Teams tab design). On branch
+`update/settings`, stacked on `update/organizer` → `update/overlays` — merge
+order: overlays (PR #32) → organizer → settings. See
+[milestones/M30-settings-redesign.md](milestones/M30-settings-redesign.md).
+
+## Now — M29 organizer route redesign (2026-08-29)
+
+The `/organizer/` tabs became six rail pages (designer handoff): **Offsets**
+(runtime offset-set imports, delete-with-migration, scraper dynamic source),
+**Discs** (role model play/server/shelved + allow-on-xbox, replaces the
+available bool), **Maps** (canonical build catalog keyed game+filename+hash,
+variant curation, power items), **Gametypes** (creator absorbed; library vs
+in-game name; server-schema fields), **Rulesets** (gametypes + pool + size +
+series), **Nameplates** (600×100 banner library with the exact-geometry plate
+crop; text-outline deviation back-ported to the overlay NamePlate). On branch
+`update/organizer`, stacked on `update/overlays` (merge that first — PR #32).
+Smoke-verified on a fresh dev DB; remaining: Gametypes/Rulesets field truing
+against in-game screenshots + a live pass with a real ingested disc. See
+[milestones/M29-organizer-redesign.md](milestones/M29-organizer-redesign.md).
 
 ## Live offset verification (2026-07-02) — CE + H2, unblocks M19/M20
 

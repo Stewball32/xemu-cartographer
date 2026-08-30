@@ -14,6 +14,14 @@ import (
 // Game BEHAVIOR stays in code; these values come from the instance's offset set
 // (default: the game's baseline). Field names match the config keys exactly.
 type Offsets struct {
+	AddrH2DeathsPerPlayer       uint32
+	AddrH2GamePhase             uint32
+	AddrH2Gametype              uint32
+	AddrH2KillsPerPlayer        uint32
+	AddrH2KillsTotal            uint32
+	AddrH2NetLocalMachineIndex  uint32
+	AddrH2NetMachineMacArray    uint32
+	AddrH2NetMachineTable       uint32
 	AddrH2ObjectArrayPtr        uint32
 	AddrH2PlayersArrayPtr       uint32
 	AddrH2ScenarioNamePoolPtr   uint32
@@ -44,12 +52,17 @@ type Offsets struct {
 	OffH2ObjTagId               uint32
 	OffH2ObjType                uint32
 	OffH2ObjVelocity            uint32
+	OffH2NetMachineName         uint32
+	OffH2PlrBetrayals           uint32
 	OffH2PlrDatumId             uint32
 	OffH2PlrIndex               uint32
+	OffH2PlrMacOctet            uint32
+	OffH2PlrMachineIndex        uint32
 	OffH2PlrName                uint32
 	OffH2PlrPlayerId            uint32
 	OffH2PlrTeam                uint32
 	OffH2PlrUnitHandle          uint32
+	OffH2ScenarioPathInPool     uint32
 	OffH2TagHdrCount            uint32
 	OffH2TagHdrGlobalsId        uint32
 	OffH2TagHdrInstanceArrayPtr uint32

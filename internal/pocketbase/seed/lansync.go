@@ -191,7 +191,8 @@ func ensureTestISO(app *pocketbase.PocketBase) (*core.Record, error) {
 	r.Set("filename", filename) // provenance only — managed file is <id>.iso
 	r.Set("title_id", halosave.TitleIDHaloCE)
 	r.Set("dest_name", "HaloCE")
-	r.Set("available", true)
+	r.Set("role", "play")
+	r.Set("allow_on_xbox", true)
 	if err := app.Save(r); err != nil {
 		return nil, err
 	}

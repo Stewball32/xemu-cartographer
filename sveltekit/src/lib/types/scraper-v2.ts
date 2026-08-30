@@ -284,6 +284,11 @@ export interface HostHealth {
 
 export interface GamePayload {
 	phase: PhaseV2;
+	/** The reader's LOSSLESS engine lifecycle — 'menu' | 'pregame' | 'in_game'
+	 * | 'postgame' ('' while idle/unbound). `phase` collapses menu, pregame,
+	 * and postgame into 'ready'; this field is what lets an overlay tell a
+	 * lobby from a carnage report. Optional: older servers omit it. */
+	game_state?: string;
 	started_at: string;
 	last_read_at: string;
 	/** The real match clock (GTG 0x0C): 30Hz count-up, re-inits to 0 at match

@@ -1,25 +1,26 @@
 <script>
 	// @ts-nocheck — OBS overlay graphic (plain JS); not strict-TS checked.
 	//
-	// POV bar — one per split-screen seat: emblem badge, name, placing, score,
-	// K/D/A, spree/accuracy/damage. Ported from the obs-handoff pack's
-	// pov-bar.html. Natural size 700×64; /overlay/ anchors 1–4 of these on a
-	// 1440×1080 canvas and scales the quadrant seats to 68%.
-	//
-	// The pack's standalone ?player= / ?slot= targeting is deliberately NOT
-	// carried over — /overlay/'s ?console=NAME resolves a seat by console name,
-	// which survives lobby churn (machine indices shift live) where a fixed slot
-	// index would silently follow the wrong player.
-	import starUrl from '$lib/assets/star.png';
+	// POV bar — redesign (CL-01/02/05/06/07/08/13/14/18). One per seat,
+	// 820×72. Identity is the shared NamePlate (neutral — the bar's panel +
+	// 1.5px accent frame carry team color). Score white, Selection Orange only
+	// while lobby-best, kill pop on change. K/D/A unpadded. SPR column dropped —
+	// the live spree is the crosshair tally above the frame. Camo ghosts the
+	// bar surface and the plate's banner (never avatar/name/stats), the solid
+	// front advancing left→right off the timer. Overshield = conic rings on the
+	// plate's avatar well.
+	import { untrack } from 'svelte';
 	import { themes } from './themes.js';
+	import NamePlate from './NamePlate.svelte';
+	import SpreeTicks from './SpreeTicks.svelte';
 
 	let {
 		player = {},
 		theme = 'ffa', // 'ffa' | 'red' | 'blue' — usually player.team
 		scale = 1,
 		origin = 'center',
-		/** Placing label, e.g. `3RD`. Empty hides the suffix. */
-		place = '',
+		/** Lobby-best score — flips the score Selection Orange (CL-01). */
+		leader = false,
 		/** Sheen animation delay so stacked bars don't sweep in unison. */
 		sheen = '0s'
 	} = $props();
@@ -27,11 +28,6 @@
 	const t = $derived(themes[player.team] ?? themes[theme] ?? themes.ffa);
 	const dead = $derived(player.alive === false);
 
-	const spree = $derived(player.spree > 0 ? `×${player.spree}` : '—');
-	// DMG = damage dealt ÷ damage taken. Unbounded (dealt some, taken none)
-	// renders as ∞ — see damageRatioOf for why not the raw dealt total.
-	// ACC needs shots_HIT, which reads 0 live (see overlay-state.ts), so it shows
-	// an em dash rather than a fake 0.0 that would read as a real stat.
 	const dmg = $derived(
 		Number.isFinite(Number(player.damageRatio))
 			? Number(player.damageRatio).toFixed(2)
@@ -39,36 +35,71 @@
 				? '∞'
 				: '0.00'
 	);
+	// ACC lights up once the shots_hit offsets land (CL-05); dash until then.
+	const acc = $derived(player.acc != null ? Number(player.acc).toFixed(1) : null);
+
+	// Camo (CL-07): player.camo — number > 1 reads as % of cloak remaining
+	// (100 = fully cloaked); true/1 means the wire only has the has_camo bool,
+	// so run CE's nominal 30s decay locally, matching the old row behavior.
+	let camoPct = $state(0);
+	$effect(() => {
+		const c = player.camo;
+		let int;
+		if (typeof c === 'number' && c > 1) camoPct = Math.min(100, c);
+		else if (c === true || c === 1) {
+			camoPct = 100;
+			const t0 = performance.now();
+			int = setInterval(() => {
+				camoPct = Math.max(0, 100 - ((performance.now() - t0) / 30000) * 100);
+				if (camoPct === 0) clearInterval(int);
+			}, 100);
+		} else camoPct = 0;
+		return () => clearInterval(int);
+	});
+	const cloaked = $derived(camoPct > 0 && !dead);
+
+	// Overshield rings live on the plate's avatar well (shield 1–3).
+	const osVal = $derived((player.shield ?? 0) > 1 && !dead ? (player.shield ?? 0) : 0);
+
+	// Kill pop (CL-06): scale 1.55 → 1 with the #FFB041 flash on score change.
+	let pop = $state(false);
+	let prevScore;
+	let popTimer;
+	$effect(() => {
+		const s = player.score ?? 0;
+		untrack(() => {
+			if (prevScore !== undefined && s > prevScore) {
+				pop = false;
+				clearTimeout(popTimer);
+				requestAnimationFrame(() => (pop = true));
+				popTimer = setTimeout(() => (pop = false), 750);
+			}
+			prevScore = s;
+		});
+	});
 </script>
 
 <div
 	class="pov"
 	class:dead
-	style="transform: scale({scale}); transform-origin: {origin}; --accent:{t.accent}; --border:{t.border}; --glow:{t.glow}"
+	class:cloaked
+	style="transform: scale({scale}); transform-origin: {origin}; --accent:{t.accent}; --border:{t.border}; --glow:{t.glow}; --panel:{t.panel}"
 >
 	<div class="breathe"></div>
 	<div class="sheenclip"><div class="sheen" style="animation-delay:{sheen}"></div></div>
 
-	<!-- Identified players show their own avatar; everyone else keeps the
-	     placeholder emblem (which twinkles — a photo should not). -->
-	<div
-		class="badge"
-		class:is-placeholder={!player.avatar}
-		style="border-color:{player.armor || t.accent}"
-	>
-		<img src={player.avatar || starUrl} alt="" onerror={(e) => (e.currentTarget.src = starUrl)} />
-	</div>
+	{#if cloaked}
+		<!-- Solid surface, wiped off the camo timer: the visible edge is the
+		     re-solidifying front advancing left → right as camo drains. -->
+		<div class="solid" style="clip-path: inset(0 {camoPct}% 0 0)"></div>
+	{/if}
 
-	<div class="id">
-		<span class="name">{player.display || player.name || '—'}</span>
-		<span class="tag" style="color:{t.tagColor}">
-			{t.tagText}
-			{#if place}<em>· {place}</em>{/if}
-		</span>
-	</div>
+	<SpreeTicks spree={player.spree ?? 0} {dead} />
+	<NamePlate {player} h={64} ghost={cloaked && camoPct > 50} os={osVal} bg={player.plateBg} />
+	<div class="grow"></div>
 
 	<span class="rule"></span>
-	<span class="score">{player.score ?? 0}</span>
+	<span class="score" class:is-best={leader} class:pop>{player.score ?? 0}</span>
 	<span class="rule"></span>
 
 	<div class="stats">
@@ -78,8 +109,11 @@
 	</div>
 
 	<span class="rule"></span>
-	<div class="stat"><b>SPR</b><i>{spree}</i></div>
-	<div class="stat"><b>ACC</b><i class="na">—</i></div>
+	{#if acc}
+		<div class="stat"><b>ACC</b><i>{acc}</i></div>
+	{:else}
+		<div class="stat"><b>ACC</b><i class="na">—</i></div>
+	{/if}
 	<div class="stat"><b>DMG</b><i>{dmg}</i></div>
 </div>
 
@@ -89,21 +123,44 @@
 		display: flex;
 		align-items: center;
 		gap: 15px;
-		width: 700px;
+		width: 820px;
 		box-sizing: border-box;
-		height: 64px;
-		padding: 0 22px 0 5px;
-		background: rgba(11, 14, 26, 0.93);
-		border: 1px solid var(--border);
+		height: 72px;
+		padding: 0 22px 0 4px;
+		background: var(--panel);
+		border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
 		border-radius: 12px;
 		box-shadow:
-			0 0 22px var(--glow),
+			0 0 30px var(--glow),
+			0 0 10px var(--glow),
 			inset 0 1px 0 rgba(255, 255, 255, 0.14);
 		font-family: Inter, system-ui, sans-serif;
 	}
 	.pov.dead {
 		opacity: 0.75;
 		filter: grayscale(1) brightness(0.85);
+	}
+	/* Camo base state: the ghosted surface the solid front wipes over. */
+	.pov.cloaked {
+		background: rgba(11, 14, 26, 0.26);
+		border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+	}
+	.pov.cloaked > :global(*) {
+		position: relative;
+	}
+	.pov.cloaked > .breathe,
+	.pov.cloaked > .sheenclip,
+	.pov.cloaked > .solid,
+	.pov.cloaked > :global(.spree-clip) {
+		position: absolute;
+	}
+	.solid {
+		inset: 0;
+		border-radius: 12px;
+		background: var(--panel);
+		border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+		box-sizing: border-box;
+		pointer-events: none;
 	}
 
 	.breathe {
@@ -132,78 +189,32 @@
 		animation: sheen 9s ease-in-out infinite;
 	}
 
-	.badge {
-		width: 54px;
-		height: 54px;
-		flex: none;
-		border-radius: 50%;
-		background: repeating-linear-gradient(45deg, #10152a 0 7px, #141a30 7px 14px);
-		border: 2px solid var(--accent);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		overflow: hidden;
-	}
-	/* A real avatar fills the badge and holds still; only the placeholder emblem
-	   overflows, glows and twinkles. */
-	.badge img {
-		width: 100%;
-		height: 100%;
-		flex: none;
-		display: block;
-		object-fit: cover;
-	}
-	.badge.is-placeholder img {
-		width: 58px;
-		height: auto;
-		object-fit: unset;
-		filter: drop-shadow(0 0 6px rgba(61, 98, 224, 0.6));
-		animation: twinkle 5s ease-in-out infinite;
-	}
-
-	.id {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
+	.grow {
 		flex: 1;
 		min-width: 0;
 	}
-	.name {
-		font-family: Orbitron, sans-serif;
-		font-weight: 700;
-		font-size: 15px;
-		line-height: 1;
-		color: var(--nh-text);
-		letter-spacing: 0.04em;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.tag {
-		font-size: 9px;
-		font-weight: 700;
-		letter-spacing: 0.3em;
-	}
-	.tag em {
-		font-style: normal;
-		color: var(--nh-steel);
-		letter-spacing: 0.18em;
-	}
-
 	.rule {
 		width: 1px;
 		height: 34px;
 		background: rgba(255, 255, 255, 0.12);
 		flex: none;
 	}
+	/* Inter numerals (CL-12); white unless lobby-best (CL-01). */
 	.score {
 		font-size: 30px;
 		font-weight: 700;
 		line-height: 1;
-		color: var(--nh-orange);
+		color: var(--nh-text);
 		font-variant-numeric: tabular-nums;
 		min-width: 44px;
 		text-align: center;
+	}
+	.score.is-best {
+		color: var(--nh-orange);
+	}
+	.score.pop {
+		display: inline-block;
+		animation: killpop 0.7s ease-out both;
 	}
 
 	.stats {
@@ -253,22 +264,25 @@
 			transform: translateX(300%);
 		}
 	}
-	@keyframes twinkle {
-		0%,
-		100% {
-			opacity: 0.75;
+	@keyframes killpop {
+		0% {
+			transform: scale(1.55);
+			color: #ffb041;
+			text-shadow: 0 0 14px rgba(255, 176, 65, 0.8);
 		}
-		50% {
-			opacity: 1;
+		38% {
+			transform: scale(1);
+			text-shadow: none;
+		}
+		100% {
+			transform: scale(1);
 		}
 	}
 
-	/* Must match .badge.is-placeholder img's specificity (0,2,1) or the twinkle
-	   rule wins and reduced-motion is silently ignored. */
 	@media (prefers-reduced-motion: reduce) {
 		.breathe,
 		.sheen,
-		.badge.is-placeholder img {
+		.score.pop {
 			animation: none;
 		}
 	}

@@ -3,6 +3,46 @@
   "id": "h2-baseline",
   "description": "Baseline for stock Halo 2 (NTSC retail, h2-stock map) - extracted verbatim from the previously hardcoded constants in internal/scraper/halo2/offsets.go.",
   "offsets": {
+    "AddrH2DeathsPerPlayer": {
+      "value": "0x51975C",
+      "type": "uint32",
+      "notes": "u32 deaths for player slot i at +4*i (kd-semantics 2026-07-11)"
+    },
+    "AddrH2GamePhase": {
+      "value": "0x0",
+      "type": "uint32",
+      "notes": "NOT MAPPED on stock (0 = sentinel; reader falls back). Slim: 0x527334 \u2014 0 menu / 1 lobby / 3 in-game / 4 postgame"
+    },
+    "AddrH2Gametype": {
+      "value": "0x4D51CC",
+      "type": "uint32",
+      "notes": "e_game_engine: 1 ctf, 2 slayer, 3 oddball, 4 king (induced live 2026-07-11)"
+    },
+    "AddrH2KillsPerPlayer": {
+      "value": "0x519500",
+      "type": "uint32",
+      "notes": "u16 kills for player slot i at +2*i (kd-semantics 2026-07-11)"
+    },
+    "AddrH2KillsTotal": {
+      "value": "0x518494",
+      "type": "uint32",
+      "notes": "match-aggregate kill total (mapper AddrH2KillsGlobal0)"
+    },
+    "AddrH2NetLocalMachineIndex": {
+      "value": "0x54D8B4",
+      "type": "uint32",
+      "notes": "this console's own 0-based machine index in the link session"
+    },
+    "AddrH2NetMachineMacArray": {
+      "value": "0x54D8B8",
+      "type": "uint32",
+      "notes": "6-byte MACs, stride 6, index = machine index"
+    },
+    "AddrH2NetMachineTable": {
+      "value": "0x54D91C",
+      "type": "uint32",
+      "notes": "per-machine entries, stride 0xB4, name UTF-16LE at +0x28"
+    },
     "AddrH2ObjectArrayPtr": {
       "value": "0x4E78D0",
       "type": "uint32"
@@ -87,6 +127,11 @@
       "value": "0x2C",
       "type": "uint32"
     },
+    "OffH2NetMachineName": {
+      "value": "0x28",
+      "type": "uint32",
+      "notes": "machine entry -> console nickname / profile name (UTF-16LE)"
+    },
     "OffH2ObjAim": {
       "value": "0x150",
       "type": "uint32"
@@ -123,6 +168,11 @@
       "value": "0x88",
       "type": "uint32"
     },
+    "OffH2PlrBetrayals": {
+      "value": "0x1C4",
+      "type": "uint32",
+      "notes": "per-player betrayals; LOCAL-ONLY in system link (mapper OffH2PlayerBetrayals)"
+    },
     "OffH2PlrDatumId": {
       "value": "0x0",
       "type": "uint32"
@@ -130,6 +180,16 @@
     "OffH2PlrIndex": {
       "value": "0x1C",
       "type": "uint32"
+    },
+    "OffH2PlrMacOctet": {
+      "value": "0x19",
+      "type": "uint32",
+      "notes": "owning machine MAC last octet \u2014 stable id across H2's dup-name renames"
+    },
+    "OffH2PlrMachineIndex": {
+      "value": "0x1A",
+      "type": "uint32",
+      "notes": "owning machine index; local iff == AddrH2NetLocalMachineIndex value"
     },
     "OffH2PlrName": {
       "value": "0x44",
@@ -146,6 +206,11 @@
     "OffH2PlrUnitHandle": {
       "value": "0x2C",
       "type": "uint32"
+    },
+    "OffH2ScenarioPathInPool": {
+      "value": "0x24",
+      "type": "uint32",
+      "notes": "scenario path string offset within the tag-name pool (layout-relative)"
     },
     "OffH2TagHdrCount": {
       "value": "0x18",

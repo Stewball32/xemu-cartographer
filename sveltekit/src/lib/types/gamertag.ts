@@ -137,7 +137,11 @@ export interface UserRef {
 export interface GametypeRecord extends RecordBase {
 	title: 'ce' | 'h2';
 	engine: string;
+	/** Library name — what rulesets and the organizer list show. */
 	name: string;
+	/** In-game name — written into the signed save, shown on the pregame lobby
+	 * list (CE truncates past 11 chars there). "" on pre-redesign rows. */
+	display_name: string;
 	settings: GametypeSettings;
 	save_bundle: string;
 	save_info: SaveInfo | null;

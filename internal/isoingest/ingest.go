@@ -135,7 +135,10 @@ func ingestOne(app core.App, cfg lansync.Config, filename string) (*IngestedItem
 	rec.Set("name", displayName(filename))
 	rec.Set("filename", filename) // original inbox name — provenance only
 	rec.Set("content_hash", hash)
-	rec.Set("available", true)
+	// New discs land shelved with baseline offsets — the organizer sets role +
+	// bindings in the Discs detail, then saves.
+	rec.Set("role", "shelved")
+	rec.Set("allow_on_xbox", false)
 	rec.Set("drift_detected", false)
 	if err := app.Save(rec); err != nil {
 		return nil, nil, fmt.Errorf("create row: %w", err)
@@ -256,8 +259,8 @@ func VerifyAndFlag(app core.App, cfg lansync.Config, rec *core.Record) bool {
 	if ok {
 		return true
 	}
-	log.Printf("isoingest: DRIFT %s (%s): %s — marking unavailable", rec.Id, rec.GetString("name"), reason)
-	rec.Set("available", false)
+	log.Printf("isoingest: DRIFT %s (%s): %s — shelving", rec.Id, rec.GetString("name"), reason)
+	rec.Set("role", "shelved")
 	rec.Set("drift_detected", true)
 	if err := app.Save(rec); err != nil {
 		log.Printf("isoingest: flag drift %s: %v", rec.Id, err)

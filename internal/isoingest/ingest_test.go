@@ -29,7 +29,8 @@ func testCatalog(t *testing.T) (core.App, lansync.Config) {
 		&core.TextField{Name: "content_hash"},
 		&core.NumberField{Name: "file_size", OnlyInt: true},
 		&core.NumberField{Name: "file_mtime", OnlyInt: true},
-		&core.BoolField{Name: "available"},
+		&core.SelectField{Name: "role", Values: []string{"play", "server", "shelved"}, MaxSelect: 1},
+		&core.BoolField{Name: "allow_on_xbox"},
 		&core.BoolField{Name: "drift_detected"},
 		&core.TextField{Name: "extracted_path"},
 		&core.BoolField{Name: "extracted_ready"},
@@ -62,7 +63,8 @@ func drop(t *testing.T, cfg lansync.Config, name string, data []byte) {
 }
 
 // TestIngest_HappyPath: a dropped file becomes a managed <id>.iso, hashed +
-// frozen read-only, removed from the inbox, with a row available=true.
+// frozen read-only, removed from the inbox, with a row landing shelved (the
+// organizer sets role + bindings in the Discs detail).
 func TestIngest_HappyPath(t *testing.T) {
 	app, cfg := testCatalog(t)
 	drop(t, cfg, "Halo CE.iso", []byte("disc-one-bytes"))
@@ -96,9 +98,9 @@ func TestIngest_HappyPath(t *testing.T) {
 	if rec.GetString("content_hash") == "" {
 		t.Error("content_hash not stored")
 	}
-	if !rec.GetBool("available") || rec.GetBool("drift_detected") {
-		t.Errorf("row should be available + undrifted; got available=%v drift=%v",
-			rec.GetBool("available"), rec.GetBool("drift_detected"))
+	if rec.GetString("role") != "shelved" || rec.GetBool("drift_detected") {
+		t.Errorf("row should land shelved + undrifted; got role=%q drift=%v",
+			rec.GetString("role"), rec.GetBool("drift_detected"))
 	}
 	if rec.GetInt("file_size") == 0 {
 		t.Error("file_size anchor not stored")
@@ -131,7 +133,7 @@ func TestIngest_DedupeByHash(t *testing.T) {
 }
 
 // TestDrift_Detected: tampering with the managed bytes trips VerifyAndFlag,
-// which forces the row unavailable + flagged.
+// which forces the row to shelved + flagged (losing its play role).
 func TestDrift_Detected(t *testing.T) {
 	app, cfg := testCatalog(t)
 	drop(t, cfg, "game.iso", []byte("pristine-bytes"))
@@ -145,6 +147,11 @@ func TestDrift_Detected(t *testing.T) {
 	rec, _ := app.FindRecordById(collectionName, id)
 	if ok, _ := VerifyManaged(cfg, rec); !ok {
 		t.Fatal("pristine disc should verify OK")
+	}
+	// Promote to play so the drift demotion below is observable.
+	rec.Set("role", "play")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("promote: %v", err)
 	}
 
 	// Tamper: rewrite the managed bytes (different size → cheap check re-hashes).
@@ -160,8 +167,8 @@ func TestDrift_Detected(t *testing.T) {
 		t.Fatal("VerifyAndFlag should report bad bytes")
 	}
 	reloaded, _ := app.FindRecordById(collectionName, id)
-	if reloaded.GetBool("available") || !reloaded.GetBool("drift_detected") {
-		t.Errorf("drift row should be unavailable + flagged; got available=%v drift=%v",
-			reloaded.GetBool("available"), reloaded.GetBool("drift_detected"))
+	if reloaded.GetString("role") != "shelved" || !reloaded.GetBool("drift_detected") {
+		t.Errorf("drift row should be shelved + flagged; got role=%q drift=%v",
+			reloaded.GetString("role"), reloaded.GetBool("drift_detected"))
 	}
 }

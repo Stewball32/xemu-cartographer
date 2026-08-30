@@ -33,12 +33,55 @@ const (
 	AddrH2ScenarioNamePoolPtr uint32 = 0x4EDA3C // -> scenario tag-name pool
 )
 
+// ---------------------------------------------------------------------------
+// Match stats + config globals (low GVAs, read as VALUES, not pointers).
+// Imported from halo-offset-mapper h2-stock.offsets.json (runtime-verified):
+// the K/D semantics resolved by the 2026-07-11 reverse+repeat kill test
+// (docs/h2-kd-semantics-2026-07-11.md), the gametype enum induced live the
+// same day, and the system-link machine layer from the 2026-07-02 pass. These
+// were verified upstream but never wired into this reader — the "H2 offsets"
+// general blocker (see docs/h2-slim-offsets-2026-08-13.md, "simply not wired").
+// ---------------------------------------------------------------------------
+const (
+	// AddrH2KillsPerPlayer: u16 kills for player slot i at +2*i. Per-player
+	// (NOT aggregate) — proven by alternating killers.
+	AddrH2KillsPerPlayer uint32 = 0x519500
+	// AddrH2DeathsPerPlayer: u32 deaths for player slot i at +4*i.
+	AddrH2DeathsPerPlayer uint32 = 0x51975C
+	// AddrH2KillsTotal: match-aggregate kill total (killer-independent).
+	// Mapper name AddrH2KillsGlobal0.
+	AddrH2KillsTotal uint32 = 0x518494
+	// AddrH2Gametype: e_game_engine index — 1 ctf, 2 slayer, 3 oddball,
+	// 4 king (induced by changing only the gametype on a fixed map).
+	AddrH2Gametype uint32 = 0x4D51CC
+	// AddrH2GamePhase: lifecycle enum 0 menu / 1 lobby / 3 in-game /
+	// 4 postgame, full-cycle validated on the H2 SLIM build (0x527334).
+	// NOT MAPPED on stock — 0 here is a deliberate sentinel meaning
+	// "unavailable on this build"; the reader falls back to array inference
+	// and AllLowGVAs skips zeros so Init never translates GVA 0.
+	AddrH2GamePhase uint32 = 0x0
+	// System-link machine layer (valid during an active session, zeroed
+	// otherwise): this console's own machine index, the per-machine MAC
+	// array (stride 6), and the per-machine entry table (stride 0xB4,
+	// name UTF-16LE at +0x28 — console nickname, else profile name).
+	AddrH2NetLocalMachineIndex uint32 = 0x54D8B4
+	AddrH2NetMachineMacArray   uint32 = 0x54D8B8
+	AddrH2NetMachineTable      uint32 = 0x54D91C
+)
+
 // AllLowGVAs are the low guest VAs this plugin needs translated at Init time.
 var AllLowGVAs = []uint32{
 	AddrH2PlayersArrayPtr,
 	AddrH2ObjectArrayPtr,
 	AddrH2TagHeaderPtr,
 	AddrH2ScenarioNamePoolPtr,
+	AddrH2KillsPerPlayer,
+	AddrH2DeathsPerPlayer,
+	AddrH2KillsTotal,
+	AddrH2Gametype,
+	AddrH2NetLocalMachineIndex,
+	AddrH2NetMachineMacArray,
+	AddrH2NetMachineTable,
 }
 
 // ---------------------------------------------------------------------------
@@ -71,15 +114,44 @@ const (
 // Player datum (struct h2_player_datum) — element of the players array.
 // ---------------------------------------------------------------------------
 const (
-	OffH2PlrDatumId         uint32 = 0x0   // uint32 datum id (0/0xFFFFFFFF = empty slot)
-	OffH2PlrPlayerId        uint32 = 0x4   // uint32 player id
-	OffH2PlrIndex           uint32 = 0x1C  // int32  player index
-	OffH2PlrTeam            uint32 = 0x20  // int32  team index
-	OffH2PlrUnitHandle      uint32 = 0x2C  // uint32 handle -> object table
-	OffH2PlrName            uint32 = 0x44  // wchar[16] UTF-16LE gamertag
+	OffH2PlrDatumId    uint32 = 0x0  // uint32 datum id (0/0xFFFFFFFF = empty slot)
+	OffH2PlrPlayerId   uint32 = 0x4  // uint32 player id
+	OffH2PlrIndex      uint32 = 0x1C // int32  player index
+	OffH2PlrTeam       uint32 = 0x20 // int32  team index
+	OffH2PlrUnitHandle uint32 = 0x2C // uint32 handle -> object table
+	OffH2PlrName       uint32 = 0x44 // wchar[16] UTF-16LE gamertag
+	// OffH2PlrMachineIndex: the owning machine's 0-based session index
+	// (system-link; same absolute value on every console). A player is LOCAL
+	// on this box iff it equals AddrH2NetLocalMachineIndex's value. Mapper
+	// name OffH2PlayerMachineIndex.
+	OffH2PlrMachineIndex uint32 = 0x1A // u8
+	// OffH2PlrMacOctet: last octet of the owning machine's MAC — the STABLE
+	// player identifier (H2 randomly renames duplicate-name joiners; the MAC
+	// octet survives). Mapper name OffH2PlayerMachineMacOctet.
+	OffH2PlrMacOctet uint32 = 0x19 // u8
+	// OffH2PlrBetrayals: per-player betrayal counter. LOCAL-ONLY in system
+	// link — it increments only on the betrayer's own console, so a host
+	// scraper undercounts remote players' betrayals. Mapper name
+	// OffH2PlayerBetrayals.
+	OffH2PlrBetrayals       uint32 = 0x1C4 // u16
 	ConstH2PlayerRecordSize uint32 = 0x21C // 540
 	ConstH2PlayerMax        uint32 = 0x10  // 16
 )
+
+// ---------------------------------------------------------------------------
+// System-link machine table entries (from AddrH2NetMachineTable).
+// ---------------------------------------------------------------------------
+const (
+	OffH2NetMachineName     uint32 = 0x28 // wchar UTF-16LE, NUL-terminated
+	ConstH2NetMachineStride uint32 = 0xB4 // 180 B per machine entry
+	ConstH2NetMachineMax    uint32 = 0x10 // H2 system link caps at 16 players
+)
+
+// OffH2ScenarioPathInPool is the offset within the scenario tag-name pool at
+// which the loaded scenario's path string sits (e.g. scenarios\multi\...\
+// midship). Layout-relative (build-independent); verified on Slim, pool
+// pointer verified on stock. Mapper name OffH2ScenarioNamePoolPathOffset.
+const OffH2ScenarioPathInPool uint32 = 0x24
 
 // ---------------------------------------------------------------------------
 // Object / biped data (struct h2_object_data) — from an entry's data_ptr.
