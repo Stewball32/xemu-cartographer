@@ -1,1032 +1,290 @@
 <script lang="ts">
+	// Settings — the unified, tabbed player-identity page (settings redesign).
+	// One page owns account profile (General), the per-game Halo: CE / Halo 2
+	// profile config (WIP tabs), the stream nameplate + gamertags (Stream), and
+	// OAuth connections (Accounts). CONSOLIDATES the old /gamertag/ page (which
+	// now redirects here) and the previous settings layout; the old Teams
+	// section is PARKED until the Teams tab gets its own design pass.
+	//
+	// Persistence is the pre-redesign logic behind the new UI: profile upserts
+	// regenerate signed saves server-side, the default gamertag (Stream) is the
+	// name both game profiles carry (a users hook syncs users.gamertag + regen),
+	// and motto + nameplate feed the overlays via /api/public/profiles.
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
-	import { FileUpload } from '@skeletonlabs/skeleton-svelte';
-	import {
-		UserIcon,
-		MailIcon,
-		Trash2Icon,
-		UploadIcon,
-		LockIcon,
-		ShieldCheckIcon,
-		ShieldAlertIcon,
-		MapPinIcon,
-		LinkIcon,
-		UnlinkIcon,
-		LoaderIcon,
-		TagIcon,
-		PlusIcon,
-		StarIcon,
-		UsersIcon,
-		CrownIcon,
-		BriefcaseIcon
-	} from '@lucide/svelte';
-	import { auth } from '$lib/stores/auth.svelte';
+	import { page } from '$app/state';
+	import { GamepadIcon, LinkIcon, SwordsIcon, TvIcon, UserIcon } from '@lucide/svelte';
+	import { ClientResponseError } from 'pocketbase';
 	import pb from '$lib/pocketbase';
-	import UserAvatar from '$lib/components/ui/UserAvatar.svelte';
-	import PendingRequests from '$lib/components/membership/PendingRequests.svelte';
-	import { toastPromise } from '$lib/stores/toaster';
-	import { OAUTH_PROVIDERS } from '$lib/config/app';
-	import { apiBaseURL } from '$lib/utils/api-base';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { describeAsyncError, toaster, toastPromise } from '$lib/stores/toaster';
+	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import WipChip from '$lib/components/settings/WipChip.svelte';
+	import GeneralTab from '$lib/components/settings/GeneralTab.svelte';
+	import CETab from '$lib/components/settings/CETab.svelte';
+	import H2Tab from '$lib/components/settings/H2Tab.svelte';
+	import StreamTab from '$lib/components/settings/StreamTab.svelte';
+	import AccountsTab from '$lib/components/settings/AccountsTab.svelte';
+	import { lanMeta } from '$lib/utils/lansaves';
+	import { fetchIdentity, type MeGamertag } from '$lib/utils/identity';
+	import type { CEField } from '$lib/types/lansaves';
+	import type { CeProfileRecord, CeProfileSettings, H2ProfileRecord } from '$lib/types/gamertag';
+	import type { Appearance } from '$lib/utils/emblem';
 
-	// General tab state — load() guarantees auth.user is non-null here
-	const _user = auth.user!;
-	let displayName = $state(_user?.name ?? '');
-	let email = $state(_user?.email ?? '');
-	let bio = $state(_user?.bio ?? '');
-	let location = $state(_user?.location ?? '');
-	let pendingPreviewUrl = $state<string | null>(null);
-	let pendingAvatarFile = $state<File | null>(null);
-	let saving = $state(false);
-	let deleting = $state(false);
-	let sendingVerification = $state(false);
-	let changingPassword = $state(false);
-	let oldPassword = $state('');
-	let newPassword = $state('');
-	let newPasswordConfirm = $state('');
-	const passwordMismatch = $derived(
-		newPasswordConfirm !== '' && newPassword !== newPasswordConfirm
-	);
-	const previewInitials = $derived.by<string | undefined>(() => {
-		const name = displayName.trim();
-		if (!name) return undefined;
-		return name
-			.split(/\s+/)
-			.map((p) => p[0])
-			.join('')
-			.toUpperCase()
-			.slice(0, 2);
+	type TabKey = 'general' | 'ce' | 'h2' | 'stream' | 'accounts';
+	const TABS: { key: TabKey; icon: typeof UserIcon; label: string; wip: boolean }[] = [
+		{ key: 'general', icon: UserIcon, label: 'General', wip: false },
+		{ key: 'ce', icon: GamepadIcon, label: 'Halo: CE', wip: true },
+		{ key: 'h2', icon: SwordsIcon, label: 'Halo 2', wip: true },
+		{ key: 'stream', icon: TvIcon, label: 'Stream', wip: false },
+		{ key: 'accounts', icon: LinkIcon, label: 'Accounts', wip: false }
+	];
+	const isTab = (v: string | null): v is TabKey =>
+		v === 'general' || v === 'ce' || v === 'h2' || v === 'stream' || v === 'accounts';
+
+	const tab = $derived.by<TabKey>(() => {
+		const q = page.url.searchParams.get('tab');
+		return isTab(q) ? q : 'general';
 	});
-
-	// Connected Accounts tab state
-	let linkedAuths = $state<Array<Record<string, string>>>([]);
-	let enabledProviders = $state<string[]>([]);
-	let linkingProvider = $state<string | null>(null);
-	let unlinkingProvider = $state<string | null>(null);
-	const linkedProviderNames = $derived(new Set(linkedAuths.map((a) => a.provider)));
-
-	const visibleProviders = $derived(enabledProviders.filter((name) => name in OAUTH_PROVIDERS));
-
-	// Identity tab state
-	interface MeGamertag {
-		id: string;
-		tag: string;
-		status: string;
-	}
-	interface MeTeamMembership {
-		gamertag_id: string;
-		is_owner: boolean;
-		is_manager: boolean;
-		joined_at: string;
-		left_at: string | null;
-	}
-	interface MeTeam {
-		id: string;
-		name: string;
-		slug: string;
-		status: string;
-		membership: MeTeamMembership;
-	}
-	interface MeIdentity {
-		default_gamertag: MeGamertag | null;
-		gamertags: MeGamertag[];
-		teams: MeTeam[];
+	function switchTab(k: TabKey) {
+		const url = new URL(page.url);
+		if (k === 'general') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', k);
+		// Same-page query-param update — resolve() has nothing to resolve here.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
 	}
 
-	let myGamertags = $state<MeGamertag[]>([]);
-	let myTeams = $state<MeTeam[]>([]);
-	let myDefaultGamertagId = $state<string | null>(null);
-	let identityLoading = $state(false);
-	let newTagInput = $state('');
-	let addingTag = $state(false);
-	let removingTagId = $state<string | null>(null);
-	let settingDefaultId = $state<string | null>(null);
-	let teamCreateOpen = $state(false);
-	let teamCreateName = $state('');
-	let teamCreateSlug = $state('');
-	let teamSlugTouched = $state(false);
-	let creatingTeam = $state(false);
+	let innerWidth = $state(1280);
+	const narrow = $derived(innerWidth < 900);
 
-	const identityBaseURL = apiBaseURL();
+	// ── Shared identity + profile state (loaded once) ───────────────────────
+	let loading = $state(true);
+	let gamertags = $state<MeGamertag[]>([]);
+	let defaultGamertagId = $state<string | null>(null);
+	let defaultTag = $state('');
 
-	function slugify(value: string): string {
-		return value
-			.toLowerCase()
-			.trim()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
+	let ceFields = $state<CEField[]>([]);
+	let ceRecord = $state<CeProfileRecord | null>(null);
+	let ceSettings = $state<CeProfileSettings>({});
+	let ceBaseline = $state('{}');
+	let h2Record = $state<H2ProfileRecord | null>(null);
+	let h2Appearance = $state<Appearance>({});
+	let h2Baseline = $state('{}');
+	let gameBusy = $state(false);
 
-	$effect(() => {
-		// Auto-derive the slug from the name until the user touches the slug
-		// field directly. After that, leave their typed value alone.
-		if (!teamSlugTouched) teamCreateSlug = slugify(teamCreateName);
-	});
+	let motto = $state('');
+	let nameplateId = $state('');
+	let savedMotto = $state('');
+	let savedNameplateId = $state('');
+	let streamBusy = $state(false);
 
-	async function loadIdentity() {
-		if (!auth.token) return;
-		identityLoading = true;
+	const ceDirty = $derived(JSON.stringify(ceSettings) !== ceBaseline);
+	const h2Dirty = $derived(JSON.stringify(h2Appearance) !== h2Baseline);
+
+	async function firstOrNull<T>(collection: string, filter: string): Promise<T | null> {
 		try {
-			const res = await fetch(`${identityBaseURL}/api/me`, {
-				headers: { Authorization: auth.token }
-			});
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data = (await res.json()) as MeIdentity;
-			myGamertags = data.gamertags ?? [];
-			myTeams = data.teams ?? [];
-			myDefaultGamertagId = data.default_gamertag?.id ?? null;
-		} catch {
-			// Don't toast — the tab just stays empty. Network blip is fine.
-			myGamertags = [];
-			myTeams = [];
-			myDefaultGamertagId = null;
-		} finally {
-			identityLoading = false;
+			return await pb.collection(collection).getFirstListItem<T>(filter);
+		} catch (err) {
+			if (err instanceof ClientResponseError && err.status === 404) return null;
+			throw err;
 		}
 	}
 
-	async function addGamertag() {
-		if (!auth.user || !newTagInput.trim()) return;
-		const tag = newTagInput.trim();
-		addingTag = true;
+	async function reloadIdentity() {
+		const id = await fetchIdentity();
+		gamertags = id?.gamertags ?? [];
+		defaultGamertagId = id?.default_gamertag?.id ?? null;
+		defaultTag = id?.default_gamertag?.tag ?? '';
+	}
+
+	async function load() {
+		const uid = auth.user?.id;
+		if (!uid) return;
 		try {
-			await toastPromise(pb.collection('gamertags').create({ user: auth.user.id, tag }), {
-				loading: { title: 'Adding gamertag' },
-				success: { title: 'Added', description: tag },
-				errorTitle: 'Add failed',
-				errorDescription: (err) => {
-					const m = err instanceof Error ? err.message : 'Failed';
-					return m.toLowerCase().includes('unique') ? 'You already own that gamertag.' : m;
-				}
-			});
-			newTagInput = '';
-			await loadIdentity();
-		} catch {
-			// toast already shown
+			loading = true;
+			const [meta, user] = await Promise.all([
+				lanMeta(),
+				pb.collection('users').getOne(uid),
+				reloadIdentity()
+			]);
+			ceFields = meta.ce_profile_fields ?? [];
+			const u = user as unknown as Record<string, unknown>;
+			savedMotto = motto = String(u.motto ?? '');
+			savedNameplateId = nameplateId = String(u.nameplate ?? '');
+
+			ceRecord = await firstOrNull<CeProfileRecord>('ce_profiles', `user = "${uid}"`);
+			h2Record = await firstOrNull<H2ProfileRecord>('h2_profiles', `user = "${uid}"`);
+			ceSettings = { ...(ceRecord?.settings ?? {}) };
+			ceBaseline = JSON.stringify(ceSettings);
+			h2Appearance = { ...(h2Record?.appearance ?? {}) };
+			h2Baseline = JSON.stringify(h2Appearance);
+		} catch (err) {
+			toaster.error({ title: 'Load failed', description: describeAsyncError(err) });
 		} finally {
-			addingTag = false;
+			loading = false;
 		}
 	}
 
-	async function removeGamertag(id: string) {
-		if (!auth.user) return;
-		removingTagId = id;
-		try {
-			await toastPromise(pb.collection('gamertags').delete(id), {
-				loading: { title: 'Removing' },
-				success: { title: 'Removed' },
-				errorTitle: 'Remove failed'
-			});
-			await loadIdentity();
-		} catch {
-			// toast already shown
-		} finally {
-			removingTagId = null;
+	function cleanAppearance(): Record<string, number> {
+		const out: Record<string, number> = {};
+		for (const [k, v] of Object.entries(h2Appearance)) {
+			if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
 		}
+		return out;
 	}
 
-	async function setDefaultGamertag(id: string) {
-		if (!auth.user) return;
-		settingDefaultId = id;
+	async function saveCE() {
+		const uid = auth.user?.id;
+		if (!uid) return;
+		gameBusy = true;
 		try {
-			await toastPromise(pb.collection('users').update(auth.user.id, { default_gamertag: id }), {
-				loading: { title: 'Setting default' },
-				success: { title: 'Default updated' },
-				errorTitle: 'Update failed'
-			});
-			await loadIdentity();
-		} catch {
-			// toast already shown
-		} finally {
-			settingDefaultId = null;
-		}
-	}
-
-	function openTeamCreate() {
-		teamCreateOpen = true;
-		teamCreateName = '';
-		teamCreateSlug = '';
-		teamSlugTouched = false;
-	}
-
-	function closeTeamCreate() {
-		teamCreateOpen = false;
-	}
-
-	async function createTeam() {
-		if (!auth.user || !myDefaultGamertagId) return;
-		const name = teamCreateName.trim();
-		const slug = teamCreateSlug.trim();
-		if (!name || !slug) return;
-		creatingTeam = true;
-		try {
-			const team = await toastPromise(
-				pb.collection('teams').create({ name, slug, created_by: auth.user.id }),
+			const rec = await toastPromise(
+				ceRecord
+					? pb
+							.collection('ce_profiles')
+							.update<CeProfileRecord>(ceRecord.id, { settings: ceSettings })
+					: pb
+							.collection('ce_profiles')
+							.create<CeProfileRecord>({ user: uid, settings: ceSettings }),
 				{
-					loading: { title: 'Creating team' },
-					success: { title: 'Team created', description: name },
-					errorTitle: 'Create failed',
-					errorDescription: (err) => {
-						const m = err instanceof Error ? err.message : 'Failed';
-						return m.toLowerCase().includes('unique') ? 'Slug is already taken.' : m;
-					}
+					loading: { title: 'Saving', description: 'Regenerating blam.sav' },
+					success: { title: 'Saved', description: 'Halo: CE profile regenerated.' },
+					errorTitle: 'Save failed'
 				}
 			);
-			// Auto-roster the creator as owner + manager so they can manage
-			// the team without an admin intervention. PB rules permit this
-			// because the acting user is the team's created_by.
-			await pb.collection('rosters').create({
-				team: team.id,
-				gamertag: myDefaultGamertagId,
-				is_owner: true,
-				is_manager: true,
-				joined_at: new Date().toISOString().replace('T', ' ').replace(/\..+$/, '.000Z')
-			});
-			closeTeamCreate();
-			await loadIdentity();
+			ceRecord = rec;
+			ceSettings = { ...(rec.settings ?? {}) };
+			ceBaseline = JSON.stringify(ceSettings);
 		} catch {
-			// toast already shown
+			/* toast shown */
 		} finally {
-			creatingTeam = false;
+			gameBusy = false;
 		}
 	}
 
-	onMount(async () => {
+	async function saveH2() {
+		const uid = auth.user?.id;
+		if (!uid) return;
+		gameBusy = true;
 		try {
-			const methods = await pb.collection('users').listAuthMethods();
-			enabledProviders = methods.oauth2?.providers?.map((p) => p.name) ?? [];
+			const ap = cleanAppearance();
+			const rec = await toastPromise(
+				h2Record
+					? pb.collection('h2_profiles').update<H2ProfileRecord>(h2Record.id, { appearance: ap })
+					: pb.collection('h2_profiles').create<H2ProfileRecord>({ user: uid, appearance: ap }),
+				{
+					loading: { title: 'Saving', description: 'Regenerating the H2 profile' },
+					success: { title: 'Saved', description: 'Halo 2 profile regenerated.' },
+					errorTitle: 'Save failed'
+				}
+			);
+			h2Record = rec;
+			h2Appearance = { ...(rec.appearance ?? {}) };
+			h2Baseline = JSON.stringify(h2Appearance);
 		} catch {
-			enabledProviders = [];
-		}
-		await loadLinkedAuths();
-		await loadIdentity();
-	});
-
-	async function loadLinkedAuths() {
-		if (!auth.user) return;
-		try {
-			linkedAuths = await auth.listExternalAuths(auth.user.id);
-		} catch {
-			linkedAuths = [];
-		}
-	}
-
-	function loadUserData() {
-		const user = auth.user!;
-		displayName = user.name ?? '';
-		email = user.email ?? '';
-		bio = user.bio ?? '';
-		location = user.location ?? '';
-		pendingPreviewUrl = null;
-	}
-
-	function handleAvatarAccept(details: { files: File[] }) {
-		const file = details.files[0];
-		if (!file) return;
-		pendingAvatarFile = file;
-		pendingPreviewUrl = URL.createObjectURL(file);
-	}
-
-	async function saveGeneral() {
-		if (!auth.user) return;
-		saving = true;
-		try {
-			const data: Record<string, unknown> = { name: displayName, bio, location };
-			if (pendingAvatarFile) data.avatar = pendingAvatarFile;
-			await toastPromise(pb.collection('users').update(auth.user.id, data), {
-				loading: { title: 'Saving' },
-				success: { title: 'Saved', description: 'Your profile has been updated.' },
-				errorTitle: 'Save failed'
-			});
-			pendingAvatarFile = null;
-			if (pendingPreviewUrl) {
-				URL.revokeObjectURL(pendingPreviewUrl);
-				pendingPreviewUrl = null;
-			}
-		} catch {
-			// toast already shown
+			/* toast shown */
 		} finally {
-			saving = false;
+			gameBusy = false;
 		}
 	}
 
-	// Email change goes through PocketBase's built-in requestEmailChange flow:
-	// PB sends a confirmation token to the NEW address, and on confirm it flips
-	// `email`, sets `verified=false`, and re-fires verification. We don't hold
-	// the address change ourselves; the user clicks the link in their inbox to
-	// commit. Old-email notification + current-password re-auth gate are
-	// deferred — PB doesn't surface them and we don't have a mailer outside
-	// of PB's templated path yet (M7 log notes this).
-	let changingEmail = $state(false);
-	const emailDirty = $derived(email !== (auth.user?.email ?? ''));
-
-	async function requestEmailChangeFlow() {
-		if (!auth.user || !emailDirty) return;
-		changingEmail = true;
-		try {
-			await toastPromise(pb.collection('users').requestEmailChange(email), {
-				loading: { title: 'Sending confirmation', description: email },
-				success: {
-					title: 'Check your inbox',
-					description: `We sent a confirmation link to ${email}. Until you click it, your account email stays ${auth.user.email}.`
-				},
-				errorTitle: 'Email change failed'
-			});
-		} catch {
-			// toast already shown
-		} finally {
-			changingEmail = false;
-		}
-	}
-
-	function resetGeneral() {
-		pendingAvatarFile = null;
-		if (pendingPreviewUrl) {
-			URL.revokeObjectURL(pendingPreviewUrl);
-		}
-		loadUserData();
-	}
-
-	async function resendVerification() {
-		if (!auth.user) return;
-		sendingVerification = true;
-		try {
-			await toastPromise(auth.requestVerification(auth.user.email), {
-				loading: { title: 'Sending' },
-				success: { title: 'Sent', description: 'Verification email sent. Check your inbox.' },
-				errorTitle: 'Send failed'
-			});
-		} catch {
-			// toast already shown
-		} finally {
-			sendingVerification = false;
-		}
-	}
-
-	async function changePassword() {
-		if (!auth.user || newPassword !== newPasswordConfirm) return;
-		changingPassword = true;
+	async function saveStream() {
+		const uid = auth.user?.id;
+		if (!uid) return;
+		streamBusy = true;
 		try {
 			await toastPromise(
-				pb.collection('users').update(auth.user.id, {
-					oldPassword,
-					password: newPassword,
-					passwordConfirm: newPasswordConfirm
-				}),
+				pb.collection('users').update(uid, { motto: motto.trim(), nameplate: nameplateId }),
 				{
-					loading: { title: 'Updating password' },
-					success: { title: 'Updated', description: 'Your password has been changed.' },
-					errorTitle: 'Password change failed'
+					loading: { title: 'Saving' },
+					success: { title: 'Saved', description: 'Your nameplate is live on the overlays.' },
+					errorTitle: 'Save failed'
 				}
 			);
-			oldPassword = '';
-			newPassword = '';
-			newPasswordConfirm = '';
+			savedMotto = motto = motto.trim();
+			savedNameplateId = nameplateId;
 		} catch {
-			// toast already shown
+			/* toast shown */
 		} finally {
-			changingPassword = false;
+			streamBusy = false;
 		}
 	}
 
-	async function deleteAccount() {
-		if (!auth.user) return;
-		const confirmed = confirm(
-			'Mark your account as deleted? Your gamertag, roster, and team history stay attached to "[deleted user]" so past games remain readable, but your email, display name, bio, and avatar are blanked and you cannot log back in.'
-		);
-		if (!confirmed) return;
-		deleting = true;
-		try {
-			await toastPromise(pb.collection('users').update(auth.user.id, { is_deleted: true }), {
-				loading: { title: 'Deleting account' },
-				success: { title: 'Deleted', description: 'Your account has been tombstoned.' },
-				errorTitle: 'Delete failed'
-			});
-			auth.logout();
-			goto(resolve('/login/'));
-		} catch {
-			// toast already shown
-			deleting = false;
+	onMount(() => {
+		if (!auth.token) {
+			toaster.error({ title: 'Not authenticated', description: 'Log in to edit your settings.' });
+			return;
 		}
-	}
-
-	async function linkProvider(provider: string) {
-		if (!auth.user) return;
-		linkingProvider = provider;
-		const label = OAUTH_PROVIDERS[provider]?.label ?? provider;
-		try {
-			await toastPromise(auth.linkOAuth(provider), {
-				loading: { title: 'Connecting', description: label },
-				success: { title: 'Connected', description: `${label} account linked.` },
-				errorTitle: 'Connect failed',
-				errorDescription: (err) => {
-					const message = err instanceof Error ? err.message : 'Failed to link account.';
-					return message.includes('already') || message.includes('unique')
-						? 'This account is already linked to another user.'
-						: message;
-				}
-			});
-			await loadLinkedAuths();
-		} catch {
-			// toast already shown
-		} finally {
-			linkingProvider = null;
-		}
-	}
-
-	async function unlinkProvider(provider: string) {
-		if (!auth.user) return;
-		unlinkingProvider = provider;
-		const label = OAUTH_PROVIDERS[provider]?.label ?? provider;
-		try {
-			await toastPromise(auth.unlinkOAuth(auth.user.id, provider), {
-				loading: { title: 'Disconnecting', description: label },
-				success: { title: 'Disconnected', description: `${label} account unlinked.` },
-				errorTitle: 'Disconnect failed'
-			});
-			await loadLinkedAuths();
-		} catch {
-			// toast already shown
-		} finally {
-			unlinkingProvider = null;
-		}
-	}
+		void load();
+	});
 </script>
 
-<h1 class="mb-6 h2">Settings</h1>
+<svelte:window bind:innerWidth />
 
-<div class="max-w-2xl">
-	<!-- General -->
-	<section class="mb-10">
-		<h2 class="mb-4 border-b border-surface-300-700 pb-2 h3">General</h2>
-		<div class="space-y-6">
-			<!-- Account Info -->
-			<div class="space-y-6 card p-6">
-				<h2 class="h4">Account</h2>
+<div class="mx-auto flex w-full max-w-290 flex-col gap-4.5 p-4 sm:p-6">
+	<PageHeader
+		title="Settings"
+		description="Your account, your identity, your stream presence — all in one place."
+	/>
 
-				<!-- Avatar Upload -->
-				<div class="flex items-center gap-6">
-					<UserAvatar
-						user={_user}
-						overrideSrc={pendingPreviewUrl}
-						fallback={previewInitials}
-						size="size-20"
-					/>
-					<FileUpload maxFiles={1} accept="image/*" onFileAccept={handleAvatarAccept}>
-						<FileUpload.Dropzone class="card preset-outlined-surface-200-800 p-4">
-							<div class="flex flex-col items-center gap-2 text-center">
-								<UploadIcon class="size-8 text-surface-400-600" />
-								<p class="text-sm">
-									<span class="font-semibold text-primary-500">Click to upload</span> or drag and drop
-								</p>
-								<p class="text-xs opacity-50">PNG, JPG up to 2MB</p>
-							</div>
-						</FileUpload.Dropzone>
-						<FileUpload.HiddenInput />
-					</FileUpload>
-				</div>
+	<!-- tab row -->
+	<div class="flex flex-wrap gap-1.5 border-b border-surface-200-800 pb-3">
+		{#each TABS as t (t.key)}
+			<button
+				type="button"
+				class="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-colors
+					{tab === t.key
+					? 'border-primary-500/40 bg-primary-500/15 text-primary-600-400'
+					: 'border-transparent text-surface-600-400 hover:text-surface-950-50'}"
+				aria-current={tab === t.key ? 'page' : undefined}
+				onclick={() => switchTab(t.key)}
+			>
+				<t.icon class="size-4" />
+				<span>{t.label}</span>
+				{#if t.wip}<WipChip />{/if}
+			</button>
+		{/each}
+	</div>
 
-				<hr class="hr" />
-
-				<!-- Username — immutable. Locked at the DB layer via the
-					     users_username_immutable hook; new gamertags are the
-					     mechanism for changing how others see you. -->
-				<label class="label">
-					<span>Username</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<LockIcon class="size-4" />
-						</div>
-						<input
-							type="text"
-							class="input opacity-70"
-							value={_user?.username ?? ''}
-							readonly
-							title="Usernames cannot be changed. Add a gamertag to use a different displayed handle."
-						/>
-					</div>
-				</label>
-
-				<!-- Input Groups -->
-				<label class="label">
-					<span>Display Name</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<UserIcon class="size-4" />
-						</div>
-						<input type="text" class="input" bind:value={displayName} />
-					</div>
-				</label>
-
-				<!-- Email change goes through PB's requestEmailChange. The save
-					     button below intentionally does NOT send email so the user
-					     has to opt in to the verification flow. -->
-				<label class="label">
-					<span>Email</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<MailIcon class="size-4" />
-						</div>
-						<input type="email" class="input" bind:value={email} />
-						<button
-							type="button"
-							class="btn preset-tonal btn-sm"
-							onclick={requestEmailChangeFlow}
-							disabled={changingEmail || !emailDirty || !email.trim()}
-							title="Send a confirmation link to the new address"
-						>
-							{#if changingEmail}<LoaderIcon class="size-4 animate-spin" />{/if}
-							<span>Change email</span>
-						</button>
-					</div>
-					{#if emailDirty}
-						<p class="text-xs opacity-70">
-							Clicking Save updates everything except email. Click "Change email" to send a
-							confirmation link to the new address — your email won't change until you click that
-							link.
-						</p>
-					{/if}
-				</label>
-
-				<label class="label">
-					<span>Bio</span>
-					<textarea
-						class="textarea"
-						rows="3"
-						maxlength="500"
-						bind:value={bio}
-						placeholder="Tell us about yourself..."
-					></textarea>
-				</label>
-
-				<label class="label">
-					<span>Location</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<MapPinIcon class="size-4" />
-						</div>
-						<input
-							type="text"
-							class="input"
-							bind:value={location}
-							maxlength="100"
-							placeholder="City, Country"
-						/>
-					</div>
-				</label>
-
-				{#if auth.user?.verified}
-					<div class="flex items-center gap-2 text-sm text-success-500">
-						<ShieldCheckIcon class="size-4" />
-						<span>Email verified</span>
-					</div>
-				{:else}
-					<div
-						class="flex items-center justify-between rounded-md border border-warning-500/30 bg-warning-500/10 p-3"
-					>
-						<div class="flex items-center gap-2 text-sm text-warning-500">
-							<ShieldAlertIcon class="size-4" />
-							<span>Email not verified</span>
-						</div>
-						<button
-							class="btn preset-tonal btn-sm"
-							onclick={resendVerification}
-							disabled={sendingVerification}
-						>
-							{#if sendingVerification}<LoaderIcon class="size-4 animate-spin" />{/if}
-							<span>Resend</span>
-						</button>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Change Password -->
-			<div class="space-y-4 card p-6">
-				<h2 class="h4">Change Password</h2>
-
-				<label class="label">
-					<span>Current Password</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<LockIcon class="size-4" />
-						</div>
-						<input
-							type="password"
-							class="input"
-							placeholder="••••••••"
-							bind:value={oldPassword}
-							required
-						/>
-					</div>
-				</label>
-
-				<label class="label">
-					<span>New Password</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<LockIcon class="size-4" />
-						</div>
-						<input
-							type="password"
-							class="input"
-							placeholder="••••••••"
-							bind:value={newPassword}
-							minlength="8"
-							required
-						/>
-					</div>
-				</label>
-
-				<label class="label">
-					<span>Confirm New Password</span>
-					<div class="field-group grid-cols-[auto_1fr_auto]">
-						<div class="flex items-center justify-center preset-tonal px-3">
-							<LockIcon class="size-4" />
-						</div>
-						<input
-							type="password"
-							class="input"
-							placeholder="••••••••"
-							bind:value={newPasswordConfirm}
-							minlength="8"
-							required
-						/>
-					</div>
-					{#if passwordMismatch}
-						<p class="text-sm text-error-500">Passwords do not match.</p>
-					{/if}
-				</label>
-
-				<button
-					class="btn preset-filled"
-					onclick={changePassword}
-					disabled={changingPassword ||
-						passwordMismatch ||
-						!oldPassword ||
-						!newPassword ||
-						!newPasswordConfirm}
-				>
-					{#if changingPassword}<LoaderIcon class="size-4 animate-spin" />{/if}
-					<span>Update Password</span>
-				</button>
-			</div>
-
-			<!-- Danger Zone -->
-			<div class="space-y-3 card preset-outlined-error-500 p-6">
-				<h2 class="h4 text-error-500">Danger Zone</h2>
-				<p class="text-sm opacity-70">
-					Permanently delete your account and all associated data. This action cannot be undone.
-				</p>
-				<button class="btn preset-filled-error-500" onclick={deleteAccount} disabled={deleting}>
-					{#if deleting}
-						<LoaderIcon class="size-4 animate-spin" />
-					{:else}
-						<Trash2Icon class="size-4" />
-					{/if}
-					<span>Delete Account</span>
-				</button>
-			</div>
-
-			<!-- Save -->
-			<div class="flex gap-3">
-				<button class="btn preset-filled" onclick={saveGeneral} disabled={saving}>
-					{#if saving}<LoaderIcon class="size-4 animate-spin" />{/if}
-					<span>Save Changes</span>
-				</button>
-				<button class="btn preset-tonal" onclick={resetGeneral} disabled={saving}>Reset</button>
-			</div>
-		</div>
-	</section>
-
-	<!-- Gamertags & Teams -->
-	<section class="mb-10">
-		<h2 class="mb-4 border-b border-surface-300-700 pb-2 h3">Gamertags &amp; Teams</h2>
-		<div class="space-y-6">
-			<!-- M23d: pending invites + sent requests, inline with the rest
-			     of the team management surface. The component handles its
-			     own load + actions. -->
-			<PendingRequests />
-			<!-- My Gamertags -->
-			<div class="space-y-4 card p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="h4">My Gamertags</h2>
-					{#if identityLoading}
-						<LoaderIcon class="size-4 animate-spin opacity-50" />
-					{/if}
-				</div>
-				<p class="text-sm opacity-70">
-					Add the handles you play under. Your default is what other players see by default.
-				</p>
-
-				{#if myGamertags.length === 0}
-					<p class="text-sm opacity-50">No gamertags yet.</p>
-				{:else}
-					<div class="space-y-2">
-						{#each myGamertags as gt (gt.id)}
-							{@const isDefault = gt.id === myDefaultGamertagId}
-							{@const isRemoving = removingTagId === gt.id}
-							{@const isSettingDefault = settingDefaultId === gt.id}
-							<div
-								class="flex items-center justify-between rounded-md border border-surface-300-700 p-3"
-							>
-								<div class="flex items-center gap-3">
-									<TagIcon class="size-4 opacity-50" />
-									<span class="font-mono">{gt.tag}</span>
-									{#if isDefault}
-										<span class="badge preset-tonal-primary text-xs">
-											<StarIcon class="size-3" />
-											Default
-										</span>
-									{/if}
-									{#if gt.status === 'blocked'}
-										<span class="badge preset-tonal-error text-xs" title="Blocked by an admin">
-											<ShieldAlertIcon class="size-3" />
-											Blocked
-										</span>
-									{:else if gt.status === 'pending'}
-										<span class="badge preset-tonal-warning text-xs" title="Pending admin review">
-											Pending
-										</span>
-									{:else if gt.status === 'approved'}
-										<span class="badge preset-tonal-success text-xs" title="Approved by an admin">
-											Approved
-										</span>
-									{/if}
-								</div>
-								<div class="flex items-center gap-2">
-									{#if !isDefault && gt.status !== 'blocked'}
-										<button
-											class="btn preset-tonal btn-sm"
-											onclick={() => setDefaultGamertag(gt.id)}
-											disabled={isSettingDefault}
-										>
-											{#if isSettingDefault}
-												<LoaderIcon class="size-4 animate-spin" />
-											{:else}
-												<StarIcon class="size-4" />
-											{/if}
-											<span>Set default</span>
-										</button>
-									{/if}
-									{#if gt.status !== 'blocked'}
-										<button
-											class="btn preset-tonal-error btn-sm"
-											onclick={() => removeGamertag(gt.id)}
-											disabled={isRemoving}
-											title={isDefault
-												? 'Removing your default will clear the default selection'
-												: 'Remove gamertag'}
-										>
-											{#if isRemoving}
-												<LoaderIcon class="size-4 animate-spin" />
-											{:else}
-												<Trash2Icon class="size-4" />
-											{/if}
-										</button>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-
-				<form
-					class="flex items-end gap-2"
-					onsubmit={(e) => {
-						e.preventDefault();
-						addGamertag();
-					}}
-				>
-					<label class="label flex-1">
-						<span>Add a gamertag</span>
-						<div class="field-group grid-cols-[auto_1fr_auto]">
-							<div class="flex items-center justify-center preset-tonal px-3">
-								<TagIcon class="size-4" />
-							</div>
-							<input
-								type="text"
-								class="input"
-								placeholder="e.g. Stewball32"
-								maxlength="32"
-								bind:value={newTagInput}
-								disabled={addingTag}
-							/>
-						</div>
-					</label>
-					<button
-						type="submit"
-						class="btn preset-filled"
-						disabled={addingTag || !newTagInput.trim()}
-					>
-						{#if addingTag}
-							<LoaderIcon class="size-4 animate-spin" />
-						{:else}
-							<PlusIcon class="size-4" />
-						{/if}
-						<span>Add</span>
-					</button>
-				</form>
-			</div>
-
-			<!-- My Teams -->
-			<div class="space-y-4 card p-6">
-				<div class="flex items-center justify-between gap-3">
-					<h2 class="h4">My Teams</h2>
-					<button
-						class="btn preset-filled btn-sm"
-						onclick={openTeamCreate}
-						disabled={!myDefaultGamertagId}
-						title={myDefaultGamertagId ? 'Create a new team' : 'Pick a default gamertag first'}
-					>
-						<PlusIcon class="size-4" />
-						<span>Create team</span>
-					</button>
-				</div>
-				<p class="text-sm opacity-70">Teams you are currently rostered on.</p>
-
-				{#if myTeams.length === 0}
-					<p class="text-sm opacity-50">Not on any teams yet.</p>
-				{:else}
-					<div class="space-y-2">
-						{#each myTeams as team (team.id)}
-							<div
-								class="flex items-center justify-between rounded-md border border-surface-300-700 p-3"
-							>
-								<div class="flex items-center gap-3">
-									<UsersIcon class="size-4 opacity-50" />
-									<div>
-										<div class="flex items-center gap-2">
-											<p class="font-semibold">{team.name}</p>
-											{#if team.status === 'blocked'}
-												<span class="badge preset-tonal-error text-xs" title="Blocked by an admin">
-													<ShieldAlertIcon class="size-3" />
-													Blocked
-												</span>
-											{:else if team.status === 'pending'}
-												<span
-													class="badge preset-tonal-warning text-xs"
-													title="Pending admin review"
-												>
-													Pending
-												</span>
-											{:else if team.status === 'approved'}
-												<span
-													class="badge preset-tonal-success text-xs"
-													title="Approved by an admin"
-												>
-													Approved
-												</span>
-											{/if}
-										</div>
-										<p class="text-xs opacity-50">{team.slug}</p>
-									</div>
-								</div>
-								<div class="flex items-center gap-2">
-									{#if team.membership.is_owner}
-										<span class="badge preset-tonal-warning text-xs">
-											<CrownIcon class="size-3" />
-											Owner
-										</span>
-									{/if}
-									{#if team.membership.is_manager}
-										<span class="badge preset-tonal-primary text-xs">
-											<BriefcaseIcon class="size-3" />
-											Manager
-										</span>
-									{/if}
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-
-			<!-- Team Create Modal (inline; Skeleton's Modal needs portal setup, dialog is simpler) -->
-			{#if teamCreateOpen}
-				<div
-					class="fixed inset-0 z-50 flex items-center justify-center bg-surface-950/50 p-4"
-					role="dialog"
-					aria-modal="true"
-				>
-					<div class="w-full max-w-md space-y-4 card p-6">
-						<h3 class="h4">Create team</h3>
-						<label class="label">
-							<span>Name</span>
-							<div class="field-group grid-cols-[auto_1fr_auto]">
-								<div class="flex items-center justify-center preset-tonal px-3">
-									<UsersIcon class="size-4" />
-								</div>
-								<input
-									type="text"
-									class="input"
-									maxlength="60"
-									bind:value={teamCreateName}
-									placeholder="NorCal Halo"
-								/>
-							</div>
-						</label>
-						<label class="label">
-							<span>Slug</span>
-							<div class="field-group grid-cols-[auto_1fr_auto]">
-								<div
-									class="flex items-center justify-center preset-tonal px-3 font-mono text-xs opacity-50"
-								>
-									/teams/
-								</div>
-								<input
-									type="text"
-									class="input"
-									maxlength="60"
-									bind:value={teamCreateSlug}
-									onkeydown={() => (teamSlugTouched = true)}
-									placeholder="norcal-halo"
-								/>
-							</div>
-							<p class="text-xs opacity-50">Lowercase letters, numbers, and dashes only.</p>
-						</label>
-						<div class="flex justify-end gap-2">
-							<button class="btn preset-tonal" onclick={closeTeamCreate} disabled={creatingTeam}>
-								Cancel
-							</button>
-							<button
-								class="btn preset-filled"
-								onclick={createTeam}
-								disabled={creatingTeam || !teamCreateName.trim() || !teamCreateSlug.trim()}
-							>
-								{#if creatingTeam}<LoaderIcon class="size-4 animate-spin" />{/if}
-								<span>Create</span>
-							</button>
-						</div>
-					</div>
-				</div>
-			{/if}
-		</div>
-	</section>
-
-	<!-- Connected Accounts -->
-	<section class="mb-10">
-		<h2 class="mb-4 border-b border-surface-300-700 pb-2 h3">Connected Accounts</h2>
-		<div class="space-y-6">
-			<div class="space-y-4 card p-6">
-				<h2 class="h4">Connected Accounts</h2>
-				<p class="text-sm opacity-70">Link or unlink your external sign-in providers.</p>
-
-				{#if visibleProviders.length === 0}
-					<p class="text-sm opacity-50">No OAuth providers are configured.</p>
-				{:else}
-					<div class="space-y-3">
-						{#each visibleProviders as provider (provider)}
-							{@const meta = OAUTH_PROVIDERS[provider]}
-							{@const isLinked = linkedProviderNames.has(provider)}
-							{@const isLinking = linkingProvider === provider}
-							{@const isUnlinking = unlinkingProvider === provider}
-							<div
-								class="flex items-center justify-between rounded-md border border-surface-300-700 p-3"
-							>
-								<div class="flex items-center gap-3">
-									<img src={meta.icon} alt={meta.label} class="size-6" />
-									<div>
-										<p class="font-semibold">{meta.label}</p>
-										{#if isLinked}
-											<p class="text-xs text-success-500">Connected</p>
-										{:else}
-											<p class="text-xs opacity-50">Not connected</p>
-										{/if}
-									</div>
-								</div>
-								{#if isLinked}
-									<button
-										class="btn preset-tonal-error btn-sm"
-										onclick={() => unlinkProvider(provider)}
-										disabled={isUnlinking}
-									>
-										{#if isUnlinking}
-											<LoaderIcon class="size-4 animate-spin" />
-										{:else}
-											<UnlinkIcon class="size-4" />
-										{/if}
-										<span>Disconnect</span>
-									</button>
-								{:else}
-									<button
-										class="btn preset-tonal btn-sm"
-										onclick={() => linkProvider(provider)}
-										disabled={isLinking}
-									>
-										{#if isLinking}
-											<LoaderIcon class="size-4 animate-spin" />
-										{:else}
-											<LinkIcon class="size-4" />
-										{/if}
-										<span>Connect</span>
-									</button>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		</div>
-	</section>
+	{#if loading}
+		<p class="p-4 text-sm text-surface-500">Loading…</p>
+	{:else}
+		<GeneralTab active={tab === 'general'} {h2Appearance} />
+		<CETab
+			active={tab === 'ce'}
+			{narrow}
+			gamertag={defaultTag}
+			fields={ceFields}
+			bind:settings={ceSettings}
+			record={ceRecord}
+			dirty={ceDirty}
+			busy={gameBusy}
+			onsave={saveCE}
+		/>
+		<H2Tab
+			active={tab === 'h2'}
+			{narrow}
+			gamertag={defaultTag}
+			bind:appearance={h2Appearance}
+			record={h2Record}
+			dirty={h2Dirty}
+			busy={gameBusy}
+			onsave={saveH2}
+		/>
+		<StreamTab
+			active={tab === 'stream'}
+			{gamertags}
+			{defaultGamertagId}
+			{defaultTag}
+			bind:motto
+			bind:nameplateId
+			{savedMotto}
+			{savedNameplateId}
+			busy={streamBusy}
+			onsave={saveStream}
+			onreloadIdentity={reloadIdentity}
+		/>
+		<AccountsTab active={tab === 'accounts'} />
+	{/if}
 </div>

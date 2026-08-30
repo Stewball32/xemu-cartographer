@@ -357,6 +357,22 @@ describe('applyIdentities', () => {
 		expect(a.avatar).toBeNull();
 	});
 
+	it('carries motto + plate art onto the plate fields (settings Stream tab)', () => {
+		const [a, b] = applyIdentities(players, {
+			stewball32: {
+				display: 'Stewart',
+				motto: 'No tunnel is safe from me',
+				plate: 'https://pb/api/files/nameplates/x/neon.png'
+			}
+		});
+		expect(a.motto).toBe('No tunnel is safe from me');
+		expect(a.plateBg).toBe('https://pb/api/files/nameplates/x/neon.png');
+		// Unidentified (or motto-less) players get the empty defaults, never
+		// undefined — the plate renders nothing rather than "undefined".
+		expect(b.motto).toBe('');
+		expect(b.plateBg).toBe('');
+	});
+
 	it('?names= override beats the resolved identity', () => {
 		const [a] = applyIdentities(
 			players,

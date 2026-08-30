@@ -593,11 +593,25 @@ function mockAvatarDataURI(name: string, hex: string): string {
 //     avatar spot falls back to the placeholder.
 export function mockProfiles(): Record<
 	string,
-	{ display?: string; avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+	{
+		display?: string;
+		avatar?: string;
+		motto?: string;
+		plate?: string;
+		ce?: { color: number };
+		h2?: { appearance: Appearance };
+	}
 > {
 	const out: Record<
 		string,
-		{ display?: string; avatar?: string; ce?: { color: number }; h2?: { appearance: Appearance } }
+		{
+			display?: string;
+			avatar?: string;
+			motto?: string;
+			plate?: string;
+			ce?: { color: number };
+			h2?: { appearance: Appearance };
+		}
 	> = {};
 	for (const s of SEEDS) {
 		if (s.index === 5) continue; // unidentified → full fallback demo
@@ -608,6 +622,9 @@ export function mockProfiles(): Record<
 			...(s.index === 7
 				? {} // identified without an avatar image → avatar-spot fallback demo
 				: { avatar: mockAvatarDataURI(s.name, colorHex(CE_COLORS, s.armorColor)) }),
+			// One seed carries a motto so the plate's second line previews under
+			// ?mock=1 (settings Stream tab data on the wire).
+			...(s.index === 0 ? { motto: 'No tunnel is safe from me' } : {}),
 			ce: { color: s.armorColor },
 			h2: { appearance: mockAppearance(s.index) }
 		};

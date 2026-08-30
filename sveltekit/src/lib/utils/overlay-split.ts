@@ -43,6 +43,10 @@ export interface OverlayPlayer {
 	display: string;
 	/** Resolved avatar URL, or null for the placeholder emblem. */
 	avatar: string | null;
+	/** Plate second line, "" until identity resolves one (settings motto). */
+	motto?: string;
+	/** 600×100 banner-art URL for the plate, "" for the plain navy pill. */
+	plateBg?: string;
 	team: 'ffa' | 'red' | 'blue';
 	armor: string; // hex tint for the FFA chip
 	score: number;

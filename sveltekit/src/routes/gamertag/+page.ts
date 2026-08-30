@@ -1,14 +1,9 @@
 import { redirect } from '@sveltejs/kit';
-import pb from '$lib/pocketbase';
-import { buildLoginUrl } from '$lib/utils/redirect';
 import type { PageLoad } from './$types';
 
-// /gamertag/ — the per-user gamertag identity page (RequireAuth, not admin).
-// Unauthenticated visitors go to login first, then back here.
-export const load: PageLoad = async ({ url, parent }) => {
-	await parent();
-	if (!pb.authStore.isValid) {
-		throw redirect(303, buildLoginUrl(url.pathname + url.search));
-	}
-	return { requiresAuth: true };
+// The gamertag identity page was consolidated into the tabbed /settings/ page
+// (settings redesign) — its content lives on the Halo 2 / Halo: CE / Stream
+// tabs now. Keep the old path working; land on the H2 tab.
+export const load: PageLoad = async () => {
+	throw redirect(303, '/settings/?tab=h2');
 };

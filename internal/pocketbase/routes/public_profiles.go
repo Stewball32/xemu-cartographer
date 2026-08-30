@@ -69,9 +69,15 @@ type publicProfile struct {
 	// upload) as a same-origin thumb URL, '' when the user has none. The file is
 	// world-readable by PB's own rules (the field is not Protected), so handing
 	// the URL to an anonymous overlay leaks nothing the file server wouldn't.
-	Avatar string              `json:"avatar,omitempty"`
-	CE     *publicCEAppearance `json:"ce"`
-	H2     *publicH2Appearance `json:"h2"`
+	Avatar string `json:"avatar,omitempty"`
+	// Motto is the plate's second line (users.motto, ≤40 chars, big plates
+	// only) and Plate the 600×100 banner art URL of the ORGANIZER-CURATED
+	// nameplate the user picked (users.nameplate → nameplates.art). Both are
+	// deliberate broadcast surfaces from the settings Stream tab.
+	Motto string              `json:"motto,omitempty"`
+	Plate string              `json:"plate,omitempty"`
+	CE    *publicCEAppearance `json:"ce"`
+	H2    *publicH2Appearance `json:"h2"`
 }
 
 // userAvatarPath builds the public file URL for a users.avatar upload — PB
@@ -83,6 +89,26 @@ func userAvatarPath(userID, filename string) string {
 		return ""
 	}
 	return "/api/files/users/" + userID + "/" + filename + "?thumb=100x100"
+}
+
+// nameplateArtPath resolves a users.nameplate relation to its banner-art file
+// URL ("" for no pick, a dangling row, or a plate with no art yet). Hidden
+// (unselectable) banners still serve — current wearers keep them; only the
+// settings picker shrinks. 600×100 source art is already broadcast-sized, so
+// no thumb query.
+func nameplateArtPath(app core.App, nameplateID string) string {
+	if nameplateID == "" {
+		return ""
+	}
+	plate, err := app.FindRecordById("nameplates", nameplateID)
+	if err != nil || plate == nil {
+		return ""
+	}
+	art := plate.GetString("art")
+	if art == "" {
+		return ""
+	}
+	return "/api/files/nameplates/" + plate.Id + "/" + art
 }
 
 func registerPublicProfilesRoute(se *core.ServeEvent) {
@@ -153,6 +179,8 @@ func registerPublicProfilesRoute(se *core.ServeEvent) {
 				Gamertag: t,
 				Display:  displayNameFor(defTag, defStatus, row.tag),
 				Avatar:   userAvatarPath(u.Id, u.GetString("avatar")),
+				Motto:    strings.TrimSpace(u.GetString("motto")),
+				Plate:    nameplateArtPath(e.App, u.GetString("nameplate")),
 			}
 		}
 		if len(keyForUser) == 0 {
@@ -186,12 +214,12 @@ func registerPublicProfilesRoute(se *core.ServeEvent) {
 		}
 
 		// Drop entries that resolved to a user but carry nothing worth sending —
-		// no display name, no avatar, no game profile. The caller treats "absent"
-		// as "use the trimmed scraped name + placeholder avatar". A user with only
-		// a display name is KEPT: the name swap is useful on its own, even before
-		// they upload an avatar.
+		// no display name, no avatar, no plate identity, no game profile. The
+		// caller treats "absent" as "use the trimmed scraped name + placeholder
+		// avatar". A user with only a display name is KEPT: the name swap is
+		// useful on its own, even before they upload an avatar.
 		for k, v := range out {
-			if v.Display == "" && v.Avatar == "" && v.CE == nil && v.H2 == nil {
+			if v.Display == "" && v.Avatar == "" && v.Motto == "" && v.Plate == "" && v.CE == nil && v.H2 == nil {
 				delete(out, k)
 			}
 		}

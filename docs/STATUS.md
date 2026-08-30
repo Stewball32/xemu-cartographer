@@ -1,8 +1,22 @@
 # Status
 
-> **Last updated:** 2026-08-29 (M29 organizer route redesign — see below). Prior: 2026-08-29 CL-01…18 OBS overlay re-skin on `update/overlays` (PR #32); 2026-07-02 live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below.
+> **Last updated:** 2026-08-29 (M30 settings redesign + M29 organizer redesign — see below). Prior: 2026-08-29 CL-01…18 OBS overlay re-skin on `update/overlays` (PR #32); 2026-07-02 live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below.
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
+
+## Now — M30 player settings redesign (2026-08-29)
+
+The `/gamertag/` page and the old `/settings/` layout consolidated into one
+five-tab Settings page (General · Halo: CE (WIP) · Halo 2 (WIP) · Stream ·
+Accounts). New stream identity: `users.motto` + `users.nameplate` (curated
+picker over the M29 nameplates pool, selectable-guard hook), served to overlays
+through `/api/public/profiles` → `player.motto`/`player.plateBg` on the plate.
+Default-gamertag changes now sync `users.gamertag` and regenerate both signed
+profiles. **Parked by decision**: the old Teams/membership settings surface
+(components stay in-tree, awaiting the Teams tab design). On branch
+`update/settings`, stacked on `update/organizer` → `update/overlays` — merge
+order: overlays (PR #32) → organizer → settings. See
+[milestones/M30-settings-redesign.md](milestones/M30-settings-redesign.md).
 
 ## Now — M29 organizer route redesign (2026-08-29)
 

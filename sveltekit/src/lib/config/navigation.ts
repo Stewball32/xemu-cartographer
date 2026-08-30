@@ -2,7 +2,6 @@ import {
 	BookmarkXIcon,
 	BoxIcon,
 	DiscIcon,
-	IdCardIcon,
 	MapIcon,
 	MemoryStickIcon,
 	PlayIcon,
@@ -40,8 +39,10 @@ export interface NavGroup {
 export const mainGroups: NavGroup[] = [
 	{
 		links: [
-			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true },
-			{ label: 'Gamertag', href: '/gamertag/', icon: IdCardIcon }
+			// The old Gamertag entry is gone — its page consolidated into the
+			// tabbed /settings/ (Halo 2 / Halo: CE / Stream tabs); /gamertag/
+			// still redirects there.
+			{ label: 'Play', href: '/play/', icon: PlayIcon, showInBar: true }
 		]
 	},
 	{

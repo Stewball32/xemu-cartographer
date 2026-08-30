@@ -124,6 +124,11 @@ export interface OverlayIdentity {
 	display?: string;
 	/** Absolute avatar URL, already origin-resolved by the lookup store. */
 	avatar?: string;
+	/** The plate's second line (users.motto — settings Stream tab). */
+	motto?: string;
+	/** Absolute 600×100 banner-art URL of the picked nameplate, origin-resolved
+	 * by the lookup store. Renders under the plate's navy scrim. */
+	plate?: string;
 }
 
 /**
@@ -150,7 +155,9 @@ export function applyIdentities(
 		return {
 			...p,
 			display: override ?? id?.display ?? p.name,
-			avatar: id?.avatar ?? null
+			avatar: id?.avatar ?? null,
+			motto: id?.motto ?? '',
+			plateBg: id?.plate ?? ''
 		};
 	});
 }
