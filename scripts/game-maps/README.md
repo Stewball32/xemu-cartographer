@@ -15,7 +15,7 @@ Files:
 
 Runtime deps: `python3`, `numpy`, `Pillow`.
 
-Staged to `~/xcarto-beta/tools/game-maps/`; the Go side defaults
+Installed to `<tier>/tools/game-maps/` by `/srv/registry/srv-pre.sh`; the Go side defaults
 `MAPS_THUMBS_SCRIPT=./tools/game-maps/extract_bsp.py` and
 `MAPS_THUMBS_MAPPER_DIR=./tools/game-maps` (relative to the tier cwd).
 Disable with `MAPS_THUMBS_ENABLED=false`.

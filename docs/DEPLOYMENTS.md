@@ -1,104 +1,88 @@
 # Deployments
 
-How cartographer is deployed. Three tiers, one interface.
+How cartographer is deployed, under the host's **/srv Hosting Standard**
+(`/srv/shared/HOSTING-PLAN.md`; canonical registries in `/srv/registry/` —
+[`SITES.md`](/srv/registry/SITES.md) + [`PORTS.md`](/srv/registry/PORTS.md)).
+Three tiers. Deployed tiers hold **artifacts + state only** (binary, `pb_data/`,
+`.env`) — never a git checkout; builds happen in the repo, installs land under
+`/srv`.
 
 > **Cartographer runs NATIVELY, not in Docker.** It provisions xemu containers
 > and needs host podman, `/dev/kvm`, `/dev/dri` and raw sockets, so each tier is
-> a plain process with its own run dir, `.env`, port and `pb_data` — rather than
-> a compose stack. The *interface* (guard → build → deploy → health-check, the
-> same flags and guards) matches the [site-template standard](https://github.com/)
-> so every project deploys the same way.
+> a plain binary with its own run dir, `.env`, port and `pb_data`.
 
 ## Tiers
 
-| Tier | Purpose | Runs from | Command | Env | Bot |
-| --- | --- | --- | --- | --- | --- |
-| **dev** | live-reload coding | this working tree (Air + Vite HMR) | `./run-dev.sh` | `.env.dev` | **off** (forced) |
-| **pre** (preview) | merged-branch testing before beta | built snapshot in `/srv/http/xemu-cartographer/pre` | `BETA_DIR=/srv/http/xemu-cartographer/pre ~/xcarto-beta/pull-beta.sh` | `<run-dir>/.env` | off |
-| **beta** (test) | the gate before prod | built snapshot in `~/xcarto-beta` | `~/xcarto-beta/pull-beta.sh`, then start manually | `~/xcarto-beta/.env` | cart-beta **test** app |
-| **prod** | the live site | built snapshot in `/var/lib/xemu-cartographer` | *(manual — not yet scripted)* | prod `.env` | cart **prod** app |
+| Tier | Purpose | Runs from | How | Port | Hostname | Bot |
+| --- | --- | --- | --- | --- | --- | --- |
+| **dev** | live-reload coding | this working tree (Air + Vite HMR) | `./run-dev.sh` | `19099` vite / `19090` backend | `lab.norcal.pro` (only while up) | **off** (forced) |
+| **pre** (test) | the gate before prod — merged branches soak here | `/srv/http/xemu-cartographer/pre/` | `/srv/registry/srv-pre.sh xemu-cartographer [ref]` → systemd **user** unit `site-xemu-cartographer-pre` | `18099` | `beta.norcal.pro` | cart-beta **test** app (per tier `.env`) |
+| **prod** | the live site | `/srv/http/xemu-cartographer/prod/` | systemd unit `site-xemu-cartographer-prod` (migrated 2026-08-27; still root + `0.0.0.0` — de-root/loopback is a pending follow-up) | `8099` | `lan.norcal.pro` | cart **prod** app |
 
-## This project
-
-| Tier | Host port | Public hostname | Branch |
-| --- | --- | --- | --- |
-| dev (vite) | `19099` | `dev.norcal.pro` | any |
-| dev (backend) | `19090` | _internal — proxied by Vite_ | any |
-| pre (preview) | `17099` | _loopback only (no tunnel yet)_ | `beta` |
-| beta (test) | `18099` | `beta.norcal.pro` | `beta` |
-| prod | `8099` | `lan.norcal.pro` | `main` |
-
-- Ports come from cartographer's row in [`../PORTS.md`](../PORTS.md) (the
-  grandfathered, interleaved block — **do not** renumber; `8098`–`8101` is shared
-  with norcal-halo-site). Provisioned xemu containers use base `3300` on beta.
-- Every tier binds **loopback only**; the cloudflared tunnel is the only way in.
-- Data is **separate per tier**: prod `/var/lib/xemu-cartographer/pb_data`, beta
-  `~/xcarto-beta/pb_data`, dev `./tmp-dev/pb_data` (ephemeral, wiped on exit).
-- **Discord: one gateway per bot token.** Each tier that runs the bot needs its
-  OWN Discord application — beta uses the `cart-beta` test app; dev never runs it.
+- Ports are claimed in the **canonical host registry**
+  `/srv/registry/PORTS.md` (cartographer's spread — `8099`, `18099`,
+  `19090/19099`, rig reservations `3300-3399` tcp + `9970-9989` udp — is
+  grandfathered; don't renumber). Audit with `sudo /srv/registry/check-ports.sh`.
+- Tiers bind **loopback only** (prod's `0.0.0.0` is the known exception being
+  fixed); cloudflared is the public front door, the LAN Caddy serves
+  `lan.local`.
+- Data is separate per tier: each run dir has its own `pb_data/`. Dev's is
+  ephemeral (`tmp/pb_data`, wiped on exit).
+- **Discord: one gateway per bot token** — each tier that runs the bot needs its
+  own Discord application; dev never runs it.
+- Naming hazard: prod `lan.norcal.pro` and dev `lab.norcal.pro` are one letter
+  apart in the same ingress list — double-check which you're editing.
 
 ## Promotion path
 
 ```
-dev (working tree)  ──►  pre / beta (test)  ──►  prod
-   run-dev.sh            pull-beta.sh           (manual)
+dev (working tree)  ──►  pre (/srv, :18099)  ──►  prod (/srv, :8099)
+   run-dev.sh            srv-pre.sh               site-xemu-cartographer-prod
 ```
 
-Nothing should reach prod without passing through beta. For anything touching the
-schema, beta applies the migration first — see [MIGRATIONS.md](MIGRATIONS.md).
+Nothing should reach prod without soaking on pre. For anything touching the
+schema, pre applies the migration first — see [MIGRATIONS.md](MIGRATIONS.md).
 
-## Deploying (pull-beta.sh — build + install, start yourself)
-
-The old `deploy-beta.sh` full-cycle wrapper (stop → deploy → start →
-health-check) is retired; the tier owner starts the process. `pull-beta.sh`
-lives IN the run dir (`~/xcarto-beta`), builds from this repo, and installs
-into the dir it lives in — or any dir via `BETA_DIR=`:
+## Deploying pre
 
 ```sh
-~/xcarto-beta/pull-beta.sh              # build local `beta` → install into ~/xcarto-beta
-~/xcarto-beta/pull-beta.sh --fetch      # fast-forward from origin/beta first
-BETA_DIR=/srv/http/xemu-cartographer/pre ~/xcarto-beta/pull-beta.sh   # the pre tier
+/srv/registry/srv-pre.sh xemu-cartographer beta     # build the beta branch tip
+/srv/registry/srv-pre.sh xemu-cartographer <ref>    # any committish
+/srv/registry/srv-pre.sh xemu-cartographer status|logs|restart|stop|info
 ```
 
-**What it does:**
+What it does (see the script header for the full contract): builds the ref in a
+**temporary detached worktree** (only committed code ships — the repo checkout
+is never touched), installs `bin/server` + `pb_public/` + `tools/game-maps/`
+into the tier, regenerates `run.sh`, writes `BUILD-INFO` with provenance
+verification, then (re)starts the `site-xemu-cartographer-pre` **user** unit
+(linger is on — survives reboots, no sudo) and polls `/api/health`. It never
+touches `.env` or `pb_data/`; a missing `.env` is seeded once from the repo's
+`.env.pre` / `*.example` and must be reviewed.
 
-1. Guards: on branch `beta` (`BETA_BRANCH=`/`ALLOW_ANY_BRANCH=1` to override),
-   the target's `.env` present, the tier's port NOT live (it refuses to
-   overwrite the binary of a running process — the kernel keeps the old inode
-   mapped and a later restart is what actually changes behaviour).
-2. Builds the static frontend (`PUBLIC_PB_PORT` from the target `.env`) and the
-   production Go binary (**no `-tags dev`**, so Automigrate + seeding stay off).
-3. Installs `server`, `pb_public/`, and `tools/game-maps/` (the thumbnail
-   renderer) into the run dir; regenerates the run script if missing; writes
-   `BUILD-INFO` and verifies the installed binary's `vcs.revision` against
-   HEAD. `.env`, `pb_data/`, `containers/`, `inbox/` are never touched.
-4. Hands off. Start it yourself (`sudo ./run-beta.sh`, foreground or nohup) and
-   verify `/api/health`. **Pending migrations apply on boot**, so a healthy
-   boot also proves the migrations applied.
-
-## First-time setup (a new tier)
-
-1. Confirm the port block in [`../PORTS.md`](../PORTS.md).
-2. Create the run dir; `cp .env.dev.example <run-dir>/.env` and fill it in
-   (`chmod 600`). Give the tier its **own** `SEED_SUPERUSER_*` — never prod's.
-3. If the bot runs on this tier: a **separate Discord application** + token.
-4. Add the cloudflared ingress rule + DNS record for the hostname.
-5. Deploy, then verify the health check and the logs.
+**Pending migrations apply on boot**, so a healthy check also proves the
+migrations applied.
 
 ## Rollback
 
 ```sh
-git checkout <last-good-sha>
-~/xcarto-beta/pull-beta.sh   # rebuilds + reinstalls that revision (tier stopped)
+/srv/registry/srv-pre.sh xemu-cartographer <last-good-ref>
 ```
 
 ⚠️ Code rolls back; **migrations do not**. An applied migration stays applied —
-that's why they're proven on beta first. To undo a schema change, write a new
+that's why they're proven on pre first. To undo a schema change, write a new
 forward migration.
 
 ## Backups
 
-`pull-beta.sh` does **not** snapshot `pb_data` (the retired deploy-beta.sh
-did). Copy `pb_data` yourself before risky migrations:
-`cp -r <run-dir>/pb_data <run-dir>/pb_data.bak-$(date +%Y%m%d)` — and prune old
-ones periodically; they are full copies.
+`/srv/backups/` + a nightly snapshot timer is a planned phase of the hosting
+standard (not live yet). Until then, copy a tier's `pb_data` yourself before
+risky migrations: `cp -r <tier>/pb_data <tier>/pb_data.bak-$(date +%Y%m%d)` —
+and prune old copies periodically; they are full copies.
+
+## History
+
+The pre-/srv deployment generations are retired: `deploy-beta.sh` (in-repo
+full-cycle wrapper), then `~/xcarto-beta` + `pull-beta.sh` (home-dir run dir,
+manual start), then briefly a hand-rolled `/srv/.../pre` on an unregistered
+port. All superseded by `srv-pre.sh` + systemd units per the hosting standard.

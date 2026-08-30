@@ -64,8 +64,9 @@ dev (Automigrate, many small files)
 2. **Review it.** Plain Go — confirm it does what you expect and that `down`
    actually reverses `up`.
 3. **Commit it** with the code that depends on it, in the same commit.
-4. **Prove it on beta.** `~/xcarto-beta/pull-beta.sh`, then start the tier —
-   migrations apply on boot, so a healthy `/api/health` proves they succeeded.
+4. **Prove it on pre.** `/srv/registry/srv-pre.sh xemu-cartographer <ref>` —
+   migrations apply on boot, and the deploy's health check only passes if the
+   tier came up (so they succeeded).
 5. **Deploy prod.** It applies the same pending migrations on boot.
 
 ### Squashing for a release
