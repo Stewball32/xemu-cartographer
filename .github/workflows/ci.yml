@@ -1,10 +1,13 @@
 name: CI
 
 on:
+  # `beta` is gated as well as `main`: it is the long-lived integration branch
+  # the /srv pre tier deploys from (srv-pre.sh xemu-cartographer beta), so a
+  # direct push there reaches a running tier and must not skip CI.
   push:
-    branches: [main]
+    branches: [main, beta]
   pull_request:
-    branches: [main]
+    branches: [main, beta]
 
 env:
   PUBLIC_PB_PORT: 8090
