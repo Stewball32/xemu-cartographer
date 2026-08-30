@@ -61,6 +61,21 @@ func TestBaselineOffsetsMatchConstants(t *testing.T) {
 		"OffH2TagInstId":              OffH2TagInstId,
 		"OffH2WepMag":                 OffH2WepMag,
 		"OffH2WepReserve":             OffH2WepReserve,
+		// 2026-08-29 import — the verified-but-unwired stats/config/machine
+		// globals (halo-offset-mapper h2-stock map + kd-semantics 2026-07-11).
+		"AddrH2KillsPerPlayer":       AddrH2KillsPerPlayer,
+		"AddrH2DeathsPerPlayer":      AddrH2DeathsPerPlayer,
+		"AddrH2KillsTotal":           AddrH2KillsTotal,
+		"AddrH2Gametype":             AddrH2Gametype,
+		"AddrH2GamePhase":            AddrH2GamePhase, // 0 sentinel on stock
+		"AddrH2NetLocalMachineIndex": AddrH2NetLocalMachineIndex,
+		"AddrH2NetMachineMacArray":   AddrH2NetMachineMacArray,
+		"AddrH2NetMachineTable":      AddrH2NetMachineTable,
+		"OffH2PlrMachineIndex":       OffH2PlrMachineIndex,
+		"OffH2PlrMacOctet":           OffH2PlrMacOctet,
+		"OffH2PlrBetrayals":          OffH2PlrBetrayals,
+		"OffH2NetMachineName":        OffH2NetMachineName,
+		"OffH2ScenarioPathInPool":    OffH2ScenarioPathInPool,
 	}
 	wantS := map[string]string{}
 	rv := reflect.ValueOf(o)
