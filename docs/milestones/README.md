@@ -24,7 +24,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M17  | [Discord integration: stats lookup + per-guild channel posting](M17-discord-integration.md) | Planned     |
 | M18  | [Rating system + multiple leaderboards](M18-rating-leaderboards.md)                         | In progress |
 | M19  | [Robustness + offset validation](M19-robustness-offsets.md)                                 | Planned     |
-| M20  | [Halo 2 scraper (with known caveats)](M20-halo2-scraper.md)                                 | Planned     |
+| M20  | [Halo 2 scraper (with known caveats)](M20-halo2-scraper.md)                                 | In progress |
 | M21+ | [Open](M21-plus-open.md)                                                                    | Planned     |
 | M22  | [Moderation + audit log](M22-moderation-audit.md)                                           | Done        |
 | M23  | [Team membership workflows](M23-team-membership-workflows.md)                               | Done        |

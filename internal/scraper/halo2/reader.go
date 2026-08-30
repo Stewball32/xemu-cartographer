@@ -28,6 +28,49 @@ func NewReader(inst *xemu.Instance, instanceName string, off Offsets) *Reader {
 // validHigh reports whether p is a plausible high-GVA heap pointer.
 func validHigh(p uint32) bool { return p >= 0x80000000 && p != 0xFFFFFFFF }
 
+// ---------------------------------------------------------------------------
+// Low-global VALUE reads. DerefLowPtr covers "read the u32 at a low GVA"; the
+// per-slot stat arrays additionally need sized reads at base+delta. Deltas
+// must stay inside the base's 4K page (the translation is per-page) — the
+// slot math in stats.go keeps them there for all 16 player slots.
+// ---------------------------------------------------------------------------
+
+func (r *Reader) lowU16(baseGVA uint32, delta int64) (uint16, bool) {
+	hva, err := r.inst.LowHVA(baseGVA)
+	if err != nil {
+		return 0, false
+	}
+	v, err := r.inst.Mem.ReadU16At(hva + delta)
+	return v, err == nil
+}
+
+func (r *Reader) lowU32(baseGVA uint32, delta int64) (uint32, bool) {
+	hva, err := r.inst.LowHVA(baseGVA)
+	if err != nil {
+		return 0, false
+	}
+	v, err := r.inst.Mem.ReadU32At(hva + delta)
+	return v, err == nil
+}
+
+func (r *Reader) lowU8(baseGVA uint32, delta int64) (uint8, bool) {
+	hva, err := r.inst.LowHVA(baseGVA)
+	if err != nil {
+		return 0, false
+	}
+	v, err := r.inst.Mem.ReadU8At(hva + delta)
+	return v, err == nil
+}
+
+func (r *Reader) lowBytes(baseGVA uint32, delta int64, n int) ([]byte, bool) {
+	hva, err := r.inst.LowHVA(baseGVA)
+	if err != nil {
+		return nil, false
+	}
+	b, err := r.inst.Mem.ReadBytesAt(hva+delta, n)
+	return b, err == nil
+}
+
 // arrayInfo is the decoded s_data_array header.
 type arrayInfo struct {
 	base     uint32 // high-GVA of the data_array
@@ -82,11 +125,14 @@ func (r *Reader) resolveObject(objs arrayInfo, handle uint32) uint32 {
 
 // rosterEntry is an internal decode of one active player datum.
 type rosterEntry struct {
-	slot  int
-	index int32
-	team  int32
-	name  string
-	unit  uint32
+	slot       int
+	index      int32
+	team       int32
+	name       string
+	unit       uint32
+	machineIdx int   // owning machine's session index (system link)
+	macOctet   uint8 // stable player id — survives H2's dup-name renames
+	betrayals  uint16
 }
 
 // readRoster iterates the players array and returns active player datums.
@@ -109,12 +155,18 @@ func (r *Reader) readRoster(players arrayInfo) []rosterEntry {
 		team, _ := r.inst.Mem.ReadS32(rec + r.off.OffH2PlrTeam)
 		unit, _ := r.inst.Mem.ReadU32(rec + r.off.OffH2PlrUnitHandle)
 		nameB, _ := r.inst.Mem.ReadBytes(rec+r.off.OffH2PlrName, 32)
+		machineIdx, _ := r.inst.Mem.ReadU8(rec + r.off.OffH2PlrMachineIndex)
+		macOctet, _ := r.inst.Mem.ReadU8(rec + r.off.OffH2PlrMacOctet)
+		betrayals, _ := r.inst.Mem.ReadU16(rec + r.off.OffH2PlrBetrayals)
 		out = append(out, rosterEntry{
-			slot:  int(i),
-			index: idx,
-			team:  team,
-			name:  xbox.DecodeUTF16LEBounded(nameB, 16),
-			unit:  unit,
+			slot:       int(i),
+			index:      idx,
+			team:       team,
+			name:       xbox.DecodeUTF16LEBounded(nameB, 16),
+			unit:       unit,
+			machineIdx: int(machineIdx),
+			macOctet:   macOctet,
+			betrayals:  betrayals,
 		})
 	}
 	return out
@@ -124,8 +176,12 @@ func (r *Reader) readRoster(players arrayInfo) []rosterEntry {
 // GameReader implementation
 // ---------------------------------------------------------------------------
 
-// ReadGameState classifies menu vs in-game. In-game requires the players array
-// to be valid+active and at least one player's unit handle to resolve to a
+// ReadGameState classifies the engine lifecycle. When the bound set maps the
+// lifecycle enum (AddrH2GamePhase — Slim builds; full-cycle validated
+// menu→lobby→in-game→postgame→lobby), it is the authority and yields the full
+// 4-state including pregame/postgame. On builds without it (stock: 0
+// sentinel), fall back to the array inference: in-game requires the players
+// array valid+active and at least one player's unit handle to resolve to a
 // biped with a plausible health fraction.
 func (r *Reader) ReadGameState() (scraper.GameState, uint32, error) {
 	players, err := r.readArray(r.off.AddrH2PlayersArrayPtr)
@@ -139,6 +195,20 @@ func (r *Reader) ReadGameState() (scraper.GameState, uint32, error) {
 		"players_sig":    players.sig,
 		"players_active": players.active,
 		"objects_active": objs.active,
+	}
+
+	if r.off.AddrH2GamePhase != 0 {
+		if raw, ok := r.lowU32(r.off.AddrH2GamePhase, 0); ok {
+			inputs["phase_enum"] = raw
+			if gs, known := phaseFromEnum(raw); known {
+				inputs["in_game"] = gs == scraper.GameStateInGame
+				r.lastInputs = inputs
+				if gs == scraper.GameStateInGame {
+					r.tick++
+				}
+				return gs, r.tick, nil
+			}
+		}
 	}
 
 	inGame := false
@@ -166,22 +236,48 @@ func (r *Reader) ReadGameState() (scraper.GameState, uint32, error) {
 
 func (r *Reader) LastStateInputs() scraper.StateInputs { return r.lastInputs }
 
-// BuildScoreProbe surfaces the raw score/gametype candidates. H2 gametype +
-// team scores are not yet in the verified offset map (legacy globals stale);
-// this reports the scenario id so the debug page can key maps until re-derived.
+// BuildScoreProbe surfaces the raw stats/config globals for the debug page:
+// the gametype enum, per-slot K/D reads, the match kill total, and (when the
+// build maps it) the lifecycle enum.
 func (r *Reader) BuildScoreProbe() scraper.ScoreProbe {
 	probe := scraper.ScoreProbe{}
 	if th, err := r.inst.DerefLowPtr(r.off.AddrH2TagHeaderPtr); err == nil && validHigh(th) {
 		scen, _ := r.inst.Mem.ReadU32(th + r.off.OffH2TagHdrScenarioId)
 		probe["scenario_id"] = fmt.Sprintf("0x%x", scen)
 	}
-	probe["note"] = "gametype/team-score offsets unverified (legacy globals stale) — M20 re-derivation pending"
+	if v, ok := r.lowU32(r.off.AddrH2Gametype, 0); ok {
+		probe["gametype_enum"] = v
+		probe["gametype"] = gametypeName(v)
+	}
+	if v, ok := r.lowU32(r.off.AddrH2KillsTotal, 0); ok {
+		probe["kills_total"] = v
+	}
+	for slot := 0; slot < 4; slot++ {
+		if k, ok := r.lowU16(r.off.AddrH2KillsPerPlayer, killsSlotDelta(slot)); ok {
+			probe[fmt.Sprintf("kills_slot%d", slot)] = k
+		}
+		if d, ok := r.lowU32(r.off.AddrH2DeathsPerPlayer, deathsSlotDelta(slot)); ok {
+			probe[fmt.Sprintf("deaths_slot%d", slot)] = d
+		}
+	}
+	if r.off.AddrH2GamePhase != 0 {
+		if v, ok := r.lowU32(r.off.AddrH2GamePhase, 0); ok {
+			probe["phase_enum"] = v
+		}
+	} else {
+		probe["phase_enum"] = "unmapped on this build (stock)"
+	}
+	probe["note"] = "assists / score / kill-streak have no known H2 offsets on any build; team scores underived"
 	return probe
 }
 
-// ReadGameData reads match config + roster. Map is keyed off the scenario id;
-// gametype and K/D/A are stubbed (legacy stats-block globals do not resolve on
-// this build — M20 known-broken).
+// ReadGameData reads match config + roster: real per-player kills/deaths from
+// the per-slot stat arrays (K/D semantics resolved 2026-07-11), the gametype
+// enum, per-player betrayals (LOCAL-ONLY in system link — remote players'
+// betrayals undercount on a host scraper), and the system-link machine layer
+// (per-player machine index + is_local against this console's own index).
+// Assists / score / kill-streak have NO known H2 offsets on any build and stay
+// zero — honestly absent rather than guessed.
 func (r *Reader) ReadGameData() (scraper.GameData, error) {
 	players, err := r.readArray(r.off.AddrH2PlayersArrayPtr)
 	if err != nil {
@@ -189,24 +285,96 @@ func (r *Reader) ReadGameData() (scraper.GameData, error) {
 	}
 	roster := r.readRoster(players)
 
+	gametype := ""
+	if v, ok := r.lowU32(r.off.AddrH2Gametype, 0); ok {
+		gametype = gametypeName(v)
+	}
+
+	// This console's machine index — the is_local pivot. In a local
+	// (non-link) game the roster region is zeroed and every player's
+	// machineIdx is 0 == localIdx 0, which is correct: they ARE all local.
+	localIdx := -1
+	if v, ok := r.lowU8(r.off.AddrH2NetLocalMachineIndex, 0); ok {
+		localIdx = int(v)
+	}
+
 	gd := scraper.GameData{
 		Map:        r.mapName(),
-		Gametype:   "", // UNVERIFIED — legacy gametype global stale (M20)
+		Gametype:   gametype,
 		TeamScores: []scraper.TeamScore{},
-		LocalCount: uint16(players.active),
+		Machines:   r.readMachines(localIdx),
 	}
 	teams := map[uint32]struct{}{}
+	localCount := 0
 	for _, p := range roster {
-		gd.Players = append(gd.Players, scraper.GamePlayer{
+		gp := scraper.GamePlayer{
 			Index: int(p.index),
 			Name:  p.name,
 			Team:  uint32(p.team),
-			// K/D/A stubbed: stats-block globals do not resolve (M20).
-		})
+			// Assists deliberately absent — no offset exists (any build).
+			TeamKills: int16(p.betrayals),
+		}
+		if k, ok := r.lowU16(r.off.AddrH2KillsPerPlayer, killsSlotDelta(p.slot)); ok {
+			gp.Kills = int16(k)
+		}
+		if d, ok := r.lowU32(r.off.AddrH2DeathsPerPlayer, deathsSlotDelta(p.slot)); ok {
+			gp.Deaths = int16(d)
+		}
+		if localIdx >= 0 {
+			mi := p.machineIdx
+			isLocal := mi == localIdx
+			gp.MachineIndex = &mi
+			gp.IsLocal = &isLocal
+			if isLocal {
+				li := localCount
+				gp.LocalIndex = &li
+				localCount++
+			}
+		}
+		gd.Players = append(gd.Players, gp)
 		teams[uint32(p.team)] = struct{}{}
+	}
+	gd.LocalCount = uint16(localCount)
+	if localIdx < 0 {
+		// No machine layer readable — fall back to the old "everyone active"
+		// count so LocalCount stays meaningful for splitscreen display.
+		gd.LocalCount = uint16(players.active)
 	}
 	gd.IsTeamGame = len(teams) > 1
 	return gd, nil
+}
+
+// readMachines decodes the system-link machine roster: MACs from the MAC
+// array (stride 6, non-zero = present), names from the machine table
+// (page-guarded — see machineNameReadable). Empty outside a link session.
+func (r *Reader) readMachines(localIdx int) []scraper.GameMachine {
+	var out []scraper.GameMachine
+	for i := 0; i < int(ConstH2NetMachineMax); i++ {
+		mac, ok := r.lowBytes(r.off.AddrH2NetMachineMacArray, macSlotDelta(i), 6)
+		if !ok {
+			break
+		}
+		nonZero := false
+		for _, b := range mac {
+			if b != 0 {
+				nonZero = true
+				break
+			}
+		}
+		if !nonZero {
+			continue
+		}
+		name := ""
+		if machineNameReadable(r.off.AddrH2NetMachineTable, i, 64) {
+			if b, ok := r.lowBytes(r.off.AddrH2NetMachineTable,
+				machineEntryDelta(i)+int64(r.off.OffH2NetMachineName), 64); ok {
+				name = xbox.DecodeUTF16LEBounded(b, 32)
+			}
+		}
+		isLocal := i == localIdx
+		out = append(out, scraper.GameMachine{Index: i, Name: name, IsLocal: &isLocal})
+	}
+	return out
 }
 
 // ReadReadyState is the cheap Ready-phase variant; same shape as ReadGameData.
@@ -297,10 +465,16 @@ func (r *Reader) DetectEvents(_ uint32, _ string, _ scraper.GameData, _ scraper.
 // OnStateChange has no scenario/match caches to invalidate yet.
 func (r *Reader) OnStateChange(_ scraper.GameState, _ scraper.GameState) error { return nil }
 
-// mapName resolves the loaded scenario to a display name via the tag header's
-// scenario id. Full scenario-path string decoding (tag-name pool) is a pending
-// follow-up; until then known ids map to names, else "scnr:0x........".
+// mapName resolves the loaded scenario to a display name. Primary path: the
+// scenario tag-name pool carries the loaded scenario's path string at
+// +OffH2ScenarioPathInPool (e.g. scenarios\multi\zanzibar\zanzibar) — decode
+// it, take the basename, and map through the display table. This works for
+// EVERY map, DLC included, unlike the previous known-scenario-id lookup, which
+// stays as the fallback.
 func (r *Reader) mapName() string {
+	if name := r.mapNameFromPool(); name != "" {
+		return name
+	}
 	th, err := r.inst.DerefLowPtr(r.off.AddrH2TagHeaderPtr)
 	if err != nil || !validHigh(th) {
 		return ""
@@ -316,4 +490,26 @@ func (r *Reader) mapName() string {
 		return internal
 	}
 	return fmt.Sprintf("scnr:0x%08x", scen)
+}
+
+// mapNameFromPool reads the scenario path out of the tag-name pool and turns
+// its basename into a display name ("" when the pool isn't up or the string
+// doesn't look like a tag path).
+func (r *Reader) mapNameFromPool() string {
+	pool, err := r.inst.DerefLowPtr(r.off.AddrH2ScenarioNamePoolPtr)
+	if err != nil || !validHigh(pool) {
+		return ""
+	}
+	raw, err := r.inst.Mem.ReadBytes(pool+r.off.OffH2ScenarioPathInPool, 96)
+	if err != nil {
+		return ""
+	}
+	internal, ok := scenarioBasename(raw)
+	if !ok {
+		return ""
+	}
+	if disp, ok := mapDisplayNames[internal]; ok {
+		return disp
+	}
+	return internal
 }

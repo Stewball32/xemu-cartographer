@@ -17,7 +17,16 @@ const envelopeTypeGame = "game"
 // Players / Machines / Network are zero-valued (nil/empty) in the idle
 // phase; populated once the runner is in Ready or Live.
 type GamePayload struct {
-	Phase      Phase     `json:"phase"`
+	Phase Phase `json:"phase"`
+	// GameState is the reader's LOSSLESS engine lifecycle — menu / pregame /
+	// in_game / postgame ("" while idle/unbound). Phase above collapses
+	// menu+pregame+postgame into "ready", which made lobby indistinguishable
+	// from postgame on the wire (the general blocker flagged in
+	// halo-offset-mapper docs/h2-slim-offsets-2026-08-13.md — "worth deciding
+	// before building H2's side against the current contract"). Additive:
+	// consumers that only know phase keep working; the overlays' postgame
+	// loop and the H2 side key off this.
+	GameState  string    `json:"game_state"`
 	StartedAt  time.Time `json:"started_at"`
 	LastReadAt time.Time `json:"last_read_at"`
 	EngineTick uint32    `json:"engine_tick"`
