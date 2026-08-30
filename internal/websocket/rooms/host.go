@@ -60,6 +60,14 @@ var scraperClasses = map[string]bool{
 	"debug":         true,
 	"previous_game": true,
 	"event":         true,
+	// event_filtered is the viewer-facing variant of the event class. Unlike
+	// game_filtered it is not shape-identical to its raw sibling: it carries
+	// death events only, and its payload type drops victim_pos / killer_pos
+	// outright. Deaths involving a hidden dummy are dropped or de-attributed
+	// server-side. Overlays subscribe here for the KILLED BY plate; the raw
+	// `event` room (positions, every event type) stays for the debug page.
+	// See manager/event_filtered.go.
+	"event_filtered": true,
 }
 
 // RoomForInstance is the only sanctioned source of "host:<name>" room names —

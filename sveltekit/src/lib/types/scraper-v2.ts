@@ -37,6 +37,12 @@ export type EnvelopeTypeV2 =
 	| 'summary'
 	| 'previous_game'
 	| 'event'
+	// event_filtered: the viewer-facing event class. NOT shape-identical to
+	// 'event' — it carries death events only, with victim_pos / killer_pos
+	// absent and dummy-involved deaths dropped or de-attributed server-side.
+	// Overlays subscribe here and the client stores it in the normal `events`
+	// slot (see scraper-ws-v2 handleEnvelope).
+	| 'event_filtered'
 	| 'events'
 	| 'hello'
 	| 'error';
@@ -734,9 +740,11 @@ export interface EventCommon {
 export interface DeathEvent extends EventCommon {
 	event_type: 'death';
 	victim: PlayerRef;
-	victim_pos: Vec3;
 	killer: PlayerRef | null;
-	killer_pos: Vec3 | null;
+	/** Absent on the event_filtered class — world coordinates are withheld from
+	 * viewer-facing feeds. Present on the raw `event` class (debug page). */
+	victim_pos?: Vec3;
+	killer_pos?: Vec3 | null;
 	cause: DeathCause;
 	weapon: string;
 	team_kill: boolean;
@@ -869,6 +877,13 @@ export function isPreviousGameEnv(
 }
 export function isEventEnv(e: EnvelopeV2): e is EnvelopeV2<AnyEvent> & { type: 'event' } {
 	return e.type === 'event';
+}
+/** event_filtered carries a DeathEvent — the class is deaths-only, and its
+ * position fields are absent (hence the optional victim_pos / killer_pos). */
+export function isEventFilteredEnv(
+	e: EnvelopeV2
+): e is EnvelopeV2<DeathEvent> & { type: 'event_filtered' } {
+	return e.type === 'event_filtered';
 }
 export function isEventsReplyEnv(
 	e: EnvelopeV2

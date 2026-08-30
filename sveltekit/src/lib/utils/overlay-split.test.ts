@@ -127,7 +127,21 @@ describe('localOverlayPlayers', () => {
 		expect(out[1].alive).toBe(false);
 		expect(out[1].spree).toBe(3);
 		expect(out[1].respawn).toBe(3); // 90 ticks / 30 = 3s
-		expect(out[1].camo).toBeGreaterThan(0);
+		expect(out[1].camo).toBe(1); // boolean contract — PlayerCard reads >1 as a percent
+	});
+
+	it('keeps respawn seconds fractional so the ring arc drains', () => {
+		// 90 ticks divides evenly, which is why the rounded and unrounded
+		// mappings were indistinguishable above. 91 does not.
+		const g = game(roster({ index: 0, is_local: true, local_index: 0, name: 'STEW' }), false);
+		const tick = {
+			players: [
+				{ index: 0, alive: false, health: 0, shields: 0, respawn_in_ticks: 91, has_camo: false }
+			],
+			locals: []
+		} as unknown as TickPayloadV2;
+
+		expect(localOverlayPlayers(g, tick)[0].respawn).toBeCloseTo(91 / 30, 5);
 	});
 
 	it('is ffa team when not a team game', () => {

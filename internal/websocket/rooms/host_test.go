@@ -88,6 +88,8 @@ func TestRoomForInstanceClass(t *testing.T) {
 		{name: "debug", instance: "smoke1", class: "debug", want: "host:smoke1:debug"},
 		{name: "game", instance: "pod-2", class: "game", want: "host:pod-2:game"},
 		{name: "previous_game", instance: "pod-2", class: "previous_game", want: "host:pod-2:previous_game"},
+		{name: "game_filtered", instance: "pod-2", class: "game_filtered", want: "host:pod-2:game_filtered"},
+		{name: "event_filtered", instance: "pod-2", class: "event_filtered", want: "host:pod-2:event_filtered"},
 
 		{name: "empty-instance", instance: "", class: "tick", wantErr: "name required"},
 		{name: "reserved-all", instance: "all", class: "tick", wantErr: "reserved"},
