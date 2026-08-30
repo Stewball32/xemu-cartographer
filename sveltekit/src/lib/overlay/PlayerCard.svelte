@@ -41,19 +41,41 @@
 	// Camo (CL-07): player.camo — number > 1 reads as % of cloak remaining
 	// (100 = fully cloaked); true/1 means the wire only has the has_camo bool,
 	// so run CE's nominal 30s decay locally, matching the old row behavior.
-	let camoPct = $state(0);
+	//
+	// Split in two on purpose. `player` is a fresh object on every ~30Hz roster
+	// update, so an effect that reads it re-runs constantly — running the decay
+	// there restarted its timer each frame and pinned the wipe at 100%. The
+	// first effect distils the prop down to two primitives; the second depends
+	// only on those, so it re-runs on an actual cloak transition and the timer
+	// survives the frames in between.
+	let camoOn = $state(false);
+	let camoWirePct = $state(0);
 	$effect(() => {
 		const c = player.camo;
-		let int;
-		if (typeof c === 'number' && c > 1) camoPct = Math.min(100, c);
-		else if (c === true || c === 1) {
-			camoPct = 100;
-			const t0 = performance.now();
-			int = setInterval(() => {
-				camoPct = Math.max(0, 100 - ((performance.now() - t0) / 30000) * 100);
-				if (camoPct === 0) clearInterval(int);
-			}, 100);
-		} else camoPct = 0;
+		const pct = typeof c === 'number' && c > 1 ? Math.min(100, c) : 0;
+		const on = c === true || c === 1;
+		untrack(() => {
+			camoWirePct = pct;
+			camoOn = on;
+		});
+	});
+
+	let camoPct = $state(0);
+	$effect(() => {
+		if (camoWirePct > 0) {
+			untrack(() => (camoPct = camoWirePct));
+			return;
+		}
+		if (!camoOn) {
+			untrack(() => (camoPct = 0));
+			return;
+		}
+		const t0 = performance.now();
+		untrack(() => (camoPct = 100));
+		const int = setInterval(() => {
+			camoPct = Math.max(0, 100 - ((performance.now() - t0) / 30000) * 100);
+			if (camoPct === 0) clearInterval(int);
+		}, 100);
 		return () => clearInterval(int);
 	});
 	const cloaked = $derived(camoPct > 0 && !dead);

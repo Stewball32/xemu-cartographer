@@ -69,9 +69,14 @@ export interface OverlayPlayer {
 	camoPickups: number;
 	osPickups: number;
 	alive: boolean;
-	respawn: number; // seconds remaining (0 = alive / no countdown)
+	/** Scraped name of whoever last killed this player, or null when the death
+	 * had no attributed killer (suicide / fall / environment, or a killer the
+	 * viewer isn't allowed to see). Populated by withKilledBy from the event
+	 * feed, not by the roster mappers — see overlay-deaths.ts. */
+	killedBy?: string | null;
+	respawn: number; // seconds remaining, FRACTIONAL (0 = alive / no countdown)
 	respawnMax: number;
-	camo: number; // seconds remaining (>0 cloaks the card)
+	camo: number; // 0 or 1 — has camo; PlayerCard reads >1 as a literal percent
 	camoMax: number;
 	shield: number; // 0..2 (>1 = overshield)
 	health: number; // 0..1
@@ -189,9 +194,11 @@ export function localOverlayPlayers(
 			camoPickups: p.acc_camo_pickups ?? 0,
 			osPickups: p.acc_overshield_pickups ?? 0,
 			alive: t?.alive ?? true,
-			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
+			// Unrounded / boolean camo — see the matching notes in
+			// overlay-state.ts; both mappers feed the same PlayerCard.
+			respawn: respawnTicks != null ? respawnTicks / TICKS_PER_SECOND : 0,
 			respawnMax: RESPAWN_MAX,
-			camo: t?.has_camo ? CAMO_MAX : 0,
+			camo: t?.has_camo ? 1 : 0,
 			camoMax: CAMO_MAX,
 			shield: t?.shields ?? 1,
 			health: t?.health ?? 1

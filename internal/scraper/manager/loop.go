@@ -577,6 +577,11 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			r.pushEvent(ev)
 			r.broadcast(svc, ev)
 		}
+		// Viewer-facing death stream. Separate pass rather than a branch
+		// inside the loop above: broadcast routes on env.Type, and the
+		// filtered path re-types its envelopes, so the two can't share a
+		// send. Demand-gated internally — no subscriber, no work.
+		r.broadcastEventsFiltered(svc, events)
 
 		lastBroadcastTick = tick
 		r.sleepOrCancel(livePollInterval)

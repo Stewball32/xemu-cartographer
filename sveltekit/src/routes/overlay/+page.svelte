@@ -6,14 +6,15 @@
 	// Motion 1a: bars deploy up from the bottom rail on activate, staggered
 	// 120ms in seat order; the leading 120ms is headroom so the scorebug (a
 	// separate browser source) reads first when one scene switch shows both.
-	// All drop away together on `game.over`. Motion 2a: the respawn ring's disc locks on every death
+	// All drop away together at match end. Motion 2a: the respawn ring's disc locks on every death
 	// (in RespawnRing.svelte — the plate rises in behind it); this page owns
 	// only the ring's EXIT via the out: transition below.
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { cubicIn } from 'svelte/easing';
 	import { createOverlayFeed } from '$lib/stores/overlay-feed.svelte';
 	import { deriveSplitCount, layoutKey, localOverlayPlayers } from '$lib/utils/overlay-split';
 	import { applyIdentities, overlayPlayers } from '$lib/utils/overlay-state';
+	import { withKilledBy } from '$lib/utils/overlay-deaths';
 	import { createProfileLookup } from '$lib/stores/overlay-profiles.svelte';
 	import { layouts, viewportCenters } from '$lib/overlay/themes.js';
 	import PlayerCard from '$lib/overlay/PlayerCard.svelte';
@@ -27,7 +28,9 @@
 		feed.start({
 			console: data.console,
 			mock: data.mock,
-			classes: ['game', 'tick']
+			// 'event' resolves to the viewer-safe event_filtered room on the
+			// console path (see toFilteredClasses) — deaths only, no positions.
+			classes: ['game', 'tick', 'event']
 		})
 	);
 	onDestroy(() => feed.stop());
@@ -56,8 +59,14 @@
 			data.mock
 		);
 	});
+	// killedBy comes from the event feed, not the roster — folded in here rather
+	// than inside overlayPlayers because the other three overlay routes share
+	// that mapper and don't subscribe to events.
 	const players = $derived(
-		applyIdentities(rawPlayers.slice(0, anchors.length), lookup.all, data.names)
+		withKilledBy(
+			applyIdentities(rawPlayers.slice(0, anchors.length), lookup.all, data.names),
+			feed.events
+		)
 	);
 	const lobbyIdentified = $derived(applyIdentities(lobby, lookup.all, data.names));
 
@@ -72,9 +81,19 @@
 	const pos = (a) =>
 		`left:${a.left ?? 'auto'}; top:${a.top ?? 'auto'}; bottom:${a.bottom ?? 'auto'}; transform:${a.tf ?? 'none'};`;
 
-	// Optional carnage-report flag (see README) — absent, no out plays and the
-	// source just hides on scene switch.
-	const over = $derived(!!feed.game?.over);
+	// Match-end latch — same rule as the scorebug's, see the note there.
+	// `game.over` alone never fires because the scraper doesn't send it; the
+	// live→not-live transition is what actually ends a match.
+	let sawLive = $state(false);
+	$effect(() => {
+		const live = feed.game?.phase === 'live';
+		untrack(() => {
+			if (live) sawLive = true;
+		});
+	});
+	const over = $derived(
+		!!feed.game?.over || (sawLive && !!feed.game && feed.game.phase !== 'live')
+	);
 
 	// Ring release (motion 2a out) — entry lives in RespawnRing.svelte (it
 	// replays each death since the {#if} remounts); removal can only be

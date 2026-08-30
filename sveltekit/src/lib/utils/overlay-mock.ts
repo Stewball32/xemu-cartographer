@@ -2,10 +2,19 @@
 // rendering with a believable 4v4 Team Slayer on Bloodgulch — no live xemu, no
 // minted token. Enabled with ?mock=1 on any overlay URL.
 //
-// The functions take an optional `frame` counter (the overlay feed ticks it a
-// few times a second in mock mode) so health bars wobble and the score creeps
-// upward — the preview looks alive instead of frozen, which also visually
-// confirms the overlay reacts to feed updates.
+// The mock is a CHOREOGRAPHY, not a set of wobbling constants. A single
+// deterministic kill script is forward-simulated from frame 0 and every
+// frame-dependent export (`mockGame`, `mockTick`, `mockEvents`) reads the same
+// simulated state, so the scoreboard, kill feed, sprees, respawn rings and team
+// scores can never disagree with each other. That matters because most of the
+// overlay pack's motion is DATA-driven — a respawn ring only drains if someone
+// is actually respawning, a spree badge only cascades if a streak actually
+// breaks — so a static fixture previews the layout but none of the animation.
+//
+// One cycle is a full match followed by a short idle gap, then a complete
+// reset. The idle window is what drives the match-end out-animations (the pages
+// latch on live→not-live), and the reset is what keeps scores from creeping
+// past the score limit and lets the team-lead flip happen every time around.
 
 import type {
 	AnyEvent,
@@ -23,14 +32,40 @@ import { CE_COLORS, colorHex, H2_KEYS, type Appearance } from '$lib/utils/emblem
  * mode — the URL's `[instance]` is ignored when ?mock=1 is set. */
 export const MOCK_INSTANCE = 'demo';
 
+// ---------------------------------------------------------------------------
+// Cadence
+// ---------------------------------------------------------------------------
+// The feed advances `frame` every MOCK_TICK_MS (200ms → 5 fps), so one frame is
+// 6 engine ticks at CE's 30Hz. Everything below is expressed in frames and
+// converted on the way out.
+
+/** Engine ticks per mock frame (30Hz engine ÷ 5fps feed). */
+const TICKS_PER_FRAME = 6;
+/** Frames between kill-script steps — 2.4s, a believable Slayer cadence. */
+const STEP_FRAMES = 12;
+/** Frames a victim stays dead — 3s, so the ring has time to visibly drain. */
+const DEAD_FRAMES = 15;
+/** Match length in script steps: three passes over the 17-step loop. */
+const MATCH_STEPS = 51;
+const MATCH_FRAMES = MATCH_STEPS * STEP_FRAMES; // 612 frames ≈ 122s
+/** Dead air after the match — long enough to read the out-animations. */
+const IDLE_FRAMES = 25; // 5s
+const CYCLE_FRAMES = MATCH_FRAMES + IDLE_FRAMES;
+
+/** Fixed match-start instant so event timestamps advance without a clock read
+ * (keeps every export deterministic for a given frame). */
+const MATCH_START_MS = Date.parse('2026-06-20T02:00:00Z');
+
 interface MockSeed {
 	index: number;
 	name: string;
 	team: number;
+	/** Kills at the opening whistle. Per team these MUST sum to the team's
+	 * starting score — the postgame ledger prints the team aggregate directly
+	 * above rows that sum to this, so a mismatch reads as a bug. */
 	kills: number;
 	deaths: number;
 	assists: number;
-	score: number;
 	isLocal: boolean;
 	/** CE/H2 armor-palette index (0..17) — tints the player card's Spartan. Warm
 	 * indices for the red team, cool for blue, so the roster reads team-wise while
@@ -40,19 +75,27 @@ interface MockSeed {
 	/** base health/shields as a 0..1 fraction; the frame counter wobbles it. */
 	baseHealth: number;
 	baseShields: number;
-	/** when set, the player is dead and respawning (overrides health/shields). */
-	dead?: boolean;
 }
 
+// Red opens at 26, blue at 31 — blue leads by 5. The script hands red a net +3
+// every loop, so red takes the lead ONCE, around 70s in, and holds it. Red
+// finishes on exactly 50 (the score limit), which is what ends the match.
+//
+// The deficit is 5 rather than 4 on purpose. Red and blue kills alternate for
+// the first eleven steps of each loop, so the gap oscillates by 1 as it climbs;
+// a 4-point deficit put that oscillation right on top of the tie, and the
+// scorebug's leader-orange blinked off and on six times over half a minute
+// before the real handover. A 5-point deficit lands the crossing in the loop's
+// monotone tail instead, so the lead changes hands once through a single brief
+// level scoreline.
 const SEEDS: MockSeed[] = [
 	{
 		index: 0,
 		name: 'Stewball',
 		team: 0,
-		kills: 17,
-		deaths: 9,
+		kills: 8,
+		deaths: 4,
 		assists: 4,
-		score: 17,
 		isLocal: true,
 		armorColor: 2, // Red
 		baseHealth: 0.82,
@@ -62,10 +105,9 @@ const SEEDS: MockSeed[] = [
 		index: 1,
 		name: 'gravemind',
 		team: 0,
-		kills: 12,
-		deaths: 11,
+		kills: 7,
+		deaths: 9,
 		assists: 6,
-		score: 12,
 		isLocal: true,
 		armorColor: 11, // Orange
 		baseHealth: 0.55,
@@ -75,10 +117,9 @@ const SEEDS: MockSeed[] = [
 		index: 2,
 		name: 'noble_six',
 		team: 0,
-		kills: 9,
-		deaths: 13,
+		kills: 6,
+		deaths: 5,
 		assists: 8,
-		score: 9,
 		isLocal: false,
 		armorColor: 16, // Maroon
 		baseHealth: 1,
@@ -88,24 +129,21 @@ const SEEDS: MockSeed[] = [
 		index: 3,
 		name: 'CmdrKeyes',
 		team: 0,
-		kills: 7,
-		deaths: 10,
+		kills: 5,
+		deaths: 6,
 		assists: 3,
-		score: 7,
 		isLocal: false,
 		armorColor: 17, // Salmon
-		baseHealth: 0,
-		baseShields: 0,
-		dead: true
+		baseHealth: 0.7,
+		baseShields: 0.5
 	},
 	{
 		index: 4,
 		name: 'TheArbiter',
 		team: 1,
-		kills: 15,
-		deaths: 10,
+		kills: 10,
+		deaths: 5,
 		assists: 5,
-		score: 15,
 		isLocal: false,
 		armorColor: 3, // Blue
 		baseHealth: 0.9,
@@ -115,10 +153,9 @@ const SEEDS: MockSeed[] = [
 		index: 5,
 		name: 'TartarusX',
 		team: 1,
-		kills: 11,
-		deaths: 12,
+		kills: 8,
+		deaths: 8,
 		assists: 2,
-		score: 11,
 		isLocal: false,
 		armorColor: 10, // Cobalt
 		baseHealth: 0.3,
@@ -128,10 +165,9 @@ const SEEDS: MockSeed[] = [
 		index: 6,
 		name: 'Regret',
 		team: 1,
-		kills: 8,
-		deaths: 9,
+		kills: 7,
+		deaths: 8,
 		assists: 7,
-		score: 8,
 		isLocal: false,
 		armorColor: 9, // Cyan
 		baseHealth: 0.65,
@@ -142,9 +178,8 @@ const SEEDS: MockSeed[] = [
 		name: 'flood_carrier',
 		team: 1,
 		kills: 6,
-		deaths: 14,
+		deaths: 7,
 		assists: 1,
-		score: 6,
 		isLocal: false,
 		armorColor: 12, // Teal
 		baseHealth: 1,
@@ -152,9 +187,225 @@ const SEEDS: MockSeed[] = [
 	}
 ];
 
+const SCORE_LIMIT = 50;
+
 function clamp01(n: number): number {
 	return n < 0 ? 0 : n > 1 ? 1 : n;
 }
+
+// ---------------------------------------------------------------------------
+// The kill script
+// ---------------------------------------------------------------------------
+
+interface KillStep {
+	/** null = no attributed killer (suicide / fall / environment / unknown). */
+	killer: number | null;
+	victim: number;
+	weapon: string;
+	cause: DeathCause;
+}
+
+// One loop of the scripted exchange. Three properties are load-bearing and any
+// edit has to preserve them (the unit tests assert all three):
+//
+//  1. RED NETS EXACTLY +3. Eight red kills, five blue, four unattributed. With
+//     a 4-point opening deficit that puts the lead change in loop 2.
+//  2. THE RUNNING DIFFERENTIAL NEVER SWINGS MORE THAN 1. Red and blue kills
+//     alternate strictly until red's surplus is banked, so the score gap
+//     crosses zero exactly once instead of ping-ponging around the crossing
+//     point for half a minute.
+//  3. NOBODY KILLS WHILE DEAD. A victim is out for DEAD_FRAMES (15) which
+//     overlaps the next step (12 frames), so no player may appear as killer in
+//     the step immediately after they were a victim.
+//
+// It also exercises all six DeathCause values, every one of which is a distinct
+// render branch in the kill feed and the respawn ring's plate.
+const KILL_SCRIPT: KillStep[] = [
+	// R — Stewball opens; his streak is the spree-badge demo.
+	{ killer: 0, victim: 5, weapon: 'weapons\\pistol\\pistol', cause: 'kill' },
+	// B — gravemind's first death of the loop, with a named killer: this is the
+	// KILLED BY plate on the POV overlay's respawn ring.
+	{ killer: 4, victim: 1, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
+	// R — Stewball's second in a row (badge goes orange at 3 next loop).
+	{ killer: 0, victim: 4, weapon: 'weapons\\assault rifle\\assault rifle', cause: 'kill' },
+	// B — and the streak breaks; the badge cascades.
+	{ killer: 6, victim: 0, weapon: 'weapons\\plasma rifle\\plasma rifle', cause: 'kill' },
+	{ killer: 2, victim: 6, weapon: 'weapons\\pistol\\pistol', cause: 'kill' },
+	{ killer: 4, victim: 2, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
+	{ killer: 3, victim: 7, weapon: 'weapons\\needler\\needler', cause: 'kill' },
+	// B — betrayal (blue on blue), so the shame columns and the team_kill flag
+	// both have something to render.
+	{ killer: 5, victim: 6, weapon: 'weapons\\shotgun\\shotgun', cause: 'betrayal' },
+	{ killer: 1, victim: 4, weapon: 'weapons\\rocket launcher\\rocket launcher', cause: 'kill' },
+	{ killer: 7, victim: 1, weapon: 'weapons\\assault rifle\\assault rifle', cause: 'kill' },
+	{ killer: 0, victim: 5, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
+	// N — gravemind's third death, unattributed: the RESPAWNING pill (no plate).
+	{ killer: null, victim: 1, weapon: 'weapons\\frag grenade\\frag grenade', cause: 'suicide' },
+	{ killer: 2, victim: 7, weapon: 'weapons\\plasma rifle\\plasma rifle', cause: 'kill' },
+	{ killer: null, victim: 3, weapon: '', cause: 'fall' },
+	{ killer: 2, victim: 4, weapon: 'weapons\\assault rifle\\assault rifle', cause: 'kill' },
+	{ killer: null, victim: 5, weapon: '', cause: 'environment' },
+	{ killer: null, victim: 6, weapon: '', cause: 'unknown' }
+];
+
+const LOOP_STEPS = KILL_SCRIPT.length; // 17
+
+// Power-up windows, in frames within one script loop. Both sit on Stewball —
+// he's a local, so they land on the POV bar where the effects actually read.
+// Chosen to avoid his death window (frames 36–51) so the card isn't cloaked or
+// overshielded while it's showing a respawn ring.
+// The camo window is long (19s of the nominal 30s decay) so the wipe travels
+// far enough to cross the ghost threshold at 50% — both sides of that branch
+// get previewed instead of only the fully-ghosted one.
+const CAMO_WINDOW: [number, number] = [56, 152];
+const OVERSHIELD_WINDOW: [number, number] = [156, 200];
+const POWERUP_SEAT = 0;
+
+// ---------------------------------------------------------------------------
+// Forward simulation
+// ---------------------------------------------------------------------------
+
+interface MockPlayerState {
+	kills: number;
+	deaths: number;
+	suicides: number;
+	betrayals: number;
+	streak: number;
+	bestStreak: number;
+	/** Frame of this player's most recent death; null if they haven't died. */
+	deathFrame: number | null;
+}
+
+interface MockMatch {
+	/** 0-based frame within the cycle. */
+	cycleFrame: number;
+	/** Frame within the match; frozen at the last match frame during idle. */
+	matchFrame: number;
+	/** Frame within the current script loop — drives the power-up windows. */
+	loopFrame: number;
+	phase: 'live' | 'idle';
+	players: MockPlayerState[];
+	teamScores: [number, number];
+	/** Newest-first, exactly like the live WS store's per-instance event log. */
+	events: DeathEvent[];
+}
+
+function blankState(): MockPlayerState[] {
+	return SEEDS.map(() => ({
+		kills: 0,
+		deaths: 0,
+		suicides: 0,
+		betrayals: 0,
+		streak: 0,
+		bestStreak: 0,
+		deathFrame: null
+	}));
+}
+
+/** Single-entry memo: mockGame / mockTick / mockEvents are all called for the
+ * same frame on every feed update, and each would otherwise re-run the whole
+ * forward simulation. */
+let memoFrame = -1;
+let memoMatch: MockMatch | null = null;
+
+function derive(frame: number): MockMatch {
+	if (memoMatch && memoFrame === frame) return memoMatch;
+	const out = simulate(frame);
+	memoFrame = frame;
+	memoMatch = out;
+	return out;
+}
+
+function simulate(frame: number): MockMatch {
+	const f = Math.max(0, Math.floor(frame));
+	const cycleFrame = f % CYCLE_FRAMES;
+	const live = cycleFrame < MATCH_FRAMES;
+	// During the idle gap the match state freezes on its final frame, so the
+	// postgame ledger and the scorebug's latched clock both keep reading the
+	// finished match rather than snapping back to zero.
+	const matchFrame = live ? cycleFrame : MATCH_FRAMES - 1;
+
+	const players = blankState();
+	const events: DeathEvent[] = [];
+	// A step lands ON its frame, so the step at matchFrame itself has happened.
+	const stepsDone = Math.min(Math.floor(matchFrame / STEP_FRAMES) + 1, MATCH_STEPS);
+
+	for (let step = 0; step < stepsDone; step++) {
+		const s = KILL_SCRIPT[step % LOOP_STEPS];
+		const at = step * STEP_FRAMES;
+		const victim = players[s.victim];
+
+		victim.deaths += 1;
+		victim.streak = 0;
+		victim.deathFrame = at;
+		if (s.cause === 'suicide') victim.suicides += 1;
+
+		if (s.killer != null) {
+			const killer = players[s.killer];
+			killer.kills += 1;
+			killer.streak += 1;
+			if (killer.streak > killer.bestStreak) killer.bestStreak = killer.streak;
+			if (s.cause === 'betrayal') killer.betrayals += 1;
+		}
+
+		events.unshift(buildDeath(step, s));
+	}
+
+	const teamScores: [number, number] = [0, 0];
+	SEEDS.forEach((seed, i) => {
+		teamScores[seed.team === 1 ? 1 : 0] += seed.kills + players[i].kills;
+	});
+
+	return {
+		cycleFrame,
+		matchFrame,
+		loopFrame: matchFrame % (LOOP_STEPS * STEP_FRAMES),
+		phase: live ? 'live' : 'idle',
+		players,
+		teamScores,
+		events: events.slice(0, 12)
+	};
+}
+
+function buildDeath(step: number, s: KillStep): DeathEvent {
+	const tick = step * STEP_FRAMES * TICKS_PER_FRAME;
+	return {
+		seq: step + 1,
+		tick,
+		at: new Date(MATCH_START_MS + (tick / 30) * 1000).toISOString(),
+		event_type: 'death',
+		victim: seedRef(s.victim),
+		victim_pos: { x: 0, y: 0, z: 0 },
+		killer: s.killer == null ? null : seedRef(s.killer),
+		killer_pos: s.killer == null ? null : { x: 0, y: 0, z: 0 },
+		cause: s.cause,
+		weapon: s.weapon,
+		team_kill: s.cause === 'betrayal',
+		respawn_in_ticks: DEAD_FRAMES * TICKS_PER_FRAME
+	};
+}
+
+function seedRef(i: number): PlayerRef {
+	const s = SEEDS[i];
+	return { index: s.index, name: s.name, team: s.team, armor_color: s.armorColor };
+}
+
+/** Frames this player has been dead, or null if they're alive right now. */
+function deadFor(m: MockMatch, i: number): number | null {
+	if (m.phase !== 'live') return null; // match over — everyone is back up
+	const at = m.players[i].deathFrame;
+	if (at == null) return null;
+	const elapsed = m.matchFrame - at;
+	return elapsed >= 0 && elapsed < DEAD_FRAMES ? elapsed : null;
+}
+
+function inWindow(loopFrame: number, [from, to]: [number, number]): boolean {
+	return loopFrame >= from && loopFrame < to;
+}
+
+// ---------------------------------------------------------------------------
+// Positions (for the top-down visualizer; the OBS overlays ignore these)
+// ---------------------------------------------------------------------------
 
 // Believable Bloodgulch-ish layout so the top-down VISUALIZER has something to
 // render in mock mode. The OBS scoreboard/status overlays ignore positions +
@@ -170,9 +421,13 @@ const BLUE_BASE = { x: 70, y: -165 };
 const MID = { x: 65, y: -118 };
 const FLOOR_Z = 2;
 
-function mockPlayerPos(s: MockSeed, frame: number): { x: number; y: number; z: number } {
+function mockPlayerPos(
+	s: MockSeed,
+	frame: number,
+	dead: boolean
+): { x: number; y: number; z: number } {
 	const base = s.team === 0 ? RED_BASE : BLUE_BASE;
-	if (s.dead) return { x: base.x, y: base.y, z: FLOOR_Z }; // respawning — sit at base
+	if (dead) return { x: base.x, y: base.y, z: FLOOR_Z }; // respawning — sit at base
 	if (s.index === 0 || s.index === 4) {
 		// Roamer: ping-pong between base and mid-map.
 		const t = (Math.sin(frame / 30 + s.index) + 1) / 2;
@@ -202,61 +457,69 @@ function mockPlayerAim(s: MockSeed): { x: number; y: number; z: number } {
 	return { x: dx / len, y: dy / len, z: 0 };
 }
 
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+
 export function mockGame(frame = 0): GamePayload {
-	// Score creeps every ~5s (the feed ticks ~5 fps) so the strip looks live.
-	const redDrift = Math.floor(frame / 40);
-	const blueDrift = Math.floor((frame + 17) / 47);
+	const m = derive(frame);
 	return {
-		phase: 'live',
-		started_at: '2026-06-20T02:00:00Z',
-		last_read_at: '2026-06-20T02:08:30Z',
-		engine_tick: 14400 + frame * 6,
+		phase: m.phase,
+		started_at: new Date(MATCH_START_MS).toISOString(),
+		last_read_at: new Date(
+			MATCH_START_MS + ((m.matchFrame * TICKS_PER_FRAME) / 30) * 1000
+		).toISOString(),
+		engine_tick: m.matchFrame * TICKS_PER_FRAME,
 		iterations: 1,
 		config: {
 			gametype: 'slayer',
 			variant_name: 'Team Slayer',
 			is_team_game: true,
-			score_limit: 50,
+			score_limit: SCORE_LIMIT,
 			time_limit_ticks: 0
 		},
 		team_scores: [
-			{ team: 0, score: 31 + redDrift },
-			{ team: 1, score: 27 + blueDrift }
+			{ team: 0, score: m.teamScores[0] },
+			{ team: 1, score: m.teamScores[1] }
 		],
-		players: SEEDS.map((s) => ({
-			index: s.index,
-			name: s.name,
-			team: s.team,
-			armor_color: s.armorColor,
-			score: s.score + (s.team === 0 ? redDrift : blueDrift),
-			kills: s.kills + (s.index === 0 ? redDrift : 0),
-			deaths: s.deaths,
-			assists: s.assists,
-			ctf_score: 0,
-			// One betrayal + suicide on player 1 so the postgame shame columns
-			// exercise their red-when-nonzero styling in previews.
-			team_kills: s.index === 1 ? 1 : 0,
-			suicides: s.index === 1 ? 1 : 0,
-			kill_streak: s.index === 0 ? 3 : 0,
-			multikill: 0,
-			shots_fired: 0,
-			shots_hit: 0,
-			// Accumulated match stats (acc_* — the server-side HaloCaster-port
-			// deltas), scaled off each seed's kills so every postgame column +
-			// footer total renders non-zero in mock previews.
-			acc_shots_fired: 40 + s.kills * 9 + s.index * 7,
-			acc_grenade_throws: 3 + (s.index % 3) * 2,
-			acc_melees: 1 + (s.index % 2) * 2,
-			acc_damage_dealt: 300 + s.kills * 82,
-			acc_damage_received: 250 + s.deaths * 78,
-			acc_camo_pickups: s.index % 2,
-			acc_overshield_pickups: (s.index + 1) % 2,
-			best_kill_streak: 2 + (s.kills % 5),
-			is_local: s.isLocal,
-			local_index: s.isLocal ? s.index : null,
-			machine_index: s.team,
-			controller_index: s.isLocal ? s.index : null
-		})),
+		players: SEEDS.map((s, i) => {
+			const st = m.players[i];
+			const kills = s.kills + st.kills;
+			return {
+				index: s.index,
+				name: s.name,
+				team: s.team,
+				armor_color: s.armorColor,
+				// score IS kills in Slayer, and per team these sum to team_scores —
+				// the postgame ledger prints both, so they have to agree.
+				score: kills,
+				kills,
+				deaths: s.deaths + st.deaths,
+				assists: s.assists,
+				ctf_score: 0,
+				team_kills: st.betrayals,
+				suicides: st.suicides,
+				kill_streak: st.streak,
+				multikill: 0,
+				shots_fired: 0,
+				shots_hit: 0,
+				// Accumulated match stats (acc_* — the server-side HaloCaster-port
+				// deltas), scaled off live kills/deaths so every postgame column +
+				// footer total climbs through the match instead of sitting still.
+				acc_shots_fired: 40 + kills * 9 + s.index * 7,
+				acc_grenade_throws: 3 + (s.index % 3) * 2 + Math.floor(st.kills / 2),
+				acc_melees: 1 + (s.index % 2) * 2 + Math.floor(st.kills / 3),
+				acc_damage_dealt: 300 + kills * 82,
+				acc_damage_received: 250 + (s.deaths + st.deaths) * 78,
+				acc_camo_pickups: s.index % 2,
+				acc_overshield_pickups: (s.index + 1) % 2,
+				best_kill_streak: Math.max(2 + (s.kills % 3), st.bestStreak),
+				is_local: s.isLocal,
+				local_index: s.isLocal ? s.index : null,
+				machine_index: s.team,
+				controller_index: s.isLocal ? s.index : null
+			};
+		}),
 		machines: [
 			{ index: 0, name: 'RED-XBOX', is_local: true },
 			{ index: 1, name: 'BLU-XBOX', is_local: false }
@@ -265,30 +528,48 @@ export function mockGame(frame = 0): GamePayload {
 	};
 }
 
-function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][number] {
+function mockTickPlayer(
+	s: MockSeed,
+	m: MockMatch,
+	frame: number
+): TickPayloadV2['players'][number] {
+	const dead = deadFor(m, s.index);
+	const alive = dead === null;
 	// Per-player phase offset so the bars don't all pulse in lockstep.
 	const wobble = Math.sin((frame + s.index * 3) / 6) * 0.12;
-	const alive = !s.dead;
 	const health = alive ? clamp01(s.baseHealth + wobble) : 0;
-	const shields = alive ? clamp01(s.baseShields + wobble) : 0;
+
+	const camo = alive && s.index === POWERUP_SEAT && inWindow(m.loopFrame, CAMO_WINDOW);
+	const os = alive && s.index === POWERUP_SEAT && inWindow(m.loopFrame, OVERSHIELD_WINDOW);
+	// Overshield reads as shields ABOVE 1 (the card's conic rings only render
+	// past 1); drain it back down to 1 across the window so the rings visibly
+	// deplete instead of holding a constant arc.
+	const osProgress = os
+		? (m.loopFrame - OVERSHIELD_WINDOW[0]) / (OVERSHIELD_WINDOW[1] - OVERSHIELD_WINDOW[0])
+		: 0;
+	const shields = !alive ? 0 : os ? 2 - osProgress : clamp01(s.baseShields + wobble);
+
 	return {
 		index: s.index,
 		alive,
-		respawn_in_ticks: s.dead ? Math.max(0, 90 - (frame % 120)) : null,
-		pos: mockPlayerPos(s, frame),
+		// Drains one whole step per frame down to a final 6 — the ring sweeps off
+		// the unrounded seconds, so it has to move every frame, not every second.
+		respawn_in_ticks: alive ? null : (DEAD_FRAMES - (dead as number)) * TICKS_PER_FRAME,
+		pos: mockPlayerPos(s, frame, !alive),
 		vel: { x: 0, y: 0, z: 0 },
 		aim: mockPlayerAim(s),
 		zoom_level: 0,
 		crouch_scale: 0,
 		// Emit the engine's 0..1 fraction, matching the live wire (health/shields
-		// at 0x90/0x94 are RUNTIME-VERIFIED 0..1, not 0..75). `health`/`shields`
-		// here are already clamped 0..1 above. Max* are the absolute ceilings.
+		// at 0x90/0x94 are RUNTIME-VERIFIED 0..1, not 0..75) — except during the
+		// overshield window, where the overlay's own model is 0..2. Max* are the
+		// absolute ceilings.
 		health,
 		shields,
 		max_health: 75,
 		max_shields: 75,
-		has_camo: s.index === 0 && frame % 80 < 30,
-		has_overshield: s.index === 4,
+		has_camo: camo,
+		has_overshield: os,
 		frags: 2,
 		plasmas: 1,
 		selected_weapon_slot: 0,
@@ -296,7 +577,7 @@ function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][nu
 		actions: {
 			crouching: false,
 			jumping: false,
-			firing: frame % 20 < 6 && s.index % 2 === 0,
+			firing: alive && frame % 20 < 6 && s.index % 2 === 0,
 			flashlight: false,
 			throwing_grenade: false,
 			meleeing: false,
@@ -319,8 +600,9 @@ function mockTickPlayer(s: MockSeed, frame: number): TickPayloadV2['players'][nu
 }
 
 export function mockTick(frame = 0): TickPayloadV2 {
+	const m = derive(frame);
 	return {
-		players: SEEDS.map((s) => mockTickPlayer(s, frame)),
+		players: SEEDS.map((s) => mockTickPlayer(s, m, frame)),
 		// Tracked power items: rockets sit mid-map, the sniper is held by Arbiter
 		// (4), the overshield is respawning (counted, off-map), camo is on the
 		// floor. spawn_ids line up with mockPowerItemSpawns() for labels.
@@ -352,13 +634,21 @@ export function mockTick(frame = 0): TickPayloadV2 {
 		ctf_flags: [],
 		game_globals: {
 			map_loaded: 1,
-			active: 1,
+			active: m.phase === 'live' ? 1 : 0,
 			game_loading_in_progress: 0,
 			precache_map_status: 1,
 			stored_global_random: 0
 		},
 		locals: []
 	};
+}
+
+/** Recent deaths, NEWEST-FIRST — exactly how the live WS store keeps the
+ * per-instance event log, so the overlays render identically from either
+ * source. The respawn ring's KILLED BY plate reads the newest death per victim
+ * out of this list. */
+export function mockEvents(frame = 0): AnyEvent[] {
+	return derive(frame).events;
 }
 
 export function mockScenario(): ScenarioPayload {
@@ -429,70 +719,6 @@ function mockPowerItemSpawns(): ScenarioPayload['power_item_spawns'] {
 			pos: { x: 80, y: -95, z: 1 }
 		}
 	];
-}
-
-// Mock kill feed — a believable rolling Slayer exchange built from the same
-// SEEDS roster so names/teams line up with the scoreboard. The feed factory
-// ticks `frame` a few times a second; mockEvents derives "how many kills have
-// happened so far" from it and returns the most recent ones NEWEST-FIRST, which
-// is exactly how the live WS store keeps the per-instance event log — so the
-// kill-feed overlay renders identically from either source.
-
-function seedRef(i: number): PlayerRef {
-	const s = SEEDS[i];
-	return { index: s.index, name: s.name, team: s.team, armor_color: s.team };
-}
-
-interface KillStep {
-	/** null = no killer (suicide / fall). */
-	killer: number | null;
-	victim: number;
-	weapon: string;
-	cause: DeathCause;
-}
-
-// One loop of the scripted exchange: cross-team kills, a fall death, a botched
-// grenade suicide, and a same-team betrayal — enough variety to exercise every
-// kill-feed render branch.
-const KILL_SCRIPT: KillStep[] = [
-	{ killer: 0, victim: 5, weapon: 'weapons\\pistol\\pistol', cause: 'kill' },
-	{ killer: 4, victim: 1, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
-	{ killer: 0, victim: 4, weapon: 'weapons\\assault rifle\\assault rifle', cause: 'kill' },
-	{ killer: null, victim: 3, weapon: '', cause: 'fall' },
-	{ killer: 6, victim: 0, weapon: 'weapons\\plasma rifle\\plasma rifle', cause: 'kill' },
-	{ killer: null, victim: 1, weapon: 'weapons\\frag grenade\\frag grenade', cause: 'suicide' },
-	{ killer: 4, victim: 2, weapon: 'weapons\\sniper rifle\\sniper rifle', cause: 'kill' },
-	{ killer: 5, victim: 6, weapon: 'weapons\\needler\\needler', cause: 'betrayal' }
-];
-
-/** Cadence: a new kill roughly every ~2.4s (12 frames at the ~5 fps mock tick). */
-const FRAMES_PER_KILL = 12;
-/** Seed a few kills so the preview is populated immediately rather than empty. */
-const KILL_BASELINE = 3;
-
-export function mockEvents(frame = 0): AnyEvent[] {
-	const total = KILL_BASELINE + Math.floor(Math.max(0, frame) / FRAMES_PER_KILL);
-	const show = Math.min(total, 8);
-	const out: DeathEvent[] = [];
-	for (let k = 0; k < show; k++) {
-		const idx = total - 1 - k; // newest first
-		const step = KILL_SCRIPT[idx % KILL_SCRIPT.length];
-		out.push({
-			seq: idx + 1,
-			tick: 14400 + idx * 72, // ~2.4s apart at 30 Hz
-			at: '2026-06-20T02:08:30Z',
-			event_type: 'death',
-			victim: seedRef(step.victim),
-			victim_pos: { x: 0, y: 0, z: 0 },
-			killer: step.killer == null ? null : seedRef(step.killer),
-			killer_pos: step.killer == null ? null : { x: 0, y: 0, z: 0 },
-			cause: step.cause,
-			weapon: step.weapon,
-			team_kill: step.cause === 'betrayal',
-			respawn_in_ticks: 90
-		});
-	}
-	return out;
 }
 
 export function mockObjects(): ObjectsPayload {
@@ -582,10 +808,31 @@ function mockAvatarDataURI(name: string, hex: string): string {
 	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+// Stand-in for a picked nameplate's 600×100 banner art (users.nameplate → the
+// `plate` field). Only ONE seed carries it, so a preview shows the banner
+// treatment and the plain navy pill side by side.
+function mockPlateDataURI(hex: string): string {
+	const svg =
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 100">` +
+		`<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+		`<stop offset="0" stop-color="${hex}"/><stop offset="1" stop-color="#0b1220"/>` +
+		`</linearGradient></defs>` +
+		`<rect width="600" height="100" fill="url(#g)"/>` +
+		`<path d="M0 100 L180 0 L240 0 L60 100 Z" fill="rgba(255,255,255,0.10)"/>` +
+		`<path d="M120 100 L300 0 L330 0 L150 100 Z" fill="rgba(255,255,255,0.06)"/>` +
+		`</svg>`;
+	return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 // Mock identity table — the ?mock=1 stand-in for the live /api/public/profiles
 // endpoint, keyed by lowercased scraped name exactly as the endpoint keys its
 // reply. Each seed gets a display name (their "default gamertag"), a PB avatar
 // image (data-URI stand-in), a CE armor colour and an H2 emblem/appearance.
+//
+// FRAME-INDEPENDENT ON PURPOSE: the profile store snapshots this exactly once
+// behind a `mockLoaded` latch, so anything derived from the frame counter here
+// would silently freeze at frame 0.
+//
 // Deliberate gaps so the preview exercises every fallback branch:
 //   - SEED 5 (TartarusX): NOT identified at all → trimmed scraped name +
 //     placeholder emblem.
@@ -622,9 +869,15 @@ export function mockProfiles(): Record<
 			...(s.index === 7
 				? {} // identified without an avatar image → avatar-spot fallback demo
 				: { avatar: mockAvatarDataURI(s.name, colorHex(CE_COLORS, s.armorColor)) }),
-			// One seed carries a motto so the plate's second line previews under
-			// ?mock=1 (settings Stream tab data on the wire).
-			...(s.index === 0 ? { motto: 'No tunnel is safe from me' } : {}),
+			// One seed carries a motto + nameplate art so the plate's second line and
+			// its banner treatment both preview under ?mock=1 (settings Stream tab
+			// data on the wire); the rest stay on the plain pill for comparison.
+			...(s.index === 0
+				? {
+						motto: 'No tunnel is safe from me',
+						plate: mockPlateDataURI(colorHex(CE_COLORS, s.armorColor))
+					}
+				: {}),
 			ce: { color: s.armorColor },
 			h2: { appearance: mockAppearance(s.index) }
 		};

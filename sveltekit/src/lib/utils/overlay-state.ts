@@ -108,9 +108,15 @@ export function overlayPlayers(
 			camoPickups: p.acc_camo_pickups ?? 0,
 			osPickups: p.acc_overshield_pickups ?? 0,
 			alive: t?.alive ?? true,
-			respawn: respawnTicks != null ? Math.ceil(respawnTicks / TICKS_PER_SECOND) : 0,
+			// Unrounded: RespawnRing sweeps its arc off this value and ceils
+			// separately for the digit, so rounding here made the arc step in
+			// whole seconds instead of draining.
+			respawn: respawnTicks != null ? respawnTicks / TICKS_PER_SECOND : 0,
 			respawnMax: RESPAWN_MAX,
-			camo: t?.has_camo ? CAMO_MAX : 0, // real timer deferred
+			// The scraper exposes camo as a boolean, and PlayerCard reads any
+			// value > 1 as "percent remaining" — so CAMO_MAX here pinned the
+			// wipe at a constant 30%. 1 selects the nominal decay instead.
+			camo: t?.has_camo ? 1 : 0,
 			camoMax: CAMO_MAX,
 			shield: t?.shields ?? 1,
 			health: t?.health ?? 1

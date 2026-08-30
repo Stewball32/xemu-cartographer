@@ -59,10 +59,15 @@ interface ConsoleSnapshot {
 
 const sanitize = (s: string) => s.trim().toLowerCase();
 
-/** Swap the raw `game` class for the dummy-filtered `game_filtered` class on the
- * console-ws path; other classes pass through. */
+/** Swap the raw classes for their dummy-filtered counterparts on the console-ws
+ * path; other classes pass through. A page asks for what it wants semantically
+ * ('game', 'event') and gets the viewer-safe room. */
 function toFilteredClasses(classes: EnvelopeTypeV2[]): EnvelopeTypeV2[] {
-	return classes.map((c) => (c === 'game' ? 'game_filtered' : c));
+	return classes.map((c) => {
+		if (c === 'game') return 'game_filtered';
+		if (c === 'event') return 'event_filtered';
+		return c;
+	});
 }
 
 export function createOverlayFeed() {

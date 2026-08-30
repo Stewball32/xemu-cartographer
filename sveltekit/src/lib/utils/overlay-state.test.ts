@@ -401,6 +401,36 @@ describe('applyIdentities', () => {
 	});
 });
 
+// The respawn ring sweeps its arc off `respawn` and PlayerCard reads any
+// `camo` above 1 as a literal percent-remaining. Both were previously
+// quantised here (ceil to whole seconds; a constant 30), which froze the two
+// animations without changing anything the older assertions looked at.
+describe('live-tick vitals mapping', () => {
+	const liveTick = (over: Record<string, unknown>) =>
+		({
+			players: [{ index: 0, alive: true, health: 1, shields: 1, ...over }],
+			power_items: [],
+			ctf_flags: [],
+			game_globals: null,
+			locals: []
+		}) as unknown as TickPayloadV2;
+
+	it('keeps respawn seconds fractional', () => {
+		const [p] = overlayPlayers(gameWith(), liveTick({ alive: false, respawn_in_ticks: 91 }));
+		expect(p.respawn).toBeCloseTo(91 / 30, 5);
+	});
+
+	it('is 0 seconds when the tick carries no respawn timer', () => {
+		const [p] = overlayPlayers(gameWith(), liveTick({ respawn_in_ticks: null }));
+		expect(p.respawn).toBe(0);
+	});
+
+	it('maps camo as a boolean, not a duration', () => {
+		expect(overlayPlayers(gameWith(), liveTick({ has_camo: true }))[0].camo).toBe(1);
+		expect(overlayPlayers(gameWith(), liveTick({ has_camo: false }))[0].camo).toBe(0);
+	});
+});
+
 describe('scraped name trimming', () => {
 	it('trims padding CE leaves on profile names', () => {
 		const g = gameWith();

@@ -7,7 +7,7 @@
 	// FFA: 3+ players → top-FOUR podium on mottoless nameplates (1st leads left,
 	// 2nd–4th stack right); exactly two keeps the head-to-head duel on plates.
 	// Motion 1b: CRT power-on (scanline snap, 0.5s) on source activate; CRT
-	// power-off (collapse → line → dot, 0.42s) when `game.over` goes truthy.
+	// power-off (collapse → line → dot, 0.42s) at match end.
 	// NOTE: this is its own browser source, independent of /overlay — no
 	// wiring between them. The POV bars bake in a 120ms head delay so the
 	// bug reads first when one scene switch activates both.
@@ -49,9 +49,27 @@
 	});
 	const players = $derived(applyIdentities(scraped, lookup.all, data.names));
 	const match = $derived(matchState(feed.game, feed.scenario));
-	// Optional carnage-report flag (see README) — absent, no out plays and the
-	// source just hides on scene switch.
-	const over = $derived(!!feed.game?.over);
+
+	// Match-end latch. `game.over` is an optional carnage-report flag the
+	// scraper does not currently send, so deriving the out purely from it meant
+	// the power-off never played. Latch instead on this source having SEEN a
+	// live match: once it has, the match leaving `live` is the end of it.
+	//
+	// Ordering matters — a source activated after a match already ended never
+	// sees `live`, so it stays visible rather than powering off on arrival. A
+	// dropped feed (game null) is not an ending, so a reconnect blip doesn't
+	// fire it either. Re-entering `live` clears the latch, so the source comes
+	// back for the next match without a remount.
+	let sawLive = $state(false);
+	$effect(() => {
+		const live = feed.game?.phase === 'live';
+		untrack(() => {
+			if (live) sawLive = true;
+		});
+	});
+	const over = $derived(
+		!!feed.game?.over || (sawLive && !!feed.game && feed.game.phase !== 'live')
+	);
 
 	const teams = $derived(match.teams ?? null);
 	const red = $derived(teams?.find((t) => t.id === 'red'));

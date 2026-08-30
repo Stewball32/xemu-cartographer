@@ -22,6 +22,7 @@ import {
 	SUMMARY_ROOM,
 	isDebugEnv,
 	isEventEnv,
+	isEventFilteredEnv,
 	isEventsReplyEnv,
 	isGameEnv,
 	isGameFilteredEnv,
@@ -361,7 +362,10 @@ function createScraperWSV2() {
 			// "fetched Xs ago" and re-render when a new reply arrives.
 			probe = { ...probe, [env.instance]: env.data };
 			lastProbeReplyAt = { ...lastProbeReplyAt, [env.instance]: now };
-		} else if (isEventEnv(env)) {
+		} else if (isEventEnv(env) || isEventFilteredEnv(env)) {
+			// event_filtered is the viewer-facing death stream; stored in the same
+			// events log — a page subscribes to one or the other, never both, so
+			// there's no clobber. (Same arrangement as game / game_filtered.)
 			const prev = events[env.instance] ?? [];
 			const next = [env.data, ...prev].slice(0, MAX_EVENTS_PER_INSTANCE);
 			events = { ...events, [env.instance]: next };

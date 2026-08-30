@@ -503,7 +503,13 @@
 	.padded.tight {
 		padding: 1px 3px;
 	}
-	.grow {
+	/* The `.pgrow > span` blanket below is more specific than a bare `.grow`
+	   and later in source, so it collapsed the player rows' spacer spans and
+	   packed the 14 stat columns left, out from under their headers. The
+	   header row escapes it only because `.cols .c-player` happens to
+	   out-specify the same blanket. */
+	.grow,
+	.pgrow > span.grow {
 		flex: 1;
 		min-width: 0;
 	}
