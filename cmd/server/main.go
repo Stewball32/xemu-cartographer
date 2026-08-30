@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
@@ -103,6 +105,32 @@ func main() {
 			App: app,
 			PB:  pbSvc,
 		}
+
+		// Imported offset sets (Offsets page): ids the embedded registry doesn't
+		// know resolve through the offset_sets collection — the stored offsetmap
+		// JSON parses through the same path as an embedded file at bind time.
+		// Wired before the scraper manager exists so no bind can race it.
+		offsets.SetDynamicSource(func(id string) ([]byte, bool) {
+			rec, err := app.FindFirstRecordByData("offset_sets", "set_id", id)
+			if err != nil || rec == nil {
+				return nil, false
+			}
+			fsys, err := app.NewFilesystem()
+			if err != nil {
+				return nil, false
+			}
+			defer fsys.Close()
+			r, err := fsys.GetReader(rec.BaseFilesPath() + "/" + rec.GetString("file"))
+			if err != nil {
+				return nil, false
+			}
+			defer r.Close()
+			raw, err := io.ReadAll(r)
+			if err != nil {
+				return nil, false
+			}
+			return raw, true
+		})
 
 		// Scraper manager: always available. Holds a *Services pointer; broadcasts
 		// safely no-op until svc.WS is populated below. The blank import of

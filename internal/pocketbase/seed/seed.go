@@ -18,6 +18,23 @@ import (
 func Run(app *pocketbase.PocketBase) error {
 	log.Println("Seeding database...")
 
+	// Baseline role rows first — no migration inserts records, so a FRESH dev
+	// DB has an empty roles collection and every roles.Grant below (plus the
+	// users_default_role hook) would fail. Prod grew its rows live; dev
+	// re-mints them each ephemeral boot.
+	for _, r := range []struct {
+		Slug, Label string
+		Level       int
+	}{
+		{"member", "Member", 0},
+		{"organizer", "Organizer", 50},
+		{"admin", "Admin", 100},
+	} {
+		if err := ensureRole(app, r.Slug, r.Label, r.Level); err != nil {
+			return fmt.Errorf("seed role %s: %w", r.Slug, err)
+		}
+	}
+
 	for _, su := range superusers {
 		if err := ensureSuperuser(app, su); err != nil {
 			return fmt.Errorf("seed superuser %s: %w", su.Email, err)
@@ -74,8 +91,33 @@ func ensureUser(app *pocketbase.PocketBase, u seedUser) error {
 			return fmt.Errorf("seed user %s: grant admin role: %w", u.Email, err)
 		}
 	}
+	if u.IsOrganizer {
+		if err := roles.Grant(app, record.Id, "organizer", nil); err != nil {
+			return fmt.Errorf("seed user %s: grant organizer role: %w", u.Email, err)
+		}
+	}
 
 	log.Printf("  user %s: created", u.Email)
+	return nil
+}
+
+// ensureRole upserts one baseline roles row by slug (idempotent).
+func ensureRole(app *pocketbase.PocketBase, slug, label string, level int) error {
+	if existing, _ := app.FindFirstRecordByData("roles", "slug", slug); existing != nil {
+		return nil
+	}
+	collection, err := app.FindCollectionByNameOrId("roles")
+	if err != nil {
+		return err
+	}
+	record := core.NewRecord(collection)
+	record.Set("slug", slug)
+	record.Set("label", label)
+	record.Set("level", level)
+	if err := app.Save(record); err != nil {
+		return err
+	}
+	log.Printf("  role %s: created", slug)
 	return nil
 }
 

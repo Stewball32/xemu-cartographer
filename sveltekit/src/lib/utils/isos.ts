@@ -12,6 +12,10 @@
 import { auth } from '$lib/stores/auth.svelte';
 import { apiBaseURL } from '$lib/utils/api-base';
 
+/** Disc visibility role: play (player pickers), server (host boots only),
+ * shelved (in the library, hidden everywhere). Replaces the old available bool. */
+export type IsoRole = 'play' | 'server' | 'shelved';
+
 /** A catalog entry as projected by the admin isos routes (isoView). */
 export interface IsoEntry {
 	id: string;
@@ -20,7 +24,10 @@ export interface IsoEntry {
 	filename: string;
 	title_id: string;
 	description: string;
-	available: boolean;
+	role: IsoRole;
+	/** eligible for real-Xbox station HDDs regardless of role (sync-time pick
+	 * happens elsewhere — this only grants eligibility). */
+	allow_on_xbox: boolean;
 	server_iso: string;
 	/** offset-set id the scraper binds for this build ("" = game baseline). */
 	offset_set: string;
@@ -65,19 +72,30 @@ export interface IngestResult {
 export interface IsoUpdate {
 	name?: string;
 	description?: string;
-	available?: boolean;
+	role?: IsoRole;
+	allow_on_xbox?: boolean;
 	server_iso?: string;
 	offset_set?: string;
 }
 
-/** One registered memory-offset set (version-level address layer). */
+/** One offset set — embedded baseline or imported record — as listed by the
+ * merged endpoint, with its dependent-disc count + import provenance. */
 export interface OffsetSetInfo {
 	game: string;
 	id: string;
 	description: string;
 	count: number;
 	baseline: boolean;
+	bound_discs: number;
+	/** "" / absent for embedded baselines. */
+	imported?: string;
+	source_name?: string;
+	version?: number;
 }
+
+// Offsetmap parsing (import preview + detail table) lives in the pure leaf
+// module so it's unit-testable without store/env imports.
+export { parseOffsetmap, type OffsetEntry } from '$lib/utils/offsetmap';
 
 export class IsoApiError extends Error {
 	status: number;
@@ -133,11 +151,95 @@ export async function ingestInbox(): Promise<IngestResult> {
 	return (await res.json()) as IngestResult;
 }
 
-/** GET /api/admin/isos/offset-sets — registered offset sets for the picker. */
+/** GET /api/admin/isos/offset-sets — embedded + imported sets, merged. */
 export async function listOffsetSets(): Promise<OffsetSetInfo[]> {
 	const res = await fetch(`${apiBaseURL()}/api/admin/isos/offset-sets`, { headers: authHeaders() });
 	if (!res.ok) throw await errorFrom(res);
 	return (await res.json()) as OffsetSetInfo[];
+}
+
+/** POST /api/admin/isos/offset-sets — import an offsetmap export. saveAs
+ * overrides the id it lands under (discs will reference that id). */
+export async function importOffsetSet(file: File, saveAs: string): Promise<OffsetSetInfo> {
+	const form = new FormData();
+	form.append('file', file);
+	if (saveAs.trim()) form.append('save_as', saveAs.trim());
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/offset-sets`, {
+		method: 'POST',
+		headers: authHeaders(),
+		body: form
+	});
+	if (!res.ok) throw await errorFrom(res);
+	return (await res.json()) as OffsetSetInfo;
+}
+
+/** GET /api/admin/isos/offset-sets/{id}/raw — the set's offsetmap JSON,
+ * byte-identical to what was imported (or shipped, for baselines). */
+export async function fetchOffsetSetRaw(id: string): Promise<string> {
+	const res = await fetch(
+		`${apiBaseURL()}/api/admin/isos/offset-sets/${encodeURIComponent(id)}/raw`,
+		{ headers: authHeaders() }
+	);
+	if (!res.ok) throw await errorFrom(res);
+	return await res.text();
+}
+
+/** DELETE /api/admin/isos/offset-sets/{id} — delete an imported set, re-binding
+ * its dependent discs to migrateTo ("" = unbound, stats go dark). */
+export async function deleteOffsetSet(id: string, migrateTo: string): Promise<void> {
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/offset-sets/${encodeURIComponent(id)}`, {
+		method: 'DELETE',
+		headers: authHeaders(true),
+		body: JSON.stringify({ migrate_to: migrateTo })
+	});
+	if (!res.ok) throw await errorFrom(res);
+}
+
+// ── Maps catalog (canonical builds) ─────────────────────────────────────────
+
+/** One power-item spawn rotation row: several items ALTERNATE each spawn. */
+export interface PowerItemRow {
+	items: string[];
+	every: string; // "M:SS"
+}
+
+/** One carrying disc chip. */
+export interface CatalogDisc {
+	id: string;
+	name: string;
+}
+
+/** One canonical build (the `maps` collection joined to its carriers). */
+export interface CatalogMap {
+	id: string;
+	game: 'ce' | 'h2';
+	filename: string;
+	content_hash: string;
+	display_name: string;
+	variant_of: string;
+	description: string;
+	power_items: PowerItemRow[];
+	graphic_url: string;
+	/** BSP-render stand-in when no graphic is uploaded ("" if neither). */
+	thumb_url: string;
+	internal_name: string;
+	discs: CatalogDisc[];
+	updated: string;
+}
+
+/** GET /api/admin/isos/maps-catalog — every canonical build + carriers. */
+export async function listMapsCatalog(): Promise<CatalogMap[]> {
+	const res = await fetch(`${apiBaseURL()}/api/admin/isos/maps-catalog`, {
+		headers: authHeaders()
+	});
+	if (!res.ok) throw await errorFrom(res);
+	return (await res.json()) as CatalogMap[];
+}
+
+/** The art to show for a build: uploaded graphic beats the BSP stand-in. */
+export function catalogArtURL(m: CatalogMap): string | null {
+	const rel = m.graphic_url || m.thumb_url;
+	return rel ? `${apiBaseURL()}${rel}` : null;
 }
 
 /** PATCH /api/admin/isos/{id} — partial metadata/server_iso/available update. */

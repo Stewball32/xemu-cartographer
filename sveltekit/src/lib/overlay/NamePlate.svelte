@@ -15,10 +15,26 @@
 	//             layer (1–2), green = layer above (2–3), draining live off the
 	//             ~30Hz shield feed. Nothing renders at shield ≤ 1.
 	//   bg        optional 600×100 plate banner (profile field), edge to edge
-	//             under a light legibility scrim.
+	//             under a light legibility scrim. Custom-bg rendering carries
+	//             the organizer-pack text treatment (white motto + ~2px
+	//             near-black letter outline) so the organizer's banner-crop
+	//             preview and the OBS output stay identical — that deviation is
+	//             deliberate (chosen over a heavier directional scrim, which
+	//             darkened the art too much).
+	//   chromeOnly organizer crop-stage mode: the pill surface goes transparent
+	//             (the live crop shows through from the stage beneath) while the
+	//             scrim + avatar well + name/motto still draw at exact geometry.
 	import starUrl from '$lib/assets/star.png';
 
-	let { player = {}, h = 64, showMotto = true, ghost = false, os = 0, bg = '' } = $props();
+	let {
+		player = {},
+		h = 64,
+		showMotto = true,
+		ghost = false,
+		os = 0,
+		bg = '',
+		chromeOnly = false
+	} = $props();
 
 	const k = $derived(h / 64);
 	const nameText = $derived(player.display || player.name || '—');
@@ -57,11 +73,15 @@
 <div
 	class="plate"
 	class:ghost
+	class:hasart={!!bg || chromeOnly}
+	class:chrome={chromeOnly}
 	style="height:{h}px; width:{h * 6}px; border-radius:{h / 2}px; padding:0 {24 * k}px 0 {4 *
 		k}px; gap:{14 * k}px"
 >
 	{#if bg}
 		<div class="bgart" style="background-image:url({bg}); border-radius:{h / 2}px"></div>
+	{:else if chromeOnly}
+		<div class="bgart" style="border-radius:{h / 2}px"></div>
 	{/if}
 
 	<div class="well" style="width:{56 * k}px; height:{56 * k}px">
@@ -127,6 +147,32 @@
 	}
 	.plate.ghost .bgart {
 		opacity: 0.16;
+	}
+	/* Crop-stage chrome: the live crop shows through from beneath; only the
+	   scrim (.bgart with no image) + content draw. */
+	.plate.chrome {
+		background: none;
+	}
+
+	/* Custom-art text treatment (organizer-pack deviation, kept identical
+	   between the organizer preview and OBS): white motto + layered ~2px
+	   near-black letter outline on name AND motto, over the flat 0.22 scrim —
+	   no extra darkening. Art-backed plates only; the plain navy pill keeps
+	   the original CL-18 rendering. */
+	.plate.hasart .pname,
+	.plate.hasart .motto {
+		text-shadow:
+			2px 0 0 rgba(4, 6, 12, 0.85),
+			-2px 0 0 rgba(4, 6, 12, 0.85),
+			0 2px 0 rgba(4, 6, 12, 0.85),
+			0 -2px 0 rgba(4, 6, 12, 0.85),
+			1.5px 1.5px 0 rgba(4, 6, 12, 0.85),
+			-1.5px 1.5px 0 rgba(4, 6, 12, 0.85),
+			1.5px -1.5px 0 rgba(4, 6, 12, 0.85),
+			-1.5px -1.5px 0 rgba(4, 6, 12, 0.85);
+	}
+	.plate.hasart .motto {
+		color: #ffffff;
 	}
 
 	.bgart {

@@ -135,6 +135,12 @@ func SyncMaps(app core.App, cfg lansync.Config, isoID, treeDir string) {
 		rec.Set("filename", mi.Filename)
 		rec.Set("name", mi.Name)
 		rec.Set("map_type", mi.Type)
+		// Content hash keys the canonical catalog: (game, filename, hash) is a
+		// unique BUILD there, so byte-identical caches across discs collapse
+		// while a renamed-in-place retune surfaces as its own entry.
+		if h, err := lansync.HashFile(filepath.Join(treeDir, "maps", mi.Filename)); err == nil {
+			rec.Set("content_hash", h)
+		}
 		// Only multiplayer maps get a top-down render (campaign/ui aren't
 		// pick-a-map surfaces); mark them pending so the UI shows a spinner.
 		if mi.Type == "multiplayer" && tc.Enabled {
@@ -147,6 +153,11 @@ func SyncMaps(app core.App, cfg lansync.Config, isoID, treeDir string) {
 			log.Printf("isoingest: save map row %s/%s: %v", isoID, mi.Filename, err)
 		}
 	}
+	// Mint canonical catalog rows for any build (game, filename, hash) this
+	// disc introduced. Create-only — organizer curation on existing rows is
+	// never touched.
+	SyncCatalog(app, isoID)
+
 	if len(thumbable) == 0 {
 		return
 	}
@@ -270,6 +281,7 @@ func mapView(r *core.Record) map[string]any {
 		"filename":     r.GetString("filename"),
 		"name":         r.GetString("name"),
 		"map_type":     r.GetString("map_type"),
+		"content_hash": r.GetString("content_hash"),
 		"thumb_url":    thumbURL,
 		"thumb_status": r.GetString("thumb_status"),
 	}

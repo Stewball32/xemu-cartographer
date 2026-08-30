@@ -79,7 +79,11 @@ func (s *Set) Str(name string) (string, error) {
 // Len reports how many named values the set carries.
 func (s *Set) Len() int { return len(s.addrs) + len(s.strings) }
 
-var registry = map[string]*Set{} // key: id (ids are globally unique)
+var (
+	registry    = map[string]*Set{}   // key: id (ids are globally unique)
+	rawRegistry = map[string][]byte{} // embedded file bytes, for re-export
+	rawNames    = map[string]string{} // embedded source filename per id
+)
 
 func init() {
 	entries, err := setsFS.ReadDir("sets")
@@ -102,7 +106,17 @@ func init() {
 			panic(fmt.Sprintf("offsets: duplicate set id %q", s.ID))
 		}
 		registry[s.ID] = s
+		rawRegistry[s.ID] = raw
+		rawNames[s.ID] = e.Name()
 	}
+}
+
+// Raw returns an embedded set's original file bytes + source filename (for the
+// download endpoint — byte-identical to what shipped). ok=false for ids that
+// aren't embedded (imported sets serve their stored upload instead).
+func Raw(id string) (raw []byte, sourceName string, ok bool) {
+	raw, ok = rawRegistry[id]
+	return raw, rawNames[id], ok
 }
 
 func parseSet(raw []byte) (*Set, error) {
@@ -155,9 +169,40 @@ func Baseline(game string) *Set {
 	return s
 }
 
+// DynamicSource supplies runtime-imported sets by id (the PB-backed
+// offset_sets collection, wired from main.go). Consulted only when an id
+// isn't in the embedded registry; returning ok=false means "no such set".
+// The raw bytes are parsed + validated exactly like an embedded file.
+type DynamicSource func(id string) (raw []byte, ok bool)
+
+var dynamic DynamicSource
+
+// SetDynamicSource installs the runtime set source. Call once at startup,
+// before any scraper binds (later calls replace the source).
+func SetDynamicSource(fn DynamicSource) { dynamic = fn }
+
+// ParseSet parses one offsetmap JSON export into an immutable Set. Exposed for
+// the import route (server-side re-validation of an upload) and the dynamic
+// source path; embedded files go through the same parser at init.
+func ParseSet(raw []byte) (*Set, error) { return parseSet(raw) }
+
 // Lookup returns the set with the given id, requiring it to belong to `game`.
+// Embedded sets win; unknown ids fall through to the dynamic source.
 func Lookup(game, id string) (*Set, error) {
 	s, ok := registry[id]
+	if !ok && dynamic != nil {
+		if raw, found := dynamic(id); found {
+			parsed, err := parseSet(raw)
+			if err != nil {
+				return nil, fmt.Errorf("offsets: imported set %q: %w", id, err)
+			}
+			// The record's set_id is the identity ("Save as" may have renamed the
+			// import); the stored file stays byte-identical for re-download, so
+			// its internal id can lag — the record wins.
+			parsed.ID = id
+			s, ok = parsed, true
+		}
+	}
 	if !ok {
 		return nil, fmt.Errorf("offsets: unknown set id %q", id)
 	}

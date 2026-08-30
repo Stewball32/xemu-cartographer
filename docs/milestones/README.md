@@ -33,6 +33,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M26  | [HDD copy-on-write overlay provisioning](M26-hdd-overlay-provisioning.md)                    | Done        |
 | M27  | [3D visualizer (live markers + real BSP geometry)](M27-3d-visualizer.md)                     | In progress |
 | M28  | [Broadcast graphics (themed scoreboard + player cards)](M28-broadcast-graphics.md)           | In progress |
+| M29  | [Organizer route redesign (six-page library suite)](M29-organizer-redesign.md)              | In progress |
 
 ## Status values
 
