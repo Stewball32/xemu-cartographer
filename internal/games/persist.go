@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/series"
@@ -36,6 +37,16 @@ type FinishedGame struct {
 	WinnerTeam      *int
 	ScoreSummary    string
 	Players         []PlayerStat
+
+	// GameUID is the scraper-generated idempotency key (opaque here — ULID/
+	// UUIDv7 minted once at capture). Non-empty and already persisted →
+	// PersistFinishedGame is a dedupe no-op. Empty (legacy callers) → no
+	// dedupe, every call writes a new row.
+	GameUID string
+	// EndReason carries the scraper's observed match-exit cause
+	// ("postgame" | "left_match" | "shutdown"); stored verbatim as an open
+	// set — unknown values are the scraper's contract problem, not ours.
+	EndReason string
 }
 
 // Result reports what PersistFinishedGame created + the downstream chain
@@ -45,6 +56,10 @@ type Result struct {
 	GameID         string
 	PlayerRowCount int
 	CreatedSeries  bool
+
+	// Deduped means a games row with this GameUID already existed, nothing
+	// was written, and SeriesID/GameID point at the existing row.
+	Deduped bool
 
 	// EventsStamped is how many game_events rows were back-linked to this game
 	// (M13 option-a). SeriesStanding is the series' standing after this game
@@ -64,9 +79,59 @@ type Result struct {
 //
 // The caller (the scraper Live→Ready hook) is best-effort: log + continue on
 // error so a persistence hiccup never stalls the scraper loop. Errors are
-// surfaced (with the game id already in Result) so tests catch regressions and
-// the caller can decide how loud to be.
+// surfaced so tests catch regressions and the caller can decide how loud to be.
+//
+// The whole chain runs in one transaction — a mid-chain failure rolls back
+// everything (no orphan series, no half-applied Elo), so an at-least-once
+// deliverer can safely retry. A non-empty GameUID dedupes redeliveries: an
+// existing games row with that uid makes the call a logged no-op. The cheap
+// pre-check catches replays; the games.game_uid unique index catches the
+// concurrent race (the losing insert's tx fails and rolls back, then finds the
+// winner's committed row).
 func PersistFinishedGame(app core.App, fg FinishedGame) (Result, error) {
+	if r, ok := findByGameUID(app, fg.GameUID); ok {
+		return dedupedResult(app, fg.GameUID, r), nil
+	}
+
+	var res Result
+	err := app.RunInTransaction(func(tx core.App) error {
+		var txErr error
+		res, txErr = persistFinishedGameTx(tx, fg)
+		return txErr
+	})
+	if err != nil {
+		if r, ok := findByGameUID(app, fg.GameUID); ok {
+			return dedupedResult(app, fg.GameUID, r), nil
+		}
+		return Result{}, err
+	}
+	return res, nil
+}
+
+// findByGameUID returns the existing games row for a non-empty uid, if any.
+func findByGameUID(app core.App, uid string) (*core.Record, bool) {
+	if uid == "" {
+		return nil, false
+	}
+	r, err := app.FindFirstRecordByFilter("games", "game_uid = {:uid}", dbx.Params{"uid": uid})
+	if err != nil || r == nil {
+		return nil, false
+	}
+	return r, true
+}
+
+func dedupedResult(app core.App, uid string, existing *core.Record) Result {
+	app.Logger().Info("games.PersistFinishedGame: duplicate game_uid, skipping",
+		"game_uid", uid, "game", existing.Id)
+	return Result{
+		Deduped:  true,
+		GameID:   existing.Id,
+		SeriesID: existing.GetString("series"),
+	}
+}
+
+// persistFinishedGameTx is the six-step chain body, run inside one transaction.
+func persistFinishedGameTx(app core.App, fg FinishedGame) (Result, error) {
 	var res Result
 
 	seriesID := fg.SeriesID
@@ -86,6 +151,8 @@ func PersistFinishedGame(app core.App, fg FinishedGame) (Result, error) {
 	}
 	g := core.NewRecord(gamesCol)
 	g.Set("series", seriesID)
+	g.Set("game_uid", fg.GameUID)
+	g.Set("end_reason", fg.EndReason)
 	g.Set("container", fg.Container)
 	g.Set("host_machine_name", fg.HostMachineName)
 	g.Set("map", fg.Map)
