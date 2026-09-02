@@ -85,7 +85,11 @@ func setScreenRec(ram []byte, curRec, backRec, tagID uint32) {
 // moved these would move the test with it.
 func screenRecReader(t *testing.T, ram []byte) *Reader {
 	t.Helper()
-	off, err := OffsetsFromSet(offsets.Baseline("haloce"))
+	set, err := offsets.Baseline("haloce")
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	off, err := OffsetsFromSet(set)
 	if err != nil {
 		t.Fatalf("bind baseline offsets: %v", err)
 	}

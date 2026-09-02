@@ -11,7 +11,11 @@ import (
 // offset-versioning refactor: every field bound from the halo2 baseline config
 // must equal the previously hardcoded package constant of the same name.
 func TestBaselineOffsetsMatchConstants(t *testing.T) {
-	o, err := OffsetsFromSet(offsets.Baseline("halo2"))
+	s, err := offsets.Baseline("halo2")
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	o, err := OffsetsFromSet(s)
 	if err != nil {
 		t.Fatalf("bind baseline: %v", err)
 	}

@@ -585,8 +585,11 @@ func buildPreviousGamePayload(c *instanceCache) *PreviousGamePayload {
 	}
 	prev := c.PreviousGame
 	p := &PreviousGamePayload{
-		EndedAt: prev.EndedAt,
-		Events:  prev.Events,
+		EndedAt:         prev.EndedAt,
+		Events:          prev.Events,
+		EventsTruncated: prev.EventsTruncated,
+		GameUID:         prev.GameUID,
+		EndReason:       prev.EndReason,
 	}
 	// Build a synthetic GamePayload from the snapshot's GameData. The
 	// previous game doesn't carry a separate snapshot's phase or
