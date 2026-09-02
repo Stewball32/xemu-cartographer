@@ -42,9 +42,9 @@ type HelloInstance struct {
 // Manager's current view of the world. ServerTime is captured at call time
 // so clients can estimate clock skew.
 //
-// Classes lists the envelope types this server emits. Today (v1 wire) that's
-// the four existing envelope types; the v2 rollout broadens this to the
-// per-data-class names (xbox, scenario, game, tick, ...) as they land.
+// Classes is the shared allClasses registry (classes.go) — every envelope
+// class this server emits, the same list the sink reconciliation walks.
+// Copied per call so a payload consumer can't mutate the registry.
 func (m *Manager) BuildHelloPayload() HelloPayload {
 	infos := m.List() // sorted by name
 	instances := make([]HelloInstance, 0, len(infos))
@@ -57,17 +57,8 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 	return HelloPayload{
 		ProtocolVersion: scraper.ProtocolVersion,
 		ServerTime:      time.Now(),
-		Classes: []string{
-			envelopeTypeXbox,
-			envelopeTypeScenario,
-			envelopeTypeGame,
-			envelopeTypeTick,
-			envelopeTypeObjects,
-			envelopeTypeDebug,
-			envelopeTypeSummary,
-			envelopeTypePreviousGame,
-		},
-		Instances: instances,
+		Classes:         append([]string(nil), allClasses...),
+		Instances:       instances,
 	}
 }
 

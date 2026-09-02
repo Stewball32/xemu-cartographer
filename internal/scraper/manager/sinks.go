@@ -41,7 +41,9 @@ func newSinkManager(instance string) *sinkManager {
 }
 
 // applyPolicies reconciles the per-class sink map with the current
-// effective policies. For each class:
+// effective policies, walking the shared allClasses registry (classes.go)
+// so every emitted class — including event / game_filtered /
+// event_filtered — can carry a sink. For each class:
 //
 //   - resolved policy with empty Sink → close + drop any existing sink
 //   - resolved policy with new spec → close existing, open replacement
@@ -116,19 +118,4 @@ func (sm *sinkManager) closeAll() {
 		_ = a.sink.Close()
 	}
 	sm.active = make(map[string]*activeSink)
-}
-
-// allClasses lists every v2 envelope class the runner emits — used by
-// applyPolicies so a row removal (effective DefaultPolicy() with empty
-// Sink) closes the formerly-active sink for that class. Keep in sync
-// with hello.go's broadcast surface.
-var allClasses = []string{
-	"xbox",
-	"scenario",
-	"game",
-	"tick",
-	"objects",
-	"debug",
-	"summary",
-	"previous_game",
 }
