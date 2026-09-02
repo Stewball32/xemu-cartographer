@@ -212,7 +212,7 @@ The **first** message after you connect (sent automatically, before anything els
     "data": {
       "protocol_version": 2,
       "server_time": "2026-06-18T20:01:30Z",  // for estimating clock skew
-      "classes": ["xbox","scenario","game","tick","objects","debug","summary","previous_game"],
+      "classes": ["xbox","scenario","game","game_filtered","tick","objects","debug","summary","previous_game","event","event_filtered"],
       "instances": [
         { "name": "smoke1", "started_at": "2026-06-18T19:55:00Z" },
         { "name": "smoke2", "started_at": "2026-06-18T19:58:12Z" }
@@ -306,6 +306,8 @@ capturing the just-finished match and its complete event log. This is the cleane
 | --- | --- | --- | --- |
 | **`game`** | `host:<n>:game` | change-driven, ≤1 Hz heartbeat | **Yes** — roster, scores, cumulative kills/deaths/assists. |
 | **`event`** | `host:<n>:event` | as they happen (Live) | **Yes** — kills, deaths, medals, score changes, joins/leaves. |
+| `game_filtered` | `host:<n>:game_filtered` | as `game` | Overlays — viewer-safe `game` (same payload shape, dummy/neutral-host players filtered server-side). Stats apps read `game`. |
+| `event_filtered` | `host:<n>:event_filtered` | as they happen (Live) | Overlays — viewer-safe deaths-only event stream (positions structurally absent, dummy attributions scrubbed). |
 | **`previous_game`** | `host:<n>:previous_game` | once per match end | **Yes** — finished-match snapshot + full event log. |
 | **`summary`** | `host:summary` | ≤4 Hz | Optional — one-line status of every instance (admin-only). |
 | **`xbox`** | `host:<n>:xbox` | rare | Optional — console/XBE identity, clock. |
@@ -496,16 +498,47 @@ games.
 ```jsonc
 {
   "ended_at": "2026-06-18T20:05:00Z",
+  "game_uid": "01991f6d3a8e5f0c9b2a7d4e6c1b8a90", // stable per-artifact id — your idempotency key
+  "end_reason": "postgame",  // "postgame" | "left_match" | "shutdown" (open set)
   "game": { /* a full `game` payload — final roster + final scores */ } | null,
   "events": [ /* the complete event log for the match, oldest-first */
     { "v":2, "type":"event", "instance":"smoke1", "tick":..., "ts":"...", "data": { /* event */ } }
     // ...
-  ]
+  ],
+  "events_truncated": false  // true if the log overflowed the server cap (tail dropped)
 }
 ```
 
 Note `events[]` here are **full envelopes** (each with its own `data` holding the event
-payload from §6.2), so you can replay the whole match end-to-end.
+payload from §6.2), so you can replay the whole match end-to-end. The log is **complete and
+oldest-first** — unlike the `request_events` backfill (a rolling window of the newest ~50),
+it holds every event the scraper observed for the match, up to a server cap (currently
+10 000); `events_truncated: true` flags the pathological overflow case where the log's
+**tail** was dropped.
+
+Field notes:
+
+- **`game_uid`** is minted exactly once when the match ends and is stable across join
+  replays and reconnects — **use it as your idempotency key** when persisting, so a
+  re-delivered `previous_game` is a no-op. It deduplicates re-deliveries of *this
+  instance's* artifact only: on a system-link LAN, each scraping box emits its **own**
+  artifact (with its own `game_uid`) for the same match, so cross-box dedupe is your
+  side's job (e.g. by (map, gametype, `ended_at`±ε)).
+- **`end_reason`** is how the match ended, as this scraper observed it: `postgame` — the
+  post-game carnage report was seen (a normal finish); `left_match` — the instance left
+  the match without the scraper seeing a post-game screen (e.g. host quit to the menu);
+  `shutdown` — the scraper/server shut down mid-match. Treat it as an open set and
+  tolerate unknown values. Only `postgame` is a completed match: a `left_match` artifact
+  carries whatever roster/scores were last read, so gate rating updates on `end_reason`
+  if you only want finished games. A `shutdown` artifact is persisted server-side but
+  **never broadcast** — the runner exits before its next snapshot. The only way one
+  reaches a client is join-replay (`join_room` / `request_state`) from a runner that
+  panicked mid-match and is still registered; treat it like `left_match`.
+- **A match is recorded only if the scraper is still attached when it ends.** If the
+  emulator crashes (or the instance disappears) mid-game, no `previous_game` is emitted
+  for that match at all — there is no crash artifact.
+- Servers older than these fields omit `game_uid` / `end_reason` / `events_truncated`
+  (and cap `events` differently) — treat all three as optional.
 
 ### 6.4 `summary` — cross-instance dashboard (admin-only)
 
@@ -667,8 +700,8 @@ ws.onclose = () => {
 **Send:** `join_room` · `leave_room` · `request_state` · `request_events {since_tick?, types?}`.
 
 **Receive:** `{type:"scraper", room, payload:{ v, type, instance, seq, tick, ts, data }}` —
-switch on `payload.type`: `hello` · `game` · `event` · `previous_game` · `summary` · `xbox` ·
-`scenario` · `tick` · `objects` · `debug` · `events`.
+switch on `payload.type`: `hello` · `game` · `game_filtered` · `event` · `event_filtered` ·
+`previous_game` · `summary` · `xbox` · `scenario` · `tick` · `objects` · `debug` · `events`.
 
 **Event types** (`data.event_type` on the `event` class): `death` · `damage` · `medal` ·
 `player_update` · `game_update`.

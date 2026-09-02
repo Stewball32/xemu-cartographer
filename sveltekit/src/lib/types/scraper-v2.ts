@@ -662,7 +662,23 @@ export interface HostSummaryV2 {
 export interface PreviousGamePayload {
 	ended_at: string;
 	game: GamePayload | null;
+	/** Complete per-match event log, oldest-first (full 'event' envelopes),
+	 * capped server-side at 10 000. Older servers sent a newest-first
+	 * window of ≤50 instead. */
 	events: EnvelopeV2[];
+	/** true when the per-match log overflowed the server cap and the tail
+	 * was dropped. Absent on older servers. */
+	events_truncated?: boolean;
+	/** Stable per-artifact id, minted once at match end — identical across
+	 * join replays/reconnects, so it's the consumer idempotency key for
+	 * persisting finished games. Absent on older servers. */
+	game_uid?: string;
+	/** How the match ended as this scraper observed it — 'postgame' |
+	 * 'left_match' | 'shutdown'. Open set: tolerate unknown values. Only
+	 * 'postgame' is a completed match; 'shutdown' is persisted server-side but
+	 * never broadcast (only a join-replay from a runner that panicked
+	 * mid-match can carry one). Absent on older servers. */
+	end_reason?: string;
 }
 
 // =============================================================================

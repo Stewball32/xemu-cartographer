@@ -1,6 +1,6 @@
 # Status
 
-> **Last updated:** 2026-08-30 (everything below SHIPPED to `main` + prod). Prior: 2026-07-02 live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below.
+> **Last updated:** 2026-08-31 (M31 pre-freeze hardening added to Now; the 2026-08-29/30 four-branch release below is SHIPPED to `main` + prod). Prior: 2026-07-02 live CE+H2 offset verification on the 3way-systemlink rig — see **Live offset verification** below.
 
 The single-pane view of where this project is right now. Update whenever "Now" changes.
 
@@ -100,6 +100,7 @@ Milestones, not dates. Generally each blocks the next, though M03 was ported ear
 
 ## Now
 
+- [ ] [M31 — xc-scraper pre-freeze hardening](milestones/M31-xc-scraper-prefreeze-hardening.md) — **in progress** (`feat/xc-prefreeze-hardening`, 2026-08-31). The 8-item pre-freeze fix list ahead of extracting the scraper to `xc-scraper`: complete oldest-first `previous_game` event log (+`events_truncated`), unified 11-class registry for hello/sinks, per-sender resync (anonymous cross-replay fixed), `game_uid` + `end_reason` on the finished-game artifact + bounded shutdown flush, `offsets.RegisterBaseline` + panic-free resolve, QMP dial/command deadlines, transactional idempotent `PersistFinishedGame` on a `games.game_uid` unique index. All landed with regression tests; remaining: the live end-to-end match pass + DESIGN item 9 (`--sock` retry / dup basenames). Design: the local `xemu-cartographer-split/scraper-repo-design/` workspace.
 - [ ] [M09 — Match-aware kiosk view](milestones/M09-match-aware-kiosk.md) — **in progress** (`wip/milestone-9`). 9a/9b/9c implemented end-to-end (membership lookup + `/api/me/match` + `/play/` page + WS & kiosk/VNC proxy roster-narrowing); all CI checks green. Remaining: the live 4-container smoke test (podman-gated, can't run in CI).
 - [ ] [M10 — Overlay revamp + new browser sources](milestones/M10-overlay-revamp.md) — **in progress** (`wip/milestone-10`; overlay-token auth on `wip/m10-overlay-auth`). Data foundation (10d filter + schema) + the **overlay/spectator auth layer** (read-only revocable tokens + two-door WS handshake + `overlay_manager` role + mint/revoke API + minimal UI) landed. The first **render surfaces** (scoreboard + status strip) landed under M25; remaining render surfaces (10a POV routing / 10c events / 10e POV pass) deferred — need live data + OBS.
 - [ ] [M25 — OBS spectator overlays](milestones/M25-obs-overlays.md) — **in progress** (`wip/obs-spectator-overlays`). Scoreboard/roster (`/overlays/[instance]/`) + match-status strip (`/overlays/[instance]/status/`) render pages on the shipped M10 overlay-token contract, with `?mock=1` sample mode; mint page emits both URLs. Pure builders unit-tested; check/lint/test/build + headless mock render green. Remaining: live match pass (K/D/A + team-score correctness) + wiring the M10d dummy filter into the broadcast.
