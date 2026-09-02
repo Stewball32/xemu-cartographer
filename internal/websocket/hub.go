@@ -210,6 +210,9 @@ func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 			}
 			h.mu.Unlock()
 		},
+		Rooms: func() []string {
+			return h.clientRooms(im.sender)
+		},
 	}
 }
 
@@ -316,6 +319,22 @@ func (h *Hub) RoomHasMembers(room string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.rooms[room]) > 0
+}
+
+// clientRooms returns the rooms one specific connection is currently in.
+// This is the per-SENDER view the handler Event's Rooms capability exposes;
+// unlike UserRooms it never conflates two connections sharing a UserID
+// (anonymous clients all carry "", and one user can have several tabs).
+func (h *Hub) clientRooms(c *Client) []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var result []string
+	for room, members := range h.rooms {
+		if members[c] {
+			result = append(result, room)
+		}
+	}
+	return result
 }
 
 // UserRooms returns the rooms a user is currently in.

@@ -34,7 +34,7 @@ type requestProbePayload struct {
 // Auth: free for any connected client; membership is the access gate
 // (host:<name> rooms RequireAuth at join_room time).
 func handleRequestProbe(e *Event) {
-	if e.Services == nil || e.Services.Scraper == nil || e.Services.WS == nil {
+	if e.Services == nil || e.Services.Scraper == nil {
 		return
 	}
 
@@ -53,11 +53,14 @@ func handleRequestProbe(e *Event) {
 		return
 	}
 
-	// Fallback: scan room membership when no explicit instance was
-	// supplied. Mirrors request_events' room-walk pattern, dedup'd by
-	// instance name.
+	// Fallback: scan the sender's own room memberships when no explicit
+	// instance was supplied. Mirrors request_events' room-walk pattern,
+	// dedup'd by instance name.
 	seenInstance := map[string]bool{}
-	for _, room := range e.Services.WS.UserRooms(e.UserID) {
+	if e.Rooms == nil {
+		return
+	}
+	for _, room := range e.Rooms() {
 		if room == rooms.HostAllRoom || room == rooms.SummaryRoom {
 			continue
 		}
