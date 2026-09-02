@@ -5,27 +5,62 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// Every QMP exchange is bounded by a deadline: a wedged xemu (guest hung with
+// the monitor unresponsive, or a socket that accepts but never speaks QMP)
+// must surface as an error, not hang the caller — RefreshLowHVA runs on the
+// Idle poll path, so an unbounded read there wedges the whole runner.
+const (
+	defaultQMPDialTimeout = 3 * time.Second
+	defaultQMPCmdTimeout  = 5 * time.Second
+)
+
+// qmpTimeouts bounds a client's dial and per-command exchanges. Zero fields
+// mean the package defaults; Instance exposes them for override.
+type qmpTimeouts struct {
+	dial time.Duration
+	cmd  time.Duration
+}
+
+func (t qmpTimeouts) withDefaults() qmpTimeouts {
+	if t.dial <= 0 {
+		t.dial = defaultQMPDialTimeout
+	}
+	if t.cmd <= 0 {
+		t.cmd = defaultQMPCmdTimeout
+	}
+	return t
+}
 
 // qmpClient holds an open, handshaked QMP connection.
 type qmpClient struct {
-	conn    net.Conn
-	scanner *bufio.Scanner
+	conn       net.Conn
+	scanner    *bufio.Scanner
+	cmdTimeout time.Duration
 }
 
-func newQMPClient(sockPath string) (*qmpClient, error) {
-	conn, err := net.Dial("unix", sockPath)
+func newQMPClient(sockPath string, timeouts qmpTimeouts) (*qmpClient, error) {
+	timeouts = timeouts.withDefaults()
+	conn, err := net.DialTimeout("unix", sockPath, timeouts.dial)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", sockPath, err)
 	}
-	c := &qmpClient{conn: conn, scanner: bufio.NewScanner(conn)}
+	c := &qmpClient{conn: conn, scanner: bufio.NewScanner(conn), cmdTimeout: timeouts.cmd}
+	// The whole greeting + capabilities handshake shares one command deadline.
+	if err := conn.SetDeadline(time.Now().Add(timeouts.cmd)); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("set handshake deadline for %s: %w", sockPath, err)
+	}
 	// Read greeting banner.
 	if !c.scanner.Scan() {
 		_ = conn.Close()
-		return nil, fmt.Errorf("no QMP banner from %s", sockPath)
+		return nil, fmt.Errorf("no QMP banner from %s: %w", sockPath, scanErr(c.scanner))
 	}
 	// Negotiate capabilities (required before any command).
 	if _, err := fmt.Fprintln(conn, `{"execute":"qmp_capabilities"}`); err != nil {
@@ -34,21 +69,44 @@ func newQMPClient(sockPath string) (*qmpClient, error) {
 	}
 	if !c.scanner.Scan() {
 		_ = conn.Close()
-		return nil, fmt.Errorf("no capabilities response from %s", sockPath)
+		return nil, fmt.Errorf("no capabilities response from %s: %w", sockPath, scanErr(c.scanner))
 	}
+	_ = conn.SetDeadline(time.Time{})
 	return c, nil
 }
 
 func (c *qmpClient) close() { _ = c.conn.Close() }
 
+// scanErr reports why a Scan stopped: the scanner's error (deadline exceeded,
+// closed conn), or io.EOF for the clean-close case Scanner reports as nil.
+func scanErr(s *bufio.Scanner) error {
+	if err := s.Err(); err != nil {
+		return err
+	}
+	return io.EOF
+}
+
 // hmp sends a Human Monitor Protocol command and returns the trimmed return string.
 func (c *qmpClient) hmp(cmd string) (string, error) {
+	return c.hmpTimeout(cmd, c.cmdTimeout)
+}
+
+// hmpTimeout is hmp with an explicit exchange bound, for commands with a known
+// longer legitimate runtime (e.g. sendkey with a hold duration). A deadline
+// timeout leaves the connection's read stream desynchronized, so the client
+// must be discarded after one — every caller opens a fresh client per
+// operation, which makes that safe.
+func (c *qmpClient) hmpTimeout(cmd string, timeout time.Duration) (string, error) {
+	if err := c.conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return "", fmt.Errorf("set deadline for %q: %w", cmd, err)
+	}
+	defer func() { _ = c.conn.SetDeadline(time.Time{}) }()
 	req := fmt.Sprintf(`{"execute":"human-monitor-command","arguments":{"command-line":%q}}`, cmd)
 	if _, err := fmt.Fprintln(c.conn, req); err != nil {
 		return "", fmt.Errorf("send %q: %w", cmd, err)
 	}
 	if !c.scanner.Scan() {
-		return "", fmt.Errorf("no response for %q", cmd)
+		return "", fmt.Errorf("no response for %q: %w", cmd, scanErr(c.scanner))
 	}
 	var resp struct{ Return string }
 	if err := json.Unmarshal(c.scanner.Bytes(), &resp); err != nil {
@@ -61,8 +119,15 @@ func (c *qmpClient) hmp(cmd string) (string, error) {
 // the result to an error. HMP `sendkey` returns an empty string on success;
 // any non-empty return (e.g. "unknown key: 'foo'") is surfaced as an error so
 // callers don't silently believe a rejected keypress landed.
-func (c *qmpClient) sendKeyRaw(cmd string) error {
-	ret, err := c.hmp(cmd)
+//
+// hold widens the exchange deadline: QEMU answers `sendkey` immediately
+// (release is timer-scheduled), but if that ever changes a long hold must not
+// be misread as a wedged monitor.
+func (c *qmpClient) sendKeyRaw(cmd string, hold time.Duration) error {
+	if hold < 0 {
+		hold = 0
+	}
+	ret, err := c.hmpTimeout(cmd, c.cmdTimeout+hold)
 	if err != nil {
 		return err
 	}

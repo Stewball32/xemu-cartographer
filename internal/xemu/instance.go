@@ -20,9 +20,19 @@ type Instance struct {
 	PID     int
 	Mem     *Mem
 
+	// QMPDialTimeout / QMPCommandTimeout bound each QMP dial and each
+	// command exchange so a wedged xemu errors out instead of hanging the
+	// caller. Zero means the package defaults (3s dial, 5s per command).
+	QMPDialTimeout    time.Duration
+	QMPCommandTimeout time.Duration
+
 	// lowHVAs caches host VAs for low guest VAs (< 0x80000000), translated
 	// once at startup via gva2gpa + gpa2hva.
 	lowHVAs map[uint32]int64
+}
+
+func (inst *Instance) qmpTimeouts() qmpTimeouts {
+	return qmpTimeouts{dial: inst.QMPDialTimeout, cmd: inst.QMPCommandTimeout}
 }
 
 // Init finds the xemu PID, connects to QMP, translates all provided low guest
@@ -33,7 +43,7 @@ func (inst *Instance) Init(lowGVAs []uint32) error {
 		return fmt.Errorf("%s: find PID: %w", inst.Name, err)
 	}
 
-	qmp, err := newQMPClient(inst.QMPSock)
+	qmp, err := newQMPClient(inst.QMPSock, inst.qmpTimeouts())
 	if err != nil {
 		return fmt.Errorf("%s: QMP: %w", inst.Name, err)
 	}
@@ -158,7 +168,7 @@ func (inst *Instance) LowHVA(gva uint32) (int64, error) {
 // Costs one QMP round-trip (open socket + qmp_capabilities + gva2gpa +
 // gpa2hva). Cheap enough for the Idle phase's 3s title-ID poll cadence.
 func (inst *Instance) RefreshLowHVA(gva uint32) (int64, error) {
-	qmp, err := newQMPClient(inst.QMPSock)
+	qmp, err := newQMPClient(inst.QMPSock, inst.qmpTimeouts())
 	if err != nil {
 		return 0, fmt.Errorf("%s: refresh QMP: %w", inst.Name, err)
 	}

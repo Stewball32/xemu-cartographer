@@ -150,12 +150,12 @@ func (inst *Instance) SendChordHold(hold time.Duration, keys ...string) error {
 	if err != nil {
 		return fmt.Errorf("%s: sendkey: %w", inst.Name, err)
 	}
-	qmp, err := newQMPClient(inst.QMPSock)
+	qmp, err := newQMPClient(inst.QMPSock, inst.qmpTimeouts())
 	if err != nil {
 		return fmt.Errorf("%s: sendkey QMP: %w", inst.Name, err)
 	}
 	defer qmp.close()
-	if err := qmp.sendKeyRaw(buildSendKeyCmd(chord, holdToMs(hold))); err != nil {
+	if err := qmp.sendKeyRaw(buildSendKeyCmd(chord, holdToMs(hold)), hold); err != nil {
 		return fmt.Errorf("%s: %w", inst.Name, err)
 	}
 	return nil
