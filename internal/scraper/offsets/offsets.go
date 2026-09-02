@@ -12,7 +12,8 @@
 // previously hardcoded constants; a build rides its game's baseline unless the
 // catalog row is explicitly pointed at another set (isos.offset_set). Assigning
 // a build to an existing set is pure data; authoring a NEW set is a new file in
-// sets/ + deploy.
+// sets/ + deploy. Out-of-tree game plugins supply their baseline from init()
+// via RegisterBaseline — same JSON format, same parser.
 //
 // Consumers: scraper.Detect resolves the set for the instance and hands it to
 // the game plugin's factory, which binds it into a typed per-game struct
@@ -81,8 +82,9 @@ func (s *Set) Len() int { return len(s.addrs) + len(s.strings) }
 
 var (
 	registry    = map[string]*Set{}   // key: id (ids are globally unique)
-	rawRegistry = map[string][]byte{} // embedded file bytes, for re-export
-	rawNames    = map[string]string{} // embedded source filename per id
+	rawRegistry = map[string][]byte{} // embedded/registered file bytes, for re-export
+	rawNames    = map[string]string{} // source filename per id
+	baselineIDs = map[string]string{} // game key → RegisterBaseline'd set id
 )
 
 func init() {
@@ -111,9 +113,10 @@ func init() {
 	}
 }
 
-// Raw returns an embedded set's original file bytes + source filename (for the
-// download endpoint — byte-identical to what shipped). ok=false for ids that
-// aren't embedded (imported sets serve their stored upload instead).
+// Raw returns a compiled-in set's original file bytes + source filename (for
+// the download endpoint — byte-identical to what shipped, whether embedded in
+// this package or registered by a plugin). ok=false for ids that aren't
+// compiled in (imported sets serve their stored upload instead).
 func Raw(id string) (raw []byte, sourceName string, ok bool) {
 	raw, ok = rawRegistry[id]
 	return raw, rawNames[id], ok
@@ -148,8 +151,13 @@ func parseSet(raw []byte) (*Set, error) {
 	return s, nil
 }
 
-// BaselineID is the conventional baseline set id for a game key.
+// BaselineID is the baseline set id for a game key: a RegisterBaseline'd id
+// when the game's plugin supplied one, else the conventional "<game>-baseline"
+// (with the legacy short ids for the embedded games).
 func BaselineID(game string) string {
+	if id, ok := baselineIDs[game]; ok {
+		return id
+	}
 	switch game {
 	case "haloce":
 		return "ce-baseline"
@@ -159,14 +167,41 @@ func BaselineID(game string) string {
 	return game + "-baseline"
 }
 
-// Baseline returns the baseline set for a game key. Panics if absent — every
-// registered game ships a baseline (enforced by tests).
-func Baseline(game string) *Set {
+// Baseline returns the baseline set for a game key, erroring when the game has
+// none — callers degrade (a runner stays idle) rather than die.
+func Baseline(game string) (*Set, error) {
 	s, ok := registry[BaselineID(game)]
 	if !ok || s.Game != game {
-		panic(fmt.Sprintf("offsets: no baseline set for game %q", game))
+		return nil, fmt.Errorf("offsets: no baseline set for game %q", game)
 	}
-	return s
+	return s, nil
+}
+
+// RegisterBaseline registers a game's baseline set from raw offsetmap JSON.
+// Out-of-tree game plugins call this from init(), before any scraper binds:
+// the registry maps are unsynchronised, so mutate them only during package
+// initialisation (same rule as SetDynamicSource). Embedded sets already cover
+// the in-tree games. The set's game must match the given key, its id must be
+// globally unique, and a game gets exactly one baseline.
+func RegisterBaseline(game string, raw []byte) error {
+	s, err := parseSet(raw)
+	if err != nil {
+		return fmt.Errorf("offsets: register baseline for %q: %w", game, err)
+	}
+	if s.Game != game {
+		return fmt.Errorf("offsets: register baseline for %q: set %q belongs to game %q", game, s.ID, s.Game)
+	}
+	if _, dup := registry[s.ID]; dup {
+		return fmt.Errorf("offsets: register baseline for %q: duplicate set id %q", game, s.ID)
+	}
+	if b, err := Baseline(game); err == nil {
+		return fmt.Errorf("offsets: game %q already has baseline %q", game, b.ID)
+	}
+	registry[s.ID] = s
+	rawRegistry[s.ID] = raw
+	rawNames[s.ID] = s.ID + ".json"
+	baselineIDs[game] = s.ID
+	return nil
 }
 
 // DynamicSource supplies runtime-imported sets by id (the PB-backed
@@ -214,15 +249,20 @@ func Lookup(game, id string) (*Set, error) {
 
 // Resolve picks the set an instance should run: the explicit id when given and
 // valid for the game, else the game's baseline. An invalid explicit id degrades
-// to the baseline with a non-nil warning (fail-soft — a bad data assignment
-// must not stop a vanilla box from booting).
+// to the baseline with a non-nil set AND a non-nil warning (fail-soft — a bad
+// data assignment must not stop a vanilla box from booting). A nil set means
+// the game has no baseline to fall back on; the error is then fatal.
 func Resolve(game, explicitID string) (s *Set, warn error) {
 	if explicitID == "" {
-		return Baseline(game), nil
+		return Baseline(game)
 	}
 	s, err := Lookup(game, explicitID)
 	if err != nil {
-		return Baseline(game), fmt.Errorf("falling back to %s: %w", BaselineID(game), err)
+		base, baseErr := Baseline(game)
+		if baseErr != nil {
+			return nil, fmt.Errorf("%v; %w", err, baseErr)
+		}
+		return base, fmt.Errorf("falling back to %s: %w", BaselineID(game), err)
 	}
 	return s, nil
 }

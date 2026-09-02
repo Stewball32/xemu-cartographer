@@ -11,7 +11,11 @@ import (
 // offset-versioning refactor: every field bound from the haloce baseline config
 // must equal the previously hardcoded package constant of the same name.
 func TestBaselineOffsetsMatchConstants(t *testing.T) {
-	o, err := OffsetsFromSet(offsets.Baseline("haloce"))
+	s, err := offsets.Baseline("haloce")
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	o, err := OffsetsFromSet(s)
 	if err != nil {
 		t.Fatalf("bind baseline: %v", err)
 	}
