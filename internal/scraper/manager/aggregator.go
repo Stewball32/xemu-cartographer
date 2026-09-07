@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/xemu-cartographer/xc-scraper/scraper"
-	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // hostSummary (one entry in the summary aggregate cache) is declared in
@@ -134,11 +133,12 @@ func (a *aggregator) broadcast() {
 	a.emitter.Emit("", envelopeTypeSummary, envBytes)
 }
 
-// joinReplay returns one wire.Message-framed summary envelope representing
-// the current hostsCache, for replay to clients that just joined
-// host:summary. Same envelope as the broadcast() output, framed for the
-// reply path (part 3c retires the framing).
-func (a *aggregator) joinReplay() [][]byte {
+// joinReplay returns the one summary envelope representing the current
+// hostsCache, for replay to clients that just joined host:summary. Same
+// envelope bytes as the broadcast() output; the league adapter frames it
+// for the summary room (Reply.Instance is "" — the summary class is
+// cross-instance).
+func (a *aggregator) joinReplay() []Reply {
 	if a == nil {
 		return nil
 	}
@@ -146,11 +146,7 @@ func (a *aggregator) joinReplay() [][]byte {
 	if !ok {
 		return nil
 	}
-	msgBytes, ok := wrapRoomMessage("summary", wire.SummaryRoom, envBytes)
-	if !ok {
-		return nil
-	}
-	return [][]byte{msgBytes}
+	return []Reply{{Instance: "", Class: envelopeTypeSummary, Envelope: envBytes}}
 }
 
 // marshalEnvelope is the shared host:summary envelope builder. Returns

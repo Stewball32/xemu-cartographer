@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
@@ -94,9 +93,9 @@ func TestEventsReplyUnknownInstance(t *testing.T) {
 	m := New(Options{})
 	defer m.Close()
 
-	bytes, ok := m.EventsReply("nope", 0, nil)
-	if ok {
-		t.Fatalf("EventsReply(unknown): want ok=false, got bytes=%q", string(bytes))
+	rep, ok := m.EventsReply("nope", 0, nil)
+	if ok || rep.Envelope != nil {
+		t.Fatalf("EventsReply(unknown): want ok=false, got bytes=%q", string(rep.Envelope))
 	}
 }
 
@@ -115,12 +114,12 @@ func TestEventsReplyIdleReturnsEmpty(t *testing.T) {
 	r.cache.Events = []scraper.Envelope{makeEvent(2, scraper.EventTypeDeath)}
 	m.runners["alpha"] = r
 
-	bytes, ok := m.EventsReply("alpha", 0, nil)
+	rep, ok := m.EventsReply("alpha", 0, nil)
 	if !ok {
 		t.Fatal("EventsReply: ok=false")
 	}
 
-	payload := decodeEventsReply(t, bytes)
+	payload := decodeEventsReply(t, rep)
 	if payload.Phase != PhaseIdle {
 		t.Fatalf("payload.phase = %q, want %q", payload.Phase, PhaseIdle)
 	}
@@ -148,20 +147,18 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	}
 	m.runners["alpha"] = r
 
-	bytes, ok := m.EventsReply("alpha", 5, []string{scraper.EventTypeDeath})
+	rep, ok := m.EventsReply("alpha", 5, []string{scraper.EventTypeDeath})
 	if !ok {
 		t.Fatal("EventsReply: ok=false")
 	}
 
-	var msg websocket.Message
-	if err := json.Unmarshal(bytes, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
-	}
-	if msg.Room != "host:alpha" {
-		t.Fatalf("msg.room = %q, want %q", msg.Room, "host:alpha")
+	// The routing keys the league adapter turns into the legacy host:alpha
+	// room (asserted in internal/leaguescraper wireadapter_test.go).
+	if rep.Instance != "alpha" || rep.Class != envelopeTypeEvents {
+		t.Fatalf("reply keys = (%q, %q), want (alpha, %q)", rep.Instance, rep.Class, envelopeTypeEvents)
 	}
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(rep.Envelope, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.Type != envelopeTypeEvents {
@@ -192,20 +189,27 @@ func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
 	}
 }
 
-// decodeEventsReply unwraps the websocket.Message + scraper.Envelope wrapper
-// and returns the EventsResponsePayload.
-func decodeEventsReply(t *testing.T, data []byte) EventsResponsePayload {
+// decodeEventsReply checks the Reply's routing keys, unwraps the bare
+// scraper.Envelope and returns the EventsResponsePayload. (The wire.Message
+// frame is the league adapter's — see internal/leaguescraper
+// wireadapter_test.go.)
+func decodeEventsReply(t *testing.T, rep Reply) EventsResponsePayload {
 	t.Helper()
-	var msg websocket.Message
-	if err := json.Unmarshal(data, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
+	if rep.Class != envelopeTypeEvents {
+		t.Fatalf("reply.class = %q, want %q", rep.Class, envelopeTypeEvents)
+	}
+	if rep.Instance != "alpha" {
+		t.Fatalf("reply.instance = %q, want %q", rep.Instance, "alpha")
 	}
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(rep.Envelope, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.Type != envelopeTypeEvents {
 		t.Fatalf("envelope.type = %q, want %q", env.Type, envelopeTypeEvents)
+	}
+	if env.Instance != "alpha" {
+		t.Fatalf("envelope.instance = %q, want %q", env.Instance, "alpha")
 	}
 	var p EventsResponsePayload
 	if err := json.Unmarshal(env.Data, &p); err != nil {

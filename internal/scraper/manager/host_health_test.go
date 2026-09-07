@@ -104,13 +104,13 @@ func TestGameEnvelopeCarriesHostHealth(t *testing.T) {
 	var gameMsg []byte
 	for _, m := range msgs {
 		if m.Class == "game" {
-			gameMsg = m.Bytes
+			gameMsg = m.Envelope
 		}
 	}
 	if gameMsg == nil {
 		t.Fatal("no game-class envelope emitted")
 	}
-	_, env := decodeClassEnvelope(t, gameMsg)
+	env := decodeEnvelope(t, gameMsg)
 
 	var payload struct {
 		HostHealth struct {

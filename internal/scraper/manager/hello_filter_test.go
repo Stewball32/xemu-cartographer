@@ -1,12 +1,9 @@
 package manager
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
@@ -19,13 +16,13 @@ func helloNames(p HelloPayload) []string {
 	return out
 }
 
-// TestHelloPayloadForFiltersByPrincipal is the W-1 hello narrowing: users,
-// superusers and machine keys are told about every live instance; a
-// spectator / device key or the console door sees only the instance it is
-// bound to, and nothing when that instance is not live or the binding is
-// missing. The instance list is always a JSON array, never null, and the
-// protocol fields are not identity-dependent.
-func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
+// TestHelloPayloadFilteredKeepsSubset is the mechanics behind the W-1 hello
+// narrowing (the principal → keep mapping itself is the league adapter's,
+// tested in internal/leaguescraper wireadapter_test.go): keep receives the
+// full name-sorted list, only the names it returns survive, unknown names it
+// returns are ignored, the instance list is always a JSON array (never
+// null), and the protocol fields are not identity-dependent.
+func TestHelloPayloadFilteredKeepsSubset(t *testing.T) {
 	m := New(Options{})
 	defer m.Close()
 
@@ -37,35 +34,34 @@ func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 		m.runners[name] = r
 	}
 
-	bound := func(kind authz.Kind, instance string) authz.Principal {
-		p := authz.Principal{Kind: kind, ID: string(kind) + "-1", Scopes: authz.CanonScopes([]string{"room.join:*"})}
-		if instance != "" {
-			p.Bound = map[string]string{"instance": instance}
-		}
-		return p
-	}
-
 	tests := []struct {
 		name string
-		p    authz.Principal
+		keep func(names []string) []string
 		want []string
 	}{
-		{"pb_user", authz.Principal{Kind: authz.KindPBUser, ID: "u1", UserID: "u1"}, []string{"pod-a", "pod-b"}},
-		{"superuser", authz.Superuser("su"), []string{"pod-a", "pod-b"}},
-		{"machine", authz.Principal{Kind: authz.KindMachine, ID: "k1"}, []string{"pod-a", "pod-b"}},
-		{"spectator bound to live instance", bound(authz.KindSpectator, "pod-b"), []string{"pod-b"}},
-		{"device bound to live instance", bound(authz.KindDevice, "pod-a"), []string{"pod-a"}},
-		{"anonymous console door bound", authz.Anonymous("pod-a", nil), []string{"pod-a"}},
-		{"spectator bound to an instance that is not live", bound(authz.KindSpectator, "pod-z"), []string{}},
-		{"device without a binding", bound(authz.KindDevice, ""), []string{}},
-		{"nobody", authz.Nobody(), []string{}},
-		{"discord", authz.Principal{Kind: authz.KindDiscord, ID: "d1"}, []string{}},
+		{"nil keep is unfiltered", nil, []string{"pod-a", "pod-b"}},
+		{"identity", func(n []string) []string { return n }, []string{"pod-a", "pod-b"}},
+		{"one of two", func([]string) []string { return []string{"pod-b"} }, []string{"pod-b"}},
+		{"unknown name ignored", func([]string) []string { return []string{"pod-z"} }, []string{}},
+		{"none", func([]string) []string { return nil }, []string{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p := m.HelloPayloadFor(tc.p)
+			var seen []string
+			keep := tc.keep
+			if keep != nil {
+				inner := keep
+				keep = func(names []string) []string {
+					seen = append([]string(nil), names...)
+					return inner(names)
+				}
+			}
+			p := m.HelloPayloadFiltered(keep)
 			if p.Instances == nil {
 				t.Fatal("instances = nil, want a non-nil slice so JSON marshals as []")
+			}
+			if keep != nil && (len(seen) != 2 || seen[0] != "pod-a" || seen[1] != "pod-b") {
+				t.Fatalf("keep saw %v, want the full sorted list [pod-a pod-b]", seen)
 			}
 			got := helloNames(p)
 			if len(got) != len(tc.want) {
@@ -85,45 +81,5 @@ func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 				t.Fatalf("protocol fields changed by the filter: version %d classes %v", p.ProtocolVersion, p.Classes)
 			}
 		})
-	}
-}
-
-// TestSendHelloOnUsesFilteredPayload: the bytes SendHelloOn enqueues carry
-// the narrowed instance list — a bound key never learns the names of the
-// other live instances from the handshake.
-func TestSendHelloOnUsesFilteredPayload(t *testing.T) {
-	m := New(Options{})
-	defer m.Close()
-
-	for _, name := range []string{"pod-a", "pod-b"} {
-		r := newRunner(name, "/tmp/"+name, "host:"+name, nil, nil, nil)
-		defer r.cancel()
-		m.runners[name] = r
-	}
-
-	var got []byte
-	m.SendHelloOn(func(data []byte) { got = data }, authz.Principal{
-		Kind:  authz.KindSpectator,
-		ID:    "s1",
-		Bound: map[string]string{"instance": "pod-b"},
-	})
-	if len(got) == 0 {
-		t.Fatal("SendHelloOn: send received empty bytes")
-	}
-
-	var msg websocket.Message
-	if err := json.Unmarshal(got, &msg); err != nil {
-		t.Fatalf("unmarshal message: %v", err)
-	}
-	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
-		t.Fatalf("unmarshal envelope: %v", err)
-	}
-	var payload HelloPayload
-	if err := json.Unmarshal(env.Data, &payload); err != nil {
-		t.Fatalf("unmarshal hello payload: %v", err)
-	}
-	if names := helloNames(payload); len(names) != 1 || names[0] != "pod-b" {
-		t.Fatalf("hello instances = %v, want [pod-b]", names)
 	}
 }

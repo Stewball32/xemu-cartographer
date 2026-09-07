@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
@@ -24,8 +23,8 @@ func TestManagerAvailableMaps(t *testing.T) {
 	}
 
 	m.SetAvailableMaps("pod1",
-		[]scraperiface.MapOption{{Name: "battlecreek", Steps: 0}, {Name: "custom_modded_map", Steps: 1}},
-		[]scraperiface.MapOption{{Name: "slayer", Steps: 0}})
+		[]MapOption{{Name: "battlecreek", Steps: 0}, {Name: "custom_modded_map", Steps: 1}},
+		[]MapOption{{Name: "slayer", Steps: 0}})
 	l := m.AvailableMaps("pod1")
 	if !l.Available || len(l.Maps) != 2 || l.Maps[1].Name != "custom_modded_map" {
 		t.Fatalf("enumerated maps should surface live (incl. modded), got %+v", l)
@@ -77,7 +76,7 @@ func TestAttachHostRunnerScoping(t *testing.T) {
 // carousel index. That makes gametypeCustomPrefix (liveCount − listLen) compute 0
 // and a pick's Steps land on the right widget card for BOTH custom and built-in.
 func TestPrependCustomGametypes(t *testing.T) {
-	builtins := []scraperiface.MapOption{
+	builtins := []MapOption{
 		{Name: "Team Slayer", Steps: 0}, {Name: "CTF", Steps: 1}, {Name: "Oddball", Steps: 2},
 	}
 	// empty customs → built-ins pass through unchanged

@@ -21,16 +21,19 @@ import (
 // Alias of wire.EventsResponsePayload.
 type EventsResponsePayload = wire.EventsResponsePayload
 
-// EventsReply builds the request_events response bytes for one instance.
-// See scraperiface.EventsReply for the wire contract. The cache stores
-// events newest-first; this method reverses on the way out so clients
-// get oldest-first stream order (M5 brief OQ7 resolution).
-func (m *Manager) EventsReply(instance string, sinceTick uint32, types []string) ([]byte, bool) {
+// EventsReply builds the request_events response envelope for one
+// instance (Reply with Class "events" — the league adapter frames it for
+// the legacy host:<instance> room; see the league's scraperiface.EventsReply
+// for the wire contract). The cache stores events newest-first; this method
+// reverses on the way out so clients get oldest-first stream order (M5
+// brief OQ7 resolution). Returns (Reply{}, false) when the instance has no
+// runner or the envelope fails to marshal (logged).
+func (m *Manager) EventsReply(instance string, sinceTick uint32, types []string) (Reply, bool) {
 	m.mu.Lock()
 	r, ok := m.runners[instance]
 	m.mu.Unlock()
 	if !ok {
-		return nil, false
+		return Reply{}, false
 	}
 
 	c := r.readCache()
@@ -49,12 +52,7 @@ func (m *Manager) EventsReply(instance string, sinceTick uint32, types []string)
 		Events:    events,
 	}
 	env := scraper.MakeEnvelope(envelopeTypeEvents, instance, 0, c.EngineTick, payload)
-
-	msgBytes, ok := marshalRoomMessage(instance, r.hostRoom, env)
-	if !ok {
-		return nil, false
-	}
-	return msgBytes, true
+	return marshalReply(env)
 }
 
 // filterEvents returns events with tick > sinceTick AND semantic event-type

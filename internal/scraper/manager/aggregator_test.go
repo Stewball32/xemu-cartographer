@@ -237,15 +237,13 @@ func TestAggregatorJoinReplay(t *testing.T) {
 		t.Fatalf("joinReplay() returned %d messages, want 1", len(out))
 	}
 
-	var msg wire.Message
-	if err := json.Unmarshal(out[0], &msg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if msg.Room != wire.SummaryRoom {
-		t.Fatalf("joinReplay room = %q, want %q", msg.Room, wire.SummaryRoom)
+	// Instance "" + class "summary" is what the league adapter maps to
+	// wire.SummaryRoom (asserted in internal/leaguescraper wireadapter_test.go).
+	if out[0].Instance != "" || out[0].Class != envelopeTypeSummary {
+		t.Fatalf("joinReplay keys = (%q, %q), want (\"\", %q)", out[0].Instance, out[0].Class, envelopeTypeSummary)
 	}
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(out[0].Envelope, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.Type != envelopeTypeSummary {

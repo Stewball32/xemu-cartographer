@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
@@ -14,6 +13,9 @@ import (
 // handshake. Sent on WebSocket connect, before any other scraper traffic.
 // Lets the client validate protocol compatibility and detect runner
 // restarts by comparing per-instance started_at against any cached value.
+// The connect hook itself (principal-filtered payload, wire.Message frame,
+// send) lives in the league adapter — internal/leaguescraper
+// WireAdapter.SendHelloOn — since step 7 part 3c.
 //
 // See atlas/new_json/04-ground-up-rebuild.md §6 (control), §7 (runner restart
 // detection), §8 (versioning + handshake).
@@ -53,20 +55,27 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 	}
 }
 
-// HelloPayloadFor is BuildHelloPayload narrowed to what principal p may see
-// (DESIGN-STEP6 §7.3 W-1, A.3): users, superusers and machine keys get every
-// instance; a spectator / device key or the anonymous console door gets only
-// the instance it is bound to, and only while that instance is live —
-// authz.JoinableInstances is the filter. Classes and the protocol fields are
-// not identity-dependent and stay as built.
-func (m *Manager) HelloPayloadFor(p authz.Principal) HelloPayload {
+// HelloPayloadFiltered is BuildHelloPayload narrowed to the instances keep
+// retains. keep receives the full, name-sorted instance list and returns the
+// subset a particular client may learn about (the league adapter passes
+// authz.JoinableInstances for the connecting principal — DESIGN-STEP6 §7.3
+// W-1, A.3: users, superusers and machine keys see everything; a spectator /
+// device key or the anonymous console door only the instance it is bound
+// to, and only while that instance is live). Names keep returns that are
+// not in the list are ignored. Classes and the protocol fields are not
+// identity-dependent and stay as built; Instances is never nil so it
+// marshals as []. A nil keep is the unfiltered payload.
+func (m *Manager) HelloPayloadFiltered(keep func(names []string) []string) HelloPayload {
 	payload := m.BuildHelloPayload()
+	if keep == nil {
+		return payload
+	}
 	names := make([]string, 0, len(payload.Instances))
 	for _, inst := range payload.Instances {
 		names = append(names, inst.Name)
 	}
 	allowed := make(map[string]bool, len(names))
-	for _, name := range authz.JoinableInstances(p, names) {
+	for _, name := range keep(names) {
 		allowed[name] = true
 	}
 	kept := make([]HelloInstance, 0, len(allowed))
@@ -79,52 +88,29 @@ func (m *Manager) HelloPayloadFor(p authz.Principal) HelloPayload {
 	return payload
 }
 
-// HelloEnvelopeBytes builds the marshaled wire bytes for a hello envelope —
-// the websocket.Message wrapper plus the inner scraper.Envelope plus the
-// HelloPayload — ready to enqueue on a single client's send channel.
-// Returns (nil, false) on marshal error (logged); the caller is responsible
-// for delivery.
+// HelloEnvelopeBytes builds the marshaled hello envelope — the
+// scraper.Envelope wrapping the unfiltered HelloPayload — as bare envelope
+// bytes. The league adapter frames it as a wire.Message (no room) and
+// enqueues it on a single client's send channel; a per-principal hello goes
+// through HelloPayloadFiltered + HelloEnvelope instead. Returns (nil, false)
+// on marshal error (logged).
 //
 // The hello envelope's instance field is empty (hello is not per-instance)
 // and its tick is 0. The payload's Instances list carries the per-instance
-// metadata clients use for restart detection. The full list is what the
-// unfiltered (internal) view sees; SendHelloOn narrows it per principal.
+// metadata clients use for restart detection.
 func (m *Manager) HelloEnvelopeBytes() ([]byte, bool) {
-	return m.helloEnvelopeBytes(m.BuildHelloPayload())
+	return HelloEnvelope(m.BuildHelloPayload())
 }
 
-// helloEnvelopeBytes wraps an already-built payload for the wire.
-func (m *Manager) helloEnvelopeBytes(payload HelloPayload) ([]byte, bool) {
+// HelloEnvelope marshals an already-built hello payload into the bare hello
+// envelope bytes (type envelopeTypeHello, instance "", seq 0, tick 0).
+// Returns (nil, false) on marshal error (logged).
+func HelloEnvelope(payload HelloPayload) ([]byte, bool) {
 	env := scraper.MakeEnvelope(envelopeTypeHello, "", 0, 0, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("manager: marshal hello envelope: %v", err)
 		return nil, false
 	}
-	msg := wire.Message{
-		Type:    wire.TypeScraper,
-		Payload: envBytes,
-	}
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("manager: marshal hello message: %v", err)
-		return nil, false
-	}
-	return msgBytes, true
-}
-
-// SendHelloOn is a websocket.ConnectHook compatible signature. Plug it into
-// websocket.NewHandler so every fresh client gets a hello envelope before
-// any other scraper traffic flows.
-//
-//	se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
-//
-// Builds a fresh hello on each call so server_time and the instances list
-// reflect the moment-of-connect state rather than a cached snapshot. The
-// instances list is filtered to what p may join (HelloPayloadFor) so a
-// bound key or console overlay never learns the other instances' names.
-func (m *Manager) SendHelloOn(send func(data []byte), p authz.Principal) {
-	if msgBytes, ok := m.helloEnvelopeBytes(m.HelloPayloadFor(p)); ok {
-		send(msgBytes)
-	}
+	return envBytes, true
 }

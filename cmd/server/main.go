@@ -136,8 +136,12 @@ func main() {
 				return leaguescraper.LoadRosterConfig(app, inst)
 			},
 		})
-		svc.Scraper = scrMgr
-		scraperroutes.SetManager(scrMgr)
+		// The league adapter frames the manager's bare reply envelopes for the
+		// WS rooms and filters the hello per principal; it is what every
+		// scraperiface.Service consumer sees (step 7 part 3c).
+		scrAdapter := leaguescraper.NewWireAdapter(scrMgr, svc)
+		svc.Scraper = scrAdapter
+		scraperroutes.SetManager(scrAdapter)
 
 		// Containers config is read here (pure env, no side effects) because the
 		// authz adapter below needs the provisioner's name prefix; the podman
@@ -156,7 +160,7 @@ func main() {
 		if podmanCfg.Enabled {
 			prefixFn = func() string { return podmanCfg.NamePrefix }
 		}
-		authzDeps := authzpb.NewDeps(app, scrMgr, prefixFn)
+		authzDeps := authzpb.NewDeps(app, scrAdapter, prefixFn)
 		authzpb.SetDefault(authzDeps)
 		svc.Authz = authzDeps
 		// Legacy LAN_SAVES_TOKEN (PD-12): imported as the in-memory "legacy-env"
@@ -195,7 +199,7 @@ func main() {
 		// (nil-safe: no URL → runner ticks + emits state but presses nothing).
 		hostReg := hostrunner.NewRegistry(newHostRunnerSink(svc))
 		scraperroutes.SetHostControl(hostReg)
-		playroutes.SetScraper(scrMgr)
+		playroutes.SetScraper(scrAdapter)
 		playroutes.SetHostControl(hostReg)
 		// The play map picker is sourced LIVE per instance from the scraper (never
 		// a stock table) — the Manager satisfies playroutes.MapSource.
@@ -370,7 +374,7 @@ func main() {
 		hub = ws.NewHub(app)
 		go hub.Run()
 		ws.SetInstance(hub)
-		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
+		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrAdapter.SendHelloOn))
 		svc.WS = hub
 		hub.SetServices(svc)
 

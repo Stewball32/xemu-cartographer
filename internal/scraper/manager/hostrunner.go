@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/customvariants"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
@@ -135,13 +134,13 @@ func (r *runner) ensureCustomVariants() {
 // directly: the runner's gametypeCustomPrefix then computes 0 (live count ==
 // enumerated count), so both custom and built-in picks navigate to the right
 // card. Empty customs → built-ins pass through unchanged (Steps already 0..n-1).
-func prependCustomGametypes(customNames []string, builtins []scraperiface.MapOption) []scraperiface.MapOption {
+func prependCustomGametypes(customNames []string, builtins []MapOption) []MapOption {
 	if len(customNames) == 0 {
 		return builtins
 	}
-	out := make([]scraperiface.MapOption, 0, len(customNames)+len(builtins))
+	out := make([]MapOption, 0, len(customNames)+len(builtins))
 	for _, nm := range customNames {
-		out = append(out, scraperiface.MapOption{Name: nm})
+		out = append(out, MapOption{Name: nm})
 	}
 	out = append(out, builtins...)
 	for i := range out {
@@ -151,12 +150,12 @@ func prependCustomGametypes(customNames []string, builtins []scraperiface.MapOpt
 }
 
 // toMapOptions maps the game-agnostic scraper.LobbyOption slice onto the
-// scraperiface.MapOption the player API serves (identical shape; kept separate so
+// MapOption the player API serves (identical shape; kept separate so
 // game plugins carry no guards-package dependency).
-func toMapOptions(in []scraper.LobbyOption) []scraperiface.MapOption {
-	out := make([]scraperiface.MapOption, len(in))
+func toMapOptions(in []scraper.LobbyOption) []MapOption {
+	out := make([]MapOption, len(in))
 	for i, o := range in {
-		out[i] = scraperiface.MapOption{Name: o.Name, Steps: o.Steps}
+		out[i] = MapOption{Name: o.Name, Steps: o.Steps}
 	}
 	return out
 }

@@ -8,7 +8,11 @@
 //
 // One Manager per server. Routes (/api/admin/scraper/*) and the discovery
 // watcher (internal/discovery → onAdd) call Start/Stop/List through the
-// scraperiface.Service interface.
+// league's scraperiface.Service interface, which the league adapter
+// (internal/leaguescraper.WireAdapter, step 7 part 3c) satisfies by
+// embedding the Manager and framing its request/reply envelopes (Reply)
+// as wire.Messages. The manager itself imports nothing from the league
+// server (pinned by internal/leaguescraper deps_test.go).
 //
 // M5 stage 5a (single-runner-per-lifetime, OQ4): Start always creates a
 // runner — it does NOT call scraper.Detect upfront. The runner enters the
@@ -31,7 +35,6 @@ import (
 	"sort"
 	"sync"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
@@ -52,7 +55,8 @@ var ErrAlreadyRunning = errors.New("scraper already running")
 var ErrInvalidName = errors.New("scraper: invalid instance name")
 
 // Manager owns a name → runner map and dispatches lifecycle operations.
-// Implements scraperiface.Service via structural typing.
+// The league's scraperiface.Service is satisfied by the WireAdapter that
+// embeds it (the reply methods here return Reply, not framed bytes).
 type Manager struct {
 	// Ports (ports.go). emitter is never nil (nullEmitter when unset);
 	// demand, onGameEnd and rosterFilter are nil-safe at their call sites.
@@ -145,16 +149,16 @@ func (m *Manager) Close() {
 // table: an instance with no enumeration yet reports Available=false with empty
 // lists, so a modded disc's custom maps are never masked by a hardcoded set.
 // Returns a zero (unavailable) MapList for an unknown instance.
-func (m *Manager) AvailableMaps(name string) scraperiface.MapList {
+func (m *Manager) AvailableMaps(name string) MapList {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
 	if !ok {
-		return scraperiface.MapList{}
+		return MapList{}
 	}
 	c := r.readCache()
 	available := len(c.AvailableMaps) > 0 || len(c.AvailableGametypes) > 0
-	return scraperiface.MapList{
+	return MapList{
 		Available: available,
 		Maps:      c.AvailableMaps,
 		Gametypes: c.AvailableGametypes,
@@ -202,7 +206,7 @@ func (m *Manager) HostHealth(name string) (hosthealth.Health, bool) {
 // disc / HDD `.map` files — is the remaining per-instance live read (it needs
 // offset/disc work + a live box to verify); this is the seam it writes into, so
 // nothing downstream assumes a fixed map set. No-op for an unknown instance.
-func (m *Manager) SetAvailableMaps(name string, maps, gametypes []scraperiface.MapOption) {
+func (m *Manager) SetAvailableMaps(name string, maps, gametypes []MapOption) {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
@@ -430,9 +434,9 @@ func (m *Manager) Stop(name string) error {
 
 // List returns one Info per currently-tracked runner. Sorted by name for
 // stable output.
-func (m *Manager) List() []scraperiface.Info {
+func (m *Manager) List() []Info {
 	m.mu.Lock()
-	infos := make([]scraperiface.Info, 0, len(m.runners))
+	infos := make([]Info, 0, len(m.runners))
 	for _, r := range m.runners {
 		infos = append(infos, r.info())
 	}
@@ -445,15 +449,15 @@ func (m *Manager) List() []scraperiface.Info {
 // container detail page. Returns (zero, false) when no runner is attached.
 // Reads from the runner's cache so the values stay correct across phase
 // transitions (e.g. Title is empty in Idle).
-func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) {
+func (m *Manager) InstanceState(name string) (InstanceState, bool) {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
 	if !ok {
-		return scraperiface.InstanceState{Name: name}, false
+		return InstanceState{Name: name}, false
 	}
 	c := r.readCache()
-	return scraperiface.InstanceState{
+	return InstanceState{
 		Name:     name,
 		TitleID:  c.TitleID,
 		Title:    c.Title,
@@ -466,27 +470,27 @@ func (m *Manager) InstanceState(name string) (scraperiface.InstanceState, bool) 
 // Reads through readCache(); never touches r.reader or r.inst, which the
 // loop accesses without synchronisation. Returns (zero, false) when no
 // runner is attached for name.
-func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
+func (m *Manager) Inspect(name string) (InspectState, bool) {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
 	if !ok {
-		return scraperiface.InspectState{Info: scraperiface.Info{Name: name}}, false
+		return InspectState{Info: Info{Name: name}}, false
 	}
 
 	info := r.info()
 	c := r.readCache()
 
-	var prev *scraperiface.PreviousGameInfo
+	var prev *PreviousGameInfo
 	if c.PreviousGame != nil {
-		prev = &scraperiface.PreviousGameInfo{
+		prev = &PreviousGameInfo{
 			GameData: c.PreviousGame.GameData,
 			Events:   c.PreviousGame.Events,
 			EndedAt:  c.PreviousGame.EndedAt,
 		}
 	}
 
-	return scraperiface.InspectState{
+	return InspectState{
 		Info:       info,
 		Running:    true,
 		Phase:      string(c.Phase),
@@ -506,20 +510,19 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 	}, true
 }
 
-// JoinReplayMessages returns one current_state envelope per runner, each
-// addressed to that runner's host:<name> room. Retained for the
-// request_state handler until M5 stage 5d narrows it to a single-room
-// reply.
+// JoinReplayMessages returns one envelope per applicable v2 class per
+// runner (see classEnvelopeMessages). Retained for the request_state
+// handler until M5 stage 5d narrows it to a single-room reply.
 //
 // M5 stage 5a: bytes are built on demand from each runner's instanceCache
 // rather than pulled from a pre-marshaled bytes cache.
-// M5 stage 5b: the Room field on each replay message is the per-instance
-// host:<name> room (was "overlay").
-// M5 stage 5c: payload is the new current_state envelope shape — full
-// instanceCache snapshot, not just GameData — so a late-joining client
-// gets phase, identity, freshness, current game data, recent events, and
-// previous_game in a single message.
-func (m *Manager) JoinReplayMessages() [][]byte {
+// M5 stage 5c: payload is the per-class envelope shape — full
+// instanceCache snapshot spread over the classes, not just GameData — so a
+// late-joining client gets phase, identity, freshness, current game data,
+// and previous_game.
+// Step 7 part 3c: returns bare envelopes as Reply values; the league
+// adapter frames each one for its host:<name>:<class> room.
+func (m *Manager) JoinReplayMessages() []Reply {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
 	for _, r := range m.runners {
@@ -527,11 +530,9 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 	}
 	m.mu.Unlock()
 
-	out := make([][]byte, 0, len(runners)*4)
+	out := make([]Reply, 0, len(runners)*4)
 	for _, r := range runners {
-		for _, cm := range r.classEnvelopeMessages(r.dummyConfig()) {
-			out = append(out, cm.Bytes)
-		}
+		out = append(out, r.classEnvelopeMessages(r.dummyConfig())...)
 	}
 	return out
 }
@@ -541,19 +542,14 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 // join_room handler when a client subscribes to host:<name> (no class
 // suffix — returns all classes) so a late joiner can render immediately
 // rather than waiting for the next per-class broadcast.
-func (m *Manager) JoinReplayForInstance(name string) [][]byte {
+func (m *Manager) JoinReplayForInstance(name string) []Reply {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	msgs := r.classEnvelopeMessages(r.dummyConfig())
-	out := make([][]byte, 0, len(msgs))
-	for _, mm := range msgs {
-		out = append(out, mm.Bytes)
-	}
-	return out
+	return r.classEnvelopeMessages(r.dummyConfig())
 }
 
 // JoinReplayForInstanceClass returns the envelope for a single v2 class
@@ -561,7 +557,7 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 // Used by the join_room handler when a client subscribes to
 // host:<name>:<class> so they get exactly the cached envelope for that
 // class — no extra classes they didn't ask for.
-func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
+func (m *Manager) JoinReplayForInstanceClass(name, class string) []Reply {
 	m.mu.Lock()
 	r, ok := m.runners[name]
 	m.mu.Unlock()
@@ -570,17 +566,18 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 	}
 	for _, mm := range r.classEnvelopeMessages(r.dummyConfig()) {
 		if mm.Class == class {
-			return [][]byte{mm.Bytes}
+			return []Reply{mm}
 		}
 	}
 	return nil
 }
 
-// JoinReplayForHostAll returns one envelope-bytes message representing the
-// current host:all summary cache. Used by the join_room handler when a
-// client subscribes to host:all so it can populate its instance list
-// without waiting for the next aggregator coalesce tick.
-func (m *Manager) JoinReplayForHostAll() [][]byte {
+// JoinReplayForHostAll returns one summary envelope representing the
+// current host:summary cache (Reply with Instance "", Class "summary").
+// Used by the join_room handler when a client subscribes to the summary
+// room so it can populate its instance list without waiting for the next
+// aggregator coalesce tick.
+func (m *Manager) JoinReplayForHostAll() []Reply {
 	return m.agg.joinReplay()
 }
 

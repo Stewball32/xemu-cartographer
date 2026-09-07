@@ -35,20 +35,20 @@ type probeRequest struct {
 const probeReplyTimeout = 2 * time.Second
 
 // ProbeReply runs the on-demand probe readers via the runner's loop
-// goroutine and returns the marshaled envelope bytes addressed to
-// host:<instance>. Returns (nil, false) when the instance has no
-// runner attached, the runner is in Idle (no reader bound), or the
-// loop didn't service the request before probeReplyTimeout.
+// goroutine and returns the marshaled probe envelope (Reply with Class
+// "probe" — the league adapter frames it for the legacy host:<instance>
+// room). Returns (Reply{}, false) when the instance has no runner
+// attached, the runner is in Idle (no reader bound), or the loop didn't
+// service the request before probeReplyTimeout.
 //
 // Lives on the manager so request_probe handlers can call across the
-// import-cycle-free `scraperiface` boundary without depending on
-// runner internals.
-func (m *Manager) ProbeReply(instance string) ([]byte, bool) {
+// league's `scraperiface` boundary without depending on runner internals.
+func (m *Manager) ProbeReply(instance string) (Reply, bool) {
 	m.mu.Lock()
 	r, ok := m.runners[instance]
 	m.mu.Unlock()
 	if !ok {
-		return nil, false
+		return Reply{}, false
 	}
 
 	// Snapshot phase + tick under cacheMu so the reply envelope's
@@ -72,21 +72,17 @@ func (m *Manager) ProbeReply(instance string) ([]byte, bool) {
 			// Queue full — too many concurrent probe requests. The WS
 			// handler treats this as a transient failure; the next
 			// request after the loop drains will succeed.
-			return nil, false
+			return Reply{}, false
 		}
 		select {
 		case payload = <-reply:
 		case <-time.After(probeReplyTimeout):
-			return nil, false
+			return Reply{}, false
 		}
 	}
 
 	env := scraper.MakeEnvelope(envelopeTypeProbe, instance, r.nextSeq(envelopeTypeProbe), c.EngineTick, payload)
-	msgBytes, ok := marshalRoomMessage(instance, r.hostRoom, env)
-	if !ok {
-		return nil, false
-	}
-	return msgBytes, true
+	return marshalReply(env)
 }
 
 // drainProbeRequests services every probe request queued since the

@@ -25,9 +25,9 @@ import (
 //	      error → dropped (logged), exactly like the old per-class resolve
 //
 // No broadcast ever targeted the legacy per-instance room ("host:<inst>",
-// wire.RoomForInstance): that room is only used by the reply paths (join
-// replay, EventsReply, ProbeReply), which still frame their own messages
-// inside the manager until part 3c.
+// wire.RoomForInstance): that room is only used by the request/reply
+// channels (EventsReply, ProbeReply), which the WireAdapter (wireadapter.go)
+// frames from the manager's bare manager.Reply values.
 //
 // svc.WS is read at call time, not at construction: main.go builds the
 // manager before the hub exists and populates svc.WS later in OnServe, and
@@ -72,7 +72,8 @@ func roomFor(instance, class string) (string, bool) {
 
 // wrapRoomMessage frames an already-marshalled wire.Envelope as the
 // wire.Message{Type:"scraper", Room:room} the WS clients expect. Moved here
-// from the manager's broadcast path; logged-and-dropped on marshal error.
+// from the manager (broadcast path in 3a, reply + hello paths in 3c);
+// logged-and-dropped on marshal error. name is only for the log line.
 func wrapRoomMessage(name, room string, envBytes []byte) ([]byte, bool) {
 	msg := wire.Message{
 		Type:    wire.TypeScraper,

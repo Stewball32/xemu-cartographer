@@ -1,4 +1,4 @@
-package scraper
+package manager
 
 import "testing"
 

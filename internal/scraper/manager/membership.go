@@ -2,8 +2,6 @@ package manager
 
 import (
 	"sort"
-
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // Membership projects every attached runner into a ContainerMembership — the
@@ -12,7 +10,7 @@ import (
 // logged-in player to the kiosk for the match their gamertag is in. Reads
 // through readCache() like the other Manager surfaces, so it stays correct
 // across phase transitions (the identity set empties out on Ready→Idle).
-func (m *Manager) Membership() []scraperiface.ContainerMembership {
+func (m *Manager) Membership() []ContainerMembership {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
 	for _, r := range m.runners {
@@ -20,10 +18,10 @@ func (m *Manager) Membership() []scraperiface.ContainerMembership {
 	}
 	m.mu.Unlock()
 
-	out := make([]scraperiface.ContainerMembership, 0, len(runners))
+	out := make([]ContainerMembership, 0, len(runners))
 	for _, r := range runners {
 		c := r.readCache()
-		out = append(out, scraperiface.ContainerMembership{
+		out = append(out, ContainerMembership{
 			Container:  r.name,
 			Identities: collectIdentities(&c),
 		})
@@ -41,7 +39,7 @@ func (m *Manager) Membership() []scraperiface.ContainerMembership {
 func collectIdentities(c *instanceCache) []string {
 	set := map[string]struct{}{}
 	add := func(s string) {
-		if s = scraperiface.SanitizeIdentity(s); s != "" {
+		if s = SanitizeIdentity(s); s != "" {
 			set[s] = struct{}{}
 		}
 	}

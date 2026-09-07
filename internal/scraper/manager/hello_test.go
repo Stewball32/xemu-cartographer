@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
@@ -94,9 +92,11 @@ func TestBuildHelloPayloadWithRunners(t *testing.T) {
 	}
 }
 
-// TestHelloEnvelopeBytesRoundtrip: the wire bytes unmarshal back through the
-// expected three layers (websocket.Message → scraper.Envelope → HelloPayload)
-// and carry the protocol version + empty instance + tick=0.
+// TestHelloEnvelopeBytesRoundtrip: the bare envelope bytes unmarshal back
+// through the two manager-side layers (scraper.Envelope → HelloPayload) and
+// carry the protocol version + empty instance + tick=0. (The outer
+// wire.Message frame is the league adapter's — asserted in
+// internal/leaguescraper wireadapter_test.go.)
 func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 	m := New(Options{})
 	defer m.Close()
@@ -111,19 +111,8 @@ func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 		t.Fatal("HelloEnvelopeBytes: ok=false")
 	}
 
-	var msg websocket.Message
-	if err := json.Unmarshal(bytes, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
-	}
-	if msg.Type != "scraper" {
-		t.Fatalf("msg.type = %q, want %q", msg.Type, "scraper")
-	}
-	if msg.Room != "" {
-		t.Fatalf("msg.room = %q, want empty (hello is not per-room)", msg.Room)
-	}
-
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(bytes, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.V != scraper.ProtocolVersion {
@@ -151,32 +140,24 @@ func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 	}
 }
 
-// TestSendHelloOn: SendHelloOn invokes the send function exactly once with
-// the same bytes HelloEnvelopeBytes would have returned (modulo the captured
-// server_time, which advances per call).
-func TestSendHelloOn(t *testing.T) {
+// TestHelloEnvelopeMatchesHelloEnvelopeBytes: the package-level HelloEnvelope
+// (what the adapter calls with a filtered payload) produces the same envelope
+// shape as HelloEnvelopeBytes for the same payload, modulo nothing — both
+// stamp instance "" / seq 0 / tick 0.
+func TestHelloEnvelopeMatchesHelloEnvelopeBytes(t *testing.T) {
 	m := New(Options{})
 	defer m.Close()
 
-	calls := 0
-	var got []byte
-	m.SendHelloOn(func(data []byte) {
-		calls++
-		got = data
-	}, authz.Superuser("su"))
-
-	if calls != 1 {
-		t.Fatalf("SendHelloOn: send called %d times, want 1", calls)
+	payload := m.BuildHelloPayload()
+	got, ok := HelloEnvelope(payload)
+	if !ok || len(got) == 0 {
+		t.Fatalf("HelloEnvelope: ok=%v len=%d", ok, len(got))
 	}
-	if len(got) == 0 {
-		t.Fatal("SendHelloOn: send received empty bytes")
-	}
-	// Sanity: the bytes parse as a websocket.Message wrapping a hello envelope.
-	var msg websocket.Message
-	if err := json.Unmarshal(got, &msg); err != nil {
+	var env scraper.Envelope
+	if err := json.Unmarshal(got, &env); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if msg.Type != "scraper" {
-		t.Fatalf("msg.type = %q, want %q", msg.Type, "scraper")
+	if env.Type != envelopeTypeHello || env.Instance != "" || env.Seq != 0 || env.Tick != 0 {
+		t.Fatalf("hello envelope header = %+v, want type=hello instance=\"\" seq=0 tick=0", env)
 	}
 }

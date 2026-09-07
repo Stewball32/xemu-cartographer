@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
@@ -142,8 +141,8 @@ type instanceCache struct {
 	// Populated via Manager.SetAvailableMaps by the carousel enumeration when the
 	// runner parks at map-select; empty means "not enumerable for this instance"
 	// and the play API returns available:false rather than a fixed set.
-	AvailableMaps      []scraperiface.MapOption
-	AvailableGametypes []scraperiface.MapOption
+	AvailableMaps      []MapOption
+	AvailableGametypes []MapOption
 
 	// CustomGametypes are the box's user-saved custom variant DISPLAY names, read
 	// host-side off its overlay (customvariants), in live-carousel order. Loaded
@@ -208,10 +207,11 @@ type runner struct {
 	// address layer without any game-specific coupling here. Nil-safe.
 	offsetSetFor func() string
 
-	// hostRoom is the per-instance WebSocket room name ("host:<name>")
-	// scraper broadcasts target. Pre-validated at Manager.Start by the
-	// rooms.RoomForInstance chokepoint and passed in here; the broadcast
-	// helpers read it directly so loop.go doesn't re-derive it per tick.
+	// hostRoom is the per-instance legacy WebSocket room name ("host:<name>")
+	// pre-validated at Manager.Start by the wire.RoomForInstance chokepoint.
+	// Since step 7 part 3c the manager never frames a message itself (the
+	// league adapter derives every room from Reply.Instance/Class), so the
+	// field is informational — it records that the name passed validation.
 	hostRoom string
 
 	// agg is the Manager's host:all aggregator. Runners post hostSummary
@@ -455,10 +455,10 @@ func (r *runner) setPolicies(p []capture.Policy) {
 	}
 }
 
-func (r *runner) info() scraperiface.Info {
+func (r *runner) info() Info {
 	r.cacheMu.Lock()
 	defer r.cacheMu.Unlock()
-	return scraperiface.Info{
+	return Info{
 		Name:             r.name,
 		Sock:             r.sock,
 		TitleID:          r.cache.TitleID,
@@ -625,65 +625,24 @@ func (r *runner) maybeHeartbeatSummary() {
 	r.publishSummary()
 }
 
-// wrapRoomMessage wraps envBytes (already-marshaled scraper.Envelope)
-// in wire.Message{Type:"scraper", Room:room} and returns the wire
-// bytes. Logged-and-dropped on marshal error. Still used by the reply
-// paths (join replay, EventsReply, ProbeReply, hello) that hand fully
-// framed messages back to the WS handler; broadcasts go through the
-// Emitter port with the bare envelope instead (part 3c retires this).
-func wrapRoomMessage(name, room string, envBytes []byte) ([]byte, bool) {
-	msg := wire.Message{
-		Type:    wire.TypeScraper,
-		Room:    room,
-		Payload: envBytes,
-	}
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("scraper[%s]: marshal message: %v", name, err)
-		return nil, false
-	}
-	return msgBytes, true
-}
-
-// marshalRoomMessage takes a scraper.Envelope, serialises it, and
-// wraps the result in the wire.Message envelope. Used by callers
-// (events.go's EventsReply) that don't need the inner bytes separately.
-func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) {
-	envBytes, err := json.Marshal(env)
-	if err != nil {
-		log.Printf("scraper[%s]: marshal envelope (%s): %v", name, env.Type, err)
-		return nil, false
-	}
-	return wrapRoomMessage(name, room, envBytes)
-}
-
-// marshalClassEnvelope builds a v2 class envelope and serialises both
-// the inner envelope and the WS-wrapped message. Returns:
-//
-//	envBytes  — marshaled scraper.Envelope (one NDJSON line for sinks /
-//	            the Emitter port)
-//	msgBytes  — wire.Message{Type:"scraper", Room:room, Payload:envBytes}
-//	            (join replay only)
-//	room      — per-class room name (host:<inst>:<class>)
-//
-// (nil, nil, "", false) on validation or marshal failure (logged).
-func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, []byte, string, bool) {
-	room, err := wire.RoomForInstanceClass(r.name, class)
-	if err != nil {
+// marshalClassEnvelope builds a v2 class envelope and serialises it.
+// The class must resolve through wire.RoomForInstanceClass (a registered
+// per-instance class); the bare envelope bytes are what both the Emitter
+// port and the reply paths carry — framing as a wire.Message is the league
+// adapter's job (see Reply). (nil, false) on validation or marshal failure
+// (logged).
+func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, bool) {
+	if _, err := wire.RoomForInstanceClass(r.name, class); err != nil {
 		log.Printf("scraper[%s]: cannot resolve room for class %q: %v", r.name, class, err)
-		return nil, nil, "", false
+		return nil, false
 	}
 	env := scraper.MakeEnvelope(class, r.name, r.nextSeq(class), tick, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
 		log.Printf("scraper[%s]: marshal envelope (%s): %v", r.name, class, err)
-		return nil, nil, "", false
+		return nil, false
 	}
-	msgBytes, ok := wrapRoomMessage(r.name, room, envBytes)
-	if !ok {
-		return nil, nil, "", false
-	}
-	return envBytes, msgBytes, room, ok
+	return envBytes, true
 }
 
 // emitClass marshals a v2 class envelope, hands the bare envelope bytes
@@ -691,7 +650,7 @@ func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([
 // per-class room), and tees the same bytes to the configured sink (if
 // any). No-op on marshal failure.
 func (r *runner) emitClass(class string, tick uint32, payload any) {
-	envBytes, _, _, ok := r.marshalClassEnvelope(class, tick, payload)
+	envBytes, ok := r.marshalClassEnvelope(class, tick, payload)
 	if !ok {
 		return
 	}
@@ -699,24 +658,25 @@ func (r *runner) emitClass(class string, tick uint32, payload any) {
 	r.sinks.write(class, envBytes)
 }
 
-// classEnvelopeMessages returns one marshaled-message-bytes per class that
+// classEnvelopeMessages returns one marshalled envelope per class that
 // has data to send, in dependency order (xbox → scenario → game →
-// previous_game → tick → objects → debug). Used both by the snapshot
-// broadcast and by per-class join replay.
+// game_filtered → previous_game → tick → objects → debug). Used both by
+// the snapshot broadcast and by per-class join replay.
 //
-// Returns (class-name, bytes) pairs so callers can route or filter.
-func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
+// Returns Reply values (instance + class + bare envelope) so callers can
+// route or filter; the league adapter frames them for the wire.
+func (r *runner) classEnvelopeMessages(cfg roster.Config) []Reply {
 	c := r.readCache()
-	out := make([]classMessage, 0, 8)
+	out := make([]Reply, 0, 8)
 	add := func(class string, payload any) {
 		if payload == nil {
 			return
 		}
-		envBytes, msgBytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
+		envBytes, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
 		if !ok {
 			return
 		}
-		out = append(out, classMessage{Class: class, Bytes: msgBytes, Env: envBytes})
+		out = append(out, Reply{Instance: r.name, Class: class, Envelope: envBytes})
 	}
 	add("xbox", buildXboxPayload(&c))
 	if sp := buildScenarioPayload(&c); sp != nil {
@@ -739,17 +699,6 @@ func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 	return out
 }
 
-// classMessage pairs a class name with its marshaled wire bytes. Used by
-// classEnvelopeMessages so callers can filter to a specific class (per-
-// class join replay) or fan everything out (snapshot broadcast).
-type classMessage struct {
-	Class string
-	// Bytes is the wire.Message-framed message (join replay replies).
-	Bytes []byte
-	// Env is the bare marshalled envelope (what the Emitter port takes).
-	Env []byte
-}
-
 // broadcastSnapshot emits every applicable per-class envelope for the
 // current cache state. Called on phase transitions so a transitioning
 // (or just-joined) client gets a complete view across all classes
@@ -766,7 +715,7 @@ func (r *runner) broadcastSnapshot() {
 	c := r.readCache()
 	r.lastScenarioFingerprint = computeScenarioFingerprint(c.GameData)
 	for _, m := range r.classEnvelopeMessages(r.dummyConfig()) {
-		r.emitter.Emit(r.name, m.Class, m.Env)
+		r.emitter.Emit(r.name, m.Class, m.Envelope)
 	}
 }
 

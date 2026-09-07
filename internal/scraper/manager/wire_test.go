@@ -8,7 +8,6 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
-	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // newTestRunner builds a minimal *runner suitable for exercising the
@@ -25,21 +24,6 @@ func newTestRunnerWith(name string, s *stubEmitter) *runner {
 	r := newTestRunner(name)
 	r.emitter, r.demand = s, s
 	return r
-}
-
-// decodeClassEnvelope unwraps a marshaled wire.Message (the join-replay
-// framing) to the inner scraper.Envelope. Used by per-class assertions.
-func decodeClassEnvelope(t *testing.T, data []byte) (wire.Message, scraper.Envelope) {
-	t.Helper()
-	var msg wire.Message
-	if err := json.Unmarshal(data, &msg); err != nil {
-		t.Fatalf("unmarshal wire.Message: %v", err)
-	}
-	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
-		t.Fatalf("unmarshal scraper.Envelope: %v", err)
-	}
-	return msg, env
 }
 
 // decodeEnvelope unmarshals bare envelope bytes as handed to the Emitter
@@ -115,15 +99,16 @@ func TestClassEnvelopeMessagesLive(t *testing.T) {
 	}
 
 	// Spot-check one envelope: the tick envelope should have Type="tick"
-	// and route to host:bravo:tick.
+	// and carry the routing keys (instance bravo, class tick) the league
+	// adapter turns into host:bravo:tick (wireadapter_test.go).
 	for _, m := range msgs {
 		if m.Class != "tick" {
 			continue
 		}
-		msg, env := decodeClassEnvelope(t, m.Bytes)
-		if msg.Room != "host:bravo:tick" {
-			t.Fatalf("tick room = %q, want %q", msg.Room, "host:bravo:tick")
+		if m.Instance != "bravo" {
+			t.Fatalf("tick reply instance = %q, want %q", m.Instance, "bravo")
 		}
+		env := decodeEnvelope(t, m.Envelope)
 		if env.Type != "tick" {
 			t.Fatalf("tick envelope type = %q, want %q", env.Type, "tick")
 		}

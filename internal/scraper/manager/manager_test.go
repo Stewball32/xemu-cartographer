@@ -2,17 +2,12 @@ package manager
 
 import (
 	"testing"
-
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
-// TestManagerSatisfiesInterface verifies that *Manager structurally implements
-// scraperiface.Service. If this fails to compile, Services.Scraper assignments
-// in main.go will also fail — catching it here gives a clearer error than the
-// downstream failure.
-func TestManagerSatisfiesInterface(t *testing.T) {
-	var _ scraperiface.Service = (*Manager)(nil)
-}
+// The scraperiface.Service conformance check moved to the league adapter
+// (internal/leaguescraper wireadapter.go: `var _ scraperiface.Service =
+// (*WireAdapter)(nil)`) in step 7 part 3c — the manager's reply methods
+// return Reply values and the manager no longer imports the league.
 
 // TestEmptyManagerListAndStop covers the no-runners branches of List and Stop:
 // fresh manager returns an empty list, and stopping an unknown name is a no-op
