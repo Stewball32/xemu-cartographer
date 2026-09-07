@@ -41,6 +41,61 @@ _TODO — fill in. Should cover: stopping the service, replacing the volume, ver
 
 _TODO — fill in. Should cover: which env vars exist, where they're set in production, how to roll them without downtime (or with planned downtime)._
 
+For the LAN token specifically, see [Retire `LAN_SAVES_TOKEN`](#retire-lan_saves_token-and-close-the-console-door) below — it is now an `api_tokens` machine key, not an env var, and rotating one means minting a new key and revoking the old.
+
+## Read the authz boot report
+
+Every boot prints eight `authz:` lines (DESIGN-STEP6 §8.2) right after the seeder and before any route binds. They are the fastest health check for the authorization layer — read them top to bottom after a deploy:
+
+```
+authz: roles ok (admin, organizer, member, overlay_manager, anonymous)
+authz: admins=1
+authz: anonymous scopes=[overlay.read_state:*, room.join:host:*:event_filtered, room.join:host:*:game_filtered, room.join:host:*:scenario, room.join:host:*:tick]
+authz: console door OPEN (?console= accepted; PD-1 window)
+authz: LAN_SAVES_TOKEN unset
+authz: api_tokens machine=2 spectator=3 device=0 (revoked=1, expired=0)
+authz: /api/lan/* fail-closed: 2 live machine keys
+authz: WS_ALLOWED_ORIGINS unset — fail-open (PD-15), set it before exposing /api/ws
+```
+
+| Line | Healthy | Act on |
+| --- | --- | --- |
+| 1 `roles ok (…)` | The five built-in roles exist. | `authz: roles MISSING: [...] — run migrations` — the `1788300001_roles_scopes` migration did not apply; check `_migrations`. Every scoped decision denies until the rows exist. |
+| 2 `admins=<n>` | `n ≥ 1`. | `authz: WARNING no admin users — grant one from /_/ (superuser) or the seed` — log in to `/_/` as the superuser (or set `SEED_SUPERUSER_EMAIL`/`_PASSWORD`) and grant `admin` from `/admin/roles/`. Superusers always pass, so you are never locked out. |
+| 3 `anonymous scopes=[…]` | Lists the console-door classes while overlays still use `?console=`; `authz: console door CLOSED (anonymous role has no scopes)` once you have flipped PD-1. | Anything else listed here (e.g. `room.join:host:*:game`) widens what an unauthenticated overlay sees — trim it. |
+| 4 `console door OPEN …` / `console door CLOSED (?console= connects but can join nothing)` | Whichever you intend. | Printed once at startup; the state follows line 3. Edits to the `anonymous` row apply live (roles cache 60 s) but the line itself is only re-printed on the next boot. |
+| 5 `LAN_SAVES_TOKEN unset` | Unset in production. | `LAN_SAVES_TOKEN imported as kid=legacy-env … WARNING: rotate …` — the env token is still the LAN credential; follow the cut-over below. |
+| 6 `api_tokens machine=<n> spectator=<n> device=<n> (revoked=<n>, expired=<n>)` | Matches what you minted. | A surprise count means someone else minted keys — audit `/admin/tokens/`. |
+| 7 `/api/lan/* fail-closed: <n> live machine keys` | `n ≥ 1` (or line 5 says imported). | `authz: WARNING /api/lan/* has no valid key — all LAN clients will get 401` — every LAN station is locked out; mint a machine key before the next LAN night. |
+| 8 `WS_ALLOWED_ORIGINS unset — fail-open (PD-15) …` | Absent (the variable is set). | Set `WS_ALLOWED_ORIGINS` to your public origin(s) before exposing `/api/ws`; the handshake accepts every origin until you do. |
+
+## Retire `LAN_SAVES_TOKEN` and close the console door
+
+The authz batch removed LAN "open mode" and made every LAN / overlay credential an `api_tokens` row. Both `roles.scopes` and `api_tokens` are **additive** — reverting the binary leaves them inert, so there is no rollback step beyond redeploying the previous release. Do the steps in this order; each one is safe to pause on.
+
+1. **Mint one `machine` key per LAN station, scoped `lan.*`, while `LAN_SAVES_TOKEN` is still set.** From Studio, `/admin/tokens/` → Mint → kind `machine`, label it after the station, scopes `lan.*`. Or from a shell with an admin JWT:
+
+   ```sh
+   curl -X POST https://<host>/api/admin/tokens \
+     -H "Authorization: Bearer $ADMIN_JWT" -H 'Content-Type: application/json' \
+     -d '{"kind":"machine","label":"lan-station-1","scopes":["lan.*"]}'
+   # → 201 {"kid":"mk_…","token":"mk_….<secret>", …}   ← the token is shown ONCE
+   ```
+
+   Put the returned token on the station (it goes where the shared token went: `X-LAN-Token`, `?token=`, or `Authorization: Bearer`). The old env token keeps working meanwhile — it is imported at boot as kid `legacy-env` and shows read-only in the list.
+
+2. **Verify each station syncs with its own key** (`GET /api/lan/sync/manifest` with the new token → 200). Boot line 7 should now count your keys: `authz: /api/lan/* fail-closed: <n> live machine keys`.
+
+3. **Unset `LAN_SAVES_TOKEN` and restart.** Line 5 flips to `authz: LAN_SAVES_TOKEN unset` and the `legacy-env` row disappears from `/admin/tokens/`. (Trying to revoke it from the UI answers `409 unset LAN_SAVES_TOKEN instead` — the env var is the only switch.)
+
+4. **Mint spectator keys for every OBS browser source.** `/admin/tokens/` → kind `spectator`, pick the instance and the classes the source needs (a scorebug wants `game_filtered`; a POV overlay adds `tick`, `scenario`, `event_filtered`). Users holding `overlay_manager` can do this without the admin role (`overlay.mint`). Add `&spectator=<key>` to each OBS browser-source URL — the overlay pages keep `?console=<name>` as the "which console" selector and pick the key up off the page URL themselves, putting it on the socket as `?spectator=` (raw WS clients pass `?spectator=<key>` directly).
+
+5. **Leave the `anonymous` role's scopes seeded until every overlay URL carries `?spectator=`.** Boot line 4 reads `console door OPEN` throughout; that is expected during the migration.
+
+6. **Flip PD-1: empty the `anonymous` row's `scopes`** in the PocketBase dashboard (`/_/` as the superuser → `roles` → `anonymous` → `scopes: []`; the `roles` collection has no API mutate rule, so this is the one place it can be edited). Takes effect on live sockets within about two minutes (the adapter's roles cache is 60 s and every socket re-resolves its principal every 60 s), no restart. The next boot reads `authz: console door CLOSED (?console= connects but can join nothing)`. Any overlay still on `?console=` goes blank — that is how you find the stragglers.
+
+7. **Rotating a key later** is mint-new → move the client → `DELETE /api/admin/tokens/{kid}` (optional `{"reason":"…"}` body) on the old one. Revocation reaches connected sockets within 60 s (`session_revoked`, close 4401).
+
 ## Recover from "PocketBase admin locked out"
 
 _TODO — fill in. PocketBase has a CLI for resetting admin password; document the exact command and any caveats around running it against a live container._

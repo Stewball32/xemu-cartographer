@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
@@ -18,21 +19,13 @@ import (
 func Run(app *pocketbase.PocketBase) error {
 	log.Println("Seeding database...")
 
-	// Baseline role rows first — no migration inserts records, so a FRESH dev
-	// DB has an empty roles collection and every roles.Grant below (plus the
-	// users_default_role hook) would fail. Prod grew its rows live; dev
-	// re-mints them each ephemeral boot.
-	for _, r := range []struct {
-		Slug, Label string
-		Level       int
-	}{
-		{"member", "Member", 0},
-		{"organizer", "Organizer", 50},
-		{"admin", "Admin", 100},
-	} {
-		if err := ensureRole(app, r.Slug, r.Label, r.Level); err != nil {
-			return fmt.Errorf("seed role %s: %w", r.Slug, err)
-		}
+	// Baseline role rows first so every roles.Grant below (plus the
+	// users_default_role hook) has a row to point at. The roles_scopes
+	// migration already mints these on boot; this is the safety net for a
+	// dev DB whose rows were deleted by hand, and it keeps the seeder's
+	// notion of the built-in roles pinned to authz.SeedRoles (B-3).
+	if err := ensureRoles(app); err != nil {
+		return err
 	}
 
 	for _, su := range superusers {
@@ -101,8 +94,25 @@ func ensureUser(app *pocketbase.PocketBase, u seedUser) error {
 	return nil
 }
 
-// ensureRole upserts one baseline roles row by slug (idempotent).
-func ensureRole(app *pocketbase.PocketBase, slug, label string, level int) error {
+// ensureRoles guarantees one roles row per authz.SeedRoles entry — the same
+// literal the roles_scopes migration and the authz core read, so the seeder
+// can never drift from the rule table. Existing rows are left untouched
+// (an operator's edited scopes survive a reseed); only missing slugs are
+// created, with their default scopes. Takes core.App so the seed test can
+// drive it against a pbtest app.
+func ensureRoles(app core.App) error {
+	for _, r := range authz.SeedRoles {
+		if err := ensureRole(app, r.Slug, r.Label, r.Level, r.Scopes); err != nil {
+			return fmt.Errorf("seed role %s: %w", r.Slug, err)
+		}
+	}
+	return nil
+}
+
+// ensureRole creates one baseline roles row by slug if it is missing
+// (idempotent). scopes is written as a JSON list, never null, so the authz
+// roles cache reads "[]" rather than a missing field for a scopeless role.
+func ensureRole(app core.App, slug, label string, level int, scopes []string) error {
 	if existing, _ := app.FindFirstRecordByData("roles", "slug", slug); existing != nil {
 		return nil
 	}
@@ -114,6 +124,7 @@ func ensureRole(app *pocketbase.PocketBase, slug, label string, level int) error
 	record.Set("slug", slug)
 	record.Set("label", label)
 	record.Set("level", level)
+	record.Set("scopes", append([]string{}, scopes...))
 	if err := app.Save(record); err != nil {
 		return err
 	}
