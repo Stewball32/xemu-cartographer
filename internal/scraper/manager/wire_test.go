@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // newTestRunner builds a minimal *runner suitable for exercising the

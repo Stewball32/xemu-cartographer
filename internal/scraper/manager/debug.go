@@ -3,7 +3,7 @@ package manager
 import (
 	"encoding/json"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypeDebug is the wire type for the per-instance debug class —

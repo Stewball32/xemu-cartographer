@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
 // HostControl is the arbitration surface the host-runner control endpoints call.

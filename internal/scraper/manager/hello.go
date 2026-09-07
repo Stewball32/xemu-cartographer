@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypeHello is the wire type for the server→client hello envelope.

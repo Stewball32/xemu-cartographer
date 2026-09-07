@@ -5,8 +5,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypeGameFiltered is the wire type for the viewer-facing filtered
@@ -32,7 +33,7 @@ func (r *runner) dummyConfig(app core.App) roster.Config {
 	if !at.IsZero() && time.Since(at) < dummyCfgTTL {
 		return cfg
 	}
-	fresh := roster.LoadConfig(app, r.name)
+	fresh := leaguescraper.LoadRosterConfig(app, r.name)
 	r.dummyMu.Lock()
 	r.dummyCfg, r.dummyCfgAt = fresh, time.Now()
 	r.dummyMu.Unlock()

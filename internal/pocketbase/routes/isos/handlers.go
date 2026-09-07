@@ -11,7 +11,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
+	"github.com/xemu-cartographer/xc-scraper/offsets"
 )
 
 func init() {

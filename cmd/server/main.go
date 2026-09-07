@@ -11,9 +11,8 @@ import (
 	"time"
 
 	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/migrateconf"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
@@ -26,21 +25,22 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+	"github.com/xemu-cartographer/xc-scraper/discovery"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/offsets"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/halo2"      // self-registering Halo 2 GameReader (M20)
-	_ "github.com/Stewball32/xemu-cartographer/internal/scraper/haloce"     // self-registering Halo: CE GameReader
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
 	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
 	_ "github.com/Stewball32/xemu-cartographer/migrations"                  // self-registering DB migrations (schema source of truth)
+	_ "github.com/xemu-cartographer/xc-scraper/halo2"                       // self-registering Halo 2 GameReader (M20)
+	_ "github.com/xemu-cartographer/xc-scraper/haloce"                      // self-registering Halo: CE GameReader
 )
 
 func main() {
@@ -232,7 +232,7 @@ func main() {
 		// pb: sink scheme must register BEFORE the initial reload — a
 		// policy carrying "pb:game_events" loaded against an empty registry
 		// would error with "unknown scheme" and silently drop captures.
-		sinks.RegisterPBSink(app)
+		leaguescraper.RegisterPBSink(app)
 		scrMgr.RegisterCapturePolicyHooks()
 		if err := scrMgr.ReloadCapturePolicies(); err != nil {
 			log.Printf("scraper: initial capture-policy load: %v", err)

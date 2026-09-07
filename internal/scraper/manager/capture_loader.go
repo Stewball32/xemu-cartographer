@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/capture"
 )
 
 // CapturePoliciesCollection is the PocketBase collection name holding the

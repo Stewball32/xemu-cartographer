@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // The live map source is per-instance and never falls back to a stock table: an

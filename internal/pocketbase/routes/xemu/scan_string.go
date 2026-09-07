@@ -11,8 +11,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/xbox"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // scanMatch is one hit in a scan-string response.

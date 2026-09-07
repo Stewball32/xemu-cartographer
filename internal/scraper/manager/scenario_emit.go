@@ -2,7 +2,7 @@ package manager
 
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // scenarioFingerprint is a packed snapshot of the observable scenario-

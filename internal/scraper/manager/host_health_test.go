@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/hosthealth"
+	"github.com/xemu-cartographer/xc-scraper/roster"
 )
 
 // The pure rate maths is covered in internal/hosthealth. These tests cover the

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // hostSummary is one entry in the host:all aggregate cache. Lean on purpose

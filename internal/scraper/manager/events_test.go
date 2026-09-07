@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // makeEvent is a small helper for building events the cache stores. Mirrors

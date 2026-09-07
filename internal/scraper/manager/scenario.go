@@ -1,6 +1,6 @@
 package manager
 
-import "github.com/Stewball32/xemu-cartographer/internal/scraper"
+import "github.com/xemu-cartographer/xc-scraper/scraper"
 
 // envelopeTypeScenario is the wire type for the per-instance scenario
 // class — the loaded map. One message per map load; everything static

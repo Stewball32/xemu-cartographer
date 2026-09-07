@@ -3,8 +3,8 @@ package manager
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/capture"
 )
 
 // stubRooms is a minimal wsiface.Rooms implementation that reports a

@@ -9,7 +9,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
 func init() {

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // stubWS captures SendToRoomRaw calls for assertions. Implements wsiface.Service

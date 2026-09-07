@@ -6,7 +6,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/games"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // persistFlushTimeout bounds how long Manager.Stop waits for in-flight

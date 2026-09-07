@@ -1,6 +1,6 @@
 package manager
 
-import "github.com/Stewball32/xemu-cartographer/internal/scraper"
+import "github.com/xemu-cartographer/xc-scraper/scraper"
 
 // envelopeTypeObjects is the wire type for the per-instance objects class
 // — the world-object firehose (vehicles, scenery, dropped weapons,

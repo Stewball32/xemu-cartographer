@@ -9,9 +9,10 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	sc "github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	sc "github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // Target an overlay purely by CONSOLE NAME (no instance / container id). Given
@@ -318,7 +319,7 @@ func handleOverlayConsole(e *core.RequestEvent) error {
 	// accumulator latches them Active; is_neutral_host = hard override;
 	// dummy_gamertags allowlist. This snapshot only serves the HTTP-poll
 	// fallback; the WS-push path gets the game_filtered class.
-	cfg := roster.LoadConfig(e.App, instance)
+	cfg := leaguescraper.LoadRosterConfig(e.App, instance)
 	cfg.HideInactiveLocals = true
 	cfg.ActiveLocals = activeFromAccum(st.PlayerAccum)
 	// engine_tick (0x0C) is the MATCH CLOCK — starts ~0 at match start and

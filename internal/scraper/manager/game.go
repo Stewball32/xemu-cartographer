@@ -3,7 +3,7 @@ package manager
 import (
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
+	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 )
 
 // envelopeTypeGame is the wire type for the per-instance game class —

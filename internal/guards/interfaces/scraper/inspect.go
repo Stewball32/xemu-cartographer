@@ -3,7 +3,7 @@ package scraper
 import (
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // Info is one row in the running-scraper list, returned by Lifecycle consumers

@@ -1,6 +1,6 @@
 package manager
 
-import "github.com/Stewball32/xemu-cartographer/internal/scraper"
+import "github.com/xemu-cartographer/xc-scraper/scraper"
 
 // envelopeTypeTick is the wire type for the per-instance tick class — the
 // hot path, ~30 Hz, only volatile per-frame data. Static per-tag data

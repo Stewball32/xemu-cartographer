@@ -2,8 +2,8 @@ package manager
 
 import (
 	wsiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/websocket"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/capture"
 )
 
 // shouldRead reports whether the runner should produce envelopes for

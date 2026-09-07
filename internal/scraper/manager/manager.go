@@ -33,13 +33,13 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
-	"github.com/Stewball32/xemu-cartographer/internal/vncinput"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
-	"github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/hosthealth"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/vncinput"
+	"github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // ErrAlreadyRunning is returned from Start when name is already in use.

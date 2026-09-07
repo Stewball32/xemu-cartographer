@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/xbox"
 )
 
 // Per-phase poll cadences (M5 stage 5a). Each phase trades freshness for read

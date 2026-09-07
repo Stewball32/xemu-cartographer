@@ -9,8 +9,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // titleProbeSample is one reading taken by the continuous title-ID probe.

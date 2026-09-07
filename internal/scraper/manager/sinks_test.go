@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/capture"
 )
 
 // TestSinkManagerOpenWriteClose: the basic happy path — an `always`

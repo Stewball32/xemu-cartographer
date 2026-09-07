@@ -1,4 +1,4 @@
-package sinks
+package leaguescraper
 
 import (
 	"encoding/json"
@@ -7,7 +7,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/sinks"
 )
 
 // PBSink persists each envelope as one record in a PocketBase collection.
@@ -92,7 +93,7 @@ func (s *PBSink) resolveCollection() (*core.Collection, error) {
 // scraper.Manager.ReloadCapturePolicies — otherwise a policy with a
 // pb: spec loaded at startup would fail with "unknown scheme".
 func RegisterPBSink(app core.App) {
-	Register("pb", func(rest string, _ map[string]string) (Sink, error) {
+	sinks.Register("pb", func(rest string, _ map[string]string) (sinks.Sink, error) {
 		if rest == "" {
 			return nil, fmt.Errorf("pb sink: missing collection name in spec")
 		}

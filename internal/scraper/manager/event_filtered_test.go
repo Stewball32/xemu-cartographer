@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // deathEnv wraps a DeathEvent in the "event" envelope the runner loop hands

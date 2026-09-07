@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypeEventFiltered is the wire type for the viewer-facing event

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/customvariants"
+	"github.com/xemu-cartographer/xc-scraper/customvariants"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // hostTickMinInterval bounds how often the host runner is ticked. 100ms

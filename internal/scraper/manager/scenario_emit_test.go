@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // TestMaybeEmitScenarioReEmitsOnFingerprintChange exercises the edge-

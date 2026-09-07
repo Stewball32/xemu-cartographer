@@ -10,7 +10,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // sampleDeltasMatch is one offset whose u32 value changed between two reads.

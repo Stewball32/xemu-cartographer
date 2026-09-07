@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hosthealth"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/hosthealth"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
 // MapSource supplies the LIVE-enumerated map/gametype carousel for a box (the same

@@ -21,7 +21,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
 // PlayControl is the subset of *hostrunner.Registry the play endpoints call.

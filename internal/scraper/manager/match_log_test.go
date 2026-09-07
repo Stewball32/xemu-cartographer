@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // TestPushEventDualLogs: one pushEvent feeds both logs — the request_events

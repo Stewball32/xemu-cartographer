@@ -17,7 +17,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
+	"github.com/xemu-cartographer/xc-scraper/offsets"
 )
 
 func init() {

@@ -4,8 +4,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/capture"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/sinks"
+	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/sinks"
 )
 
 // sinkManager owns the per-class sink instances for one runner. Sinks

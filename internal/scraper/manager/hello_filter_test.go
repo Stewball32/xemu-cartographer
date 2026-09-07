@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // helloNames flattens a payload's instance list for comparison.

@@ -3,7 +3,7 @@ package manager
 import (
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypePreviousGame is the wire type for the per-instance

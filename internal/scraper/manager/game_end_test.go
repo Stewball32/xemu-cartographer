@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // scriptedReader drives runLive without a live xemu: ReadGameState returns

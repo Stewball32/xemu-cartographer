@@ -3,7 +3,7 @@ package manager
 import (
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // envelopeTypeProbe is the wire type for a request_probe response.

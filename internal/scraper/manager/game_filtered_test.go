@@ -3,8 +3,8 @@ package manager
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/roster"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 func boolp(b bool) *bool { return &b }

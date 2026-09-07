@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // TestFinishedGameFromPrevious: the capture-minted identity (game_uid,

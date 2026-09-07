@@ -3,7 +3,7 @@ package manager
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // The silent-staleness detector. A scraper that attached mid-boot can cache low

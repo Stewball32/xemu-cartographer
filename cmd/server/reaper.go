@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
 // reaperSource implements reaper.Source over the live scraper + host-runner

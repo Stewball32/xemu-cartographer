@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // TestAdaptersOnEmptyCache: each adapter handles a freshly-constructed

@@ -1,11 +1,13 @@
-package roster
+package leaguescraper
 
 import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/xemu-cartographer/xc-scraper/roster"
 )
 
-// LoadConfig reads the dummy-filter configuration for one container from the
+// LoadRosterConfig reads the dummy-filter configuration for one container from the
 // database: the container's is_neutral_host flag (containers collection) and
 // the global dummy_gamertags allowlist. It is the single source of the filter
 // Config, reused by the scraper's server-side filtered broadcast (the
@@ -14,9 +16,9 @@ import (
 //
 // Best-effort + nil-safe: a nil app or any DB read error yields the zero Config
 // (a no-op filter), so a lookup failure never accidentally blanks a roster.
-func LoadConfig(app core.App, instance string) Config {
+func LoadRosterConfig(app core.App, instance string) roster.Config {
 	if app == nil {
-		return Config{}
+		return roster.Config{}
 	}
 	neutral := false
 	if rec, err := app.FindFirstRecordByFilter("containers", "name = {:n}", dbx.Params{"n": instance}); err == nil && rec != nil {
@@ -29,5 +31,5 @@ func LoadConfig(app core.App, instance string) Config {
 			raw = append(raw, r.GetString("gamertag"))
 		}
 	}
-	return Config{IsNeutralHost: neutral, DummyGamertags: BuildDummySet(raw)}
+	return roster.Config{IsNeutralHost: neutral, DummyGamertags: roster.BuildDummySet(raw)}
 }
