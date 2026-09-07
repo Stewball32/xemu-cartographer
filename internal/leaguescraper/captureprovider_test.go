@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 )
 
 func newPolicyApp(t *testing.T) core.App {
@@ -58,7 +58,7 @@ func savePolicy(t *testing.T, app core.App, col *core.Collection, p capture.Poli
 func TestReloadCapturePolicies_LoadsRows(t *testing.T) {
 	app := newPolicyApp(t)
 	col := ensurePolicyCollection(t, app)
-	mgr := manager.New(manager.Options{})
+	mgr := runner.New(runner.Options{})
 	defer mgr.Close()
 
 	want := []capture.Policy{
@@ -95,7 +95,7 @@ func TestReloadCapturePolicies_LoadsRows(t *testing.T) {
 // collection is "no policies", not a hook failure.
 func TestReloadCapturePolicies_MissingCollection(t *testing.T) {
 	app := newPolicyApp(t)
-	mgr := manager.New(manager.Options{})
+	mgr := runner.New(runner.Options{})
 	defer mgr.Close()
 	mgr.SetCapturePolicies([]capture.Policy{{Instance: "stale"}})
 
@@ -109,7 +109,7 @@ func TestReloadCapturePolicies_MissingCollection(t *testing.T) {
 
 // TestReloadCapturePolicies_NilSafe: nil app / manager are no-ops.
 func TestReloadCapturePolicies_NilSafe(t *testing.T) {
-	mgr := manager.New(manager.Options{})
+	mgr := runner.New(runner.Options{})
 	defer mgr.Close()
 	if err := ReloadCapturePolicies(nil, mgr); err != nil {
 		t.Fatalf("nil app: %v", err)
@@ -125,7 +125,7 @@ func TestReloadCapturePolicies_NilSafe(t *testing.T) {
 func TestRegisterCapturePolicyHooks_HotReload(t *testing.T) {
 	app := newPolicyApp(t)
 	col := ensurePolicyCollection(t, app)
-	mgr := manager.New(manager.Options{})
+	mgr := runner.New(runner.Options{})
 	defer mgr.Close()
 	RegisterCapturePolicyHooks(app, mgr)
 

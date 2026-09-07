@@ -2,11 +2,11 @@ package leaguescraper
 
 import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// wsDemand is the league server's manager.Demand: (instance, class) is
+// wsDemand is the league server's runner.Demand: (instance, class) is
 // wanted when the per-class WebSocket room (host:<inst>:<class>) has at
 // least one member. This is the subscriber half of the manager's shouldRead
 // formula, lifted out verbatim from the pre-port demand.go:
@@ -21,8 +21,8 @@ type wsDemand struct {
 	svc *guards.Services
 }
 
-// NewDemand returns the WebSocket-room-backed manager.Demand for svc.
-func NewDemand(svc *guards.Services) manager.Demand {
+// NewDemand returns the WebSocket-room-backed runner.Demand for svc.
+func NewDemand(svc *guards.Services) runner.Demand {
 	return &wsDemand{svc: svc}
 }
 

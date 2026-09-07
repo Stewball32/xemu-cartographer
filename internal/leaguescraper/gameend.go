@@ -6,11 +6,11 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/games"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// GameEndHook returns the league server's manager.GameEnd: it adapts the
+// GameEndHook returns the league server's runner.GameEnd: it adapts the
 // scraper's wire.FinishedGame artifact into the league's own
 // games.FinishedGame and runs the M13 persistence chain
 // (internal/games.PersistFinishedGame → games + game_players + game_events
@@ -20,7 +20,7 @@ import (
 // flushes it on Stop; errors are logged, never surfaced — a persistence
 // hiccup must never reach the scraper loop. Idempotent on fg.GameUID (the
 // persistence layer dedupes), so at-least-once delivery is safe.
-func GameEndHook(app core.App) manager.GameEnd {
+func GameEndHook(app core.App) runner.GameEnd {
 	return func(fg wire.FinishedGame) {
 		if _, err := games.PersistFinishedGame(app, FinishedGameFromWire(fg)); err != nil {
 			log.Printf("leaguescraper: persist finished game (instance=%s): %v", fg.Instance, err)

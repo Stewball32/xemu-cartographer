@@ -24,7 +24,6 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
-	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
@@ -33,6 +32,7 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/offsets"
 	"github.com/xemu-cartographer/xc-scraper/roster"
+	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
@@ -127,7 +127,7 @@ func main() {
 		// call time, so broadcasts safely no-op until svc.WS is populated
 		// below. The blank import of xc-scraper/haloce above triggers
 		// haloce.init(), which registers Halo: CE's title ID with scraper.Lookup
-		// so manager.Start() can detect it.
+		// so runner.Start() can detect it.
 		scrMgr = scrapermgr.New(scrapermgr.Options{
 			Emitter:   leaguescraper.NewEmitter(svc),
 			Demand:    leaguescraper.NewDemand(svc),

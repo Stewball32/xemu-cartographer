@@ -15,7 +15,7 @@ package scraper
 // JoinReplayMessages (the legacy "all instances" variant) is retained for
 // the request_state handler until M5 stage 5d narrows it to a single room.
 //
-// The manager's own methods return bare envelopes (manager.Reply); the
+// The manager's own methods return bare envelopes (runner.Reply); the
 // league adapter (internal/leaguescraper.WireAdapter) frames them as
 // wire.Messages addressed to the per-class room and satisfies this
 // interface.

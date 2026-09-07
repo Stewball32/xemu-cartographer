@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
 )
 
 func init() {

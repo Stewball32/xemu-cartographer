@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
@@ -18,7 +18,7 @@ import (
 // + room choice into the WireAdapter. The manager cannot be populated with
 // runners from outside its package (that needs an xemu instance), so the
 // room / frame assertions run against the framing helpers with synthetic
-// manager.Reply values, and the Manager-facing methods are exercised through
+// runner.Reply values, and the Manager-facing methods are exercised through
 // an empty Manager (whose summary replay and hello are real).
 
 // envelopeBytes marshals a minimal envelope for class/instance.
@@ -54,16 +54,16 @@ func decodeFramed(t *testing.T, data []byte) (websocket.Message, scraper.Envelop
 // cross-instance summary.
 func TestReplyRoomTable(t *testing.T) {
 	cases := []struct {
-		rep  manager.Reply
+		rep  runner.Reply
 		want string
 	}{
-		{manager.Reply{Instance: "bravo", Class: "tick"}, "host:bravo:tick"},
-		{manager.Reply{Instance: "alpha", Class: "game"}, "host:alpha:game"},
-		{manager.Reply{Instance: "alpha", Class: wire.ClassGameFiltered}, "host:alpha:game_filtered"},
-		{manager.Reply{Instance: "alpha", Class: wire.ClassPreviousGame}, "host:alpha:previous_game"},
-		{manager.Reply{Instance: "alpha", Class: wire.ClassEvents}, "host:alpha"},
-		{manager.Reply{Instance: "alpha", Class: wire.ClassProbe}, "host:alpha"},
-		{manager.Reply{Instance: "", Class: wire.ClassSummary}, wire.SummaryRoom},
+		{runner.Reply{Instance: "bravo", Class: "tick"}, "host:bravo:tick"},
+		{runner.Reply{Instance: "alpha", Class: "game"}, "host:alpha:game"},
+		{runner.Reply{Instance: "alpha", Class: wire.ClassGameFiltered}, "host:alpha:game_filtered"},
+		{runner.Reply{Instance: "alpha", Class: wire.ClassPreviousGame}, "host:alpha:previous_game"},
+		{runner.Reply{Instance: "alpha", Class: wire.ClassEvents}, "host:alpha"},
+		{runner.Reply{Instance: "alpha", Class: wire.ClassProbe}, "host:alpha"},
+		{runner.Reply{Instance: "", Class: wire.ClassSummary}, wire.SummaryRoom},
 	}
 	for _, tc := range cases {
 		got, ok := replyRoom(tc.rep)
@@ -71,7 +71,7 @@ func TestReplyRoomTable(t *testing.T) {
 			t.Fatalf("replyRoom(%+v) = (%q, %v), want (%q, true)", tc.rep, got, ok, tc.want)
 		}
 	}
-	if room, ok := replyRoom(manager.Reply{Instance: "alpha", Class: "nope"}); ok {
+	if room, ok := replyRoom(runner.Reply{Instance: "alpha", Class: "nope"}); ok {
 		t.Fatalf("replyRoom(unknown class) = (%q, true), want unroutable", room)
 	}
 }
@@ -82,7 +82,7 @@ func TestReplyRoomTable(t *testing.T) {
 // framed before 3c (tick → host:bravo:tick, events → host:alpha).
 func TestFrameReplyWrapsEnvelopeUnchanged(t *testing.T) {
 	env := envelopeBytes(t, "tick", "bravo", 1234)
-	data, ok := frameReply(manager.Reply{Instance: "bravo", Class: "tick", Envelope: env})
+	data, ok := frameReply(runner.Reply{Instance: "bravo", Class: "tick", Envelope: env})
 	if !ok {
 		t.Fatal("frameReply: ok=false")
 	}
@@ -101,7 +101,7 @@ func TestFrameReplyWrapsEnvelopeUnchanged(t *testing.T) {
 	}
 
 	env = envelopeBytes(t, wire.ClassEvents, "alpha", 100)
-	data, ok = frameReply(manager.Reply{Instance: "alpha", Class: wire.ClassEvents, Envelope: env})
+	data, ok = frameReply(runner.Reply{Instance: "alpha", Class: wire.ClassEvents, Envelope: env})
 	if !ok {
 		t.Fatal("frameReply(events): ok=false")
 	}
@@ -122,10 +122,10 @@ func TestFrameRepliesPreservesNilAndOrder(t *testing.T) {
 	if got := frameReplies(nil); got != nil {
 		t.Fatalf("frameReplies(nil) = %v, want nil", got)
 	}
-	if got := frameReplies([]manager.Reply{}); got == nil || len(got) != 0 {
+	if got := frameReplies([]runner.Reply{}); got == nil || len(got) != 0 {
 		t.Fatalf("frameReplies(empty) = %v, want empty non-nil", got)
 	}
-	reps := []manager.Reply{
+	reps := []runner.Reply{
 		{Instance: "a", Class: "xbox", Envelope: envelopeBytes(t, "xbox", "a", 0)},
 		{Instance: "a", Class: "bogus", Envelope: envelopeBytes(t, "bogus", "a", 0)},
 		{Instance: "a", Class: "game", Envelope: envelopeBytes(t, "game", "a", 0)},
@@ -145,7 +145,7 @@ func TestFrameRepliesPreservesNilAndOrder(t *testing.T) {
 // summary replay is one wire.Message addressed to host:summary carrying a
 // "summary" envelope — what TestAggregatorJoinReplay asserted pre-3c.
 func TestAdapterJoinReplayForHostAll(t *testing.T) {
-	m := manager.New(manager.Options{})
+	m := runner.New(runner.Options{})
 	defer m.Close()
 	a := NewWireAdapter(m, nil)
 
@@ -255,7 +255,7 @@ func helloNames(p wire.HelloPayload) []string {
 // (authz.JoinableInstances), and the adapter method itself is checked to
 // yield [] (not nil) for every principal.
 func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
-	m := manager.New(manager.Options{})
+	m := runner.New(runner.Options{})
 	defer m.Close()
 	a := NewWireAdapter(m, nil)
 
@@ -318,7 +318,7 @@ func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 // (modulo the captured server_time, which advances per call), framed as a
 // websocket.Message wrapping a hello envelope.
 func TestSendHelloOn(t *testing.T) {
-	m := manager.New(manager.Options{})
+	m := runner.New(runner.Options{})
 	defer m.Close()
 	a := NewWireAdapter(m, nil)
 
@@ -404,7 +404,7 @@ func TestSendHelloOnUsesFilteredPayload(t *testing.T) {
 
 	// And through the adapter for a bound spectator over an empty manager:
 	// exactly one send, with an empty (not null) instance list.
-	m := manager.New(manager.Options{})
+	m := runner.New(runner.Options{})
 	defer m.Close()
 	a := NewWireAdapter(m, nil)
 	calls := 0

@@ -48,7 +48,7 @@ var scraperClasses = func() map[string]bool {
 
 // ScraperClasses returns the sorted per-instance class names
 // RoomForInstanceClass accepts. It exists so the manager's class registry
-// (internal/scraper/manager/classes.go) can be pinned against this table in
+// (xc-scraper/runner/classes.go) can be pinned against this table in
 // both directions from outside the package — the manager imports rooms, so
 // that check can only live in an external test.
 func ScraperClasses() []string {

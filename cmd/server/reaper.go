@@ -7,8 +7,8 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
-	scrapermgr "github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
 )
 
 // reaperSource implements reaper.Source over the live scraper + host-runner

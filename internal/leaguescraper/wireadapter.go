@@ -6,14 +6,14 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // WireAdapter is the league server's view of the scraper manager: it embeds
-// *manager.Manager (so Start/Stop/List/Inspect/InstanceState/Membership and
+// *runner.Manager (so Start/Stop/List/Inspect/InstanceState/Membership and
 // every setter pass straight through) and satisfies scraperiface.Service by
-// framing the manager's request/reply envelopes (manager.Reply) as the
+// framing the manager's request/reply envelopes (runner.Reply) as the
 // wire.Message{Type:"scraper", Room:…} bytes the WebSocket handlers hand to a
 // client. Since step 7 part 3c the manager itself returns bare envelopes and
 // knows nothing about rooms, principals or the hub; everything transport- or
@@ -33,7 +33,7 @@ import (
 // svc is retained for future league-side needs (the hub, the app); the
 // reply paths themselves only need the manager.
 type WireAdapter struct {
-	*manager.Manager
+	*runner.Manager
 	svc *guards.Services
 }
 
@@ -42,7 +42,7 @@ type WireAdapter struct {
 var _ scraperiface.Service = (*WireAdapter)(nil)
 
 // NewWireAdapter wraps m for the league server. svc may be nil in tests.
-func NewWireAdapter(m *manager.Manager, svc *guards.Services) *WireAdapter {
+func NewWireAdapter(m *runner.Manager, svc *guards.Services) *WireAdapter {
 	return &WireAdapter{Manager: m, svc: svc}
 }
 
@@ -125,16 +125,16 @@ func (a *WireAdapter) SendHelloOn(send func(data []byte), p authz.Principal) {
 // wire.Message{Type:"scraper"} with no room — exactly the bytes the manager
 // used to enqueue itself. (nil, false) on marshal error (logged).
 func helloMessageBytes(payload wire.HelloPayload) ([]byte, bool) {
-	envBytes, ok := manager.HelloEnvelope(payload)
+	envBytes, ok := runner.HelloEnvelope(payload)
 	if !ok {
 		return nil, false
 	}
 	return wrapRoomMessage("hello", "", envBytes)
 }
 
-// replyRoom picks the WebSocket room for one manager.Reply per the table on
+// replyRoom picks the WebSocket room for one runner.Reply per the table on
 // WireAdapter. (room, false) when the class is not routable (logged).
-func replyRoom(rep manager.Reply) (string, bool) {
+func replyRoom(rep runner.Reply) (string, bool) {
 	switch rep.Class {
 	case wire.ClassEvents, wire.ClassProbe:
 		// Legacy per-instance room: the request/reply channels predate
@@ -153,7 +153,7 @@ func replyRoom(rep manager.Reply) (string, bool) {
 }
 
 // frameReply wraps one reply as wire.Message bytes for its room.
-func frameReply(rep manager.Reply) ([]byte, bool) {
+func frameReply(rep runner.Reply) ([]byte, bool) {
 	room, ok := replyRoom(rep)
 	if !ok {
 		return nil, false
@@ -163,7 +163,7 @@ func frameReply(rep manager.Reply) ([]byte, bool) {
 
 // frameReplies frames each reply in order, dropping any that fail. nil in →
 // nil out, so the "runner does not exist" answer stays nil.
-func frameReplies(reps []manager.Reply) [][]byte {
+func frameReplies(reps []runner.Reply) [][]byte {
 	if reps == nil {
 		return nil
 	}

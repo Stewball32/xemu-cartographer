@@ -122,7 +122,7 @@ func registerPublicProfilesRoute(se *core.ServeEvent) {
 		// Load the gamertag queue once and index the broadcast-visible rows by
 		// their `sanitized` column — the same lowercased+trimmed form the scraper
 		// matching path uses everywhere else (internal/gamertags,
-		// manager.Membership), so a scraped name lines up without per-call
+		// runner.Membership), so a scraped name lines up without per-call
 		// normalisation guesswork. Modest counts on a tournament hub, and an
 		// in-memory scan avoids SQLite collation surprises.
 		gamertags, err := e.App.FindAllRecords("gamertags")

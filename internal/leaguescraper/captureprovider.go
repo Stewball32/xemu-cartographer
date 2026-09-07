@@ -6,8 +6,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 )
 
 // CapturePoliciesCollection is the PocketBase collection name holding the
@@ -43,7 +43,7 @@ func recordsToPolicies(records []*core.Record) []capture.Policy {
 }
 
 // ReloadCapturePolicies fetches every capture_policies row from PB and
-// hands the resolved slice to the manager (manager.SetCapturePolicies —
+// hands the resolved slice to the manager (runner.SetCapturePolicies —
 // stored on the Manager and pushed to every running runner). Safe to call
 // from PB record-change hooks; serialised by reloadMu so concurrent fires
 // can't interleave a runner-by-runner push and leave half the fleet on
@@ -53,7 +53,7 @@ func recordsToPolicies(records []*core.Record) []capture.Policy {
 // FindAllRecords error is logged and treated as "empty policies" rather
 // than failing the hook — a missing collection on a fresh DB shouldn't
 // take down the runner.
-func ReloadCapturePolicies(app core.App, mgr *manager.Manager) error {
+func ReloadCapturePolicies(app core.App, mgr *runner.Manager) error {
 	if app == nil || mgr == nil {
 		return nil
 	}
@@ -76,7 +76,7 @@ func ReloadCapturePolicies(app core.App, mgr *manager.Manager) error {
 // twice, so main.go must call this exactly once during OnServe.
 //
 // Hot-reload pattern mirrors seed.RegisterContainerSnapshotHooks.
-func RegisterCapturePolicyHooks(app core.App, mgr *manager.Manager) {
+func RegisterCapturePolicyHooks(app core.App, mgr *runner.Manager) {
 	if app == nil || mgr == nil {
 		return
 	}

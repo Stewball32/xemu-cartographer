@@ -5,16 +5,16 @@ import (
 	"log"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// wsEmitter is the league server's manager.Emitter: it frames each envelope
+// wsEmitter is the league server's runner.Emitter: it frames each envelope
 // as a wire.Message{Type:"scraper"} and pushes it to the WebSocket room the
 // pre-port manager used for that class.
 //
 // Room mapping (must stay byte-for-byte what the manager did before step 7
-// part 3a — internal/scraper/manager runner.go emitClass/broadcastSnapshot/
+// part 3a — xc-scraper/runner runner.go emitClass/broadcastSnapshot/
 // broadcastPoll, loop.go broadcast, aggregator.go broadcast):
 //
 //	instance == ""  (summary, the only cross-instance class)
@@ -27,7 +27,7 @@ import (
 // No broadcast ever targeted the legacy per-instance room ("host:<inst>",
 // wire.RoomForInstance): that room is only used by the request/reply
 // channels (EventsReply, ProbeReply), which the WireAdapter (wireadapter.go)
-// frames from the manager's bare manager.Reply values.
+// frames from the manager's bare runner.Reply values.
 //
 // svc.WS is read at call time, not at construction: main.go builds the
 // manager before the hub exists and populates svc.WS later in OnServe, and
@@ -36,8 +36,8 @@ type wsEmitter struct {
 	svc *guards.Services
 }
 
-// NewEmitter returns the WebSocket-backed manager.Emitter for svc.
-func NewEmitter(svc *guards.Services) manager.Emitter {
+// NewEmitter returns the WebSocket-backed runner.Emitter for svc.
+func NewEmitter(svc *guards.Services) runner.Emitter {
 	return &wsEmitter{svc: svc}
 }
 

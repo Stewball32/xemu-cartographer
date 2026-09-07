@@ -24,7 +24,7 @@ import (
 // console name is the stable constant; the instance id churns).
 //
 // Built on the M09 identity mechanic (the host already scrapes peer console
-// names into game_data.machines — see internal/scraper/manager/membership.go).
+// names into game_data.machines — see xc-scraper/runner/membership.go).
 //
 // Authorization (design §7.1 R-14, PD-1 "console door"):
 //
