@@ -59,11 +59,11 @@ element over the correct region at any resolution.
 This is the retail CE behaviour and is the priority case for this feature.
 
 The mapping is pure and deterministic:
-[`xc-scraper/scraper/viewport.go`](../../xc-scraper/scraper/viewport.go) —
+[`xc-scraper/scraper/viewport.go`](https://github.com/xemu-cartographer/xc-scraper/blob/main/scraper/viewport.go) —
 `LocalViewport(count, localIndex)` + `AssignLocalViewports(players, count)`.
 Unit-tested for all four layouts, out-of-range indices, screen-tiling
 invariants, and the 2-player-is-horizontal guard in
-[`xc-scraper/scraper/viewport_test.go`](../../xc-scraper/scraper/viewport_test.go).
+[`xc-scraper/scraper/viewport_test.go`](https://github.com/xemu-cartographer/xc-scraper/blob/main/scraper/viewport_test.go).
 A matching TS port (`localViewport`) lives in
 [`sveltekit/src/lib/types/scraper.ts`](../sveltekit/src/lib/types/scraper.ts)
 for overlay consumers.
@@ -82,9 +82,9 @@ Added to the wire (JSON tags):
   per-local list, so the tick stream is self-sufficient for overlay placement.
 
 Populated in CE by
-[`xc-scraper/haloce/reader.go`](../../xc-scraper/haloce/reader.go)
+[`xc-scraper/haloce/reader.go`](https://github.com/xemu-cartographer/xc-scraper/blob/main/haloce/reader.go)
 (`composeGameData` — sets `local_count`, calls `AssignLocalViewports`) and
-[`xc-scraper/haloce/reader_locals.go`](../../xc-scraper/haloce/reader_locals.go)
+[`xc-scraper/haloce/reader_locals.go`](https://github.com/xemu-cartographer/xc-scraper/blob/main/haloce/reader_locals.go)
 (`readLocals` — sets each `TickLocal.viewport`). The per-player `local_index`
 was already read at `reader.go` `readGamePlayer` (`OffPlrLocalIndex`).
 

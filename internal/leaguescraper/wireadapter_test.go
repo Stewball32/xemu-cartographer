@@ -147,7 +147,7 @@ func TestFrameRepliesPreservesNilAndOrder(t *testing.T) {
 func TestAdapterJoinReplayForHostAll(t *testing.T) {
 	m := runner.New(runner.Options{})
 	defer m.Close()
-	a := NewWireAdapter(m, nil)
+	a := NewWireAdapter(m)
 
 	out := a.JoinReplayForHostAll()
 	if len(out) != 1 {
@@ -257,7 +257,7 @@ func helloNames(p wire.HelloPayload) []string {
 func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 	m := runner.New(runner.Options{})
 	defer m.Close()
-	a := NewWireAdapter(m, nil)
+	a := NewWireAdapter(m)
 
 	live := []string{"pod-a", "pod-b"}
 	bound := func(kind authz.Kind, instance string) authz.Principal {
@@ -320,7 +320,7 @@ func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 func TestSendHelloOn(t *testing.T) {
 	m := runner.New(runner.Options{})
 	defer m.Close()
-	a := NewWireAdapter(m, nil)
+	a := NewWireAdapter(m)
 
 	calls := 0
 	var got []byte
@@ -406,7 +406,7 @@ func TestSendHelloOnUsesFilteredPayload(t *testing.T) {
 	// exactly one send, with an empty (not null) instance list.
 	m := runner.New(runner.Options{})
 	defer m.Close()
-	a := NewWireAdapter(m, nil)
+	a := NewWireAdapter(m)
 	calls := 0
 	a.SendHelloOn(func([]byte) { calls++ }, p)
 	if calls != 1 {

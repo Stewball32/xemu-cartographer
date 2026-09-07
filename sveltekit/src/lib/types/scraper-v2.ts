@@ -1,8 +1,9 @@
-// V2 wire-protocol types — mirrors internal/scraper/types.go and the
-// per-class payload structs in internal/scraper/manager/ (xbox.go,
-// scenario.go, game.go, tick.go, objects.go, debug.go, summary.go,
-// previous_game.go, hello.go) plus event payloads in
-// internal/scraper/event_payloads.go.
+// V2 wire-protocol types — hand-maintained mirror of the Go structs in
+// wire/ (envelope.go, message.go, rooms.go, classes.go, phase.go and the
+// per-class payload files xbox.go, scenario.go, game.go, tick.go,
+// objects.go, debug.go, summary.go, previous_game.go, hello.go, events.go,
+// events_reply.go, probe.go, finished_game.go) plus the event payloads in
+// scraper/event_payloads.go. See wire/ts/README.md.
 //
 // Separate file from scraper.ts (the v1 types) so PR 19 ships without
 // touching the v1 surface. PR 20 swaps the WS store to v2; PR 21+ moves
@@ -259,7 +260,7 @@ export interface ScenarioTagDef {
 
 export type PhaseV2 = 'idle' | 'ready' | 'live';
 
-/** Host tick-rate health. Mirrors Go `internal/hosthealth.Health`.
+/** Host tick-rate health. Mirrors Go `hosthealth.Health`.
  *
  * `status` is the verdict to render on. 'stalled' means the engine tick has
  * STOPPED — a menu, a paused guest, or an idle runner — and is deliberately
@@ -308,7 +309,7 @@ export interface GamePayload {
 	/** Rolling observed-vs-expected engine tick rate for this host — "is the box
 	 * sustaining 30Hz?". `engine_tick` above is a raw counter, so a host running
 	 * at 24Hz is indistinguishable from one at 30Hz without dividing by wall
-	 * clock; this is that division, done server-side. See internal/hosthealth.
+	 * clock; this is that division, done server-side. See hosthealth.
 	 *
 	 * Optional: the current server always emits it, but it is purely diagnostic —
 	 * nothing rendered depends on it — so consumers must degrade gracefully

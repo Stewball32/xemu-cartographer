@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
+	"github.com/xemu-cartographer/xc-scraper/runner"
 )
 
 func init() {
@@ -40,10 +40,10 @@ func init() {
 			}
 
 			if err := Manager.Start(body.Name, body.Sock); err != nil {
-				if errors.Is(err, scrapermgr.ErrAlreadyRunning) {
+				if errors.Is(err, runner.ErrAlreadyRunning) {
 					return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 				}
-				if errors.Is(err, scrapermgr.ErrInvalidName) {
+				if errors.Is(err, runner.ErrInvalidName) {
 					return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 				}
 				return e.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})

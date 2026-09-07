@@ -1,0 +1,31 @@
+# Build-context excludes for `podman build -f Containerfile .` (Podman reads
+# .containerignore, Docker/BuildKit read .dockerignore — keep both in sync if a
+# .dockerignore is ever added).
+#
+# The frontend stage runs `pnpm install --frozen-lockfile` inside the image and
+# then `COPY sveltekit/ ./`. Without these excludes the host's node_modules /
+# .svelte-kit / build overlay the image's, and pnpm 11's pre-run deps check
+# tries to reinstall and aborts ("ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY").
+# The rest just keeps the context small and secrets / local state out of it.
+.git
+.github
+.claude
+.vscode
+.task
+.playwright-mcp
+sveltekit/node_modules
+sveltekit/.svelte-kit
+sveltekit/build
+sveltekit/.env
+sveltekit/.env.*
+!sveltekit/.env.example
+bin
+pb_data
+tmp
+dev.log
+.env
+.env.*
+!.env.example
+inbox
+atlas
+docs

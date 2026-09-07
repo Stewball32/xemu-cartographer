@@ -30,8 +30,10 @@ import (
 // frames from the manager's bare runner.Reply values.
 //
 // svc.WS is read at call time, not at construction: main.go builds the
-// manager before the hub exists and populates svc.WS later in OnServe, and
-// the pre-port manager did the same late read. A nil hub drops the envelope.
+// manager before the hub exists and populates svc.WS in OnServe — before
+// the discovery watcher (and so every runner goroutine) starts, which is
+// the happens-before edge for this unsynchronised read. A nil hub (tests,
+// a boot without OnServe) drops the envelope.
 type wsEmitter struct {
 	svc *guards.Services
 }

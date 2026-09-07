@@ -2,7 +2,7 @@
 
 The WebSocket wire contract (frames, envelope, rooms, classes, payload shapes, tiers,
 `finished_game`, compatibility policy) now lives with its implementation in the
-**xc-scraper** repository: [`xc-scraper/docs/wire.md`](../../xc-scraper/docs/wire.md)
+**xc-scraper** repository: [`xc-scraper/docs/wire.md`](https://github.com/xemu-cartographer/xc-scraper/blob/main/docs/wire.md)
 (sibling checkout `../xc-scraper`; module `github.com/xemu-cartographer/xc-scraper`).
 
 The Go types are `github.com/xemu-cartographer/xc-scraper/wire` (aliased here by `internal/websocket` and

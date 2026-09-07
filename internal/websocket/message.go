@@ -17,6 +17,9 @@ const (
 	// passes, so the Hub dropped the membership. One frame per room, sent
 	// before the membership goes; payload {"reason":"forbidden"}.
 	TypeRoomLeft = wire.TypeRoomLeft
+	// TypeScraper frames every scraper envelope the league emitter fans out
+	// to a host:* room (internal/leaguescraper/emitter.go).
+	TypeScraper = wire.TypeScraper
 )
 
 // Message is the wire format for all WebSocket communication.

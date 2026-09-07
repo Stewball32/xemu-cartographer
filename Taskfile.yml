@@ -2,6 +2,10 @@ version: "3"
 dotenv: [".env"]
 
 vars:
+  # Sibling xc-scraper checkout (go.mod: replace github.com/xemu-cartographer/xc-scraper
+  # => ../xc-scraper). Used by sync-wire*, build:backend (fingerprint) and
+  # container:build (named build context). Override: XC_SCRAPER_DIR=/path task ...
+  XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
   # Single source of truth: the git tag. See docs/decisions/0001-version-from-git-tag.md
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
@@ -66,23 +70,20 @@ tasks:
   # (also a CI step) fails when the vendored copies drift.
   sync-wire:
     desc: Vendor the wire TS types + golden fixtures from the sibling xc-scraper checkout (../xc-scraper/wire → sveltekit/src/lib/types/)
-    vars:
-      XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
     cmds:
       - cmd: 'test -f "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts not found (set XC_SCRAPER_DIR)"; exit 1; }'
       - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire/testdata" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/testdata not found (set XC_SCRAPER_DIR)"; exit 1; }'
       - cmd: 'cp "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts'
-      # Stale fixtures must go: the vendored dir mirrors testdata exactly
-      # (sync-wire:check diffs the whole directory).
+      # Stale fixtures must go: the vendored dir mirrors testdata exactly —
+      # the WHOLE directory, not just *.json, because sync-wire:check / CI
+      # `diff -ru` the directories (an unvendored README would fail forever).
       - cmd: 'rm -rf sveltekit/src/lib/types/wire-fixtures && mkdir -p sveltekit/src/lib/types/wire-fixtures'
-      - cmd: 'cp "{{.XC_SCRAPER_DIR}}"/wire/testdata/*.json sveltekit/src/lib/types/wire-fixtures/'
+      - cmd: 'cp -R "{{.XC_SCRAPER_DIR}}"/wire/testdata/. sveltekit/src/lib/types/wire-fixtures/'
       - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts -> sveltekit/src/lib/types/scraper-v2.ts"'
-      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/testdata/*.json -> sveltekit/src/lib/types/wire-fixtures/ ($(ls sveltekit/src/lib/types/wire-fixtures | wc -l) files)"'
+      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/testdata/ -> sveltekit/src/lib/types/wire-fixtures/ ($(ls sveltekit/src/lib/types/wire-fixtures | wc -l) files)"'
 
   sync-wire:check:
     desc: Fail (with a diff) if the vendored wire TS types or fixtures differ from the sibling xc-scraper checkout
-    vars:
-      XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
     cmds:
       - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire" || { echo "sync-wire:check: {{.XC_SCRAPER_DIR}}/wire not found (set XC_SCRAPER_DIR)"; exit 1; }'
       # Same commands as the CI "Wire sync check" step (.github/workflows/ci.yml).
@@ -140,7 +141,20 @@ tasks:
     desc: Build Go binary (version baked in via ldflags)
     cmds:
       - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version={{.VERSION}} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit={{.COMMIT}} -X github.com/Stewball32/xemu-cartographer/internal/version.Date={{.DATE}}" -o ./bin/server ./cmd/server
-    sources: ["cmd/**/*.go", "internal/**/*.go", "go.mod", "go.sum"]
+    # The sibling module is compiled into bin/server (go.mod replace), so it
+    # is part of the fingerprint — otherwise a sibling-only edit reports
+    # "up to date" and ships the previous binary.
+    sources:
+      [
+        "cmd/**/*.go",
+        "internal/**/*.go",
+        "migrations/**/*.go",
+        "go.mod",
+        "go.sum",
+        "{{.XC_SCRAPER_DIR}}/**/*.go",
+        "{{.XC_SCRAPER_DIR}}/go.mod",
+        "{{.XC_SCRAPER_DIR}}/go.sum",
+      ]
     generates: ["bin/server"]
 
   test:
@@ -172,7 +186,11 @@ tasks:
   container:build:
     desc: Build container image with Podman (tags VERSION and latest)
     cmds:
-      - podman build --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg DATE={{.DATE}} -t xemu-cartographer:{{.VERSION}} -t xemu-cartographer:latest -f Containerfile .
+      # The backend stage needs the sibling xc-scraper checkout (go.mod replace =>
+      # ../xc-scraper); it is handed in as a named build context, not copied into
+      # this repo's context.
+      - test -f "{{.XC_SCRAPER_DIR}}/go.mod" || { echo "xc-scraper checkout not found at {{.XC_SCRAPER_DIR}} (set XC_SCRAPER_DIR)"; exit 1; }
+      - podman build --build-context xc-scraper="{{.XC_SCRAPER_DIR}}" --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg DATE={{.DATE}} -t xemu-cartographer:{{.VERSION}} -t xemu-cartographer:latest -f Containerfile .
 
   container:run:
     desc: Run container with Podman

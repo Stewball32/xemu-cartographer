@@ -22,8 +22,9 @@ var Group *router.RouterGroup[*core.RequestEvent]
 
 // Manager is the scraper manager used by all handlers.
 // Injected by SetManager from cmd/server/main.go before RegisterAll runs.
-// Typed against the Service interface (not the concrete *runner.Manager) so
-// this package has no compile-time dependency on xc-scraper/runner.
+// Typed against the Service interface (not the concrete *runner.Manager);
+// the package imports xc-scraper/runner only for the ErrAlreadyRunning /
+// ErrInvalidName sentinels (handlers.go), never for the manager type.
 var Manager scraperiface.Service
 
 var registry []func()

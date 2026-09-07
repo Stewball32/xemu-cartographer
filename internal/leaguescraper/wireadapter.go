@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
@@ -30,20 +29,20 @@ import (
 //	every other class               → wire.RoomForInstanceClass    ("host:<inst>:<class>")
 //	hello                           → no room (connection-scoped handshake)
 //
-// svc is retained for future league-side needs (the hub, the app); the
-// reply paths themselves only need the manager.
+// The reply paths only need the manager; league-side state (the hub, the
+// app) is not held here — the emitter/demand ports carry their own
+// *guards.Services.
 type WireAdapter struct {
 	*runner.Manager
-	svc *guards.Services
 }
 
 // Compile-time proof that the adapter is what main.go stores in
 // guards.Services.Scraper / hands to authzpb.NewDeps.
 var _ scraperiface.Service = (*WireAdapter)(nil)
 
-// NewWireAdapter wraps m for the league server. svc may be nil in tests.
-func NewWireAdapter(m *runner.Manager, svc *guards.Services) *WireAdapter {
-	return &WireAdapter{Manager: m, svc: svc}
+// NewWireAdapter wraps m for the league server.
+func NewWireAdapter(m *runner.Manager) *WireAdapter {
+	return &WireAdapter{Manager: m}
 }
 
 // JoinReplayMessages frames every runner's per-class replay envelopes for

@@ -58,11 +58,11 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 
 The live game-data feed — xemu QMP/memory readers, the per-game plugins, the scraper
 runner and the WebSocket **wire contract** — lives in the sibling module
-[`github.com/xemu-cartographer/xc-scraper`](../xc-scraper) (checkout expected at `../xc-scraper`;
+[`github.com/xemu-cartographer/xc-scraper`](https://github.com/xemu-cartographer/xc-scraper) (checkout expected at `../xc-scraper`;
 `go.mod` points there with a `replace` directive). This repo is the league server around it:
 PocketBase, Discord, the WebSocket hub and the glue in `internal/leaguescraper` that turns the
 runner's envelopes into rooms and persisted games. The wire contract is documented in
-[`xc-scraper/docs/wire.md`](../xc-scraper/docs/wire.md); its TS mirror + golden fixtures are
+[`xc-scraper/docs/wire.md`](https://github.com/xemu-cartographer/xc-scraper/blob/main/docs/wire.md); its TS mirror + golden fixtures are
 vendored here by `task sync-wire`.
 
 ## Project Structure

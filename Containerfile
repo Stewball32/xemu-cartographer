@@ -18,10 +18,19 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 WORKDIR /app
+# go.mod replaces github.com/xemu-cartographer/xc-scraper => ../xc-scraper, so the
+# sibling checkout must sit at /xc-scraper inside the builder. It arrives through
+# a named build context (Podman >= 4.4 / Docker BuildKit):
+#   podman build --build-context xc-scraper=../xc-scraper -f Containerfile .
+# `task container:build` passes it (XC_SCRAPER_DIR overrides the path). Without
+# it the build fails at `go mod download` with "replacement directory
+# ../xc-scraper does not exist".
+COPY --from=xc-scraper / /xc-scraper/
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY migrations/ ./migrations/
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version=${VERSION} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit=${COMMIT} -X github.com/Stewball32/xemu-cartographer/internal/version.Date=${DATE}" -o /server ./cmd/server
 
 # Stage 3: Runtime

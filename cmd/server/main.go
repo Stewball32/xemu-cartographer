@@ -139,7 +139,7 @@ func main() {
 		// The league adapter frames the manager's bare reply envelopes for the
 		// WS rooms and filters the hello per principal; it is what every
 		// scraperiface.Service consumer sees (step 7 part 3c).
-		scrAdapter := leaguescraper.NewWireAdapter(scrMgr, svc)
+		scrAdapter := leaguescraper.NewWireAdapter(scrMgr)
 		svc.Scraper = scrAdapter
 		scraperroutes.SetManager(scrAdapter)
 
@@ -253,6 +253,18 @@ func main() {
 		if err := leaguescraper.ReloadCapturePolicies(app, scrMgr); err != nil {
 			log.Printf("scraper: initial capture-policy load: %v", err)
 		}
+
+		// WebSocket hub — created and published on svc.WS BEFORE the discovery
+		// watcher below starts. The watcher's goroutines (scrMgr.Start → runner
+		// loop / aggregator → leaguescraper emitter + demand) read svc.WS at
+		// call time; the `go w.Run(ctx)` statement is the happens-before edge
+		// that makes this write visible to them without a lock.
+		hub = ws.NewHub(app)
+		go hub.Run()
+		ws.SetInstance(hub)
+		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrAdapter.SendHelloOn))
+		svc.WS = hub
+		hub.SetServices(svc)
 
 		// Containers (optional): start podman manager + socket watcher when
 		// CONTAINERS_ENABLED=true (podmanCfg was loaded above, ahead of the authz
@@ -370,13 +382,6 @@ func main() {
 
 		se.Router.BindFunc(authzpb.RejectBannedAuth) // banned / soft-deleted JWT ⇒ guest on every route
 		routes.RegisterAll(se)
-
-		hub = ws.NewHub(app)
-		go hub.Run()
-		ws.SetInstance(hub)
-		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrAdapter.SendHelloOn))
-		svc.WS = hub
-		hub.SetServices(svc)
 
 		// Start Disgo bot (non-blocking)
 		var err error

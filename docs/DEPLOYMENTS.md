@@ -56,8 +56,14 @@ What it does (see the script header for the full contract): builds the ref in a
 is never touched; **since the step 7 restructure `go.mod` resolves
 `github.com/xemu-cartographer/xc-scraper` via `replace => ../xc-scraper`, so the
 worktree's parent directory must also hold an `xc-scraper` checkout at the
-matching ref — `srv-pre.sh` and the `Containerfile` build context do not
-provide one yet; see the CHANGELOG restructure entry**), installs `bin/server` + `pb_public/` + `tools/game-maps/`
+matching ref. `task container:build` handles this by passing the sibling as a
+named build context (`podman build --build-context xc-scraper=../xc-scraper`,
+see `Containerfile`; `.containerignore` keeps `sveltekit/node_modules`, `pb_data`,
+`.env*` etc. out of the context — without it the frontend stage's `pnpm build`
+aborts on the host's `node_modules`); `srv-pre.sh` lives in `/srv/registry`, outside this repo,
+and does NOT check the sibling out yet — until it does, a pre deploy from this
+branch fails at `go build` with "replacement directory ../xc-scraper does not
+exist"**), installs `bin/server` + `pb_public/` + `tools/game-maps/`
 into the tier, regenerates `run.sh`, writes `BUILD-INFO` with provenance
 verification, then (re)starts the `site-xemu-cartographer-pre` **user** unit
 (linger is on — survives reboots, no sudo) and polls `/api/health`. It never

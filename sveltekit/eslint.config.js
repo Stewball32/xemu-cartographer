@@ -12,7 +12,9 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
-	{ ignores: ['src/lib/types/pocketbase-types.ts'] },
+	// pocketbase-types.ts is generated; scraper-v2.ts is vendored byte-for-byte
+	// from ../xc-scraper/wire/ts (task sync-wire) — neither is linted here.
+	{ ignores: ['src/lib/types/pocketbase-types.ts', 'src/lib/types/scraper-v2.ts'] },
 	// Vendored OBS overlay pack (LAN_OBS_Browser_Sources) — plain-JS Svelte
 	// authored outside this repo's strict TS/eslint conventions. Kept as-is
 	// (@ts-nocheck for svelte-check); excluded from eslint rather than rewritten.
