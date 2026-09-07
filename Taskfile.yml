@@ -50,6 +50,15 @@ tasks:
     dir: sveltekit
     cmds: ["pnpm typegen"]
 
+  sync-wire:
+    desc: Vendor the wire TS types from the sibling xc-scraper checkout (../xc-scraper/wire/ts/scraper-v2.ts → sveltekit/src/lib/types/scraper-v2.ts)
+    vars:
+      XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
+    cmds:
+      - cmd: 'test -f "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: 'cp "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts'
+      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts -> sveltekit/src/lib/types/scraper-v2.ts"'
+
   # --- migrations (schema source of truth — see docs/MIGRATIONS.md) -----------
   migrate:
     desc: Apply pending migrations (alias of migrate:up)

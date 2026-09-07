@@ -16,20 +16,8 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
-// hostSummary is one entry in the host:all aggregate cache. Lean on purpose
-// — host:all subscribers are list views (admin debug index, future host
-// picker UI), not per-instance overlays. Anything heavier belongs on the
-// host:<name> per-instance stream.
-type hostSummary struct {
-	Instance             string    `json:"instance"`
-	Phase                Phase     `json:"phase"`
-	Title                string    `json:"title"`
-	XBETitleName         string    `json:"xbe_title_name"`
-	Map                  string    `json:"map"`
-	Gametype             string    `json:"gametype"`
-	ScoreSummary         string    `json:"score_summary"`
-	LastSuccessfulReadAt time.Time `json:"last_successful_read_at"`
-}
+// hostSummary (one entry in the summary aggregate cache) is declared in
+// summary.go as an alias of wire.HostSummary.
 
 // summaryUpdate is one message on the aggregator's input channel. Removed
 // distinguishes runner-stop (eviction) from a fresh snapshot push.

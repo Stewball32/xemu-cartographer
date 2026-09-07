@@ -10,10 +10,9 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
-// envelopeTypeGameFiltered is the wire type for the viewer-facing filtered
-// variant of the game class — identical GamePayload shape, dummy roster
-// removed server-side. See buildGameFilteredPayload.
-const envelopeTypeGameFiltered = "game_filtered"
+// The viewer-facing filtered variant of the game class rides an
+// envelopeTypeGameFiltered envelope (classes.go) — identical GamePayload
+// shape, dummy roster removed server-side. See buildGameFilteredPayload.
 
 // dummyCfgTTL bounds how stale the cached dummy-filter config may be. Short
 // enough that a live is_neutral_host flip (or a dummy_gamertags edit) takes

@@ -1,5 +1,7 @@
 package manager
 
+import "github.com/xemu-cartographer/xc-scraper/wire"
+
 // Phase is the runner's lifecycle state. Every per-instance runner moves
 // through this state machine in response to xemu memory observations:
 //
@@ -14,10 +16,14 @@ package manager
 //	                consecutive polls (heartbeat fallback for the case xemu
 //	                exits or the user quits to the dashboard mid-match —
 //	                see ROADMAP M5 OQ6).
-type Phase string
+//
+// Alias of wire.Phase — the value is published on the wire (game.phase,
+// summary.hosts[].phase, events reply phase), so the type lives in the
+// contract package and the constants are re-declared here.
+type Phase = wire.Phase
 
 const (
-	PhaseIdle  Phase = "idle"
-	PhaseReady Phase = "ready"
-	PhaseLive  Phase = "live"
+	PhaseIdle  = wire.PhaseIdle
+	PhaseReady = wire.PhaseReady
+	PhaseLive  = wire.PhaseLive
 )

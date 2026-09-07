@@ -4,24 +4,22 @@ import (
 	"encoding/json"
 
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// envelopeTypeEvents is the wire type for a request_events response.
-// Plural, distinct from envelopeTypeEvent — clients pattern-match on the
-// inner envelope type to tell a request reply ("events") from a live
-// per-event broadcast ("event"). One reply envelope per instance.
-const envelopeTypeEvents = "events"
+// The request_events reply rides an envelopeTypeEvents envelope
+// (classes.go). Plural, distinct from envelopeTypeEvent — clients
+// pattern-match on the inner envelope type to tell a request reply
+// ("events") from a live per-event broadcast ("event"). One reply envelope
+// per instance.
 
 // EventsResponsePayload is the payload of a request_events reply envelope.
 // Phase is included so a client receiving an empty Events list knows
 // whether the runner is in Live (no matching events) or Idle/Ready (always
 // empty per the M5 brief's resolution to OQ1). SinceTick echoes back the
 // requester's filter so they can match the response to the request.
-type EventsResponsePayload struct {
-	Phase     Phase              `json:"phase"`
-	SinceTick uint32             `json:"since_tick"`
-	Events    []scraper.Envelope `json:"events"`
-}
+// Alias of wire.EventsResponsePayload.
+type EventsResponsePayload = wire.EventsResponsePayload
 
 // EventsReply builds the request_events response bytes for one instance.
 // See scraperiface.EventsReply for the wire contract. The cache stores

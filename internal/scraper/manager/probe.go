@@ -4,23 +4,21 @@ import (
 	"time"
 
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// envelopeTypeProbe is the wire type for a request_probe response.
+// The request_probe reply rides an envelopeTypeProbe envelope (classes.go).
 // On-demand only — never broadcast. Probe is the developer scratch
 // space for finding/debugging memory values; running BuildScoreProbe
 // every tick (its old home, the per-tick debug envelope) was wasted
 // memory-read work whenever the probe page wasn't open.
-const envelopeTypeProbe = "probe"
 
 // ProbePayload is the data for a probe-class envelope. Mirrors the
-// shape `internal/scraper.GameReader` returns: state_inputs are the
-// raw values the plugin's ReadGameState sampled, score_probe is the
-// free-form bag of every candidate address the plugin knows about.
-type ProbePayload struct {
-	StateInputs scraper.StateInputs `json:"state_inputs"`
-	ScoreProbe  scraper.ScoreProbe  `json:"score_probe"`
-}
+// shape `scraper.GameReader` returns: state_inputs are the raw values
+// the plugin's ReadGameState sampled, score_probe is the free-form bag
+// of every candidate address the plugin knows about. Alias of
+// wire.ProbePayload.
+type ProbePayload = wire.ProbePayload
 
 // probeRequest carries a one-shot reply channel. The loop goroutine
 // fills the payload (by calling reader.LastStateInputs +

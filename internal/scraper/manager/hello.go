@@ -8,36 +8,27 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// envelopeTypeHello is the wire type for the server→client hello envelope.
-// Sent on WebSocket connect, before any other scraper traffic. Lets the
-// client validate protocol compatibility and detect runner restarts by
-// comparing per-instance started_at against any cached value.
+// The hello envelope (envelopeTypeHello, classes.go) is the server→client
+// handshake. Sent on WebSocket connect, before any other scraper traffic.
+// Lets the client validate protocol compatibility and detect runner
+// restarts by comparing per-instance started_at against any cached value.
 //
 // See atlas/new_json/04-ground-up-rebuild.md §6 (control), §7 (runner restart
-// detection), §8 (versioning + handshake). Emission lands in PR 3; this PR
-// (PR 2 of 24) only ships the payload type + builder so the connect-handler
-// in PR 3 has a self-contained data source to call.
-const envelopeTypeHello = "hello"
+// detection), §8 (versioning + handshake).
 
-// HelloPayload is the data carried by a hello envelope.
-type HelloPayload struct {
-	ProtocolVersion uint8           `json:"protocol_version"`
-	ServerTime      time.Time       `json:"server_time"`
-	Classes         []string        `json:"classes"`
-	Instances       []HelloInstance `json:"instances"`
-}
+// HelloPayload is the data carried by a hello envelope. Alias of
+// wire.HelloPayload.
+type HelloPayload = wire.HelloPayload
 
 // HelloInstance carries per-runner identity needed for runner-restart
 // detection. StartedAt advances whenever a runner restarts (binary update,
 // crash recovery, etc.); a reconnecting client compares it against the
 // previously-seen value to detect that its cached per-class seq tracking is
-// stale and to request fresh snapshots.
-type HelloInstance struct {
-	Name      string    `json:"name"`
-	StartedAt time.Time `json:"started_at"`
-}
+// stale and to request fresh snapshots. Alias of wire.HelloInstance.
+type HelloInstance = wire.HelloInstance
 
 // BuildHelloPayload assembles the data for a hello envelope from the
 // Manager's current view of the world. ServerTime is captured at call time

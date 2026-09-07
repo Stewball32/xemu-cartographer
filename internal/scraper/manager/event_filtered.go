@@ -6,12 +6,13 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// envelopeTypeEventFiltered is the wire type for the viewer-facing event
-// class. It is the event-stream counterpart to game_filtered: same dummy
-// rule, same "filtering stays server-side" motivation, but a narrower
-// surface — see DeathFiltered.
+// The viewer-facing event class rides an envelopeTypeEventFiltered
+// envelope (classes.go). It is the event-stream counterpart to
+// game_filtered: same dummy rule, same "filtering stays server-side"
+// motivation, but a narrower surface — see DeathFiltered.
 //
 // Deliberately deaths-only. The overlay consumes exactly one event (a
 // death, to paint the KILLED BY plate), and every other event type carries
@@ -19,7 +20,6 @@ import (
 // scrub audit before they could be published to an unauthenticated viewer.
 // Adding a second type here means adding a second Filtered payload type,
 // not widening this one.
-const envelopeTypeEventFiltered = "event_filtered"
 
 // DeathFiltered is the viewer-facing projection of scraper.DeathEvent: the
 // same identity + attribution fields, minus victim_pos / killer_pos.
@@ -30,17 +30,8 @@ const envelopeTypeEventFiltered = "event_filtered"
 // publish the origin instead of nothing. Making the positions structurally
 // unrepresentable turns "no world coordinates on the public class" into a
 // property the compiler enforces rather than one a reviewer has to check.
-type DeathFiltered struct {
-	scraper.EventCommon
-
-	Victim scraper.PlayerRef  `json:"victim"`
-	Killer *scraper.PlayerRef `json:"killer"` // nil when no visible attributed killer
-
-	Cause          string `json:"cause"`
-	Weapon         string `json:"weapon"`
-	TeamKill       bool   `json:"team_kill"`
-	RespawnInTicks uint32 `json:"respawn_in_ticks"`
-}
+// Alias of wire.DeathFiltered.
+type DeathFiltered = wire.DeathFiltered
 
 // visibleIndices returns the player indices that survive the dummy filter —
 // the exact roster the game_filtered class publishes for the same cache and
