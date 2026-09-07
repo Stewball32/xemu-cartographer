@@ -5,14 +5,16 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 // resolveContainer is the pure scoping decision, in priority order:
 //
-//  1. an admin may target any container via the override;
+//  1. a caller allowed to control the override container (box.control on
+//     it — a scoped admin or its owner, decided by the caller) targets it;
 //  2. OWNERSHIP — the caller's own per-user box ("<prefix>play-<uid>", the name
 //     request-instance derives) resolves the moment it exists, roster or not.
 //     This is what recognises a freshly-provisioned box (still booting, nobody
@@ -21,11 +23,13 @@ import (
 //  3. gamertag→roster match — the M09 path for joining someone else's box.
 //
 // Split from the request plumbing so it's unit-testable with no live container.
-// ok is false when nothing resolves (idle) or an admin passed no override and
-// owns/joins nothing — the caller renders that as idle (current/options) or
-// refuses the action (control POSTs).
-func resolveContainer(isAdmin bool, override, ownedBox string, tags []string, view []scraperiface.ContainerMembership) (string, bool) {
-	if isAdmin && override != "" {
+// canOverride is the caller's verdict on the override (false when there is
+// none or the rule table denies box.control on it — a denied override falls
+// through to ownership / roster, never to the override). ok is false when
+// nothing resolves (idle) — the caller renders that as idle (current/options)
+// or refuses the action (control POSTs).
+func resolveContainer(canOverride bool, override, ownedBox string, tags []string, view []scraperiface.ContainerMembership) (string, bool) {
+	if canOverride && override != "" {
 		return override, true
 	}
 	if ownedBox != "" {
@@ -55,13 +59,18 @@ func ownedBoxName(userID string) string {
 // resolveCaller resolves the container for the current request. ok=false means
 // "no active instance" and is NOT an error — a gamertag-resolution failure is
 // logged and folded into the same idle result (fail-soft), so the caller never
-// has to distinguish the two.
+// has to distinguish the two. A ?container= override is honoured only when
+// the rule table grants the caller box.control on it (R-8).
 func resolveCaller(e *core.RequestEvent) (name string, ok bool) {
-	isAdmin := roles.IsAdminAuth(e.App, e.Auth)
 	override := e.Request.URL.Query().Get("container")
+	canOverride := false
+	if override != "" {
+		d := pb.Default()
+		canOverride = authz.Can(d, pb.Get(e), authz.ActionBoxControl, authz.Container(override))
+	}
 
 	var tags []string
-	if !isAdmin || override == "" {
+	if !canOverride {
 		t, err := gamertags.SanitizedForUser(e.App, e.Auth.Id)
 		if err != nil {
 			log.Printf("/api/play: gamertags for %s: %v", e.Auth.Id, err)
@@ -70,5 +79,5 @@ func resolveCaller(e *core.RequestEvent) (name string, ok bool) {
 			tags = t
 		}
 	}
-	return resolveContainer(isAdmin, override, ownedBoxName(e.Auth.Id), tags, Scraper.Membership())
+	return resolveContainer(canOverride, override, ownedBoxName(e.Auth.Id), tags, Scraper.Membership())
 }

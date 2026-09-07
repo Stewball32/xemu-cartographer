@@ -16,27 +16,30 @@
 //     (Profiles + gametypes already have /api/lan/saves — this group adds only
 //     games + apps.)
 //
-// Access mirrors /api/lan/saves (authorizeLAN): admin JWT or the shared LAN
-// token, OPEN when the token env is unset — the trusted-LAN-appliance default.
-// TODO(lan-sync): kiosk stations are unauthenticated on the LAN today; tighten
-// (per-station token / mTLS) before exposing beyond a trusted segment.
+// Access mirrors /api/lan/saves: the group is bound to pb.AuthorizeLAN, so a
+// caller presents a machine key (X-LAN-Token / ?token= / Authorization:
+// Bearer / X-Api-Key), the raw legacy secret, or a PB session and each route
+// is checked against its lan.sync.* verb (syncVerb). There is no open mode —
+// an anonymous station is refused with 401.
 package lansync
 
 import (
-	"crypto/subtle"
-	"net/http"
-	"os"
+	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
+// groupPrefix is the mount point of the LAN sync group.
+const groupPrefix = "/api/lan/sync"
+
 // Group is the router group for /api/lan/sync. Access is governed by
-// authorizeLAN (admin JWT or the optional LAN token), NOT RequireAdmin, because
-// the on-Xbox client cannot present a browser JWT.
+// pb.AuthorizeLAN (machine key or PB session, checked per verb), NOT
+// RequireAdmin, because the on-Xbox client cannot present a browser JWT.
 var Group *router.RouterGroup[*core.RequestEvent]
 
 // cfg holds the resolved LAN-sync paths + client-facing dir names (SPEC dest_dir
@@ -50,46 +53,54 @@ func register(fn func()) { registry = append(registry, fn) }
 // RegisterAll creates the group + registers all handlers.
 func RegisterAll(se *core.ServeEvent) {
 	cfg = lansync.Load()
-	Group = se.Router.Group("/api/lan/sync")
-	Group.BindFunc(authorizeLAN())
+	Group = se.Router.Group(groupPrefix)
+	Group.BindFunc(authorizeLAN)
 	for _, fn := range registry {
 		fn()
 	}
 }
 
-// lanTokenEnv is shared with /api/lan/saves so a single LAN token unlocks both
-// surfaces. TODO(lan-sync): unify this + lansaves.authorizeLAN into one shared
-// helper instead of two parallel copies.
-const lanTokenEnv = "LAN_SAVES_TOKEN"
-
-func lanToken() string { return os.Getenv(lanTokenEnv) }
-
-func lanTokenFromRequest(e *core.RequestEvent) string {
-	if t := e.Request.Header.Get("X-LAN-Token"); t != "" {
-		return t
-	}
-	return e.Request.URL.Query().Get("token")
+// authorizeLAN is the group middleware: pb.AuthorizeLAN over the deps
+// installed at boot (pb.Default — nil until then, which denies every verb).
+func authorizeLAN(e *core.RequestEvent) error {
+	return pb.AuthorizeLAN(pb.Default(), syncVerb)(e)
 }
 
-// lanAccessAllowed is the pure access decision (unit-testable without a request).
-func lanAccessAllowed(envToken, provided string, isAdmin bool) bool {
-	if isAdmin {
-		return true
-	}
-	if envToken == "" {
-		return true // LAN-trusted default (see package doc TODO)
-	}
-	return provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(envToken)) == 1
+// syncActionUnmapped is the verb a path outside the table maps to. It is not
+// part of the action vocabulary, so no rule grants it — a route added to this
+// group without an entry in syncVerbFor is denied rather than open.
+const syncActionUnmapped authz.Action = "lan.sync.unmapped"
+
+// syncVerb names the action + resource pb.AuthorizeLAN checks for a request,
+// keyed on the path relative to the group.
+func syncVerb(e *core.RequestEvent) (authz.Action, authz.Resource) {
+	return syncVerbFor(strings.TrimPrefix(e.Request.URL.Path, groupPrefix))
 }
 
-func authorizeLAN() func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		isAdmin := e.Auth != nil && roles.IsAdminAuth(e.App, e.Auth)
-		if !lanAccessAllowed(lanToken(), lanTokenFromRequest(e), isAdmin) {
-			return e.JSON(http.StatusUnauthorized, map[string]string{
-				"error": "LAN sync access denied — present the LAN token (X-LAN-Token or ?token=) or authenticate as an admin",
-			})
+// syncVerbFor is the pure group-relative path → verb map (unit-tested):
+//
+//	/manifest        → lan.sync.manifest       (global)
+//	/dl/game/{id}    → lan.sync.download_game  (iso {id})
+//	/dl/app/{id}     → lan.sync.download_app   (global)
+//
+// Anything else maps to syncActionUnmapped.
+func syncVerbFor(path string) (authz.Action, authz.Resource) {
+	path = "/" + strings.Trim(path, "/")
+	switch {
+	case path == "/manifest":
+		return authz.ActionLANSyncManifest, authz.Global()
+	case strings.HasPrefix(path, "/dl/game/"):
+		id := strings.TrimPrefix(path, "/dl/game/")
+		if id == "" || strings.Contains(id, "/") {
+			return syncActionUnmapped, authz.Global()
 		}
-		return e.Next()
+		return authz.ActionLANSyncDLGame, authz.ISO(id)
+	case strings.HasPrefix(path, "/dl/app/"):
+		id := strings.TrimPrefix(path, "/dl/app/")
+		if id == "" || strings.Contains(id, "/") {
+			return syncActionUnmapped, authz.Global()
+		}
+		return authz.ActionLANSyncDLApp, authz.Global()
 	}
+	return syncActionUnmapped, authz.Global()
 }

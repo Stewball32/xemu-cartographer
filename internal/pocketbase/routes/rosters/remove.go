@@ -8,9 +8,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/notifications"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
-	"github.com/Stewball32/xemu-cartographer/internal/teamperms"
 )
 
 func init() {
@@ -59,12 +60,12 @@ func init() {
 				return apis.NewInternalServerError("team lookup failed", err)
 			}
 
-			ok, err := teamperms.IsOwnerOrManager(e.App, caller.Id, team.Id)
-			if err != nil {
-				return apis.NewInternalServerError("permission check failed", err)
-			}
-			if !ok {
-				return apis.NewForbiddenError("only team owners or managers may remove members", nil)
+			// `team.remove` on the team (design §7.1 R-12): the
+			// team_authority predicate or the admin `team.*` scope. The
+			// self-row check above stays hand-written — it is owner
+			// identity, not authorization.
+			if err := pb.Check(pb.Default(), e, authz.ActionTeamRemove, authz.Team(team.Id)); err != nil {
+				return apis.NewForbiddenError("only team owners or managers may remove members", err)
 			}
 
 			// Stamp left_at + persist.

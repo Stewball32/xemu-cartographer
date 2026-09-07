@@ -6,6 +6,8 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/notifications"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
 	"github.com/Stewball32/xemu-cartographer/internal/teamperms"
@@ -57,16 +59,14 @@ func init() {
 				return apis.NewBadRequestError("team is blocked; invites disabled", nil)
 			}
 
-			// Owner/manager guard. Direct PB rule expression can't help us
-			// here because the route isn't a record-mutation surface — we're
-			// writing into a different collection on the team's behalf.
-			ok, err := teamperms.IsOwnerOrManager(e.App, caller.Id, team.Id)
-			if err != nil {
-				e.App.Logger().Error("invite: owner/manager check failed", "team", team.Id, "user", caller.Id, "err", err)
-				return apis.NewInternalServerError("permission check failed", err)
-			}
-			if !ok {
-				return apis.NewForbiddenError("only team owners or managers may invite", nil)
+			// Owner/manager guard — `team.invite` on the team (design §7.1
+			// R-11): the team_authority predicate (active owner/manager row,
+			// or created_by with no owner row yet) or the admin `team.*`
+			// scope. Direct PB rule expression can't help us here because
+			// the route isn't a record-mutation surface — we're writing into
+			// a different collection on the team's behalf.
+			if err := pb.Check(pb.Default(), e, authz.ActionTeamInvite, authz.Team(team.Id)); err != nil {
+				return apis.NewForbiddenError("only team owners or managers may invite", err)
 			}
 
 			target, err := e.App.FindRecordById("users", body.UserID)

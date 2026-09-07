@@ -19,12 +19,13 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
 )
 
 // Group is the router group for /api/lan/saves. Access is governed by
-// authorizeLAN (admin JWT or the optional LAN token), NOT RequireAdmin, because
-// the nxdk client cannot present a browser JWT.
+// pb.AuthorizeLAN (admin JWT or a machine key, see auth.go), NOT
+// RequireAdmin, because the nxdk client cannot present a browser JWT.
 var Group *router.RouterGroup[*core.RequestEvent]
 
 var registry []func()
@@ -49,11 +50,18 @@ func RegisterAll(se *core.ServeEvent) {
 		cfg.FATXCluster = cs
 	}
 
-	Group = se.Router.Group("/api/lan/saves")
-	Group.BindFunc(authorizeLAN())
+	Group = se.Router.Group(groupPrefix)
+	Group.BindFunc(authorizeLAN)
 	for _, fn := range registry {
 		fn()
 	}
+}
+
+// authorizeLAN is the group middleware: pb.AuthorizeLAN over the process
+// deps, read at request time (pb.Default() is set by main before the routes
+// bind; a nil default still fails closed).
+func authorizeLAN(e *core.RequestEvent) error {
+	return pb.AuthorizeLAN(pb.Default(), lanVerb)(e)
 }
 
 func envDefault(key, def string) string {

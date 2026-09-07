@@ -2,82 +2,80 @@ package containers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
-	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 )
 
-// kioskTokenCookie is the cookie name used to carry a JWT through the iframe's
-// sub-resource requests. The iframe entry-point is fetched with ?token=…; once
-// validated, this cookie is set with Path scoped to the per-container kiosk
-// prefix so CSS/JS/images/websockify under that prefix authenticate without
-// the parent page rewriting URLs.
+// kioskTokenCookie is the cookie name used to carry a credential through the
+// iframe's sub-resource requests. The iframe entry-point is fetched with
+// ?token=…; once validated, this cookie is set with Path scoped to the
+// per-container kiosk prefix so CSS/JS/images/websockify under that prefix
+// authenticate without the parent page rewriting URLs.
 const kioskTokenCookie = "kiosk_token"
 
-// kioskTokenRecord resolves the caller's auth record from a PocketBase JWT
-// pulled from either `?token=` (preferred — used by the parent page when
-// constructing iframe and WebSocket URLs) or the kiosk_token cookie (used by
-// sub-resource fetches originating inside the iframe). Returns nil when no
-// token is present or it doesn't validate.
-func kioskTokenRecord(e *core.RequestEvent) *core.Record {
-	if Services == nil || Services.App == nil {
-		return nil
-	}
-	token := e.Request.URL.Query().Get("token")
-	if token == "" {
-		if c, err := e.Request.Cookie(kioskTokenCookie); err == nil {
-			token = c.Value
-		}
-	}
-	if token == "" {
-		return nil
-	}
-	record, err := Services.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-	if err != nil || record == nil {
-		return nil
-	}
-	return record
-}
+// kioskCookieMaxAge bounds the kiosk cookie's lifetime (12h, PD-11) so a
+// forgotten kiosk tab does not keep a credential alive indefinitely.
+const kioskCookieMaxAge = 43200
 
 // authorizeKioskAccess admits a caller to the kiosk/VNC proxy for container
-// `name` (M09 9b/9c). Admins (superuser or admin role) get in for any
-// container; a non-admin is admitted when one of their gamertags is in that
-// specific container's live roster OR was seen there within the rostergrace
-// TTL — so a transient roster drop (e.g. editing the gametype) doesn't kick
-// them off mid-edit. Re-checked on every request; fails closed once the grace
-// window lapses or on any lookup error.
-func authorizeKioskAccess(e *core.RequestEvent, name string) bool {
-	record := kioskTokenRecord(e)
-	if record == nil {
+// `name` (M09 9b/9c) for action a — kiosk.view for the noVNC proxy,
+// kiosk.input for the VNC relay. The credential comes from ?token= or the
+// kiosk_token cookie (pb.ResolveKiosk: a PB JWT or an opaque device key) and
+// the decision is the rule table's: a scoped principal, a user whose
+// gamertag is in that container's live roster (with the rostergrace TTL) or
+// who owns the box, or a device key bound to the instance. Re-checked on
+// every request; fails closed on any lookup error or before the deps are
+// installed at boot.
+func authorizeKioskAccess(e *core.RequestEvent, name string, a authz.Action) bool {
+	if e == nil || e.App == nil {
 		return false
 	}
-	if roles.IsAdminAuth(Services.App, record) {
-		return true
-	}
-	if Services.Scraper == nil {
-		return false
-	}
-	tags, err := gamertags.SanitizedForUser(Services.App, record.Id)
-	if err != nil || len(tags) == 0 {
-		return false
-	}
-	return rostergrace.Default.Allow(Services.Scraper.Membership(), name, tags, time.Now())
+	d := pb.Default()
+	p, _ := pb.ResolveKiosk(e.App, d, e)
+	return authz.Can(d, p, a, authz.Container(name))
+}
+
+// requireManage is the per-handler container.manage check every mutating
+// route (create / start / stop / remove / files / cleanup) runs after the
+// group's admin.containers gate: the caller's scopes must cover the named
+// container (or the global selector for cleanup). Returns the apis 401/403
+// error to bubble, nil when allowed.
+func requireManage(e *core.RequestEvent, r authz.Resource) error {
+	return pb.Check(pb.Default(), e, authz.ActionContainerManage, r)
 }
 
 // setKioskTokenCookie persists the validated ?token= as an HttpOnly cookie
 // scoped to the per-container kiosk prefix, so the iframe's sub-resource
 // requests authenticate without anyone rewriting URLs. Path scoping means the
-// cookie isn't sent to unrelated PB endpoints.
+// cookie isn't sent to unrelated PB endpoints; Secure is set whenever the
+// request arrived over TLS (directly or via a proxy's X-Forwarded-Proto) and
+// the cookie expires after kioskCookieMaxAge (PD-11).
 func setKioskTokenCookie(e *core.RequestEvent, path, token string) {
-	http.SetCookie(e.Response, &http.Cookie{
+	http.SetCookie(e.Response, kioskCookie(e.Request, path, token))
+}
+
+// kioskCookie builds the kiosk_token cookie for req (split out so the Secure
+// / MaxAge attributes are unit-testable without a RequestEvent).
+func kioskCookie(req *http.Request, path, token string) *http.Cookie {
+	return &http.Cookie{
 		Name:     kioskTokenCookie,
 		Value:    token,
 		Path:     path,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-	})
+		Secure:   requestIsTLS(req),
+		MaxAge:   kioskCookieMaxAge,
+	}
+}
+
+// requestIsTLS reports whether req arrived over HTTPS — a direct TLS
+// connection or a reverse proxy declaring X-Forwarded-Proto: https.
+func requestIsTLS(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	return req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https"
 }

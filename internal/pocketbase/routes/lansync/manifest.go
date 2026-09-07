@@ -10,6 +10,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
 	"github.com/Stewball32/xemu-cartographer/internal/halosave"
 )
@@ -114,6 +115,7 @@ func handleManifest(e *core.RequestEvent) error {
 	policy := resolvePolicy(preset)
 	priority := resolvePriority(preset)
 	eventID := preset.GetString("event")
+	station := isStation(e)
 
 	man := syncManifest{
 		SpecVersion: specVersion,
@@ -127,7 +129,7 @@ func handleManifest(e *core.RequestEvent) error {
 		Event:    resolveEventHeader(e.App, eventID),
 		Policy:   policy,
 		Profiles: resolveProfiles(e.App, eventID, policy.Profiles.Conflict),
-		Games:    resolveGames(e.App, preset.GetStringSlice("games"), priority, policy.Games.Conflict),
+		Games:    resolveGames(e.App, preset.GetStringSlice("games"), priority, policy.Games.Conflict, station),
 		Apps:     resolveApps(e.App, preset.GetStringSlice("apps"), priority, policy.Apps.Conflict),
 	}
 
@@ -203,17 +205,38 @@ func profileItem(app core.App, collection, title, kind, userID, player, conflict
 	}, true
 }
 
+// isStation reports whether the caller is a station key — a machine principal
+// bound to a station_id, i.e. a real Xbox. It only gets the discs cleared for
+// consoles (PD-9); peers — admins, unbound machine keys — see the whole
+// preset.
+func isStation(e *core.RequestEvent) bool {
+	return pb.Get(e).Extra["station_id"] != ""
+}
+
+// gameServable is the PD-9 predicate the manifest listing and the game
+// download share, so a station cannot fetch a disc the manifest hides from
+// it: a drifted disc (failed integrity check) is never served to anyone;
+// a station additionally only gets play-role discs flagged allow_on_xbox —
+// the server-only / shelved builds stay off real consoles.
+func gameServable(rec *core.Record, station bool) bool {
+	if rec.GetBool("drift_detected") {
+		return false
+	}
+	return !station || (rec.GetString("role") == "play" && rec.GetBool("allow_on_xbox"))
+}
+
 // resolveGames expands the preset's iso ids into game items (tar of extracted
-// tree), ordered by priority (higher first).
-func resolveGames(app core.App, isoIDs []string, priority map[string]int, conflict string) []syncItem {
+// tree), ordered by priority (higher first), keeping only the discs
+// gameServable clears for the caller.
+func resolveGames(app core.App, isoIDs []string, priority map[string]int, conflict string, station bool) []syncItem {
 	out := []syncItem{}
 	for _, id := range isoIDs {
 		rec, err := app.FindRecordById("isos", id)
 		if err != nil || rec == nil {
 			continue // dangling ref — skip
 		}
-		if rec.GetBool("drift_detected") {
-			continue // failed integrity check — never serve bad bytes to a console
+		if !gameServable(rec, station) {
+			continue
 		}
 		out = append(out, syncItem{
 			ID:             rec.Id,

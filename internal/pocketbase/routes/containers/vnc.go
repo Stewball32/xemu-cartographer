@@ -18,6 +18,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -33,9 +35,10 @@ func registerVNCRelay() {
 
 func handleVNCRelay(e *core.RequestEvent) error {
 	name := e.Request.PathValue("name")
-	// M09: same per-container roster gate as the kiosk HTTP proxy — a player
-	// rostered in this container may drive their own controller.
-	if !authorizeKioskAccess(e, name) {
+	// kiosk.input on this container: same per-container gate as the kiosk
+	// HTTP proxy but the input verb — a player rostered in this container may
+	// drive their own controller.
+	if !authorizeKioskAccess(e, name, authz.ActionKioskInput) {
 		return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 	}
 

@@ -8,11 +8,12 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
 	"github.com/Stewball32/xemu-cartographer/internal/instancename"
 	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
 )
 
 func init() {
@@ -77,15 +78,16 @@ type requestResponse struct {
 // chosen library ISO, provision + start a fresh xemu instance booting straight
 // into it (ADR-0004), and return the new instance. Body:
 //
-//	{"iso": "<isos record id>", "name": "<optional, admins only>"}
+//	{"iso": "<isos record id>", "name": "<optional, box.provision_named only>"}
 //
 // This is the last player-flow piece that was admin-only (routes/containers) —
-// it's now self-serve, but narrowly: a non-admin always gets a single stable
-// per-user box name ("play-<uid>"), so a player can neither name arbitrary
-// containers nor field more than one. Admins may pass an explicit name. Fails
-// closed with 409 when that box already exists (tear it down first), 503 when
-// provisioning isn't wired (CONTAINERS_ENABLED=false), 403 when the chosen ISO
-// isn't player-available. The admin kiosk/VNC path is untouched.
+// it's now self-serve, but narrowly: a caller without box.provision_named on
+// the ISO always gets a single stable per-user box name ("play-<uid>"), so a
+// player can neither name arbitrary containers nor field more than one. A
+// scoped admin may pass an explicit name. Fails closed with 409 when that box
+// already exists (tear it down first), 503 when provisioning isn't wired
+// (CONTAINERS_ENABLED=false), 403 when the chosen ISO isn't player-available
+// or box.provision on it is denied. The admin kiosk/VNC path is untouched.
 func registerRequest() {
 	Group.POST("/request", func(e *core.RequestEvent) error {
 		var body struct {
@@ -108,6 +110,12 @@ func registerRequest() {
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "game not found in the library"})
 		}
+		// box.provision on the chosen ISO (R-9): any linked user may field a
+		// box for a disc; a banned / non-user principal is refused.
+		d := pb.Default()
+		if err := pb.Check(d, e, authz.ActionBoxProvision, authz.ISO(rec.Id)); err != nil {
+			return err
+		}
 		if rec.GetString("role") != "play" {
 			return e.JSON(http.StatusForbidden, map[string]string{"error": "that game is not available to play right now"})
 		}
@@ -125,8 +133,10 @@ func registerRequest() {
 			return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "instance provisioning not enabled"})
 		}
 
-		isAdmin := roles.IsAdminAuth(e.App, e.Auth)
-		display, name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, isAdmin)
+		// An explicit pretty name needs box.provision_named on the ISO (a
+		// scoped admin); everyone else gets the per-user box.
+		named := authz.Can(d, pb.Get(e), authz.ActionBoxProvisionNamed, authz.ISO(rec.Id))
+		display, name := instanceName(Provisioner.NamePrefix(), e.Auth.Id, body.Name, named)
 		if name == "" {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "could not determine an instance name"})
 		}
@@ -197,14 +207,16 @@ func bootRecordID(gameID, serverID string) string {
 // returns the canonical pretty display name AND the derived podman container
 // name:
 //
-//   - A non-admin ALWAYS gets a single stable per-user box "play-<uid>" (so a
-//     player can't name arbitrary containers or field more than one — the Exists
-//     check then fails a second request closed) with an EMPTY display name (the
-//     console name falls back to the container name).
-//   - An admin may pass an explicit pretty name: it's validated as a display
-//     name (printable ASCII, ≤15) and the container name is its slug. If the
-//     pretty name slugs to empty (all punctuation), the display is kept but the
-//     container falls back to the per-user "play-<uid>" scheme for uniqueness.
+//   - Without named (no box.provision_named on the ISO) the caller ALWAYS gets
+//     a single stable per-user box "play-<uid>" (so a player can't name
+//     arbitrary containers or field more than one — the Exists check then
+//     fails a second request closed) with an EMPTY display name (the console
+//     name falls back to the container name).
+//   - With named the caller may pass an explicit pretty name: it's validated
+//     as a display name (printable ASCII, ≤15) and the container name is its
+//     slug. If the pretty name slugs to empty (all punctuation), the display
+//     is kept but the container falls back to the per-user "play-<uid>" scheme
+//     for uniqueness.
 //   - prefix (the deployment's container-name namespace, empty in prod) is
 //     prepended to the container name so a beta sharing the host podman daemon
 //     gives "beta-*" boxes that can't collide with prod's. It is NOT applied to
@@ -213,13 +225,13 @@ func bootRecordID(gameID, serverID string) string {
 // container is "" only when there's nothing to derive from (no userID and no
 // usable override), so the caller still rejects it. Split out so it's
 // unit-testable with no request/podman.
-func instanceName(prefix, userID, override string, isAdmin bool) (display, container string) {
+func instanceName(prefix, userID, override string, named bool) (display, container string) {
 	uid := sanitizeName(userID)
 	perUser := ""
 	if uid != "" {
 		perUser = prefix + "play-" + uid
 	}
-	if isAdmin {
+	if named {
 		if d := instancename.Display(override); d != "" {
 			if slug := instancename.Slug(d); slug != "" {
 				return d, prefix + slug
@@ -229,7 +241,7 @@ func instanceName(prefix, userID, override string, isAdmin bool) (display, conta
 			return d, perUser
 		}
 	}
-	// Non-admin, or admin with no usable override: uid-based box, no pretty name.
+	// Not named, or named with no usable override: uid-based box, no pretty name.
 	return "", perUser
 }
 

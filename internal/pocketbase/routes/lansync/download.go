@@ -26,14 +26,16 @@ func init() {
 }
 
 // handleGameDownload streams the extracted disc tree for an ISO as a tar built
-// on the fly from the cached tree (extracted_path).
+// on the fly from the cached tree (extracted_path). A disc the manifest would
+// hide from the caller (gameServable: drifted, or not cleared for a station
+// under PD-9) is a 404 here too, so guessing an id gains a station nothing.
 func handleGameDownload(e *core.RequestEvent) error {
 	id := strings.TrimSpace(e.Request.PathValue("id"))
 	if id == "" {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "id is required"})
 	}
 	rec, err := e.App.FindRecordById("isos", id)
-	if err != nil || rec == nil {
+	if err != nil || rec == nil || !gameServable(rec, isStation(e)) {
 		return e.JSON(http.StatusNotFound, map[string]string{"error": "game record not found"})
 	}
 	if !rec.GetBool("extracted_ready") {

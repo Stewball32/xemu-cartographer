@@ -8,7 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 )
 
 func init() {
@@ -37,12 +38,22 @@ func init() {
 // ("admin") || isSuperuser`) for frontend backwards-compat; new consumers
 // should branch on Roles to support future M16-style "tournament_organizer"
 // gates without another schema bump.
+//
+// authz (design §7.1 R-15): Scopes is the union of the caller's role scopes
+// (canonical, sorted — the same list authz.Can matches against), Level the
+// max role level, PrincipalKind the resolver's kind ("pb_user" for a users
+// JWT). Superusers report scopes ["*"], level 1000 and "superuser" — they
+// hold no user_roles rows but pass every check. IsAdmin, Roles, Scopes and
+// Level all come from one principal so they can't disagree.
 type meResponse struct {
 	ID                       string         `json:"id"`
 	Email                    string         `json:"email"`
 	IsAdmin                  bool           `json:"isAdmin"`
 	IsSuperuser              bool           `json:"isSuperuser"`
 	Roles                    []string       `json:"roles"`
+	Scopes                   []string       `json:"scopes"`
+	PrincipalKind            string         `json:"principal_kind"`
+	Level                    int            `json:"level"`
 	DefaultGamertag          *gamertagInfo  `json:"default_gamertag"`
 	Gamertags                []gamertagInfo `json:"gamertags"`
 	Teams                    []teamInfo     `json:"teams"`
@@ -73,39 +84,43 @@ type teamMembershipInfo struct {
 
 func registerMeRoute(se *core.ServeEvent) {
 	se.Router.GET("/api/me", func(e *core.RequestEvent) error {
+		// Resolve the caller through the authz adapter (R-15). RequireAuth
+		// already verified the JWT; the resolver re-reads the row, so a
+		// user banned or soft-deleted since the token was issued gets 401
+		// here rather than a stale identity payload.
+		p, err := pb.ResolveRequest(e.App, pb.Default(), e)
+		if err != nil {
+			return apis.NewUnauthorizedError("account banned or deleted", err)
+		}
+
 		resp := meResponse{
-			ID:          e.Auth.Id,
-			Email:       e.Auth.Email(),
-			IsSuperuser: e.Auth.IsSuperuser(),
-			Roles:       []string{},
-			Gamertags:   []gamertagInfo{},
-			Teams:       []teamInfo{},
+			ID:            e.Auth.Id,
+			Email:         e.Auth.Email(),
+			IsAdmin:       p.IsAdmin(),
+			IsSuperuser:   e.Auth.IsSuperuser(),
+			Roles:         append([]string{}, p.Roles...),
+			Scopes:        append([]string{}, p.Scopes...),
+			PrincipalKind: string(p.Kind),
+			Level:         p.Level,
+			Gamertags:     []gamertagInfo{},
+			Teams:         []teamInfo{},
 		}
 
 		// Superusers live in _superusers, not users — they have no
 		// gamertags/teams to render and no user_roles rows. Return the
 		// basic identity payload with IsAdmin=true so the admin nav still
-		// renders for the bootstrap operator.
+		// renders for the bootstrap operator; scopes/level are the
+		// allow-all sentinels the frontend's hasScope mirrors.
 		if resp.IsSuperuser {
 			resp.IsAdmin = true
+			resp.Scopes = []string{"*"}
+			resp.Level = 1000
+			resp.PrincipalKind = string(authz.KindSuperuser)
 			return e.JSON(http.StatusOK, resp)
 		}
 
 		userID := e.Auth.Id
 
-		slugs, err := roles.Slugs(e.App, userID)
-		if err != nil {
-			log.Printf("/api/me: roles lookup for %s: %v", userID, err)
-		}
-		if slugs != nil {
-			resp.Roles = slugs
-		}
-		for _, s := range resp.Roles {
-			if s == "admin" {
-				resp.IsAdmin = true
-				break
-			}
-		}
 		tags, err := e.App.FindRecordsByFilter(
 			"gamertags",
 			"user = {:userID}",

@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
 )
@@ -47,7 +48,7 @@ func RegisterAll(se *core.ServeEvent) {
 
 	Group = se.Router.Group("/api/admin/scraper")
 	Group.Bind(apis.RequireAuth())
-	Group.BindFunc(middleware.RequireAdmin())
+	Group.BindFunc(middleware.RequireAdmin(authz.ActionAdminScraper))
 
 	for _, fn := range registry {
 		fn()

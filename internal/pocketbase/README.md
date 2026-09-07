@@ -130,6 +130,8 @@ Use `.Bind()` for `*hook.Handler` types (e.g., `apis.RequireAuth()`), `.BindFunc
 | `apis.RequireGuestOnly()`    | (built-in)        | `.Bind()`   | Rejects authenticated requests         |
 | `apis.RequireSuperuserAuth()`| (built-in)        | `.Bind()`   | Restricts to superusers                |
 | `middleware.RequireAuth()`   | `auth.go`         | `.Bind()`   | Wrapper around apis.RequireAuth()      |
-| `middleware.RequireCustomAuth()` | `custom_auth.go` | `.BindFunc()` | Manual `e.Auth` nil check        |
-| `middleware.RequireRole(r)`  | `role.go`         | `.BindFunc()` | Checks user's "role" field           |
-| `middleware.RequireAdmin()`  | `admin.go`        | `.BindFunc()` | Checks user's "isAdmin" field        |
+| `middleware.RequireAdmin(action)` | `admin.go`   | `.BindFunc()` | authz `Can(action, Global())` — see below |
+
+(`RequireCustomAuth()` / `custom_auth.go` and `RequireRole(r)` / `role.go` were removed in the authz batch — nothing bound them, and role checks now go through `authz.Can` scopes rather than a user field.)
+
+`middleware.RequireAdmin(a authz.Action)` is the per-group admin gate since the authz batch (DESIGN-STEP6 §2.3). It no longer inspects a user field or `roles.IsAdminAuth`: it resolves the request's principal (PB JWT, superuser, or an opaque machine key via `Authorization` / `X-Api-Key`) and asks `authz.Can` for the group's own action on the global resource — `/api/admin/*` → `authz.ActionAdminAdmin`, `/api/admin/users/*` → `ActionAdminUsers`, `/api/admin/containers/*` → `ActionAdminContainers`, `/api/admin/scraper/*` → `ActionAdminScraper`, `/api/admin/xemu/*` → `ActionAdminXemu`, `/api/pod/*` → `ActionAdminPod`. The seeded `admin` role's `admin.*` scope covers all of them; a machine key minted with `admin.scraper` reaches only that group. No credential → 401, a resolvable one that fails the check → 403. The adapter is read through `pb.Default()` at request time, so a route bound before `main.go` installs it fails closed rather than open. `/api/admin/tokens` is the one admin group that does **not** bind this middleware — each of its handlers checks its exact action (`token.mint` / `overlay.mint`, `token.list`, `token.revoke`) so scoped machine keys can rotate themselves.
