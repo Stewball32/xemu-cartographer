@@ -3,11 +3,15 @@ package websocket
 import (
 	"encoding/json"
 	"log"
+	"strconv"
 	"sync"
 
+	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // Hub manages all connected WebSocket clients and rooms.
@@ -16,6 +20,12 @@ import (
 type Hub struct {
 	app      core.App
 	services *guards.Services
+	// deps, when set, replaces pb.Default() as the authz.Deps handed to
+	// handlers (Event.Authz) and to the re-resolve room re-check. Only
+	// in-package tests set it (authztest.FakeDeps); production always reads
+	// the process-wide adapter, which is nil — and therefore denies — until
+	// main.go installs it.
+	deps authz.Deps
 
 	mu      sync.RWMutex
 	clients map[*Client]bool
@@ -100,27 +110,15 @@ func (h *Hub) Run() {
 			h.dispatch(im)
 
 		case op := <-h.joinRoom:
-			h.mu.Lock()
-			if h.rooms[op.room] == nil {
-				h.rooms[op.room] = make(map[*Client]bool)
-			}
-			h.rooms[op.room][op.client] = true
-			h.mu.Unlock()
+			h.addToRoom(op.client, op.room)
 
 		case op := <-h.leaveRoom:
-			h.mu.Lock()
-			if members, ok := h.rooms[op.room]; ok {
-				delete(members, op.client)
-				if len(members) == 0 {
-					delete(h.rooms, op.room)
-				}
-			}
-			h.mu.Unlock()
+			h.removeFromRoom(op.client, op.room)
 
 		case <-h.done:
 			h.mu.Lock()
 			for client := range h.clients {
-				close(client.send)
+				client.markClosed()
 			}
 			h.mu.Unlock()
 			return
@@ -128,16 +126,85 @@ func (h *Hub) Run() {
 	}
 }
 
-// dispatch routes an incoming message to registered handlers or default broadcast.
+// requestUnregister asks Run to remove the client. Safe from any goroutine
+// and after Stop: once Run has exited nobody receives on unregister, and a
+// readPump ending then (or a full-buffer drop) must not block forever.
+func (h *Hub) requestUnregister(c *Client) {
+	select {
+	case h.unregister <- c:
+	case <-h.done:
+	}
+}
+
+// addToRoom joins a registered client to room. A client the Hub has already
+// removed is refused so a join queued behind its unregister cannot resurrect
+// it in the room index.
+func (h *Hub) addToRoom(c *Client, room string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.clients[c] {
+		return
+	}
+	if h.rooms[room] == nil {
+		h.rooms[room] = make(map[*Client]bool)
+	}
+	h.rooms[room][c] = true
+}
+
+// removeFromRoom drops the client's membership of room (no-op if absent).
+func (h *Hub) removeFromRoom(c *Client, room string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if members, ok := h.rooms[room]; ok {
+		delete(members, c)
+		if len(members) == 0 {
+			delete(h.rooms, room)
+		}
+	}
+}
+
+// registered reports whether the Hub still holds the client.
+func (h *Hub) registered(c *Client) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.clients[c]
+}
+
+// authzDeps returns the authz.Deps handlers decide against: the test
+// override when set, else the process-wide adapter. A nil adapter is passed
+// through as-is — authz.Can treats a nil (or typed-nil) Deps as "no_deps"
+// and denies, so nothing is admitted before main.go installs it.
+func (h *Hub) authzDeps() authz.Deps {
+	if h.deps != nil {
+		return h.deps
+	}
+	return pb.Default()
+}
+
+// dispatch routes an incoming message. Messages from a connection pass the
+// per-kind send whitelist first, then go to their registered handler; a
+// type with no handler is an error, never a broadcast (fail-closed, A.10).
+// Messages with no sender come from the Hub's own Broadcast / SendToUser /
+// SendToRoom API and are fanned out by their routing type.
 func (h *Hub) dispatch(im incomingMsg) {
-	// A tokenless console-overlay connection is read-only. Restrict it to the
-	// subscription message types (join/leave) BEFORE the handler lookup or the
-	// broadcast fallback, so a control/command message can never ride the
-	// console door. Room scoping lives in join_room via Event.ConsoleName.
-	if im.sender.consoleName != "" && !overlayAllowedType(im.msg.Type) {
-		errPayload, _ := json.Marshal(map[string]string{"code": "forbidden", "message": "overlay connections are read-only"})
-		errMsg, _ := json.Marshal(Message{Type: TypeError, Payload: errPayload})
-		h.trySend(im.sender, errMsg)
+	if im.sender == nil {
+		h.dispatchInternal(im.msg)
+		return
+	}
+
+	// A message queued by a connection Run has since unregistered (its
+	// readPump pushed the frame, then the disconnect) is dropped: there is
+	// nobody to answer, and a handler must never act for a removed client.
+	if !h.registered(im.sender) {
+		return
+	}
+
+	// The whitelist runs BEFORE the handler lookup so a read-only kind
+	// (spectator / device) or the console door (anonymous) can never reach a
+	// request or control handler, whatever its own guards do. Denied senders
+	// get an error frame and stay connected.
+	if !authz.WSSendAllowed(im.sender.Principal().Kind, im.msg.Type) {
+		h.sendError(im.sender, "", "forbidden", "message type not allowed for this connection")
 		return
 	}
 
@@ -145,33 +212,88 @@ func (h *Hub) dispatch(im incomingMsg) {
 		handler(h.buildEvent(im))
 		return
 	}
-	// No registered handler — default to broadcast.
-	h.broadcast(im.msg)
+	h.sendError(im.sender, "", "unknown_type", "no handler for message type "+strconv.Quote(im.msg.Type))
 }
 
-// overlayAllowedType is the read-only message-type whitelist for console-overlay
-// connections — only room subscription, never control or request/probe types.
-func overlayAllowedType(t string) bool {
-	switch t {
-	case "join_room", "leave_room":
-		return true
+// dispatchInternal fans out a message the Hub's public API queued: no
+// sender, no whitelist, no handler — just the routing its type names.
+func (h *Hub) dispatchInternal(msg Message) {
+	switch msg.Type {
+	case TypeDirect:
+		h.sendToUser(msg.Target, msg)
+	case TypeRoom:
+		h.sendToRoom(msg.Room, msg)
 	default:
-		return false
+		h.broadcast(msg)
+	}
+}
+
+// errorMessage marshals the error frame sent back to a client:
+// {"type":"error","room":…,"payload":{"code":…,"message":…}}. room is the
+// room the refused request named (join_room / leave_room) so the client can
+// tell which subscription failed; every other error leaves it empty.
+func errorMessage(room, code, message string) ([]byte, bool) {
+	errPayload, err := json.Marshal(map[string]string{"code": code, "message": message})
+	if err != nil {
+		return nil, false
+	}
+	errMsg, err := json.Marshal(Message{Type: TypeError, Room: room, Payload: errPayload})
+	if err != nil {
+		return nil, false
+	}
+	return errMsg, true
+}
+
+// sendError enqueues an error frame for one client.
+func (h *Hub) sendError(client *Client, room, code, message string) {
+	if data, ok := errorMessage(room, code, message); ok {
+		h.trySend(client, data)
+	}
+}
+
+// roomLeftMessage marshals the frame that tells a client the server took a
+// room away from it: {"type":"room_left","room":…,"payload":{"reason":…}}.
+func roomLeftMessage(room, reason string) ([]byte, bool) {
+	payload, err := json.Marshal(map[string]string{"reason": reason})
+	if err != nil {
+		return nil, false
+	}
+	msg, err := json.Marshal(Message{Type: TypeRoomLeft, Room: room, Payload: payload})
+	if err != nil {
+		return nil, false
+	}
+	return msg, true
+}
+
+// sendRoomLeft enqueues a room_left frame for one client.
+func (h *Hub) sendRoomLeft(client *Client, room, reason string) {
+	if data, ok := roomLeftMessage(room, reason); ok {
+		h.trySend(client, data)
 	}
 }
 
 // buildEvent constructs a handlers.Event with closures scoped to the sender.
 func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
+	principal := h.rebindConsole(im.sender)
+
+	// Error frames answering join_room / leave_room echo the room the
+	// request named so the client knows which subscription failed; every
+	// other error keeps room empty.
+	errRoom := ""
+	if im.msg.Type == TypeJoinRoom || im.msg.Type == TypeLeaveRoom {
+		errRoom = im.msg.Room
+	}
+
 	return &handlers.Event{
-		Services:    h.services,
-		App:         h.app,
-		UserID:      im.sender.UserID(),
-		User:        im.sender.user,
-		ConsoleName: im.sender.consoleName,
-		Type:        im.msg.Type,
-		Room:        im.msg.Room,
-		Target:      im.msg.Target,
-		Payload:     im.msg.Payload,
+		Services:  h.services,
+		App:       h.app,
+		Authz:     h.authzDeps(),
+		Principal: principal,
+		UserID:    principal.UserID,
+		Type:      im.msg.Type,
+		Room:      im.msg.Room,
+		Target:    im.msg.Target,
+		Payload:   im.msg.Payload,
 		Broadcast: func(payload json.RawMessage) {
 			h.broadcast(Message{Type: im.msg.Type, Payload: payload})
 		},
@@ -185,35 +307,75 @@ func (h *Hub) buildEvent(im incomingMsg) *handlers.Event {
 			h.trySend(im.sender, data)
 		},
 		SendError: func(code string, message string) {
-			errPayload, _ := json.Marshal(map[string]string{"code": code, "message": message})
-			errMsg, _ := json.Marshal(Message{
-				Type:    TypeError,
-				Payload: errPayload,
-			})
-			h.trySend(im.sender, errMsg)
+			h.sendError(im.sender, errRoom, code, message)
 		},
 		JoinRoom: func(room string) {
-			h.mu.Lock()
-			if h.rooms[room] == nil {
-				h.rooms[room] = make(map[*Client]bool)
-			}
-			h.rooms[room][im.sender] = true
-			h.mu.Unlock()
+			h.addToRoom(im.sender, room)
 		},
 		LeaveRoom: func(room string) {
-			h.mu.Lock()
-			if members, ok := h.rooms[room]; ok {
-				delete(members, im.sender)
-				if len(members) == 0 {
-					delete(h.rooms, room)
-				}
-			}
-			h.mu.Unlock()
+			h.removeFromRoom(im.sender, room)
 		},
 		Rooms: func() []string {
 			return h.clientRooms(im.sender)
 		},
 	}
+}
+
+// rebindConsole refreshes the console-door binding of an anonymous
+// connection that asked for a console (?console=<name>, kept in
+// Extra["console"]) but is not bound to an instance yet — the overlay
+// opened before the runner had read its XboxName, or the container is
+// coming back from a restart — and returns the principal handlers decide
+// with. Doing it here, on the message that needs it, means a join issued
+// the moment the console comes live succeeds instead of waiting for the
+// next re-resolve tick. The binding is the one pb.ReResolve makes on that
+// tick (consolePrincipal: InstanceByConsole + AnonymousScopes), read
+// through the Deps seam so a test hub answers the same way; a still-absent
+// console leaves the principal unbound, and unbound joins nothing. Bound
+// principals and every other kind are returned as they are.
+func (h *Hub) rebindConsole(c *Client) authz.Principal {
+	p := c.Principal()
+	name := p.Extra["console"]
+	if p.Kind != authz.KindAnonymous || p.BoundInstance() != "" || name == "" {
+		return p
+	}
+	deps := h.authzDeps()
+	if deps == nil {
+		return p
+	}
+	next := authz.Anonymous(deps.InstanceByConsole(name), deps.AnonymousScopes())
+	next.Extra = map[string]string{"console": name}
+	c.setPrincipal(next)
+	return next
+}
+
+// recheckRooms re-evaluates every room the client is joined to against its
+// current principal and leaves the ones room.join no longer admits
+// (re-resolve tick, W-2: role strip, roster loss after the grace window,
+// console re-bound to another instance). W-2 names the host: rooms; the
+// admin room is re-decided by the same call so an admin whose role was
+// stripped stops receiving admin-room traffic at the next tick too, and a
+// public room re-admits every kind, so nothing is lost by walking them all.
+// Rooms that no longer parse are left too — a name that was joinable once
+// must still be joinable now. Each room left is announced to the client
+// with a room_left frame, queued before the membership goes so it precedes
+// anything else the client sees about that room and the client can
+// re-join once its access returns. Returns the rooms left, for the
+// caller's log line.
+func (h *Hub) recheckRooms(c *Client) []string {
+	deps := h.authzDeps()
+	p := c.Principal()
+	var left []string
+	for _, name := range h.clientRooms(c) {
+		room, err := authz.ParseRoom(name)
+		if err == nil && authz.Can(deps, p, authz.ActionRoomJoin, authz.RoomRes(room)) {
+			continue
+		}
+		h.sendRoomLeft(c, name, "forbidden")
+		h.removeFromRoom(c, name)
+		left = append(left, name)
+	}
+	return left
 }
 
 // --- Public API (safe to call from any goroutine) ---
@@ -409,17 +571,26 @@ func (h *Hub) sendToRoom(room string, msg Message) {
 	}
 }
 
-// trySend attempts a non-blocking send. Schedules client removal if buffer full.
+// trySend attempts a non-blocking enqueue. Safe from any goroutine, before
+// and after the client's removal: a removed client is skipped, and because
+// send is never closed a frame that slips in between the check and the
+// removal is merely left in a buffer nobody drains. A full buffer drops the
+// frame and schedules the client's removal (a slow reader is cut off, not
+// allowed to stall the Hub).
 func (h *Hub) trySend(client *Client, data []byte) {
+	if client.closed() {
+		return
+	}
 	select {
 	case client.send <- data:
 	default:
 		// Defer removal to avoid lock contention — Run() handles unregister.
-		go func() { h.unregister <- client }()
+		go h.requestUnregister(client)
 	}
 }
 
-// removeClient removes a client from all indexes and closes its send channel.
+// removeClient removes a client from all indexes and signals its writePump
+// to stop. Runs on the Run goroutine only; idempotent.
 func (h *Hub) removeClient(client *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -439,5 +610,5 @@ func (h *Hub) removeClient(client *Client) {
 		}
 	}
 	delete(h.clients, client)
-	close(client.send)
+	client.markClosed()
 }

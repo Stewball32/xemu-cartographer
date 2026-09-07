@@ -1,10 +1,6 @@
 package handlers
 
-import (
-	"strings"
-
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
-)
+import "github.com/Stewball32/xemu-cartographer/internal/authz"
 
 func init() {
 	register("request_state", handleRequestState)
@@ -24,30 +20,40 @@ func init() {
 //   - host:all   → JoinReplayForHostAll() (one current_state with the full
 //     hostsCache list).
 //
-// Auth: free for any connected client. Membership is the access gate —
-// you only get state for rooms you've already successfully joined (the
-// host RoomType's RequireAuth guard runs at join_room time).
+// Auth: membership selects the rooms; each replay is then re-decided —
+// authz.Can(scraper.state, Instance(name)) per instance room, and
+// authz.Can(room.join, <that room>) for an aggregate feed, the same
+// decision join_room made to admit it (host:all and host:summary are
+// separate scope selectors, so neither stands in for the other) — so a
+// principal whose access lapsed since it joined (the re-resolve tick
+// evicts it from the room within a minute) gets nothing meanwhile.
 func handleRequestState(e *Event) {
 	if e.Services == nil || e.Services.Scraper == nil || e.Rooms == nil {
 		return
 	}
-	for _, room := range e.Rooms() {
+	for _, name := range e.Rooms() {
+		room, err := authz.ParseRoom(name)
+		if err != nil || !room.IsHost() {
+			continue
+		}
 		switch {
-		case room == rooms.HostAllRoom, room == rooms.SummaryRoom:
+		case room.IsHostAggregate():
+			if !authz.Can(e.Authz, e.Principal, authz.ActionRoomJoin, authz.RoomRes(room)) {
+				continue
+			}
 			for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
 				e.SendRaw(msg)
 			}
-		case strings.HasPrefix(room, rooms.HostRoomPrefix+":"):
-			rest := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
-			parts := strings.SplitN(rest, ":", 2)
-			name := parts[0]
-			if len(parts) == 1 {
-				for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
+		default:
+			if !authz.Can(e.Authz, e.Principal, authz.ActionScraperState, authz.Instance(room.Instance)) {
+				continue
+			}
+			if room.Class == "" {
+				for _, msg := range e.Services.Scraper.JoinReplayForInstance(room.Instance) {
 					e.SendRaw(msg)
 				}
 			} else {
-				class := parts[1]
-				for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(name, class) {
+				for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(room.Instance, room.Class) {
 					e.SendRaw(msg)
 				}
 			}

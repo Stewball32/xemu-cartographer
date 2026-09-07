@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // HostRoomPrefix is the room-type prefix scraper-related rooms use. Per-instance
@@ -94,7 +92,7 @@ func ScraperClasses() []string {
 // whitespace (instance names appear in log lines, .sock filenames, and JSON
 // payloads — keep them shell-safe).
 func RoomForInstance(name string) (string, error) {
-	if err := validateInstanceName(name); err != nil {
+	if err := ValidateInstanceName(name); err != nil {
 		return "", err
 	}
 	return HostRoomPrefix + ":" + name, nil
@@ -112,7 +110,7 @@ func RoomForInstance(name string) (string, error) {
 // See atlas/new_json/04-ground-up-rebuild.md §4 (transport: classes are
 // rooms).
 func RoomForInstanceClass(instance, class string) (string, error) {
-	if err := validateInstanceName(instance); err != nil {
+	if err := ValidateInstanceName(instance); err != nil {
 		return "", err
 	}
 	if !scraperClasses[class] {
@@ -121,9 +119,11 @@ func RoomForInstanceClass(instance, class string) (string, error) {
 	return HostRoomPrefix + ":" + instance + ":" + class, nil
 }
 
-// validateInstanceName enforces the input rules shared by RoomForInstance
-// and RoomForInstanceClass.
-func validateInstanceName(name string) error {
+// ValidateInstanceName enforces the input rules shared by RoomForInstance
+// and RoomForInstanceClass. Exported so authz.ParseRoom (which carries a
+// copy of these rules for the pure core) can be pinned against it from a
+// test — the two must never drift.
+func ValidateInstanceName(name string) error {
 	if name == "" {
 		return errors.New("rooms: instance name required")
 	}
@@ -143,16 +143,20 @@ func validateInstanceName(name string) error {
 
 // Clients in any "host:*" room receive scraper broadcasts. Per-instance rooms
 // (host:<name>) carry that instance's game-data / tick / event envelopes;
-// host:all carries the aggregate summary feed. RequireAuth ensures only
-// logged-in PocketBase users can subscribe.
+// host:all carries the aggregate summary feed.
+//
+// Admission is no longer a guard list: the join_room handler calls
+// authz.Can(p, "room.join", room) on the parsed room, which folds the old
+// RequireAuth guard, the host ladder, and the console door into one check
+// (DESIGN-STEP6 §4). Guards stays nil so nothing here can shadow it.
 //
 // Note: only one RoomType is registered (under "host"). Resolve() at
-// registry.go:37-44 strips at the first ":" before lookup, so both
-// "host:smoke1" and "host:all" resolve here. The host:all-vs-host:<name>
-// branching lives in the join_room handler and the manager's broadcast paths.
+// registry.go strips at the first ":" before lookup, so both "host:smoke1"
+// and "host:all" resolve here. The host:all-vs-host:<name> branching lives
+// in the join_room handler and the manager's broadcast paths.
 func init() {
 	register(&RoomType{
 		Name:   HostRoomPrefix,
-		Guards: []GuardFunc{guards.RequireAuth},
+		Guards: nil,
 	})
 }

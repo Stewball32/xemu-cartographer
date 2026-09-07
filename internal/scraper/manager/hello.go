@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
@@ -62,6 +63,32 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 	}
 }
 
+// HelloPayloadFor is BuildHelloPayload narrowed to what principal p may see
+// (DESIGN-STEP6 §7.3 W-1, A.3): users, superusers and machine keys get every
+// instance; a spectator / device key or the anonymous console door gets only
+// the instance it is bound to, and only while that instance is live —
+// authz.JoinableInstances is the filter. Classes and the protocol fields are
+// not identity-dependent and stay as built.
+func (m *Manager) HelloPayloadFor(p authz.Principal) HelloPayload {
+	payload := m.BuildHelloPayload()
+	names := make([]string, 0, len(payload.Instances))
+	for _, inst := range payload.Instances {
+		names = append(names, inst.Name)
+	}
+	allowed := make(map[string]bool, len(names))
+	for _, name := range authz.JoinableInstances(p, names) {
+		allowed[name] = true
+	}
+	kept := make([]HelloInstance, 0, len(allowed))
+	for _, inst := range payload.Instances {
+		if allowed[inst.Name] {
+			kept = append(kept, inst)
+		}
+	}
+	payload.Instances = kept
+	return payload
+}
+
 // HelloEnvelopeBytes builds the marshaled wire bytes for a hello envelope —
 // the websocket.Message wrapper plus the inner scraper.Envelope plus the
 // HelloPayload — ready to enqueue on a single client's send channel.
@@ -70,9 +97,14 @@ func (m *Manager) BuildHelloPayload() HelloPayload {
 //
 // The hello envelope's instance field is empty (hello is not per-instance)
 // and its tick is 0. The payload's Instances list carries the per-instance
-// metadata clients use for restart detection.
+// metadata clients use for restart detection. The full list is what the
+// unfiltered (internal) view sees; SendHelloOn narrows it per principal.
 func (m *Manager) HelloEnvelopeBytes() ([]byte, bool) {
-	payload := m.BuildHelloPayload()
+	return m.helloEnvelopeBytes(m.BuildHelloPayload())
+}
+
+// helloEnvelopeBytes wraps an already-built payload for the wire.
+func (m *Manager) helloEnvelopeBytes(payload HelloPayload) ([]byte, bool) {
 	env := scraper.MakeEnvelope(envelopeTypeHello, "", 0, 0, payload)
 	envBytes, err := json.Marshal(env)
 	if err != nil {
@@ -98,9 +130,11 @@ func (m *Manager) HelloEnvelopeBytes() ([]byte, bool) {
 //	se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrMgr.SendHelloOn))
 //
 // Builds a fresh hello on each call so server_time and the instances list
-// reflect the moment-of-connect state rather than a cached snapshot.
-func (m *Manager) SendHelloOn(send func(data []byte)) {
-	if msgBytes, ok := m.HelloEnvelopeBytes(); ok {
+// reflect the moment-of-connect state rather than a cached snapshot. The
+// instances list is filtered to what p may join (HelloPayloadFor) so a
+// bound key or console overlay never learns the other instances' names.
+func (m *Manager) SendHelloOn(send func(data []byte), p authz.Principal) {
+	if msgBytes, ok := m.helloEnvelopeBytes(m.HelloPayloadFor(p)); ok {
 		send(msgBytes)
 	}
 }

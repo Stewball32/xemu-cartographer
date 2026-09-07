@@ -4,8 +4,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
-
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/authztest"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 )
@@ -32,8 +32,8 @@ func (stubReplayScraper) JoinReplayForHostAll() [][]byte {
 
 // addTestClient registers a fake connection directly in the hub's indexes —
 // bypassing Run() so the test stays synchronous — and joins it to rooms.
-func addTestClient(h *Hub, user *core.Record, roomNames ...string) *Client {
-	c := &Client{hub: h, send: make(chan []byte, sendBufSize), user: user}
+func addTestClient(h *Hub, p authz.Principal, roomNames ...string) *Client {
+	c := newClient(h, nil, p)
 	h.mu.Lock()
 	h.clients[c] = true
 	if uid := c.UserID(); uid != "" {
@@ -67,51 +67,62 @@ func drainSend(c *Client) []string {
 	}
 }
 
-func userRecord(id string) *core.Record {
-	rec := core.NewRecord(core.NewBaseCollection("users"))
-	rec.Id = id
-	return rec
+// stateScopes lets a principal pass request_state's per-room checks by
+// scope alone (scraper.state on every instance, room.join on the aggregate
+// feeds) so the test below is about membership, not about authz.
+var stateScopes = []string{"scraper.*", "room.join:*"}
+
+// machineKey models one connection holding a machine key: no users record
+// behind it, so every such client shares UserID "" — the same identity
+// collision the old anonymous door had.
+func machineKey(kid string) authz.Principal {
+	return authz.Principal{Kind: authz.KindMachine, ID: kid, Scopes: authz.CanonScopes(stateScopes)}
+}
+
+// userPrincipal models a logged-in user (one per tab) carrying stateScopes.
+func userPrincipal(id string) authz.Principal {
+	return authz.Principal{Kind: authz.KindPBUser, ID: id, UserID: id, Collection: "users", Scopes: authz.CanonScopes(stateScopes)}
 }
 
 // TestRequestState_RepliesOnlySenderRooms is the regression test for the
-// anonymous-identity room bug: request_state used to key the caller's
-// membership on UserRooms(UserID), and since every anonymous client shares
-// UserID "" (and one user can have several tabs), one connection's resync
-// replayed the UNION of all same-identity connections' rooms. The Event's
-// per-sender Rooms capability must replay exactly the sender's own rooms.
+// shared-identity room bug: request_state used to key the caller's
+// membership on UserRooms(UserID), and since every connection without a
+// users record shares UserID "" (and one user can have several tabs), one
+// connection's resync replayed the UNION of all same-identity connections'
+// rooms. The Event's per-sender Rooms capability must replay exactly the
+// sender's own rooms.
 func TestRequestState_RepliesOnlySenderRooms(t *testing.T) {
-	anon := func() *core.Record { return nil }
-	sameUser := userRecord("user1")
+	sameUser := userPrincipal("user1")
 
 	tests := []struct {
 		name        string
-		senderUser  *core.Record
+		sender      authz.Principal
 		senderRooms []string
-		otherUser   *core.Record
+		other       authz.Principal
 		otherRooms  []string
 		wantSender  []string
 	}{
 		{
-			name:        "two anonymous clients in different rooms",
-			senderUser:  anon(),
+			name:        "two userless machine keys in different rooms",
+			sender:      machineKey("k1"),
 			senderRooms: []string{"host:pod-a"},
-			otherUser:   anon(),
+			other:       machineKey("k2"),
 			otherRooms:  []string{"host:pod-b"},
 			wantSender:  []string{"replay instance pod-a"},
 		},
 		{
 			name:        "two tabs of the same user in different rooms",
-			senderUser:  sameUser,
+			sender:      sameUser,
 			senderRooms: []string{"host:pod-a"},
-			otherUser:   sameUser,
+			other:       sameUser,
 			otherRooms:  []string{"host:pod-b"},
 			wantSender:  []string{"replay instance pod-a"},
 		},
 		{
 			name:        "sender's own multi-room set replays fully",
-			senderUser:  anon(),
+			sender:      machineKey("k1"),
 			senderRooms: []string{"host:pod-a", "host:pod-b:game", "host:summary"},
-			otherUser:   anon(),
+			other:       machineKey("k2"),
 			otherRooms:  []string{"host:pod-c"},
 			wantSender:  []string{"replay class pod-b game", "replay hostall", "replay instance pod-a"},
 		},
@@ -122,10 +133,12 @@ func TestRequestState_RepliesOnlySenderRooms(t *testing.T) {
 			h := NewHub(nil)
 			// WS is wired like production so a regression to the
 			// UserRooms(UserID) lookup fails by cross-replay, not by a
-			// nil-service early return.
+			// nil-service early return. Deps are a zero FakeDeps: every
+			// per-room decision passes on the principal's scopes alone.
 			h.SetServices(&guards.Services{Scraper: stubReplayScraper{}, WS: h})
-			sender := addTestClient(h, tc.senderUser, tc.senderRooms...)
-			other := addTestClient(h, tc.otherUser, tc.otherRooms...)
+			h.deps = &authztest.FakeDeps{}
+			sender := addTestClient(h, tc.sender, tc.senderRooms...)
+			other := addTestClient(h, tc.other, tc.otherRooms...)
 
 			h.dispatch(incomingMsg{msg: Message{Type: "request_state"}, sender: sender})
 

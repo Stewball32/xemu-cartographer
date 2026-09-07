@@ -3,7 +3,6 @@ package rooms
 import (
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
@@ -16,8 +15,14 @@ type Config struct {
 	MaxMembers int // 0 = unlimited.
 }
 
-// RoomType defines a category of rooms with shared access guards.
-// Clients join rooms using a "type:name" prefix convention (e.g. "admin:dashboard").
+// RoomType defines a category of rooms. Clients join rooms using a
+// "type:name" prefix convention (e.g. "admin:dashboard").
+//
+// Admission is decided by authz.Can(room.join) on the parsed room in the
+// join_room handler, not by a guard list: every registered type keeps
+// Guards nil and nothing walks it. The field stays so a type file still
+// reads as a declaration of "who may enter" — the answer is "see the authz
+// rule table" for all of them (DESIGN-STEP6 §4).
 type RoomType struct {
 	Name   string
 	Guards []GuardFunc
@@ -41,14 +46,4 @@ func Resolve(room string) (*RoomType, bool) {
 	}
 	rt, ok := registry[prefix]
 	return rt, ok
-}
-
-// CheckGuards runs all guards for the room type. Returns first error or nil.
-func (rt *RoomType) CheckGuards(svc *guards.Services, user *core.Record) error {
-	for _, g := range rt.Guards {
-		if err := g(svc, user); err != nil {
-			return err
-		}
-	}
-	return nil
 }

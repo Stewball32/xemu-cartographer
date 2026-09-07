@@ -10,7 +10,7 @@ package handlers
 import (
 	"encoding/json"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -18,28 +18,21 @@ func init() {
 }
 
 func handleExample(e *Event) {
-	// Guards — import the guards package and call at the top:
+	// Authorization — one authz.Can call at the top, decided against
+	// e.Authz (the process-wide adapter) with e.Principal (the sending
+	// connection). A nil adapter denies everything; pick the action and
+	// resource from the rule table in internal/authz:
 	//
-	//   if err := guards.RequireAuth(e.Services, e.User); err != nil {
-	//       e.SendError("unauthorized", "must be logged in")
+	//   if !authz.Can(e.Authz, e.Principal, authz.ActionRoomJoin, authz.RoomRes(room)) {
+	//       e.SendError("forbidden", "not allowed")
 	//       return
 	//   }
 	//
-	//   if err := guards.RequireRole("moderator")(e.Services, e.User); err != nil {
-	//       e.SendError("forbidden", "moderator role required")
-	//       return
-	//   }
-	//
-	//   if err := guards.RequireAdmin(e.Services, e.User); err != nil {
-	//       e.SendError("forbidden", "admin access required")
-	//       return
-	//   }
-	//
-	// Cross-system guards:
-	//
-	//   if err := guards.RequireConnected(e.Services, e.User); err != nil { ... }
-	//   if err := guards.RequireInRoom("admin:chat")(e.Services, e.User); err != nil { ... }
-	//   if err := guards.RequireGuildMember(guildID)(e.Services, e.User); err != nil { ... }
+	// Kinds that may send this message type at all are decided before the
+	// handler runs (authz.WSSendAllowed) — a spectator never reaches a
+	// control handler, so don't re-check the kind here. e.UserID is set for
+	// pb_user principals only; machine / spectator / device keys and the
+	// console door have none.
 
 	// Broadcast to all connected clients:
 	e.Broadcast(e.Payload)
@@ -77,6 +70,6 @@ func handleExample(e *Event) {
 	//   import pbresolvers "github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	//   user, err := pbresolvers.FindUserByDiscordID(e.App, discordID)
 
-	_ = json.Marshal      // silence unused import
-	_ = guards.RequireAuth // silence unused import
+	_ = json.Marshal // silence unused import
+	_ = authz.Can    // silence unused import
 }

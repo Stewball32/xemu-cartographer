@@ -3,9 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"log"
-	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -37,8 +36,10 @@ type requestEventsPayload struct {
 // whether it received an empty list because the runner has no current-
 // match log or because no events match its filters.
 //
-// Auth: free for any connected client; membership is the access gate
-// (host:<name> rooms RequireAuth at join_room time).
+// Auth: membership selects the instances; authz.Can(scraper.events,
+// Instance(name)) then decides each one (scope, roster / box ownership for
+// users, the binding for spectator / device keys). Denied instances are
+// skipped silently.
 func handleRequestEvents(e *Event) {
 	if e.Services == nil || e.Services.Scraper == nil || e.Rooms == nil {
 		return
@@ -58,19 +59,14 @@ func handleRequestEvents(e *Event) {
 	// host:<inst>:tick should only get one EventsReply per instance.
 	seenInstance := map[string]bool{}
 	for _, room := range e.Rooms() {
-		if room == rooms.HostAllRoom || room == rooms.SummaryRoom {
-			continue
-		}
-		if !strings.HasPrefix(room, rooms.HostRoomPrefix+":") {
-			continue
-		}
-		rest := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
-		parts := strings.SplitN(rest, ":", 2)
-		name := parts[0]
-		if seenInstance[name] {
+		name, ok := instanceOfRoom(room)
+		if !ok || seenInstance[name] {
 			continue
 		}
 		seenInstance[name] = true
+		if !authz.Can(e.Authz, e.Principal, authz.ActionScraperEvents, authz.Instance(name)) {
+			continue
+		}
 		msgBytes, ok := e.Services.Scraper.EventsReply(name, filters.SinceTick, filters.Types)
 		if !ok {
 			continue
