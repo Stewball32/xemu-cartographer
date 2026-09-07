@@ -53,17 +53,20 @@
 	const MODES: Mode[] = ['auto', 'always', 'never'];
 	const CADENCES: Cadence[] = ['default', 'engine', '30hz', '10hz', '5hz', '250ms', '500ms', '1s'];
 
-	// Canonical v2 classes a policy can target. "*" wildcards apply across
-	// every class — keep at the top of the picker.
+	// Canonical v2 classes a policy can target — mirrors the server's class
+	// registry (internal/scraper/manager/classes.go). "*" wildcards apply
+	// across every class — keep at the top of the picker.
 	const CLASSES = [
 		'*',
 		'xbox',
 		'scenario',
 		'game',
+		'game_filtered',
 		'tick',
 		'objects',
 		'debug',
 		'event',
+		'event_filtered',
 		'summary',
 		'previous_game'
 	] as const;

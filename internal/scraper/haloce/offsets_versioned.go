@@ -126,7 +126,11 @@ func OffsetsFromSet(s *offsets.Set) (Offsets, error) {
 // BaselineOffsets returns the game's baseline binding. Panics only if the
 // embedded baseline is malformed (caught by tests + init).
 func BaselineOffsets() Offsets {
-	o, err := OffsetsFromSet(offsets.Baseline("haloce"))
+	s, err := offsets.Baseline("haloce")
+	if err != nil {
+		panic(fmt.Sprintf("haloce: baseline offsets: %v", err))
+	}
+	o, err := OffsetsFromSet(s)
 	if err != nil {
 		panic(fmt.Sprintf("haloce: baseline offsets: %v", err))
 	}

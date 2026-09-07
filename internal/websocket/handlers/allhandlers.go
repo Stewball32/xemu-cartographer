@@ -32,6 +32,10 @@ type Event struct {
 	SendError  func(code string, message string) // Send error back to sender.
 	JoinRoom   func(room string)
 	LeaveRoom  func(room string)
+	// Rooms returns the rooms THIS connection is currently in. Per-sender, not
+	// per-user: keying resync/replay on UserRooms(UserID) would union every
+	// anonymous client (all share UserID "") and every tab of the same user.
+	Rooms func() []string
 }
 
 // HandlerFunc processes a WebSocket event.

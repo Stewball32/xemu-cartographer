@@ -9,7 +9,10 @@ import (
 // embedded and non-empty — the invariant the whole selection layer rests on.
 func TestBaselinesRegistered(t *testing.T) {
 	for _, game := range []string{"haloce", "halo2"} {
-		s := Baseline(game)
+		s, err := Baseline(game)
+		if err != nil {
+			t.Fatalf("Baseline(%q): %v", game, err)
+		}
 		if s.Game != game {
 			t.Errorf("Baseline(%q).Game = %q", game, s.Game)
 		}
@@ -19,8 +22,17 @@ func TestBaselinesRegistered(t *testing.T) {
 	}
 }
 
+// TestBaselineUnknownGame: a game without a baseline is an error, never a
+// panic — a plugin misregistration must not kill the runner goroutine.
+func TestBaselineUnknownGame(t *testing.T) {
+	if s, err := Baseline("nosuchgame"); err == nil || s != nil {
+		t.Errorf("Baseline(nosuchgame) = %v, %v; want nil, error", s, err)
+	}
+}
+
 // TestResolve covers the selection rules: empty → baseline; valid explicit id →
-// that set; unknown id or wrong-game id → baseline + warning (fail-soft).
+// that set; unknown id or wrong-game id → baseline + warning (fail-soft); no
+// baseline at all → nil set + hard error (never a panic).
 func TestResolve(t *testing.T) {
 	if s, warn := Resolve("haloce", ""); warn != nil || s.ID != "ce-baseline" {
 		t.Errorf(`Resolve("haloce","") = %v, %v`, s.ID, warn)
@@ -33,6 +45,12 @@ func TestResolve(t *testing.T) {
 	}
 	if s, warn := Resolve("haloce", "h2-baseline"); warn == nil || s.ID != "ce-baseline" {
 		t.Errorf("wrong-game id should warn + fall back, got %v, %v", s.ID, warn)
+	}
+	if s, err := Resolve("nosuchgame", ""); err == nil || s != nil {
+		t.Errorf("no-baseline game should hard-error, got %v, %v", s, err)
+	}
+	if s, err := Resolve("nosuchgame", "some-set"); err == nil || s != nil {
+		t.Errorf("explicit id with no baseline should hard-error, got %v, %v", s, err)
 	}
 }
 

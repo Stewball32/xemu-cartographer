@@ -32,7 +32,11 @@ func TestGameSatisfiesLobbyInterfaces(t *testing.T) {
 	if f == nil {
 		t.Fatal("haloce not registered")
 	}
-	gr, err := f(nil, "test", offsets.Baseline("haloce"))
+	set, err := offsets.Baseline("haloce")
+	if err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	gr, err := f(nil, "test", set)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}

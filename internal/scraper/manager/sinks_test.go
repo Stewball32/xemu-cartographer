@@ -34,6 +34,30 @@ func TestSinkManagerOpenWriteClose(t *testing.T) {
 	}
 }
 
+// TestSinkManagerOpensEventClassSinks: regression for the class-list drift
+// bug — applyPolicies used to walk a local list missing event /
+// game_filtered / event_filtered, so a capture sink for those classes could
+// never open (dead policy rows). Now that it walks the shared allClasses
+// registry, all three open and receive writes.
+func TestSinkManagerOpensEventClassSinks(t *testing.T) {
+	dir := t.TempDir()
+	for _, class := range []string{"event", "game_filtered", "event_filtered"} {
+		path := filepath.Join(dir, class+".ndjson")
+		sm := newSinkManager("alpha")
+		sm.applyPolicies([]capture.Policy{
+			{Instance: "alpha", Class: class, Mode: capture.ModeAlways, Sink: "file:" + path},
+		})
+		if _, ok := sm.active[class]; !ok {
+			t.Fatalf("class %q: sink did not open", class)
+		}
+		sm.write(class, []byte(`{"v":2}`))
+		sm.closeAll()
+		if b, err := os.ReadFile(path); err != nil || !strings.Contains(string(b), `"v":2`) {
+			t.Fatalf("class %q: write not persisted (err=%v, got %q)", class, err, b)
+		}
+	}
+}
+
 // TestSinkManagerSkipsClassWithoutSink: a policy with mode always but
 // empty Sink must not open a sink — the class is broadcast-only.
 // write() for an unconfigured class is a silent no-op so the runner's

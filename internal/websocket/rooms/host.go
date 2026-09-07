@@ -3,6 +3,7 @@ package rooms
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -68,6 +69,20 @@ var scraperClasses = map[string]bool{
 	// `event` room (positions, every event type) stays for the debug page.
 	// See manager/event_filtered.go.
 	"event_filtered": true,
+}
+
+// ScraperClasses returns the sorted per-instance class names
+// RoomForInstanceClass accepts. It exists so the manager's class registry
+// (internal/scraper/manager/classes.go) can be pinned against this table in
+// both directions from outside the package — the manager imports rooms, so
+// that check can only live in an external test.
+func ScraperClasses() []string {
+	out := make([]string, 0, len(scraperClasses))
+	for class := range scraperClasses {
+		out = append(out, class)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // RoomForInstance is the only sanctioned source of "host:<name>" room names —

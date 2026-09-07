@@ -49,8 +49,13 @@ func ensureCollections(t *testing.T, app core.App) {
 			&core.DateField{Name: "ended_at"},
 			&core.NumberField{Name: "winner_team", OnlyInt: true},
 			&core.TextField{Name: "score_summary"},
+			&core.TextField{Name: "game_uid"},
+			&core.TextField{Name: "end_reason"},
 			&core.AutodateField{Name: "created", OnCreate: true},
 		)
+		// Mirrors migrations/1788211877_games_ingest_dedupe.go: partial so
+		// empty (legacy) uids never collide.
+		c.AddIndex("idx_games_game_uid_unique", true, "game_uid", "game_uid != ''")
 		if err := app.Save(c); err != nil {
 			t.Fatalf("save games: %v", err)
 		}

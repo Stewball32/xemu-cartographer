@@ -9,6 +9,11 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/roster"
 )
 
+// envelopeTypeGameFiltered is the wire type for the viewer-facing filtered
+// variant of the game class — identical GamePayload shape, dummy roster
+// removed server-side. See buildGameFilteredPayload.
+const envelopeTypeGameFiltered = "game_filtered"
+
 // dummyCfgTTL bounds how stale the cached dummy-filter config may be. Short
 // enough that a live is_neutral_host flip (or a dummy_gamertags edit) takes
 // effect on viewer overlays within a few seconds; long enough that the DB read

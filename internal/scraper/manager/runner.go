@@ -25,6 +25,14 @@ import (
 // entries drop off the back.
 const recentEventsCap = 50
 
+// matchEventsCap bounds the per-match event log (instanceCache.MatchEvents)
+// so a pathological event storm can't grow the cache without limit. Generous
+// on purpose — the previous_game contract is "complete, oldest-first", and a
+// kill-heavy 4v4 lands in the hundreds, not thousands. When the cap is hit
+// the log keeps its oldest-first prefix, drops the tail, and flags
+// MatchEventsTruncated so consumers know the artifact is incomplete.
+const matchEventsCap = 10_000
+
 // instanceCache is the per-runner authoritative source of truth introduced
 // in M5 stage 5a. Holds phase, identity, freshness, current match data,
 // recent event log, and the just-ended `previous_game` slot in one struct.
@@ -108,6 +116,16 @@ type instanceCache struct {
 	LatestTick *scraper.TickPayload
 	Events     []scraper.Envelope // newest-first; bounded by recentEventsCap
 
+	// MatchEvents is the per-match event log in append (oldest-first) order —
+	// the source of previous_game.events. Separate from Events because the
+	// 50-entry ring exists for the request_events RPC and mid-match joiners,
+	// while the previous_game contract is the COMPLETE match log. Reset at
+	// match start (runLive entry), moved into PreviousGame at the Live→Ready
+	// edge. Bounded by matchEventsCap; MatchEventsTruncated records that the
+	// tail was dropped.
+	MatchEvents          []scraper.Envelope
+	MatchEventsTruncated bool
+
 	// PlayerAccum is the per-player accumulated match stats + activity latch
 	// (HaloCaster extract_events port — see internal/scraper/accum.go).
 	// Replaced WHOLESALE each tick with a fresh Snapshot() map (never mutated
@@ -145,10 +163,20 @@ type instanceCache struct {
 // previousGame is the just-ended match captured on Live→Ready. Serialised as
 // part of the current_state envelope's payload, so json tags determine the
 // wire shape.
+//
+// GameUID is minted exactly once at capture (see newGameUID) so every replay
+// of this game — join replay, request_state, the games-persistence hook —
+// carries the same idempotency key. EndReason records the observed exit
+// condition (endReasonPostgame / endReasonLeftMatch / endReasonShutdown, see
+// previous_game.go). Events is the per-match log, oldest-first;
+// EventsTruncated flags a matchEventsCap overflow.
 type previousGame struct {
-	GameData *scraper.GameData  `json:"game_data,omitempty"`
-	Events   []scraper.Envelope `json:"events,omitempty"`
-	EndedAt  time.Time          `json:"ended_at"`
+	GameData        *scraper.GameData  `json:"game_data,omitempty"`
+	Events          []scraper.Envelope `json:"events,omitempty"`
+	EndedAt         time.Time          `json:"ended_at"`
+	EventsTruncated bool               `json:"events_truncated"`
+	GameUID         string             `json:"game_uid"`
+	EndReason       string             `json:"end_reason"`
 }
 
 // runner owns one xemu instance for its lifetime: from Manager.Start (which
@@ -297,6 +325,14 @@ type runner struct {
 	// Owned for the runner's lifetime; closed in the loop's shutdown
 	// defer.
 	sinks *sinkManager
+
+	// persistWG tracks in-flight game-end persistence goroutines
+	// (persistFinishedGame) so Manager.Stop can flush them — bounded by
+	// persistFlushTimeout — instead of letting a Ctrl-C at a match end race
+	// the write to process exit. Add always happens on the loop goroutine
+	// before the loop exits (runLive's defer), so Stop's post-<-done Wait
+	// never races an Add.
+	persistWG sync.WaitGroup
 
 	// Host-runner (player-hosting, ADR-0003). host is the state-aware auto-host
 	// runner, ticked from the loop goroutine (tickHost in hostrunner.go); nil
@@ -474,9 +510,14 @@ func (r *runner) readCache() instanceCache {
 	return r.cache
 }
 
-// pushEvent appends an event to the cache's newest-first event log and
-// prunes to capacity. Always allocates a new backing array so existing
-// consumer copies of cache.Events keep pointing at their old slice.
+// pushEvent records an event in BOTH per-runner logs: the newest-first
+// recentEventsCap ring (request_events / inspect / mid-match joiners) and
+// the oldest-first per-match log (previous_game). The ring always allocates
+// a new backing array so existing consumer copies of cache.Events keep
+// pointing at their old slice. The match log appends in place — safe under
+// the same publication discipline because append never rewrites an index a
+// prior readCache copy can see (their slice header's len precedes it), and
+// rebuilding a 10k-entry array per event would be quadratic.
 func (r *runner) pushEvent(env scraper.Envelope) {
 	r.cacheMu.Lock()
 	next := append([]scraper.Envelope{env}, r.cache.Events...)
@@ -484,6 +525,11 @@ func (r *runner) pushEvent(env scraper.Envelope) {
 		next = next[:recentEventsCap]
 	}
 	r.cache.Events = next
+	if len(r.cache.MatchEvents) < matchEventsCap {
+		r.cache.MatchEvents = append(r.cache.MatchEvents, env)
+	} else {
+		r.cache.MatchEventsTruncated = true
+	}
 	r.cacheMu.Unlock()
 }
 
@@ -657,7 +703,7 @@ func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 		add("scenario", *sp)
 	}
 	add("game", buildGamePayload(&c))
-	add("game_filtered", buildGameFilteredPayload(&c, cfg))
+	add(envelopeTypeGameFiltered, buildGameFilteredPayload(&c, cfg))
 	if pg := buildPreviousGamePayload(&c); pg != nil {
 		add("previous_game", *pg)
 	}
@@ -730,8 +776,8 @@ func (r *runner) broadcastPoll(svc *guards.Services) {
 	// actually subscribed to host:<inst>:game_filtered (shouldRead gates on room
 	// membership), so this is zero-cost when nobody's watching. Dummy filtering
 	// stays server-side here.
-	if shouldRead(r.name, "game_filtered", pol, svc.WS) {
-		r.emitClass(svc, "game_filtered", c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig(svc.App)))
+	if shouldRead(r.name, envelopeTypeGameFiltered, pol, svc.WS) {
+		r.emitClass(svc, envelopeTypeGameFiltered, c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig(svc.App)))
 	}
 	if c.LatestTick == nil {
 		return

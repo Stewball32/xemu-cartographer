@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 
@@ -381,6 +382,14 @@ func (m *Manager) Stop(name string) error {
 	}
 	r.cancel()
 	<-r.done
+
+	// Flush any in-flight game-end persist (fired by runLive's deferred
+	// persistFinishedGame just before the loop exited) so stopping a runner
+	// — or shutting the daemon down — right at a match end doesn't drop the
+	// artifact. Bounded: a wedged DB must not be able to hang teardown.
+	if !r.awaitPersists(persistFlushTimeout) {
+		log.Printf("scraper[%s]: stop: game-end persist still in flight after %v — abandoning", name, persistFlushTimeout)
+	}
 
 	// Tear down the host runner + input pump after the loop goroutine has
 	// exited (so no in-flight tickHost touches r.host). Registry.Remove drops the

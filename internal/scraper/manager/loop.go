@@ -473,16 +473,27 @@ func (r *runner) refreshLowTranslations() {
 // the data rather than dropping it. Ready inherits the populated
 // PreviousGame slot; Idle clears it (handled in releaseReader).
 func (r *runner) runLive(svc *guards.Services) (next Phase) {
+	// endReason is the observed exit condition captured into PreviousGame.
+	// The state-observed exits below overwrite it; a ctx-cancel (or panic)
+	// unwind leaves the shutdown default. Read by the deferred capture via
+	// closure because defer arguments are evaluated at defer time.
+	endReason := endReasonShutdown
+
 	// LIFO: persistFinishedGame runs after captureLiveAsPrevious, so
 	// cache.PreviousGame is populated when it reads it (M13 game-end trigger).
 	defer r.persistFinishedGame(svc)
-	defer r.captureLiveAsPrevious()
+	defer func() { r.captureLiveAsPrevious(endReason) }()
 
-	// Fresh match → fresh stat accumulator + activity latches. The cache's
-	// previous-match snapshot is cleared here (not on Live→Ready) so the
-	// postgame graphic keeps the finished match's stats until a new one starts.
+	// Fresh match → fresh stat accumulator + activity latches + per-match
+	// event log. The cache's previous-match snapshot is cleared here (not on
+	// Live→Ready) so the postgame graphic keeps the finished match's stats
+	// until a new one starts.
 	r.accum = scraper.NewMatchAccum()
 	r.publishAccum(nil)
+	r.withCache(func(c *instanceCache) {
+		c.MatchEvents = nil
+		c.MatchEventsTruncated = false
+	})
 
 	var lastBroadcastTick uint32
 
@@ -522,6 +533,17 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			log.Printf("scraper[%s]: state in_game → %s tick=%d — live → ready", r.name, gs, tick)
 			if err := r.reader.OnStateChange(scraper.GameStateInGame, gs); err != nil {
 				log.Printf("scraper[%s]: OnStateChange live→ready: %v", r.name, err)
+			}
+			// Exit states observed in practice: postgame (the match ran to
+			// its carousel) or menu / pregame (players bailed to the front
+			// end, or the lobby rolled straight into the next match's setup
+			// without this box seeing a postgame). Only an observed postgame
+			// earns endReasonPostgame; anything else is honestly a
+			// left-before-the-end.
+			if gs == scraper.GameStatePostGame {
+				endReason = endReasonPostgame
+			} else {
+				endReason = endReasonLeftMatch
 			}
 			return PhaseReady
 		}
@@ -588,22 +610,33 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 	}
 }
 
-// captureLiveAsPrevious moves the just-ended match's game data + event log
-// into cache.PreviousGame and clears the live slots. Deferred from runLive
-// so the data survives a panic / ctx-cancel / heartbeat fallout.
-func (r *runner) captureLiveAsPrevious() {
+// captureLiveAsPrevious moves the just-ended match's game data + per-match
+// event log (oldest-first, see instanceCache.MatchEvents) into
+// cache.PreviousGame and clears the live slots. Deferred from runLive so the
+// data survives a panic / ctx-cancel / heartbeat fallout. endReason is the
+// exit condition runLive observed (see the endReason* constants).
+//
+// The game_uid is minted HERE, once per captured game — never in a payload
+// builder — so every downstream consumer of this capture sees one stable
+// idempotency key.
+func (r *runner) captureLiveAsPrevious(endReason string) {
 	r.cacheMu.Lock()
 	defer r.cacheMu.Unlock()
-	if r.cache.GameData == nil && len(r.cache.Events) == 0 {
+	if r.cache.GameData == nil && len(r.cache.MatchEvents) == 0 && len(r.cache.Events) == 0 {
 		return
 	}
 	r.cache.PreviousGame = &previousGame{
-		GameData: r.cache.GameData,
-		Events:   r.cache.Events,
-		EndedAt:  time.Now(),
+		GameData:        r.cache.GameData,
+		Events:          r.cache.MatchEvents,
+		EventsTruncated: r.cache.MatchEventsTruncated,
+		EndedAt:         time.Now(),
+		GameUID:         newGameUID(),
+		EndReason:       endReason,
 	}
 	r.cache.LatestTick = nil
 	r.cache.Events = nil
+	r.cache.MatchEvents = nil
+	r.cache.MatchEventsTruncated = false
 }
 
 // releaseReader clears the bound GameReader and resets the cache fields
@@ -627,6 +660,12 @@ func (r *runner) releaseReader() {
 		c.GameData = nil
 		c.LatestTick = nil
 		c.Events = nil
+		// MatchEvents must go with GameData: the deferred capture keys off
+		// both, and leaving a stale match log here would turn the xemu-death
+		// path (heartbeat → Idle, deliberately no artifact) into a phantom
+		// previous_game.
+		c.MatchEvents = nil
+		c.MatchEventsTruncated = false
 		c.PreviousGame = nil
 	})
 }

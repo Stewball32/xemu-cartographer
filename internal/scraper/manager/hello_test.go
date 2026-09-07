@@ -23,15 +23,22 @@ func TestBuildHelloPayloadEmpty(t *testing.T) {
 	if p.ServerTime.IsZero() {
 		t.Fatal("server_time is zero, want now-ish")
 	}
+	// Literal strings, not the shared slice or constants — this is the
+	// ground-truth pin for the handshake surface, including the three
+	// classes both lists historically dropped (game_filtered, event,
+	// event_filtered).
 	wantClasses := []string{
-		envelopeTypeXbox,
-		envelopeTypeScenario,
-		envelopeTypeGame,
-		envelopeTypeTick,
-		envelopeTypeObjects,
-		envelopeTypeDebug,
-		envelopeTypeSummary,
-		envelopeTypePreviousGame,
+		"xbox",
+		"scenario",
+		"game",
+		"game_filtered",
+		"tick",
+		"objects",
+		"debug",
+		"summary",
+		"previous_game",
+		"event",
+		"event_filtered",
 	}
 	if len(p.Classes) != len(wantClasses) {
 		t.Fatalf("classes = %v (len %d), want %v (len %d)", p.Classes, len(p.Classes), wantClasses, len(wantClasses))

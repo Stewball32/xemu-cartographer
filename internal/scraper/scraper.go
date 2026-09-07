@@ -176,7 +176,8 @@ func Detect(inst *xemu.Instance, instanceName, offsetSetID string) (GameReader, 
 // NewReaderForTitle binds a GameReader for an already-detected title ID,
 // resolving the offset set named by offsetSetID (empty = the game's baseline).
 // An unknown/mismatched explicit id degrades to the baseline with a logged
-// warning; a set that exists but fails to BIND is a hard error.
+// warning; a set that exists but fails to BIND is a hard error, as is a game
+// with no registered baseline (never a panic — the runner stays alive).
 func NewReaderForTitle(titleID uint32, inst *xemu.Instance, instanceName, offsetSetID string) (GameReader, error) {
 	registryMu.Lock()
 	reg, ok := registry[titleID]
@@ -185,6 +186,9 @@ func NewReaderForTitle(titleID uint32, inst *xemu.Instance, instanceName, offset
 		return nil, fmt.Errorf("detect: unknown title ID 0x%08X", titleID)
 	}
 	set, warn := offsets.Resolve(reg.gameKey, offsetSetID)
+	if set == nil {
+		return nil, fmt.Errorf("resolve offset set for %s: %w", reg.gameKey, warn)
+	}
 	if warn != nil {
 		log.Printf("scraper[%s]: offset set: %v", instanceName, warn)
 	} else if offsetSetID != "" {
