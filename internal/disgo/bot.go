@@ -13,7 +13,9 @@ import (
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/snowflake/v2"
 
+	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/actions"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/authzmw"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/events"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
@@ -51,8 +53,13 @@ func NewBot() (*Bot, error) {
 		return nil, fmt.Errorf("disgo: DISCORD_BOT_TOKEN is not set")
 	}
 
-	// Build command handler mux
+	// Build command handler mux. The authz middleware runs before every
+	// route (D-1): it derives the caller's discord principal from the
+	// interaction's resolved member and resolves the authz deps per
+	// interaction (authzpb.Default, installed at boot before the bot is
+	// built) so the command handlers can gate on authzmw.Can.
 	mux := handler.New()
+	mux.Use(authzmw.Middleware(authzpb.Default))
 	allCmds := commands.All()
 	for _, cmd := range allCmds {
 		mux.SlashCommand("/"+cmd.Create.Name, cmd.Handler)

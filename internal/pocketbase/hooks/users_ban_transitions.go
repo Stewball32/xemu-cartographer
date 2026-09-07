@@ -6,7 +6,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/audit"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 )
 
 func init() {
@@ -37,59 +38,68 @@ func init() {
 // patch hits the record. Empty reason audit rows still encode the actor +
 // timestamp, which is the load-bearing signal.
 func registerUsersBanTransitionsHook(app *pocketbase.PocketBase) {
-	app.OnRecordUpdateRequest("users").BindFunc(func(e *core.RecordRequestEvent) error {
-		prev := e.Record.Original()
+	app.OnRecordUpdateRequest("users").BindFunc(usersBanTransitions)
+}
 
-		prevBanned := prev.GetBool("is_banned")
-		nextBanned := e.Record.GetBool("is_banned")
-		prevUntil := prev.GetString("banned_until")
-		nextUntil := e.Record.GetString("banned_until")
+// usersBanTransitions is the OnRecordUpdateRequest("users") handler,
+// exposed as a named function for the integration test. The admin gate is
+// the authz `user.moderate` decision (H-1): the deps are resolved at
+// request time via pb.Default() because hooks register before the adapter
+// exists at boot; a nil result denies, so the gate fails closed.
+func usersBanTransitions(e *core.RecordRequestEvent) error {
+	prev := e.Record.Original()
 
-		bannedChanged := prevBanned != nextBanned
-		untilChanged := prevUntil != nextUntil
+	prevBanned := prev.GetBool("is_banned")
+	nextBanned := e.Record.GetBool("is_banned")
+	prevUntil := prev.GetString("banned_until")
+	nextUntil := e.Record.GetString("banned_until")
 
-		if !bannedChanged && !untilChanged {
-			return e.Next()
-		}
+	bannedChanged := prevBanned != nextBanned
+	untilChanged := prevUntil != nextUntil
 
-		if !roles.IsAdminAuth(e.App, e.Auth) {
-			return apis.NewForbiddenError("only admins may set ban or timeout state", nil)
-		}
-
-		// If banning flips true → false, clear the residual timeout so a
-		// stale future date doesn't make the next ban look already-expired.
-		if bannedChanged && prevBanned && !nextBanned {
-			e.Record.Set("banned_until", "")
-			nextUntil = ""
-			untilChanged = prevUntil != ""
-		}
-
-		// ActionBan: false → true transition.
-		if bannedChanged && !prevBanned && nextBanned {
-			if err := audit.Write(e.App, e.Auth, audit.ActionBan, e.Record, audit.BanPayload{}); err != nil {
-				e.App.Logger().Error("M8f: audit ActionBan failed", "user", e.Record.Id, "err", err)
-			}
-		}
-
-		// ActionUnban: true → false transition.
-		if bannedChanged && prevBanned && !nextBanned {
-			if err := audit.Write(e.App, e.Auth, audit.ActionUnban, e.Record, audit.UnbanPayload{}); err != nil {
-				e.App.Logger().Error("M8f: audit ActionUnban failed", "user", e.Record.Id, "err", err)
-			}
-		}
-
-		// ActionTimeout: banned_until changed while is_banned is (or
-		// becomes) true. Captures both "ban with a timer" (false → true
-		// AND banned_until set) and "extend an existing ban" (banned_until
-		// changed while is_banned stays true).
-		if untilChanged && nextBanned && nextUntil != "" {
-			if err := audit.Write(e.App, e.Auth, audit.ActionTimeout, e.Record, audit.TimeoutPayload{
-				ExpiresAt: nextUntil,
-			}); err != nil {
-				e.App.Logger().Error("M8f: audit ActionTimeout failed", "user", e.Record.Id, "err", err)
-			}
-		}
-
+	if !bannedChanged && !untilChanged {
 		return e.Next()
-	})
+	}
+
+	d := pb.Default()
+	p := pb.PrincipalFromAuth(e.App, d, e.Auth)
+	if !authz.Can(d, p, authz.ActionUserModerate, authz.User(e.Record.Id)) {
+		return apis.NewForbiddenError("only admins may set ban or timeout state", nil)
+	}
+
+	// If banning flips true → false, clear the residual timeout so a
+	// stale future date doesn't make the next ban look already-expired.
+	if bannedChanged && prevBanned && !nextBanned {
+		e.Record.Set("banned_until", "")
+		nextUntil = ""
+		untilChanged = prevUntil != ""
+	}
+
+	// ActionBan: false → true transition.
+	if bannedChanged && !prevBanned && nextBanned {
+		if err := audit.Write(e.App, e.Auth, audit.ActionBan, e.Record, audit.BanPayload{}); err != nil {
+			e.App.Logger().Error("M8f: audit ActionBan failed", "user", e.Record.Id, "err", err)
+		}
+	}
+
+	// ActionUnban: true → false transition.
+	if bannedChanged && prevBanned && !nextBanned {
+		if err := audit.Write(e.App, e.Auth, audit.ActionUnban, e.Record, audit.UnbanPayload{}); err != nil {
+			e.App.Logger().Error("M8f: audit ActionUnban failed", "user", e.Record.Id, "err", err)
+		}
+	}
+
+	// ActionTimeout: banned_until changed while is_banned is (or
+	// becomes) true. Captures both "ban with a timer" (false → true
+	// AND banned_until set) and "extend an existing ban" (banned_until
+	// changed while is_banned stays true).
+	if untilChanged && nextBanned && nextUntil != "" {
+		if err := audit.Write(e.App, e.Auth, audit.ActionTimeout, e.Record, audit.TimeoutPayload{
+			ExpiresAt: nextUntil,
+		}); err != nil {
+			e.App.Logger().Error("M8f: audit ActionTimeout failed", "user", e.Record.Id, "err", err)
+		}
+	}
+
+	return e.Next()
 }

@@ -10,7 +10,9 @@ import (
 	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/authzmw"
 )
 
 // /config — the shared admin surface for the guild→channel→hook routing table
@@ -24,8 +26,13 @@ import (
 //   - /config bootstrap  test-only quickstart: create a category + channels and
 //     tag them (the old /setup, demoted).
 //
-// Permissions: Manage Server via default_member_permissions — no in-handler
-// invoke gating (guild admins tune per-command access in Discord settings).
+// Permissions: Manage Server via default_member_permissions (the client-side
+// default guild admins tune per-command in Discord settings) AND, server-side,
+// the authz `discord.config` decision on the caller's discord principal (D-2):
+// every handler first checks configAllowed, which needs the Manage Server or
+// Administrator bit in the member's effective permissions; the tags submit
+// checks `discord.bind_channel` the same way. A caller without it gets the
+// ephemeral configDeniedText.
 func init() {
 	register(Command{
 		Create: discord.SlashCommandCreate{
@@ -58,6 +65,21 @@ func init() {
 	})
 }
 
+// configDeniedText is the ephemeral refusal for a caller without Manage Server.
+const configDeniedText = "Manage Server required: only members with the Manage Server (or Administrator) permission can change this server's Cartographer routing."
+
+// configAllowed is the D-2 gate: whether principal p may perform a (one of
+// discord.config / discord.bind_channel) on guild gid, decided by authz over
+// d — the deps the mux middleware resolved for the interaction. A nil gid
+// (DM) denies; the callers reply with their "inside a server" text before
+// reaching here, so the gate never masks that hint. Pure + unit-testable.
+func configAllowed(d authz.Deps, p authz.Principal, a authz.Action, gid *snowflake.ID) bool {
+	if gid == nil {
+		return false
+	}
+	return authz.Can(d, p, a, authz.Guild(gid.String()))
+}
+
 func handleConfigCommand(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
 	sub := ""
 	if data.SubCommandName != nil {
@@ -86,6 +108,9 @@ func handleConfigTags(e *handler.CommandEvent) error {
 	gid := e.GuildID()
 	if gid == nil {
 		return replyEphemeral(e, "Run `/config tags` inside a server.")
+	}
+	if !configAllowed(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx), authz.ActionDiscordConfig, gid) {
+		return replyEphemeral(e, configDeniedText)
 	}
 	channelID := e.Channel().ID()
 
@@ -124,6 +149,9 @@ func handleConfigTagsSubmit(data discord.SelectMenuInteractionData, e *handler.C
 	gid := e.GuildID()
 	if gid == nil {
 		return e.UpdateMessage(clearComponents("Run this inside a server."))
+	}
+	if !configAllowed(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx), authz.ActionDiscordBindChannel, gid) {
+		return e.UpdateMessage(clearComponents(configDeniedText))
 	}
 	channelID := e.Vars["channelID"]
 	selected := selectedValues(data)
@@ -169,6 +197,9 @@ func handleConfigView(e *handler.CommandEvent) error {
 	gid := e.GuildID()
 	if gid == nil {
 		return replyEphemeral(e, "Run `/config view` inside a server.")
+	}
+	if !configAllowed(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx), authz.ActionDiscordConfig, gid) {
+		return replyEphemeral(e, configDeniedText)
 	}
 	bindings, err := discordcfg.GetBindings(app, gid.String())
 	if err != nil {
@@ -297,6 +328,9 @@ func handleConfigBootstrap(e *handler.CommandEvent) error {
 	gid := e.GuildID()
 	if gid == nil {
 		return replyEphemeral(e, "Run `/config bootstrap` inside a server.")
+	}
+	if !configAllowed(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx), authz.ActionDiscordConfig, gid) {
+		return replyEphemeral(e, configDeniedText)
 	}
 	app := commandApp()
 	if app == nil {
