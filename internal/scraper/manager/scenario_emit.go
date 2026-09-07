@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
@@ -54,10 +53,7 @@ func computeScenarioFingerprint(gd *scraper.GameData) scenarioFingerprint {
 // them. Mid-match weapon-pickup tag-def additions wait for the next
 // scenario-field change to ride through. Acceptable: TagDefs are a
 // debug-page nicety, not gameplay-critical.
-func (r *runner) maybeEmitScenario(svc *guards.Services) {
-	if svc == nil || svc.WS == nil {
-		return
-	}
+func (r *runner) maybeEmitScenario() {
 	c := r.readCache()
 	fp := computeScenarioFingerprint(c.GameData)
 	if fp == r.lastScenarioFingerprint {
@@ -68,5 +64,5 @@ func (r *runner) maybeEmitScenario(svc *guards.Services) {
 	if sp == nil {
 		return
 	}
-	r.emitClass(svc, "scenario", c.EngineTick, *sp)
+	r.emitClass("scenario", c.EngineTick, *sp)
 }

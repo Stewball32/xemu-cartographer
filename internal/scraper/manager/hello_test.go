@@ -13,7 +13,7 @@ import (
 // TestBuildHelloPayloadEmpty: with no runners the Instances list is empty
 // (not nil) so a JSON consumer sees `[]` rather than `null`.
 func TestBuildHelloPayloadEmpty(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	p := m.BuildHelloPayload()
@@ -61,7 +61,7 @@ func TestBuildHelloPayloadEmpty(t *testing.T) {
 // Instances, sorted by name (inherited from m.List), each carrying the
 // runner's StartedAt — the value clients use for restart detection.
 func TestBuildHelloPayloadWithRunners(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	started := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -98,7 +98,7 @@ func TestBuildHelloPayloadWithRunners(t *testing.T) {
 // expected three layers (websocket.Message → scraper.Envelope → HelloPayload)
 // and carry the protocol version + empty instance + tick=0.
 func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	r := newRunner("alpha", "/tmp/a", "host:alpha", nil, nil, nil)
@@ -155,7 +155,7 @@ func TestHelloEnvelopeBytesRoundtrip(t *testing.T) {
 // the same bytes HelloEnvelopeBytes would have returned (modulo the captured
 // server_time, which advances per call).
 func TestSendHelloOn(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	calls := 0

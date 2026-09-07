@@ -1,8 +1,10 @@
 // Package manager owns the per-instance scraper lifecycle: it opens an
-// xemu.Instance and runs a phase-driven goroutine that broadcasts
-// current_state / state_update / event envelopes (M5 stage 5c) to a
-// per-instance host:<name> room, while a single per-Manager aggregator
-// goroutine maintains a cross-instance host:all summary feed.
+// xemu.Instance and runs a phase-driven goroutine that emits per-class
+// envelopes (M5 stage 5c) through the Emitter port — the league server's
+// adapter routes them to the per-instance host:<name>:<class> rooms — while
+// a single per-Manager aggregator goroutine maintains a cross-instance
+// host:summary feed. Subscriber demand and the roster (dummy) filter come in
+// through the Demand / RosterFilter ports (ports.go, step 7 part 3a).
 //
 // One Manager per server. Routes (/api/admin/scraper/*) and the discovery
 // watcher (internal/discovery → onAdd) call Start/Stop/List through the
@@ -16,7 +18,7 @@
 // the scraper package (the runner sits in Idle, visible via Inspect).
 //
 // M5 stage 5b: instance names are validated at Start via the
-// rooms.RoomForInstance chokepoint (rejects "all" and other reserved
+// wire.RoomForInstance chokepoint (rejects "all" and other reserved
 // strings); the per-instance host room name is cached on the runner so
 // loop broadcasts don't re-derive it per tick.
 package manager
@@ -29,16 +31,15 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/pocketbase/pocketbase/core"
-
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/vncinput"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 	"github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
@@ -46,7 +47,7 @@ import (
 var ErrAlreadyRunning = errors.New("scraper already running")
 
 // ErrInvalidName is the sentinel wrapped around input-validation failures
-// from the rooms.RoomForInstance chokepoint (M5 stage 5b). Lets HTTP route
+// from the wire.RoomForInstance chokepoint (M5 stage 5b). Lets HTTP route
 // handlers distinguish "client passed a bad name" (→ 400) from "QMP init
 // failed" (→ 502) without depending on rooms-package internals.
 var ErrInvalidName = errors.New("scraper: invalid instance name")
@@ -54,7 +55,16 @@ var ErrInvalidName = errors.New("scraper: invalid instance name")
 // Manager owns a name → runner map and dispatches lifecycle operations.
 // Implements scraperiface.Service via structural typing.
 type Manager struct {
+	// svc is TEMPORARY (part 3c removes it): capture_loader, games_persist
+	// and hello still read svc.App. Broadcasting no longer goes through it.
 	svc *guards.Services
+
+	// Ports (ports.go). emitter is never nil (nullEmitter when unset);
+	// demand and rosterFilter are nil-safe at their call sites.
+	emitter      Emitter
+	demand       Demand
+	onGameEnd    GameEnd
+	rosterFilter func(instance string) roster.Config
 
 	mu      sync.Mutex
 	runners map[string]*runner
@@ -101,15 +111,29 @@ type Manager struct {
 	overlayResolver func(name string) (string, bool)
 }
 
-// New constructs a Manager that broadcasts via svc.WS and starts a host:all
-// aggregator goroutine. svc may be nil for tests; in that case broadcasts
-// become no-ops but the aggregator still runs (it short-circuits when
-// svc.WS is nil). Call Close() on shutdown to stop the aggregator.
-func New(svc *guards.Services) *Manager {
+// New constructs a Manager from Options (every field optional — see
+// ports.go) and starts the host:summary aggregator goroutine. With a nil
+// Emitter every broadcast is dropped (nullEmitter) but the aggregator still
+// runs. Call Close() on shutdown to stop the aggregator.
+func New(o Options) *Manager {
+	emitter := o.Emitter
+	if emitter == nil {
+		emitter = nullEmitter{}
+	}
 	m := &Manager{
-		svc:     svc,
-		runners: make(map[string]*runner),
-		agg:     newAggregator(svc),
+		svc:               o.Services,
+		emitter:           emitter,
+		demand:            o.Demand,
+		onGameEnd:         o.OnGameEnd,
+		rosterFilter:      o.RosterFilter,
+		offsetSetResolver: o.OffsetSetFor,
+		overlayResolver:   o.OverlayFor,
+		hostDrive:         o.HostDrive,
+		runners:           make(map[string]*runner),
+		agg:               newAggregator(emitter),
+	}
+	if o.HostRegistry != nil {
+		m.SetHostRunner(o.HostRegistry, o.HostURL, true)
 	}
 	go m.agg.run()
 	return m
@@ -245,7 +269,7 @@ func (m *Manager) SetOverlayResolver(resolver func(name string) (string, bool)) 
 // at sock and launches the phase-driven goroutine. The runner enters Idle
 // and self-detects the running XBE; no upfront scraper.Detect call is made.
 //
-// M5 stage 5b: name is validated through rooms.RoomForInstance — reserved
+// M5 stage 5b: name is validated through wire.RoomForInstance — reserved
 // suffixes (currently "all"), names containing ":" or whitespace, and the
 // empty string are rejected before any state is mutated. Both the discovery
 // watcher's auto-start path and the manual /api/admin/scraper/start route
@@ -253,14 +277,14 @@ func (m *Manager) SetOverlayResolver(resolver func(name string) (string, bool)) 
 // → room-name derivation.
 //
 // Returns ErrAlreadyRunning if name is already in use, the chokepoint error
-// from rooms.RoomForInstance for invalid names, or whatever error
+// from wire.RoomForInstance for invalid names, or whatever error
 // xemu.Instance.Init surfaced.
 func (m *Manager) Start(name, sock string) error {
 	if sock == "" {
 		return errors.New("scraper: sock required")
 	}
 
-	hostRoom, err := rooms.RoomForInstance(name)
+	hostRoom, err := wire.RoomForInstance(name)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidName, err)
 	}
@@ -315,6 +339,13 @@ func (m *Manager) Start(name, sock string) error {
 	// Overlay resolver for host-side custom gametype variant reads (part C).
 	// Visible to the loop goroutine before it starts (happens-before via go).
 	r.overlayFor = m.overlayResolver
+
+	// Ports: transport, subscriber demand and the roster filter. Set before
+	// the loop goroutine starts (happens-before via go) so they are never
+	// touched concurrently.
+	r.emitter = m.emitter
+	r.demand = m.demand
+	r.rosterFilter = m.rosterFilter
 
 	// Attach the player-hosting runner (ADR-0003). Created before the loop
 	// goroutine starts so r.host / r.hostPump are visible to it without a race
@@ -496,15 +527,6 @@ func (m *Manager) Inspect(name string) (scraperiface.InspectState, bool) {
 // instanceCache snapshot, not just GameData — so a late-joining client
 // gets phase, identity, freshness, current game data, recent events, and
 // previous_game in a single message.
-// cfgApp returns the core.App for dummy-filter config loads, nil-safe for test
-// Managers built without a Services (dummyConfig treats nil as no-filter).
-func (m *Manager) cfgApp() core.App {
-	if m.svc == nil {
-		return nil
-	}
-	return m.svc.App
-}
-
 func (m *Manager) JoinReplayMessages() [][]byte {
 	m.mu.Lock()
 	runners := make([]*runner, 0, len(m.runners))
@@ -515,7 +537,7 @@ func (m *Manager) JoinReplayMessages() [][]byte {
 
 	out := make([][]byte, 0, len(runners)*4)
 	for _, r := range runners {
-		for _, cm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
+		for _, cm := range r.classEnvelopeMessages(r.dummyConfig()) {
 			out = append(out, cm.Bytes)
 		}
 	}
@@ -534,7 +556,7 @@ func (m *Manager) JoinReplayForInstance(name string) [][]byte {
 	if !ok {
 		return nil
 	}
-	msgs := r.classEnvelopeMessages(r.dummyConfig(m.cfgApp()))
+	msgs := r.classEnvelopeMessages(r.dummyConfig())
 	out := make([][]byte, 0, len(msgs))
 	for _, mm := range msgs {
 		out = append(out, mm.Bytes)
@@ -554,7 +576,7 @@ func (m *Manager) JoinReplayForInstanceClass(name, class string) [][]byte {
 	if !ok {
 		return nil
 	}
-	for _, mm := range r.classEnvelopeMessages(r.dummyConfig(m.cfgApp())) {
+	for _, mm := range r.classEnvelopeMessages(r.dummyConfig()) {
 		if mm.Class == class {
 			return [][]byte{mm.Bytes}
 		}

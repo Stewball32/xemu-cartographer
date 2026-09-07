@@ -3,7 +3,6 @@ package manager
 import (
 	"encoding/json"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
@@ -114,11 +113,11 @@ func buildDeathFiltered(ev scraper.Envelope, visible map[int]bool) (DeathFiltere
 // plate for a player who respawned minutes ago. The cost of omitting it is
 // that an overlay connecting mid-death shows the RESPAWNING pill without a
 // killer name for the rest of that one respawn window.
-func (r *runner) broadcastEventsFiltered(svc *guards.Services, events []scraper.Envelope) {
-	if svc == nil || svc.WS == nil || len(events) == 0 {
+func (r *runner) broadcastEventsFiltered(events []scraper.Envelope) {
+	if len(events) == 0 {
 		return
 	}
-	if !shouldRead(r.name, envelopeTypeEventFiltered, r.getPolicies(), svc.WS) {
+	if !shouldRead(r.name, envelopeTypeEventFiltered, r.getPolicies(), r.demand) {
 		return
 	}
 	var (
@@ -131,13 +130,13 @@ func (r *runner) broadcastEventsFiltered(svc *guards.Services, events []scraper.
 		}
 		if !loaded {
 			c := r.readCache()
-			visible = visibleIndices(&c, r.dummyConfig(svc.App))
+			visible = visibleIndices(&c, r.dummyConfig())
 			loaded = true
 		}
 		d, ok := buildDeathFiltered(ev, visible)
 		if !ok {
 			continue
 		}
-		r.emitClass(svc, envelopeTypeEventFiltered, ev.Tick, d)
+		r.emitClass(envelopeTypeEventFiltered, ev.Tick, d)
 	}
 }

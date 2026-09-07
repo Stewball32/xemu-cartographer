@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 	"github.com/xemu-cartographer/xc-scraper/xbox"
 )
 
@@ -113,6 +113,9 @@ func (g *consecutiveFailureGate) ok() {
 // 30Hz tick goroutine. Phase transitions update r.cache.Phase under cacheMu
 // so consumers (Inspect endpoint, future M5 5c emission layer) can observe
 // the runner's state independently of GameState.
+//
+// svc is TEMPORARY (part 3b): it only reaches runLive → persistFinishedGame
+// (svc.App). Broadcasting goes through the runner's Emitter / Demand ports.
 func (r *runner) loop(svc *guards.Services) {
 	defer close(r.done)
 	defer r.inst.Close()
@@ -147,15 +150,15 @@ func (r *runner) loop(svc *guards.Services) {
 		// sentinel makes the very first iteration (entering Idle at startup)
 		// emit too.
 		if phase != prevPhase {
-			r.broadcastSnapshot(svc)
+			r.broadcastSnapshot()
 			prevPhase = phase
 		}
 
 		switch phase {
 		case PhaseIdle:
-			phase = r.runIdle(svc)
+			phase = r.runIdle()
 		case PhaseReady:
-			phase = r.runReady(svc)
+			phase = r.runReady()
 		case PhaseLive:
 			phase = r.runLive(svc)
 		default:
@@ -173,14 +176,14 @@ func (r *runner) loop(svc *guards.Services) {
 // runIdle polls the XBE title ID and binds a GameReader as soon as the
 // title becomes recognised in the scraper registry. Returns the next phase
 // (Idle if no match, Ready if a reader was bound).
-func (r *runner) runIdle(svc *guards.Services) Phase {
+func (r *runner) runIdle() Phase {
 	titleID, err := scraper.ReadTitleID(r.inst)
 	if err != nil {
 		// Common during xemu boot or when the kernel hasn't mapped the XBE
 		// header yet. Stay idle and retry. Don't update LastReadAt — a
 		// failing read is not progress.
 		log.Printf("scraper[%s]: idle title-ID read: %v", r.name, err)
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -199,7 +202,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 		// Unknown title — stay idle and re-poll. The TitleID is already
 		// surfaced in the cache so the debug page can show "phase=idle,
 		// title_id=0x...".
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -218,14 +221,14 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 	reader, err := scraper.NewReaderForTitle(titleID, r.inst, r.name, setID)
 	if err != nil {
 		log.Printf("scraper[%s]: bind reader: %v — staying idle", r.name, err)
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
 	allGVAs := append(scraper.DetectionGVAs(), reader.LowGVAs()...)
 	if err := r.inst.Init(allGVAs); err != nil {
 		log.Printf("scraper[%s]: bind reader (init low GVAs): %v — staying idle", r.name, err)
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 		r.sleepOrCancel(idlePollInterval)
 		return PhaseIdle
 	}
@@ -257,7 +260,7 @@ func (r *runner) runIdle(svc *guards.Services) Phase {
 // but no separate envelope fires — the next state_update carries the new
 // data. Phase transitions (Ready → Live, Ready → Idle) emit a fresh
 // current_state from the loop dispatcher before the new phase starts.
-func (r *runner) runReady(svc *guards.Services) Phase {
+func (r *runner) runReady() Phase {
 	prevState := scraper.GameState("")
 	titleCheckCount := 0
 	readGate := consecutiveFailureGate{at: readyReadRefreshAt}
@@ -300,7 +303,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			if readGate.fail() {
 				r.refreshLowTranslations()
 			}
-			r.broadcastPoll(svc)
+			r.broadcastPoll()
 			r.sleepOrCancel(readyPollInterval)
 			continue
 		}
@@ -355,7 +358,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 				snap.GameState = gs
 				r.gameData = snap
 				r.publishGameData(snap)
-				r.maybeEmitScenario(svc)
+				r.maybeEmitScenario()
 				r.publishSummary()
 				prevState = gs
 			}
@@ -379,7 +382,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
-			r.maybeEmitScenario(svc)
+			r.maybeEmitScenario()
 		}
 
 		// Refresh the create-game map/gametype carousel enumeration (throttled)
@@ -394,7 +397,7 @@ func (r *runner) runReady(svc *guards.Services) Phase {
 		// happens. Throttled internally; a no-op when host-running is disabled.
 		r.tickHost(gs, tick)
 
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 		// Sleep in host-tick slices: with a host runner attached the box
 		// re-reads state + ticks the runner every hostTickMinInterval (~100ms)
 		// so the nav's closed-loop confirmations land promptly; without one
@@ -583,7 +586,7 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 			snap.GameState = gs
 			r.gameData = snap
 			r.publishGameData(snap)
-			r.maybeEmitScenario(svc)
+			r.maybeEmitScenario()
 		}
 
 		// Tick the host runner during a live match too (throttled). In-game it
@@ -592,18 +595,18 @@ func (r *runner) runLive(svc *guards.Services) (next Phase) {
 		r.tickHost(gs, tick)
 
 		// One state_update per fresh engine tick (~30Hz).
-		r.broadcastPoll(svc)
+		r.broadcastPoll()
 
 		events := r.reader.DetectEvents(tick, r.name, r.gameData, tickResult, r.state)
 		for _, ev := range events {
 			r.pushEvent(ev)
-			r.broadcast(svc, ev)
+			r.broadcast(ev)
 		}
 		// Viewer-facing death stream. Separate pass rather than a branch
 		// inside the loop above: broadcast routes on env.Type, and the
 		// filtered path re-types its envelopes, so the two can't share a
 		// send. Demand-gated internally — no subscriber, no work.
-		r.broadcastEventsFiltered(svc, events)
+		r.broadcastEventsFiltered(events)
 
 		lastBroadcastTick = tick
 		r.sleepOrCancel(livePollInterval)
@@ -793,17 +796,15 @@ func (r *runner) sleepOrCancel(d time.Duration) {
 	}
 }
 
-// broadcast wraps a scraper.Envelope inside a websocket.Message and pushes
-// the serialised bytes to the per-class room for this runner and the
-// envelope's type (host:<inst>:<class>). v2: routing is per-class — events
-// land on host:<inst>:event, state-class envelopes (if ever broadcast via
-// this generic path) land on host:<inst>:<class>.
-func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
-	if svc == nil || svc.WS == nil {
-		return
-	}
-	room, err := rooms.RoomForInstanceClass(r.name, env.Type)
-	if err != nil {
+// broadcast marshals a scraper.Envelope and hands it to the Emitter port,
+// which routes it to the per-class room for this runner and the envelope's
+// type (host:<inst>:<class>). v2: routing is per-class — events land on
+// host:<inst>:event, state-class envelopes (if ever broadcast via this
+// generic path) land on host:<inst>:<class>. The class is validated here
+// (wire.RoomForInstanceClass) exactly as before so an unroutable type is
+// logged and dropped rather than handed to the emitter.
+func (r *runner) broadcast(env scraper.Envelope) {
+	if _, err := wire.RoomForInstanceClass(r.name, env.Type); err != nil {
 		log.Printf("scraper[%s]: cannot route envelope type %q: %v", r.name, env.Type, err)
 		return
 	}
@@ -812,11 +813,7 @@ func (r *runner) broadcast(svc *guards.Services, env scraper.Envelope) {
 		log.Printf("scraper[%s]: marshal envelope (%s): %v", r.name, env.Type, err)
 		return
 	}
-	msgBytes, ok := wrapRoomMessage(r.name, room, envBytes)
-	if !ok {
-		return
-	}
-	svc.WS.SendToRoomRaw(room, msgBytes)
+	r.emitter.Emit(r.name, env.Type, envBytes)
 	if r.sinks != nil {
 		r.sinks.write(env.Type, envBytes)
 	}

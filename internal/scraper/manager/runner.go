@@ -7,16 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/vncinput"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 	"github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
@@ -295,6 +293,13 @@ type runner struct {
 	dummyCfg   roster.Config
 	dummyCfgAt time.Time
 
+	// Ports (ports.go), copied from the Manager in Start before the loop
+	// goroutine launches. emitter is never nil once wired (newRunner seeds
+	// nullEmitter); demand / rosterFilter are nil-safe at their call sites.
+	emitter      Emitter
+	demand       Demand
+	rosterFilter func(instance string) roster.Config
+
 	// seqMu guards seqByClass. Each envelope class has its own
 	// monotonically-increasing per-(instance, class) sequence number so
 	// clients can detect drops / out-of-order delivery / retransmits.
@@ -394,6 +399,7 @@ func newRunner(name, sock, hostRoom string, agg *aggregator, inst *xemu.Instance
 			// have to special-case that instead of just reading "unknown".
 			HostHealth: health.Health(now),
 		},
+		emitter:    nullEmitter{},
 		seqByClass: map[string]uint64{},
 		probeReqCh: make(chan probeRequest, 4),
 		sinks:      newSinkManager(name),
@@ -608,11 +614,14 @@ func (r *runner) maybeHeartbeatSummary() {
 }
 
 // wrapRoomMessage wraps envBytes (already-marshaled scraper.Envelope)
-// in websocket.Message{Type:"scraper", Room:room} and returns the wire
-// bytes. Logged-and-dropped on marshal error.
+// in wire.Message{Type:"scraper", Room:room} and returns the wire
+// bytes. Logged-and-dropped on marshal error. Still used by the reply
+// paths (join replay, EventsReply, ProbeReply, hello) that hand fully
+// framed messages back to the WS handler; broadcasts go through the
+// Emitter port with the bare envelope instead (part 3c retires this).
 func wrapRoomMessage(name, room string, envBytes []byte) ([]byte, bool) {
-	msg := websocket.Message{
-		Type:    "scraper",
+	msg := wire.Message{
+		Type:    wire.TypeScraper,
 		Room:    room,
 		Payload: envBytes,
 	}
@@ -625,7 +634,7 @@ func wrapRoomMessage(name, room string, envBytes []byte) ([]byte, bool) {
 }
 
 // marshalRoomMessage takes a scraper.Envelope, serialises it, and
-// wraps the result in the websocket.Message envelope. Used by callers
+// wraps the result in the wire.Message envelope. Used by callers
 // (events.go's EventsReply) that don't need the inner bytes separately.
 func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) {
 	envBytes, err := json.Marshal(env)
@@ -639,13 +648,15 @@ func marshalRoomMessage(name, room string, env scraper.Envelope) ([]byte, bool) 
 // marshalClassEnvelope builds a v2 class envelope and serialises both
 // the inner envelope and the WS-wrapped message. Returns:
 //
-//	envBytes  — marshaled scraper.Envelope (one NDJSON line for sinks)
-//	msgBytes  — websocket.Message{Type:"scraper", Room:room, Payload:envBytes}
+//	envBytes  — marshaled scraper.Envelope (one NDJSON line for sinks /
+//	            the Emitter port)
+//	msgBytes  — wire.Message{Type:"scraper", Room:room, Payload:envBytes}
+//	            (join replay only)
 //	room      — per-class room name (host:<inst>:<class>)
 //
 // (nil, nil, "", false) on validation or marshal failure (logged).
 func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([]byte, []byte, string, bool) {
-	room, err := rooms.RoomForInstanceClass(r.name, class)
+	room, err := wire.RoomForInstanceClass(r.name, class)
 	if err != nil {
 		log.Printf("scraper[%s]: cannot resolve room for class %q: %v", r.name, class, err)
 		return nil, nil, "", false
@@ -663,19 +674,16 @@ func (r *runner) marshalClassEnvelope(class string, tick uint32, payload any) ([
 	return envBytes, msgBytes, room, ok
 }
 
-// emitClass marshals a v2 class envelope, broadcasts the WS-wrapped
-// message to the per-class room, and tees the inner envelope to the
-// configured sink (if any). No-op on nil svc/WS (test harnesses) or
-// marshal failure.
-func (r *runner) emitClass(svc *guards.Services, class string, tick uint32, payload any) {
-	if svc == nil || svc.WS == nil {
-		return
-	}
-	envBytes, msgBytes, room, ok := r.marshalClassEnvelope(class, tick, payload)
+// emitClass marshals a v2 class envelope, hands the bare envelope bytes
+// to the Emitter port (the league adapter frames + routes it to the
+// per-class room), and tees the same bytes to the configured sink (if
+// any). No-op on marshal failure.
+func (r *runner) emitClass(class string, tick uint32, payload any) {
+	envBytes, _, _, ok := r.marshalClassEnvelope(class, tick, payload)
 	if !ok {
 		return
 	}
-	svc.WS.SendToRoomRaw(room, msgBytes)
+	r.emitter.Emit(r.name, class, envBytes)
 	r.sinks.write(class, envBytes)
 }
 
@@ -692,11 +700,11 @@ func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 		if payload == nil {
 			return
 		}
-		_, msgBytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
+		envBytes, msgBytes, _, ok := r.marshalClassEnvelope(class, c.EngineTick, payload)
 		if !ok {
 			return
 		}
-		out = append(out, classMessage{Class: class, Bytes: msgBytes})
+		out = append(out, classMessage{Class: class, Bytes: msgBytes, Env: envBytes})
 	}
 	add("xbox", buildXboxPayload(&c))
 	if sp := buildScenarioPayload(&c); sp != nil {
@@ -724,7 +732,10 @@ func (r *runner) classEnvelopeMessages(cfg roster.Config) []classMessage {
 // class join replay) or fan everything out (snapshot broadcast).
 type classMessage struct {
 	Class string
+	// Bytes is the wire.Message-framed message (join replay replies).
 	Bytes []byte
+	// Env is the bare marshalled envelope (what the Emitter port takes).
+	Env []byte
 }
 
 // broadcastSnapshot emits every applicable per-class envelope for the
@@ -739,18 +750,11 @@ type classMessage struct {
 // Also snapshots lastScenarioFingerprint so the very-next maybeEmitScenario
 // (called from runReady/runLive immediately after this transition) doesn't
 // double-emit the same scenario class we just shipped.
-func (r *runner) broadcastSnapshot(svc *guards.Services) {
-	if svc == nil || svc.WS == nil {
-		return
-	}
+func (r *runner) broadcastSnapshot() {
 	c := r.readCache()
 	r.lastScenarioFingerprint = computeScenarioFingerprint(c.GameData)
-	for _, m := range r.classEnvelopeMessages(r.dummyConfig(svc.App)) {
-		room, err := rooms.RoomForInstanceClass(r.name, m.Class)
-		if err != nil {
-			continue
-		}
-		svc.WS.SendToRoomRaw(room, m.Bytes)
+	for _, m := range r.classEnvelopeMessages(r.dummyConfig()) {
+		r.emitter.Emit(r.name, m.Class, m.Env)
 	}
 }
 
@@ -763,38 +767,35 @@ func (r *runner) broadcastSnapshot(svc *guards.Services) {
 // Replaces v1 broadcastStateUpdate. The 1 Hz GameData piggyback dance
 // is gone — game is always emitted on every poll, and the per-tick
 // stream (tick/objects/debug) only fires when there's tick data.
-func (r *runner) broadcastPoll(svc *guards.Services) {
-	if svc == nil || svc.WS == nil {
-		return
-	}
+func (r *runner) broadcastPoll() {
 	c := r.readCache()
 	pol := r.getPolicies()
-	if shouldRead(r.name, "game", pol, svc.WS) {
-		r.emitClass(svc, "game", c.EngineTick, buildGamePayload(&c))
+	if shouldRead(r.name, "game", pol, r.demand) {
+		r.emitClass("game", c.EngineTick, buildGamePayload(&c))
 	}
 	// Viewer-facing filtered variant: only built + sent when an overlay is
-	// actually subscribed to host:<inst>:game_filtered (shouldRead gates on room
-	// membership), so this is zero-cost when nobody's watching. Dummy filtering
+	// actually subscribed to host:<inst>:game_filtered (shouldRead gates on
+	// Demand), so this is zero-cost when nobody's watching. Dummy filtering
 	// stays server-side here.
-	if shouldRead(r.name, envelopeTypeGameFiltered, pol, svc.WS) {
-		r.emitClass(svc, envelopeTypeGameFiltered, c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig(svc.App)))
+	if shouldRead(r.name, envelopeTypeGameFiltered, pol, r.demand) {
+		r.emitClass(envelopeTypeGameFiltered, c.EngineTick, buildGameFilteredPayload(&c, r.dummyConfig()))
 	}
 	if c.LatestTick == nil {
 		return
 	}
-	if shouldRead(r.name, "tick", pol, svc.WS) {
+	if shouldRead(r.name, "tick", pol, r.demand) {
 		if tp := buildTickPayload(&c); tp != nil {
-			r.emitClass(svc, "tick", c.EngineTick, *tp)
+			r.emitClass("tick", c.EngineTick, *tp)
 		}
 	}
-	if shouldRead(r.name, "objects", pol, svc.WS) {
+	if shouldRead(r.name, "objects", pol, r.demand) {
 		if op := buildObjectsPayload(&c); op != nil {
-			r.emitClass(svc, "objects", c.EngineTick, *op)
+			r.emitClass("objects", c.EngineTick, *op)
 		}
 	}
-	if shouldRead(r.name, "debug", pol, svc.WS) {
+	if shouldRead(r.name, "debug", pol, r.demand) {
 		if dp := buildDebugPayload(&c); dp != nil {
-			r.emitClass(svc, "debug", c.EngineTick, *dp)
+			r.emitClass("debug", c.EngineTick, *dp)
 		}
 	}
 }

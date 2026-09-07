@@ -22,7 +22,7 @@ import (
 // hello and the capture sinks didn't know about — so a one-way check is not
 // enough.
 func TestScraperClassRegistryMatchesRoomsTable(t *testing.T) {
-	m := manager.New(nil)
+	m := manager.New(manager.Options{})
 	defer m.Close()
 
 	var announced []string

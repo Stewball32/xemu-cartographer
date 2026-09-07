@@ -11,7 +11,7 @@ import (
 // COPY of allClasses — same contents, distinct backing array — so the two
 // surfaces can't drift and a payload consumer can't mutate the registry.
 func TestHelloClassesAreTheSharedRegistry(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	p := m.BuildHelloPayload()

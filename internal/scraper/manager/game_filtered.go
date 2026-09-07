@@ -3,9 +3,6 @@ package manager
 import (
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
-
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
@@ -20,19 +17,23 @@ import (
 // stays off the 30 Hz hot path.
 const dummyCfgTTL = 10 * time.Second
 
-// dummyConfig returns this runner's dummy-filter config, reloading from the DB
-// (roster.LoadConfig) when the cache is empty or older than dummyCfgTTL. Reused
-// by the game_filtered broadcast (loop goroutine) and join replay (request
-// goroutine), so it's mutex-guarded. A nil app (test harness) yields the zero
-// Config — a no-op filter.
-func (r *runner) dummyConfig(app core.App) roster.Config {
+// dummyConfig returns this runner's dummy-filter config, re-resolving it
+// through the RosterFilter port (Options.RosterFilter — the league server
+// plugs in leaguescraper.LoadRosterConfig) when the cache is empty or older
+// than dummyCfgTTL. Reused by the game_filtered broadcast (loop goroutine)
+// and join replay (request goroutine), so it's mutex-guarded. A nil
+// rosterFilter (test harness) yields the zero Config — a no-op filter.
+func (r *runner) dummyConfig() roster.Config {
 	r.dummyMu.RLock()
 	cfg, at := r.dummyCfg, r.dummyCfgAt
 	r.dummyMu.RUnlock()
 	if !at.IsZero() && time.Since(at) < dummyCfgTTL {
 		return cfg
 	}
-	fresh := leaguescraper.LoadRosterConfig(app, r.name)
+	var fresh roster.Config
+	if r.rosterFilter != nil {
+		fresh = r.rosterFilter(r.name)
+	}
 	r.dummyMu.Lock()
 	r.dummyCfg, r.dummyCfgAt = fresh, time.Now()
 	r.dummyMu.Unlock()

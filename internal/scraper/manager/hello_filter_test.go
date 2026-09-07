@@ -26,7 +26,7 @@ func helloNames(p HelloPayload) []string {
 // missing. The instance list is always a JSON array, never null, and the
 // protocol fields are not identity-dependent.
 func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	started := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -92,7 +92,7 @@ func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
 // the narrowed instance list — a bound key never learns the names of the
 // other live instances from the handshake.
 func TestSendHelloOnUsesFilteredPayload(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	for _, name := range []string{"pod-a", "pod-b"} {

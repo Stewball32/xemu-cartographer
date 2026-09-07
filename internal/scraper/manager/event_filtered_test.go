@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
@@ -261,9 +260,8 @@ func TestVisibleIndicesFailsClosed(t *testing.T) {
 // typed event_filtered (not "event" — that would double-broadcast the raw
 // class the generic broadcast already handled).
 func TestBroadcastEventsFilteredEmitsOnlyDeaths(t *testing.T) {
-	ws := &stubWS{occupied: map[string]bool{"host:alpha:event_filtered": true}}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{occupied: map[string]bool{"host:alpha:event_filtered": true}}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
@@ -276,7 +274,7 @@ func TestBroadcastEventsFilteredEmitsOnlyDeaths(t *testing.T) {
 	})
 
 	killer := playerRef(1, "Stewball", 0)
-	r.broadcastEventsFiltered(svc, []scraper.Envelope{
+	r.broadcastEventsFiltered([]scraper.Envelope{
 		scraper.MakeEnvelope("event", "alpha", 0, 10, scraper.MedalEvent{
 			EventCommon: scraper.EventCommon{EventType: scraper.EventTypeMedal, Tick: 10},
 			Kind:        scraper.MedalKindMultikill,
@@ -296,7 +294,7 @@ func TestBroadcastEventsFilteredEmitsOnlyDeaths(t *testing.T) {
 	if sends[0].Room != "host:alpha:event_filtered" {
 		t.Fatalf("room = %q", sends[0].Room)
 	}
-	_, env := decodeClassEnvelope(t, sends[0].Data)
+	env := decodeEnvelope(t, sends[0].Data)
 	if env.Type != envelopeTypeEventFiltered {
 		t.Fatalf("envelope type = %q, want %q", env.Type, envelopeTypeEventFiltered)
 	}
@@ -332,25 +330,25 @@ func TestBroadcastEventsFilteredRespectsDemand(t *testing.T) {
 	}
 
 	t.Run("no subscriber", func(t *testing.T) {
-		ws := &stubWS{occupied: map[string]bool{}}
-		r := newTestRunner("alpha")
+		ws := &stubEmitter{occupied: map[string]bool{}}
+		r := newTestRunnerWith("alpha", ws)
 		defer r.cancel()
 		withRoster(r)
-		r.broadcastEventsFiltered(&guards.Services{WS: ws}, events)
+		r.broadcastEventsFiltered(events)
 		if sends := ws.snapshot(); len(sends) != 0 {
 			t.Fatalf("emitted with no subscriber: %+v", sends)
 		}
 	})
 
 	t.Run("never policy hard-caps a subscribed room", func(t *testing.T) {
-		ws := &stubWS{occupied: map[string]bool{"host:alpha:event_filtered": true}}
-		r := newTestRunner("alpha")
+		ws := &stubEmitter{occupied: map[string]bool{"host:alpha:event_filtered": true}}
+		r := newTestRunnerWith("alpha", ws)
 		defer r.cancel()
 		withRoster(r)
 		r.setPolicies([]capture.Policy{
 			{Instance: "alpha", Class: envelopeTypeEventFiltered, Mode: capture.ModeNever},
 		})
-		r.broadcastEventsFiltered(&guards.Services{WS: ws}, events)
+		r.broadcastEventsFiltered(events)
 		if sends := ws.snapshot(); len(sends) != 0 {
 			t.Fatalf("never policy ignored: %+v", sends)
 		}

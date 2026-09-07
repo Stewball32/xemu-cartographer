@@ -32,6 +32,7 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/discovery"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/offsets"
+	"github.com/xemu-cartographer/xc-scraper/roster"
 
 	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
 	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
@@ -119,11 +120,21 @@ func main() {
 			return raw, true
 		})
 
-		// Scraper manager: always available. Holds a *Services pointer; broadcasts
-		// safely no-op until svc.WS is populated below. The blank import of
-		// internal/scraper/haloce above triggers haloce.init(), which registers
-		// Halo: CE's title ID with scraper.Lookup so manager.Start() can detect it.
-		scrMgr = scrapermgr.New(svc)
+		// Scraper manager: always available. The league glue (internal/
+		// leaguescraper) plugs the WebSocket hub in through the Emitter / Demand
+		// ports and the roster filter through RosterFilter; the adapters read
+		// svc.WS at call time, so broadcasts safely no-op until svc.WS is
+		// populated below. The blank import of xc-scraper/haloce above triggers
+		// haloce.init(), which registers Halo: CE's title ID with scraper.Lookup
+		// so manager.Start() can detect it.
+		scrMgr = scrapermgr.New(scrapermgr.Options{
+			Emitter: leaguescraper.NewEmitter(svc),
+			Demand:  leaguescraper.NewDemand(svc),
+			RosterFilter: func(inst string) roster.Config {
+				return leaguescraper.LoadRosterConfig(app, inst)
+			},
+			Services: svc,
+		})
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
 

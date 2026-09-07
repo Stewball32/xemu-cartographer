@@ -59,7 +59,7 @@ func TestFinishedGameFromPrevious(t *testing.T) {
 // game-end persist goroutine is still running — the shutdown flush that
 // stops a Ctrl-C at match end from racing the write to process exit.
 func TestStopWaitsForInFlightPersist(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	r := newTestRunner("alpha")

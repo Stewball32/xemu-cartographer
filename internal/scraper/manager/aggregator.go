@@ -10,10 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // hostSummary (one entry in the summary aggregate cache) is declared in
@@ -43,11 +41,14 @@ const (
 //
 // Single-goroutine writer per room invariant: runners post via a buffered
 // channel; aggregator.run is the only thing that touches hostsCache or
-// calls SendToRoomRaw(host:all, ...). On full channel post() drops; since
+// emits the summary class. On full channel post() drops; since
 // hostsCache always converges to "last value wins" the only thing lost is
 // intermediate diffs, which is fine for a coalesced list view.
 type aggregator struct {
-	svc     *guards.Services
+	// emitter is the Emitter port (never nil — the Manager installs
+	// nullEmitter when unset). The summary class is cross-instance, so it
+	// is emitted with instance "".
+	emitter Emitter
 	updates chan summaryUpdate
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -57,10 +58,13 @@ type aggregator struct {
 	hostsCache map[string]hostSummary
 }
 
-func newAggregator(svc *guards.Services) *aggregator {
+func newAggregator(emitter Emitter) *aggregator {
+	if emitter == nil {
+		emitter = nullEmitter{}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &aggregator{
-		svc:        svc,
+		emitter:    emitter,
 		updates:    make(chan summaryUpdate, aggregatorChanBuffer),
 		ctx:        ctx,
 		cancel:     cancel,
@@ -119,27 +123,30 @@ func (a *aggregator) post(u summaryUpdate) {
 	}
 }
 
-// broadcast renders hostsCache into one envelope and pushes to
+// broadcast renders hostsCache into one envelope and hands it to the
+// Emitter port with instance "" — the league adapter routes it to
 // host:summary (the v2 cross-instance dashboard feed).
 func (a *aggregator) broadcast() {
-	if a.svc == nil || a.svc.WS == nil {
-		return
-	}
-	msgBytes, ok := a.marshalEnvelope()
+	envBytes, ok := a.marshalEnvelope()
 	if !ok {
 		return
 	}
-	a.svc.WS.SendToRoomRaw(rooms.SummaryRoom, msgBytes)
+	a.emitter.Emit("", envelopeTypeSummary, envBytes)
 }
 
-// joinReplay returns one envelope-bytes message representing the current
-// hostsCache, for replay to clients that just joined host:summary. Same
-// shape as the broadcast() output.
+// joinReplay returns one wire.Message-framed summary envelope representing
+// the current hostsCache, for replay to clients that just joined
+// host:summary. Same envelope as the broadcast() output, framed for the
+// reply path (part 3c retires the framing).
 func (a *aggregator) joinReplay() [][]byte {
 	if a == nil {
 		return nil
 	}
-	msgBytes, ok := a.marshalEnvelope()
+	envBytes, ok := a.marshalEnvelope()
+	if !ok {
+		return nil
+	}
+	msgBytes, ok := wrapRoomMessage("summary", wire.SummaryRoom, envBytes)
 	if !ok {
 		return nil
 	}
@@ -147,11 +154,11 @@ func (a *aggregator) joinReplay() [][]byte {
 }
 
 // marshalEnvelope is the shared host:summary envelope builder. Returns
-// the pre-marshaled wire bytes ready for SendToRoomRaw / SendRaw. v2:
-// envelope type is "summary"; payload is a SummaryPayload wrapping the
-// hostsCache list under a `hosts` key so the payload has somewhere to
-// grow (server-wide metrics, instance counts) without breaking
-// consumers. Instance is empty (the summary class is cross-instance).
+// the marshalled envelope bytes. v2: envelope type is "summary"; payload
+// is a SummaryPayload wrapping the hostsCache list under a `hosts` key so
+// the payload has somewhere to grow (server-wide metrics, instance counts)
+// without breaking consumers. Instance is empty (the summary class is
+// cross-instance).
 func (a *aggregator) marshalEnvelope() ([]byte, bool) {
 	payload := SummaryPayload{Hosts: a.snapshot()}
 	env := scraper.MakeEnvelope(envelopeTypeSummary, "", 0, 0, payload)
@@ -160,17 +167,7 @@ func (a *aggregator) marshalEnvelope() ([]byte, bool) {
 		log.Printf("aggregator: marshal envelope: %v", err)
 		return nil, false
 	}
-	msg := websocket.Message{
-		Type:    "scraper",
-		Room:    rooms.SummaryRoom,
-		Payload: envBytes,
-	}
-	msgBytes, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("aggregator: marshal message: %v", err)
-		return nil, false
-	}
-	return msgBytes, true
+	return envBytes, true
 }
 
 // snapshot returns the cache as a sorted slice (deterministic order).

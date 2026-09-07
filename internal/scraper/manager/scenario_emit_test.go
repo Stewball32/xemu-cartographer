@@ -3,7 +3,6 @@ package manager
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
@@ -12,13 +11,12 @@ import (
 // scenario fields fires exactly one envelope; repeat calls without
 // further mutation stay silent.
 func TestMaybeEmitScenarioReEmitsOnFingerprintChange(t *testing.T) {
-	ws := &stubWS{}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 
 	// 1. Bare cache — fingerprint is 0, no emission.
-	r.maybeEmitScenario(svc)
+	r.maybeEmitScenario()
 	if got := len(ws.snapshot()); got != 0 {
 		t.Fatalf("empty cache: want 0 sends, got %d", got)
 	}
@@ -34,7 +32,7 @@ func TestMaybeEmitScenarioReEmitsOnFingerprintChange(t *testing.T) {
 			Fog: &scraper.StaticFog{},
 		}
 	})
-	r.maybeEmitScenario(svc)
+	r.maybeEmitScenario()
 	sends := ws.snapshot()
 	if len(sends) != 1 {
 		t.Fatalf("after fill: want 1 send, got %d (%+v)", len(sends), sends)
@@ -44,7 +42,7 @@ func TestMaybeEmitScenarioReEmitsOnFingerprintChange(t *testing.T) {
 	}
 
 	// 3. Same cache, no fingerprint change — no second emission.
-	r.maybeEmitScenario(svc)
+	r.maybeEmitScenario()
 	if got := len(ws.snapshot()); got != 1 {
 		t.Fatalf("after no-op call: want still 1 send, got %d", got)
 	}
@@ -53,7 +51,7 @@ func TestMaybeEmitScenarioReEmitsOnFingerprintChange(t *testing.T) {
 	r.withCache(func(c *instanceCache) {
 		c.GameData.PlayerSpawns = append(c.GameData.PlayerSpawns, scraper.StaticPlayerSpawn{Index: 3})
 	})
-	r.maybeEmitScenario(svc)
+	r.maybeEmitScenario()
 	if got := len(ws.snapshot()); got != 2 {
 		t.Fatalf("after second mutation: want 2 sends, got %d", got)
 	}
@@ -64,9 +62,8 @@ func TestMaybeEmitScenarioReEmitsOnFingerprintChange(t *testing.T) {
 // so a downstream maybeEmitScenario is a no-op — protects against double
 // emission on Ready→Live.
 func TestBroadcastSnapshotUpdatesScenarioFingerprint(t *testing.T) {
-	ws := &stubWS{}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("bravo")
+	ws := &stubEmitter{}
+	r := newTestRunnerWith("bravo", ws)
 	defer r.cancel()
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
@@ -81,7 +78,7 @@ func TestBroadcastSnapshotUpdatesScenarioFingerprint(t *testing.T) {
 		t.Fatalf("pre-snapshot: want fingerprint 0, got %d", r.lastScenarioFingerprint)
 	}
 
-	r.broadcastSnapshot(svc)
+	r.broadcastSnapshot()
 
 	if r.lastScenarioFingerprint == 0 {
 		t.Fatalf("post-snapshot: fingerprint should be non-zero")
@@ -97,7 +94,7 @@ func TestBroadcastSnapshotUpdatesScenarioFingerprint(t *testing.T) {
 	// before the no-op call so we can verify maybeEmitScenario doesn't
 	// double-emit.
 	beforeCount := len(ws.snapshot())
-	r.maybeEmitScenario(svc)
+	r.maybeEmitScenario()
 	if got := len(ws.snapshot()); got != beforeCount {
 		t.Fatalf("maybeEmitScenario after snapshot: want %d sends (no-op), got %d", beforeCount, got)
 	}

@@ -91,7 +91,7 @@ func TestFilterEventsTypes(t *testing.T) {
 
 // TestEventsReplyUnknownInstance: missing runner returns (nil, false).
 func TestEventsReplyUnknownInstance(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	bytes, ok := m.EventsReply("nope", 0, nil)
@@ -104,7 +104,7 @@ func TestEventsReplyUnknownInstance(t *testing.T) {
 // envelope with empty Events even when filters would otherwise match —
 // the M5 brief's OQ1 resolution. Phase comes back so the client knows.
 func TestEventsReplyIdleReturnsEmpty(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil, nil)
@@ -133,7 +133,7 @@ func TestEventsReplyIdleReturnsEmpty(t *testing.T) {
 // event log in oldest-first order; the inner envelope type is "events"
 // (plural).
 func TestEventsReplyLiveReturnsFiltered(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	r := newRunner("alpha", "/tmp/sock", "host:alpha", nil, nil, nil)

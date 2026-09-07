@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
@@ -102,8 +101,8 @@ func (m *Manager) helloEnvelopeBytes(payload HelloPayload) ([]byte, bool) {
 		log.Printf("manager: marshal hello envelope: %v", err)
 		return nil, false
 	}
-	msg := websocket.Message{
-		Type:    "scraper",
+	msg := wire.Message{
+		Type:    wire.TypeScraper,
 		Payload: envBytes,
 	}
 	msgBytes, err := json.Marshal(msg)

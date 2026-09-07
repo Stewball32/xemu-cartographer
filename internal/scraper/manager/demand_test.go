@@ -3,20 +3,23 @@ package manager
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/capture"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// stubRooms is a minimal wsiface.Rooms implementation that reports a
-// fixed set of rooms as occupied. Only RoomHasMembers is exercised by
-// shouldRead; the other methods exist to satisfy the interface.
-type stubRooms struct {
+// stubDemand is a minimal Demand (ports.go) that reports a fixed set of
+// per-class rooms as occupied, keyed the way the league Demand resolves
+// them (wire.RoomForInstanceClass) so the assertions read like the WS-era
+// room-membership ones.
+type stubDemand struct {
 	occupied map[string]bool
 }
 
-func (s *stubRooms) IsInRoom(string, string) bool { return false }
-func (s *stubRooms) UserRooms(string) []string    { return nil }
-func (s *stubRooms) RoomHasMembers(room string) bool {
+func (s *stubDemand) Wants(instance, class string) bool {
+	room, err := wire.RoomForInstanceClass(instance, class)
+	if err != nil {
+		return false
+	}
 	return s.occupied[room]
 }
 
@@ -24,9 +27,9 @@ func (s *stubRooms) RoomHasMembers(room string) bool {
 // returns auto, default), the WS room membership decides — empty room
 // → false, occupied → true. This is the pre-capture-policy baseline.
 func TestShouldReadAutoDefersToWS(t *testing.T) {
-	room, _ := rooms.RoomForInstanceClass("pod-1", "tick")
-	empty := &stubRooms{occupied: map[string]bool{}}
-	full := &stubRooms{occupied: map[string]bool{room: true}}
+	room, _ := wire.RoomForInstanceClass("pod-1", "tick")
+	empty := &stubDemand{occupied: map[string]bool{}}
+	full := &stubDemand{occupied: map[string]bool{room: true}}
 
 	if shouldRead("pod-1", "tick", nil, empty) {
 		t.Fatal("auto + empty room: want false")
@@ -43,7 +46,7 @@ func TestShouldReadAlwaysOverridesEmptyWS(t *testing.T) {
 	policies := []capture.Policy{
 		{Instance: "*", Class: "tick", Mode: capture.ModeAlways},
 	}
-	ws := &stubRooms{occupied: map[string]bool{}}
+	ws := &stubDemand{occupied: map[string]bool{}}
 	if !shouldRead("pod-1", "tick", policies, ws) {
 		t.Fatal("always + empty room: want true")
 	}
@@ -54,8 +57,8 @@ func TestShouldReadAlwaysOverridesEmptyWS(t *testing.T) {
 // `always` policy that would otherwise be reached. (Resolve picks one
 // row by precedence; an exact never wins over wildcard always.)
 func TestShouldReadNeverHardCaps(t *testing.T) {
-	room, _ := rooms.RoomForInstanceClass("pod-1", "debug")
-	ws := &stubRooms{occupied: map[string]bool{room: true}}
+	room, _ := wire.RoomForInstanceClass("pod-1", "debug")
+	ws := &stubDemand{occupied: map[string]bool{room: true}}
 	policies := []capture.Policy{
 		{Instance: "*", Class: "debug", Mode: capture.ModeAlways},
 		{Instance: "pod-1", Class: "debug", Mode: capture.ModeNever},
@@ -78,7 +81,7 @@ func TestShouldReadNilWSIsPermissive(t *testing.T) {
 // debug, so the runner needs "any of these wanted?" gating. Empty room
 // + one always-on class → true; all auto + all empty → false.
 func TestShouldReadAnyOrsAcrossClasses(t *testing.T) {
-	ws := &stubRooms{occupied: map[string]bool{}}
+	ws := &stubDemand{occupied: map[string]bool{}}
 	classes := []string{"tick", "objects", "debug"}
 
 	if shouldReadAny("pod-1", classes, nil, ws) {

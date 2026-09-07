@@ -6,21 +6,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// stubWS captures SendToRoomRaw calls for assertions. Implements wsiface.Service
-// surface area the aggregator and runner touch (only SendToRoomRaw is used for
-// scraper broadcasts; the other methods exist to satisfy the interface).
-type stubWS struct {
+// stubEmitter is the test double for the Emitter + Demand ports (ports.go).
+// It records every Emit as a roomSend keyed by the room the league emitter
+// (internal/leaguescraper) would pick — host:<inst>:<class>, or host:summary
+// for instance "" — so assertions keep reading the WS-era room names; Data
+// is the bare envelope bytes (no wire.Message frame).
+type stubEmitter struct {
 	mu        sync.Mutex
 	roomSends []roomSend
-	// occupied marks rooms that RoomHasMembers should report as having
-	// subscribers. Empty by default; set per-test to make broadcastPoll
-	// (PR 15 demand-gated) exercise individual classes.
+	// occupied marks per-class rooms that Wants should report as having
+	// subscribers (mirrors leaguescraper.wsDemand's room-membership answer).
+	// Empty by default; set per-test to make broadcastPoll (PR 15
+	// demand-gated) exercise individual classes.
 	occupied map[string]bool
 }
 
@@ -29,25 +30,33 @@ type roomSend struct {
 	Data []byte
 }
 
-func (s *stubWS) BroadcastRaw([]byte)          {}
-func (s *stubWS) SendToUserRaw(string, []byte) {}
-func (s *stubWS) IsConnected(string) bool      { return false }
-func (s *stubWS) IsInRoom(string, string) bool { return false }
-func (s *stubWS) UserRooms(string) []string    { return nil }
-func (s *stubWS) RoomHasMembers(room string) bool {
+func (s *stubEmitter) Emit(instance, class string, envBytes []byte) {
+	room := wire.SummaryRoom
+	if instance != "" {
+		r, err := wire.RoomForInstanceClass(instance, class)
+		if err != nil {
+			return
+		}
+		room = r
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := make([]byte, len(envBytes))
+	copy(cp, envBytes)
+	s.roomSends = append(s.roomSends, roomSend{Room: room, Data: cp})
+}
+
+func (s *stubEmitter) Wants(instance, class string) bool {
+	room, err := wire.RoomForInstanceClass(instance, class)
+	if err != nil {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.occupied[room]
 }
-func (s *stubWS) SendToRoomRaw(room string, data []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cp := make([]byte, len(data))
-	copy(cp, data)
-	s.roomSends = append(s.roomSends, roomSend{Room: room, Data: cp})
-}
 
-func (s *stubWS) snapshot() []roomSend {
+func (s *stubEmitter) snapshot() []roomSend {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]roomSend, len(s.roomSends))
@@ -58,8 +67,8 @@ func (s *stubWS) snapshot() []roomSend {
 // TestAggregatorBroadcastsOnDirtyTick verifies that an update marks dirty and
 // the next coalesce tick produces exactly one broadcast to host:all.
 func TestAggregatorBroadcastsOnDirtyTick(t *testing.T) {
-	ws := &stubWS{}
-	a := newAggregator(&guards.Services{WS: ws})
+	ws := &stubEmitter{}
+	a := newAggregator(ws)
 	go a.run()
 	defer a.stop()
 
@@ -76,8 +85,8 @@ func TestAggregatorBroadcastsOnDirtyTick(t *testing.T) {
 	if len(sends) == 0 {
 		t.Fatal("aggregator: no broadcast after dirty update")
 	}
-	if got := sends[0].Room; got != rooms.SummaryRoom {
-		t.Fatalf("aggregator: broadcast room = %q, want %q", got, rooms.SummaryRoom)
+	if got := sends[0].Room; got != wire.SummaryRoom {
+		t.Fatalf("aggregator: broadcast room = %q, want %q", got, wire.SummaryRoom)
 	}
 }
 
@@ -85,8 +94,8 @@ func TestAggregatorBroadcastsOnDirtyTick(t *testing.T) {
 // aggregator has nothing dirty — coalesce tick fires every 250ms but only
 // broadcasts when the dirty bit is set.
 func TestAggregatorIdleNoBroadcast(t *testing.T) {
-	ws := &stubWS{}
-	a := newAggregator(&guards.Services{WS: ws})
+	ws := &stubEmitter{}
+	a := newAggregator(ws)
 	go a.run()
 	defer a.stop()
 
@@ -102,8 +111,8 @@ func TestAggregatorIdleNoBroadcast(t *testing.T) {
 // drops the instance from the cache so a subsequent broadcast doesn't
 // include it.
 func TestAggregatorRemovedEvicts(t *testing.T) {
-	ws := &stubWS{}
-	a := newAggregator(&guards.Services{WS: ws})
+	ws := &stubEmitter{}
+	a := newAggregator(ws)
 	go a.run()
 	defer a.stop()
 
@@ -128,12 +137,8 @@ func TestAggregatorRemovedEvicts(t *testing.T) {
 	last := sends[len(sends)-1]
 
 	// Verify the most recent broadcast does not include "alpha".
-	var msg websocket.Message
-	if err := json.Unmarshal(last.Data, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
-	}
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(last.Data, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.Type != envelopeTypeSummary {
@@ -164,8 +169,8 @@ func TestAggregatorRemovedEvicts(t *testing.T) {
 // TestAggregatorFullSnapshotEachBroadcast verifies that every broadcast
 // carries the full hostsCache (OQ2 — full re-broadcast, no diffs).
 func TestAggregatorFullSnapshotEachBroadcast(t *testing.T) {
-	ws := &stubWS{}
-	a := newAggregator(&guards.Services{WS: ws})
+	ws := &stubEmitter{}
+	a := newAggregator(ws)
 	go a.run()
 	defer a.stop()
 
@@ -189,12 +194,8 @@ func TestAggregatorFullSnapshotEachBroadcast(t *testing.T) {
 	// Last broadcast must include both alpha and bravo. Sorted alphabetically
 	// per aggregator.snapshot.
 	last := sends[len(sends)-1]
-	var msg websocket.Message
-	if err := json.Unmarshal(last.Data, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
-	}
 	var env scraper.Envelope
-	if err := json.Unmarshal(msg.Payload, &env); err != nil {
+	if err := json.Unmarshal(last.Data, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	if env.Type != envelopeTypeSummary {
@@ -219,8 +220,8 @@ func TestAggregatorFullSnapshotEachBroadcast(t *testing.T) {
 // TestAggregatorJoinReplay returns a single envelope-message representing
 // the current cache. Used by join_room handler when a client joins host:all.
 func TestAggregatorJoinReplay(t *testing.T) {
-	ws := &stubWS{}
-	a := newAggregator(&guards.Services{WS: ws})
+	ws := &stubEmitter{}
+	a := newAggregator(ws)
 	go a.run()
 	defer a.stop()
 
@@ -236,12 +237,12 @@ func TestAggregatorJoinReplay(t *testing.T) {
 		t.Fatalf("joinReplay() returned %d messages, want 1", len(out))
 	}
 
-	var msg websocket.Message
+	var msg wire.Message
 	if err := json.Unmarshal(out[0], &msg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if msg.Room != rooms.SummaryRoom {
-		t.Fatalf("joinReplay room = %q, want %q", msg.Room, rooms.SummaryRoom)
+	if msg.Room != wire.SummaryRoom {
+		t.Fatalf("joinReplay room = %q, want %q", msg.Room, wire.SummaryRoom)
 	}
 	var env scraper.Envelope
 	if err := json.Unmarshal(msg.Payload, &env); err != nil {

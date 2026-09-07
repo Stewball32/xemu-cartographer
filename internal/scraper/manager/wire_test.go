@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // newTestRunner builds a minimal *runner suitable for exercising the
@@ -20,19 +19,38 @@ func newTestRunner(name string) *runner {
 	return newRunner(name, "/tmp/sock", "host:"+name, nil, nil, nil)
 }
 
-// decodeClassEnvelope unwraps a marshaled websocket.Message to the inner
-// scraper.Envelope. Used by per-class assertions.
-func decodeClassEnvelope(t *testing.T, data []byte) (websocket.Message, scraper.Envelope) {
+// newTestRunnerWith is newTestRunner with the Emitter + Demand ports bound
+// to the same stubEmitter, the way Manager.Start binds a real runner.
+func newTestRunnerWith(name string, s *stubEmitter) *runner {
+	r := newTestRunner(name)
+	r.emitter, r.demand = s, s
+	return r
+}
+
+// decodeClassEnvelope unwraps a marshaled wire.Message (the join-replay
+// framing) to the inner scraper.Envelope. Used by per-class assertions.
+func decodeClassEnvelope(t *testing.T, data []byte) (wire.Message, scraper.Envelope) {
 	t.Helper()
-	var msg websocket.Message
+	var msg wire.Message
 	if err := json.Unmarshal(data, &msg); err != nil {
-		t.Fatalf("unmarshal websocket.Message: %v", err)
+		t.Fatalf("unmarshal wire.Message: %v", err)
 	}
 	var env scraper.Envelope
 	if err := json.Unmarshal(msg.Payload, &env); err != nil {
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	return msg, env
+}
+
+// decodeEnvelope unmarshals bare envelope bytes as handed to the Emitter
+// port (no wire.Message frame).
+func decodeEnvelope(t *testing.T, data []byte) scraper.Envelope {
+	t.Helper()
+	var env scraper.Envelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		t.Fatalf("unmarshal scraper.Envelope: %v", err)
+	}
+	return env
 }
 
 // TestClassEnvelopeMessagesIdle: a bare cache (no game data, no tick)
@@ -144,9 +162,8 @@ func TestClassEnvelopeMessagesWithPreviousGame(t *testing.T) {
 // TestBroadcastSnapshotEmitsToPerClassRooms: broadcastSnapshot fans out
 // every applicable class to its host:<inst>:<class> room.
 func TestBroadcastSnapshotEmitsToPerClassRooms(t *testing.T) {
-	ws := &stubWS{}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
@@ -154,7 +171,7 @@ func TestBroadcastSnapshotEmitsToPerClassRooms(t *testing.T) {
 		c.LatestTick = &scraper.TickPayload{}
 	})
 
-	r.broadcastSnapshot(svc)
+	r.broadcastSnapshot()
 
 	sends := ws.snapshot()
 	if len(sends) == 0 {
@@ -185,14 +202,13 @@ func TestBroadcastSnapshotEmitsToPerClassRooms(t *testing.T) {
 // be marked occupied for the emit to happen — that mirrors the live
 // behaviour where the broadcast skips classes with no subscribers.
 func TestBroadcastPollGameAndTick(t *testing.T) {
-	ws := &stubWS{occupied: map[string]bool{"host:alpha:game": true}}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{occupied: map[string]bool{"host:alpha:game": true}}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 
 	// Idle / no tick — only `game` should emit.
 	r.withCache(func(c *instanceCache) { c.Phase = PhaseIdle })
-	r.broadcastPoll(svc)
+	r.broadcastPoll()
 	sends := ws.snapshot()
 	if len(sends) != 1 || sends[0].Room != "host:alpha:game" {
 		t.Fatalf("poll w/o tick: want one send to host:alpha:game, got %+v", sends)
@@ -200,18 +216,18 @@ func TestBroadcastPollGameAndTick(t *testing.T) {
 
 	// Now add a tick — game + tick + objects + debug all emit (every
 	// room marked occupied).
-	ws2 := &stubWS{occupied: map[string]bool{
+	ws2 := &stubEmitter{occupied: map[string]bool{
 		"host:alpha:game":    true,
 		"host:alpha:tick":    true,
 		"host:alpha:objects": true,
 		"host:alpha:debug":   true,
 	}}
-	svc2 := &guards.Services{WS: ws2}
+	r.emitter, r.demand = ws2, ws2
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
 		c.LatestTick = &scraper.TickPayload{}
 	})
-	r.broadcastPoll(svc2)
+	r.broadcastPoll()
 	got := map[string]bool{}
 	for _, s := range ws2.snapshot() {
 		got[s.Room] = true
@@ -227,16 +243,15 @@ func TestBroadcastPollGameAndTick(t *testing.T) {
 // per-class demand — with only host:alpha:debug occupied, the runner
 // emits debug but nothing else, even when LatestTick is set.
 func TestBroadcastPollSkipsUnsubscribedClasses(t *testing.T) {
-	ws := &stubWS{occupied: map[string]bool{"host:alpha:debug": true}}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{occupied: map[string]bool{"host:alpha:debug": true}}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 
 	r.withCache(func(c *instanceCache) {
 		c.Phase = PhaseLive
 		c.LatestTick = &scraper.TickPayload{}
 	})
-	r.broadcastPoll(svc)
+	r.broadcastPoll()
 
 	sends := ws.snapshot()
 	if len(sends) != 1 || sends[0].Room != "host:alpha:debug" {
@@ -250,9 +265,8 @@ func TestBroadcastPollSkipsUnsubscribedClasses(t *testing.T) {
 // to the WS hub (which no-ops on empty rooms) so the same envelope can
 // later be teed to a sink (PR 17+).
 func TestBroadcastPollAlwaysModeBypassesWS(t *testing.T) {
-	ws := &stubWS{occupied: map[string]bool{}}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{occupied: map[string]bool{}}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 	r.setPolicies([]capture.Policy{
 		{Instance: "alpha", Class: "tick", Mode: capture.ModeAlways},
@@ -262,7 +276,7 @@ func TestBroadcastPollAlwaysModeBypassesWS(t *testing.T) {
 		c.Phase = PhaseLive
 		c.LatestTick = &scraper.TickPayload{}
 	})
-	r.broadcastPoll(svc)
+	r.broadcastPoll()
 
 	sends := ws.snapshot()
 	if len(sends) != 1 || sends[0].Room != "host:alpha:tick" {
@@ -274,13 +288,12 @@ func TestBroadcastPollAlwaysModeBypassesWS(t *testing.T) {
 // haloce events package) routes by envelope.Type — an "event" envelope
 // lands on host:<inst>:event.
 func TestBroadcastRoutesByClass(t *testing.T) {
-	ws := &stubWS{}
-	svc := &guards.Services{WS: ws}
-	r := newTestRunner("alpha")
+	ws := &stubEmitter{}
+	r := newTestRunnerWith("alpha", ws)
 	defer r.cancel()
 
 	env := scraper.MakeEnvelope("event", "alpha", 1, 42, map[string]any{"event_type": "death"})
-	r.broadcast(svc, env)
+	r.broadcast(env)
 
 	sends := ws.snapshot()
 	if len(sends) != 1 {

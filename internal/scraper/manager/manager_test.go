@@ -18,7 +18,7 @@ func TestManagerSatisfiesInterface(t *testing.T) {
 // fresh manager returns an empty list, and stopping an unknown name is a no-op
 // (returns nil rather than ErrNotFound).
 func TestEmptyManagerListAndStop(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	if got := m.List(); len(got) != 0 {
@@ -36,7 +36,7 @@ func TestEmptyManagerListAndStop(t *testing.T) {
 // rooms.RoomForInstance chokepoint; this test exercises the full chokepoint
 // behaviour rather than just the legacy empty-string check.
 func TestStartRequiresNameAndSock(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	if err := m.Start("", "/tmp/sock"); err == nil {
@@ -54,7 +54,7 @@ func TestStartRequiresNameAndSock(t *testing.T) {
 }
 
 func TestInstanceState(t *testing.T) {
-	m := New(nil)
+	m := New(Options{})
 	defer m.Close()
 
 	// Missing name: zeroed InstanceState (with name echoed back) and ok=false.
