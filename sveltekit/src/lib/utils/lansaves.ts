@@ -1,9 +1,12 @@
 // Client for the LAN-saves endpoints (/api/lan/saves/*).
 //
-// These are NOT under /api/admin, so they don't use the admin-api helper. They
-// are open on a trusted LAN by default (or gated by a shared LAN token); we
-// still attach the PocketBase JWT when present so an admin operator is
-// recognised regardless of the token config.
+// These are NOT under /api/admin, so they don't use the admin-api helper.
+// authz (design §5.5): every /api/lan/* route now requires a principal holding
+// the matching `lan.*` scope — a machine key (the nxdk client's Bearer token)
+// or a PB user whose role carries it (admins do). We attach the PocketBase JWT
+// when present so an operator is recognised; a member without the scope gets
+// 403 (401 when anonymous), which `lanMeta` surfaces as `LanAuthError` so the
+// settings + organizer pages can render an inline notice instead of a toast.
 import { auth } from '$lib/stores/auth.svelte';
 import { apiBaseURL } from '$lib/utils/api-base';
 import type { BuildRequest, BuildResponse, DownloadFormat, LanMeta } from '$lib/types/lansaves';
@@ -18,6 +21,22 @@ export class LanSavesError extends Error {
 		this.name = 'LanSavesError';
 	}
 }
+
+/**
+ * LanAuthError is the 401/403 flavour of LanSavesError: the caller is not a
+ * principal the LAN routes accept (no machine key, and no `lan.*` scope on
+ * the PB session). Pages treat it as "render without LAN tools", not as a
+ * failure worth toasting.
+ */
+export class LanAuthError extends LanSavesError {
+	constructor(status: number, message: string, body?: unknown) {
+		super(status, message, body);
+		this.name = 'LanAuthError';
+	}
+}
+
+/** LAN_AUTH_NOTICE is the inline copy shown wherever lanMeta() is refused. */
+export const LAN_AUTH_NOTICE = 'LAN tools need a machine key or admin';
 
 function authHeaders(json = false): Record<string, string> {
 	const h: Record<string, string> = {};
@@ -56,9 +75,17 @@ function clean(req: BuildRequest): Record<string, unknown> {
 	return out;
 }
 
-/** GET /api/lan/saves/meta — generator capabilities for the editor UI. */
+/**
+ * GET /api/lan/saves/meta — generator capabilities for the editor UI. Throws
+ * LanAuthError on 401/403 (caller lacks `lan.saves.meta`), LanSavesError on
+ * any other non-2xx.
+ */
 export async function lanMeta(): Promise<LanMeta> {
 	const res = await fetch(`${apiBaseURL()}/api/lan/saves/meta`, { headers: authHeaders() });
+	if (res.status === 401 || res.status === 403) {
+		const err = await errorFrom(res);
+		throw new LanAuthError(err.status, err.message, err.body);
+	}
 	if (!res.ok) throw await errorFrom(res);
 	return (await res.json()) as LanMeta;
 }
