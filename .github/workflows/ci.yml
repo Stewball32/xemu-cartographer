@@ -12,15 +12,37 @@ on:
 env:
   PUBLIC_PB_PORT: 8090
 
+# Sibling-module layout (step 7 restructure): go.mod has
+#   replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper
+# so every job that needs Go (backend) or the wire artifacts (frontend's
+# "Wire sync check") checks this repo out under ./xemu-cartographer and the
+# scraper repo under ./xc-scraper, then works from ./xemu-cartographer.
+#
+# NOTE: github.com/xemu-cartographer/xc-scraper does not exist on GitHub yet —
+# the owner has not pushed the sibling repo. Until then the second checkout
+# step fails and these jobs are red; nothing else needs to change once it lands.
+# For a private sibling repo, add a `token:` (PAT / GitHub App) to that checkout.
+
 jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: sveltekit
+        working-directory: xemu-cartographer/sveltekit
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: xemu-cartographer
+
+      # Sibling checkout: the wire contract's TS mirror + golden fixtures are
+      # vendored into sveltekit/src/lib/types (task sync-wire); the check below
+      # fails the build when the vendored copies drift from xc-scraper/wire.
+      - uses: actions/checkout@v4
+        with:
+          repository: xemu-cartographer/xc-scraper
+          ref: main
+          path: xc-scraper
 
       - uses: pnpm/action-setup@v4
         with:
@@ -30,9 +52,19 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: sveltekit/pnpm-lock.yaml
+          cache-dependency-path: xemu-cartographer/sveltekit/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Wire sync check
+        # Same commands as `task sync-wire:check` (Taskfile.yml); run from the
+        # repo root so the paths match the Taskfile.
+        working-directory: xemu-cartographer
+        run: |
+          diff -u ../xc-scraper/wire/ts/scraper-v2.ts sveltekit/src/lib/types/scraper-v2.ts \
+            || { echo "sveltekit/src/lib/types/scraper-v2.ts is stale — run task sync-wire"; exit 1; }
+          diff -ru ../xc-scraper/wire/testdata sveltekit/src/lib/types/wire-fixtures \
+            || { echo "sveltekit/src/lib/types/wire-fixtures/ is stale — run task sync-wire"; exit 1; }
 
       - name: Lint
         run: pnpm lint
@@ -50,18 +82,33 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pb_public
-          path: pb_public/
+          path: xemu-cartographer/pb_public/
           retention-days: 1
 
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: xemu-cartographer
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: xemu-cartographer
+
+      # Sibling checkout so go.mod's `replace => ../xc-scraper` resolves.
+      - uses: actions/checkout@v4
+        with:
+          repository: xemu-cartographer/xc-scraper
+          ref: main
+          path: xc-scraper
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: xemu-cartographer/go.mod
+          cache-dependency-path: |
+            xemu-cartographer/go.sum
+            xc-scraper/go.sum
 
       - name: Vet
         run: go vet ./...
@@ -81,9 +128,12 @@ jobs:
     needs: frontend
     defaults:
       run:
-        working-directory: sveltekit
+        working-directory: xemu-cartographer/sveltekit
     steps:
+      # No sibling checkout here: e2e only needs the built pb_public/ artifact.
       - uses: actions/checkout@v4
+        with:
+          path: xemu-cartographer
 
       - uses: pnpm/action-setup@v4
         with:
@@ -93,7 +143,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: sveltekit/pnpm-lock.yaml
+          cache-dependency-path: xemu-cartographer/sveltekit/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
@@ -101,7 +151,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pb_public
-          path: pb_public/
+          path: xemu-cartographer/pb_public/
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
@@ -114,5 +164,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: sveltekit/playwright-report/
+          path: xemu-cartographer/sveltekit/playwright-report/
           retention-days: 7

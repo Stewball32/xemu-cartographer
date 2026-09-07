@@ -60,16 +60,27 @@ task clean
 go run ./cmd/server serve
 ./bin/server serve
 
-# Backend tests (Go) — local-only; CI runs `go vet` + build, not `go test`
+# Backend tests (Go) — CI runs the same scope (go vet + go test ./cmd/... ./internal/... + build)
 
-go test ./...
+go test ./cmd/... ./internal/...         # what CI and `task test` run (skips the root-owned containers/ tree)
 go test ./internal/leaguescraper/...     # single package
 go vet ./...
+go test -tags dev ./internal/pocketbase/seed/...   # the dev-only seeder (Air builds with -tags dev)
 
-# The scraper runner + leaf packages live in the sibling module ../xc-scraper
-# (github.com/xemu-cartographer/xc-scraper, wired via a replace directive)
+# The scraper runner + leaf packages + the wire contract live in the SIBLING
+# module ../xc-scraper (github.com/xemu-cartographer/xc-scraper). go.mod has
+# `replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper`, so
+# ../xc-scraper MUST exist next to this checkout or nothing here builds
+# (CI checks both repos out side by side). Keep both green:
 
 cd ../xc-scraper && go build ./... && go vet ./... && go test ./...
+
+# Wire contract artifacts are vendored from ../xc-scraper/wire into
+# sveltekit/src/lib/types/ (scraper-v2.ts + wire-fixtures/*.json). Re-run
+# after every wire change; the check is also a CI step and fails on drift.
+
+task sync-wire          # copy ../xc-scraper/wire/{ts/scraper-v2.ts,testdata/*.json} into sveltekit/src/lib/types/
+task sync-wire:check    # diff the vendored copies against ../xc-scraper (XC_SCRAPER_DIR overrides the path)
 
 # Frontend type-check, lint, format (run from sveltekit/)
 
@@ -183,6 +194,7 @@ The README's [Project Structure](README.md#project-structure) tree covers the di
 - **Navigation:** `src/lib/config/navigation.ts` — central nav link config consumed by all four layout nav components; edit here to add/remove nav links
 - **App config:** `src/lib/config/app.ts` — exports `APP_NAME` (displayed app name) and `OAUTH_PROVIDERS` (display labels + icons per provider); actual enabled providers are discovered at runtime from PocketBase's `listAuthMethods()` API
 - **WebSocket:** Browser native `WebSocket` API connecting to `/api/ws?token=PB_JWT`
+- **Wire types (vendored, do not edit by hand):** [sveltekit/src/lib/types/scraper-v2.ts](sveltekit/src/lib/types/scraper-v2.ts) is a byte-for-byte copy of `../xc-scraper/wire/ts/scraper-v2.ts`, and [sveltekit/src/lib/types/wire-fixtures/](sveltekit/src/lib/types/wire-fixtures/) mirrors `../xc-scraper/wire/testdata/*.json` (the Go golden fixtures). `task sync-wire` refreshes both; `task sync-wire:check` / the CI "Wire sync check" step fail on drift. [wire-fixtures.test.ts](sveltekit/src/lib/types/wire-fixtures.test.ts) imports every fixture and `satisfies`-checks it against the TS payload types (through a literal-widening `Loose<T>` because JSON modules type `"live"` as `string`), so a Go-side wire change that breaks the TS mirror fails `pnpm check`. Change the contract in xc-scraper (`wire/*.go` + `wire/ts/scraper-v2.ts` + `go test ./wire -update`), then sync here.
 - **Routing:** SvelteKit file-based routing in `sveltekit/src/routes/`; `+layout.ts` sets `ssr = false`, `prerender = true`, `trailingSlash = 'always'` globally
 - **Admin pages:** Under `sveltekit/src/routes/admin/`: `/admin/` dashboard, `/admin/pod/` listing + `/admin/pod/[name]/` per-pod hub (View / Debug / Probe sub-pages), `/admin/capture-policies/`, `/admin/players/` (gamertag 4-state moderation queue — M07/M22), `/admin/rosters/` (Teams + Rosters tabs, with the Teams tab carrying the same 4-state queue — M07/M22), `/admin/reserved-names/` (M22e pre-list curation). `/admin/roles/` (M08 role grants + ban moderation) is live. The route group is gated by `requireAdmin` hoisted into `routes/admin/+layout.ts`.
 - **Player "my match" page:** [sveltekit/src/routes/play/](sveltekit/src/routes/play/) (M09, RequireAuth not admin) polls `GET /api/play/current` (server resolves the caller's gamertag against live container rosters and decides `box.read` through the authz adapter — `host:summary` is admin-only so this can't be a client-side match) and renders [PlayKiosk](sveltekit/src/lib/components/play/PlayKiosk.svelte) (reuses `KioskFrame` + `XboxController` + `VNCKeyboard`) for the matched container, or an idle state. The pure resolve→phase logic lives in [sveltekit/src/lib/utils/play-match.ts](sveltekit/src/lib/utils/play-match.ts) (unit-tested).
@@ -247,7 +259,7 @@ The scraper manager is special the other way round: it holds **no** `*guards.Ser
 - **Dev vs prod builds:** `air` (dev) compiles with `-tags dev`; `task build:backend` compiles without it. The `//go:build dev` constraint in `internal/pocketbase/seed/` means the seeder is a no-op in production binaries.
 - **Dev DB is ephemeral:** Air compiles the server to `tmp/server.exe` and `clean_on_exit = true` wipes `tmp/` on exit — including `tmp/pb_data/` where PocketBase stores its dev database. This is intentional: each `task dev` session starts with a clean slate. TypeScript type generation (`task typegen`) therefore uses `--url` mode against the live server rather than reading the DB file directly.
 - **`atlas/` directory:** Snapshots of predecessor projects (`HaloCaster`, `xemu-cartographer-legacy`) kept as porting reference. **Treat every artifact here as unverified** — offsets, patterns, and APIs must be re-confirmed against current xemu/library behavior before being copied into the live tree. Not part of the build, not imported, not modified. When in doubt, read `atlas/README.md` first. Contents are gitignored (local-only) by default.
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main`. **frontend** runs `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...` and `go build` (note: **not** `go test`); **e2e** downloads the built `pb_public/` and runs Playwright. Backend unit tests are local-only — run `go test ./...` before pushing scraper/podman/proxy changes.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main` + `beta`. Every job checks this repo out under `xemu-cartographer/`, and **frontend** + **backend** also check out `xemu-cartographer/xc-scraper@main` under `xc-scraper/` so `go.mod`'s `replace => ../xc-scraper` resolves (until the owner pushes that repo to GitHub, those two jobs fail at the checkout step). **frontend** runs the wire sync check (`diff` of the vendored `scraper-v2.ts` + `wire-fixtures/` against `../xc-scraper/wire`, same commands as `task sync-wire:check`), then `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...`, `go test ./cmd/... ./internal/...` and `go build`; **e2e** downloads the built `pb_public/` and runs Playwright. CI does not run xc-scraper's own tests — run `cd ../xc-scraper && go test ./...` before pushing changes there.
 - **pnpm pinned to v11:** both `Containerfile` (`corepack prepare pnpm@11`) and `.github/workflows/ci.yml` (`pnpm/action-setup` `version: 11`); pnpm v11 requires Node 22+ (already the baseline). The dependency build-script allowlist lives in `sveltekit/pnpm-workspace.yaml` under v11's `allowBuilds` map (`esbuild: true`, `sqlite3: true`), which replaced v10's `onlyBuiltDependencies` list; pnpm ignores a `pnpm` block in `package.json`, and the `Containerfile`'s frontend stage must copy this file into the build context. `pnpm-lock.yaml` (`lockfileVersion: '9.0'`) is unchanged — v11 reads the existing lockfile as-is, so there's no lockfile churn — but because build-script approvals now use v11's `allowBuilds` syntax (which v10 doesn't recognize), the project targets v11.
 
 ## Containers (xemu + browser pairs)

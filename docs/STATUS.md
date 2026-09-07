@@ -131,4 +131,4 @@ Listed by intended execution order (not strict numerical order). M22 and M23 are
 
 - Desktop GUI (WinForms, DearPyGui) — web is the UI.
 - `cmd/{memscan,prove,localproof}` offset-discovery tools — re-derive on demand.
-- Halo-specific logic leaking into `internal/xemu/` or the top-level `internal/scraper/` — domain code stays in `internal/scraper/<game>/`.
+- Halo-specific logic leaking into `xc-scraper/xemu` or the top-level `xc-scraper/scraper` — domain code stays in the game plugins (`xc-scraper/haloce`, `xc-scraper/halo2`). None of it lives in this repo any more: the readers, runner and wire contract are the sibling module `github.com/xemu-cartographer/xc-scraper`.

@@ -1,0 +1,17 @@
+{
+  "v": 2,
+  "type": "event",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18302,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "seq": 0,
+    "tick": 18302,
+    "at": "2026-09-01T12:00:00Z",
+    "event_type": "game_update",
+    "kind": "team_score",
+    "team": 0,
+    "score": 31
+  }
+}

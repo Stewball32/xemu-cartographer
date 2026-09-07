@@ -15,7 +15,7 @@ Provides a WebSocket endpoint mounted on PocketBase's ServeMux router. Handles c
 | Directory    | Purpose                                                                |
 |--------------|------------------------------------------------------------------------|
 | `handlers/`  | Self-registering message type handlers (one per file, dispatched by Hub) |
-| `rooms/`     | Room type definitions + room-name helpers (one per file, self-registering; admission is `authz.Can(room.join)`) |
+| `rooms/`     | Room type definitions (one per file, self-registering; admission is `authz.Can(room.join)`). The room-name helpers (`RoomForInstance`, `RoomForInstanceClass`, `ValidateInstanceName`) and the `host:` / `host:all` / `host:summary` constants are thin wrappers over `github.com/xemu-cartographer/xc-scraper/wire` — the sibling module owns the names |
 | `resolvers/` | WS state lookups via `*guards.Services` — one function per file          |
 | `actions/`   | Reusable WS operations — one exported function per file                  |
 
@@ -24,7 +24,7 @@ Provides a WebSocket endpoint mounted on PocketBase's ServeMux router. Handles c
 - `hub.go` — `Hub` struct, `NewHub()`, `Run()`, `Stop()`, routing, singleton (`SetInstance()`/`Instance()`), `SetServices()` for cross-system access, `*Raw` methods (`BroadcastRaw`, `SendToUserRaw`, `SendToRoomRaw`) that satisfy `wsiface.Service`; `recheckRooms()` (the re-resolve room re-check, announces each loss with `room_left`), `rebindConsole()` (the join-time console re-bind)
 - `client.go` — `Client` struct (`newClient()`), `readPump()`, `writePump()`, `Principal()` (the connection's `authz.Principal`, swapped on re-resolve), `UserID()`
 - `handler.go` — `NewHandler(hub, app, hooks...)` returns PocketBase-compatible route handler; resolves the principal at connect and runs the per-connection re-resolve loop
-- `message.go` — `Message` struct + type constants (`TypeBroadcast`, `TypeRoom`, `TypeDirect`, `TypeJoinRoom`, `TypeLeaveRoom`, `TypeError`, `TypeRoomLeft`)
+- `message.go` — aliases only: `Message` = `wire.Message` and the type constants (`TypeBroadcast`, `TypeRoom`, `TypeDirect`, `TypeJoinRoom`, `TypeLeaveRoom`, `TypeError`, `TypeRoomLeft`, `TypeScraper`) are re-exported from `github.com/xemu-cartographer/xc-scraper/wire`. **The frame, the envelope, the rooms and every scraper payload are owned by `xc-scraper/wire`** (single source of truth for everything crossing the socket — see `../xc-scraper/docs/wire.md`); change them there, then `task sync-wire` for the frontend copies
 - `handlers/allhandlers.go` — `Event` type (carries `Services`, `Authz` + `Principal` for decisions) + `HandlerFunc` + registry (`register()` / `Get()`)
 
 ## Auth Flow

@@ -1,0 +1,35 @@
+{
+  "v": 2,
+  "type": "hello",
+  "instance": "",
+  "seq": 0,
+  "tick": 0,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "protocol_version": 2,
+    "server_time": "2026-09-01T12:00:00Z",
+    "classes": [
+      "xbox",
+      "scenario",
+      "game",
+      "game_filtered",
+      "tick",
+      "objects",
+      "debug",
+      "summary",
+      "previous_game",
+      "event",
+      "event_filtered"
+    ],
+    "instances": [
+      {
+        "name": "smoke1",
+        "started_at": "2026-09-01T11:42:10Z"
+      },
+      {
+        "name": "smoke2",
+        "started_at": "2026-09-01T11:42:40Z"
+      }
+    ]
+  }
+}

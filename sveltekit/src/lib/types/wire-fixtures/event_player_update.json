@@ -1,0 +1,30 @@
+{
+  "v": 2,
+  "type": "event",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18310,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "seq": 0,
+    "tick": 18310,
+    "at": "2026-09-01T12:00:00Z",
+    "event_type": "player_update",
+    "kind": "item_picked_up",
+    "player": {
+      "index": 0,
+      "name": "Player1",
+      "team": 0,
+      "armor_color": 2
+    },
+    "pos": {
+      "x": 21,
+      "y": -2,
+      "z": 1.25
+    },
+    "item": {
+      "spawn_id": 0,
+      "tag": "weapons\\sniper rifle\\sniper rifle"
+    }
+  }
+}

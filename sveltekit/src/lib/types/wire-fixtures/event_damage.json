@@ -1,0 +1,39 @@
+{
+  "v": 2,
+  "type": "event",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18290,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "seq": 0,
+    "tick": 18290,
+    "at": "2026-09-01T12:00:00Z",
+    "event_type": "damage",
+    "kind": "hit",
+    "dealer": {
+      "index": 0,
+      "name": "Player1",
+      "team": 0,
+      "armor_color": 2
+    },
+    "dealer_pos": {
+      "x": 20,
+      "y": -1.5,
+      "z": 1.25
+    },
+    "victim": {
+      "index": 1,
+      "name": "Player2",
+      "team": 1,
+      "armor_color": 5
+    },
+    "victim_pos": {
+      "x": 12.5,
+      "y": -3.25,
+      "z": 1.125
+    },
+    "amount": 0.25,
+    "weapon": "weapons\\pistol\\pistol"
+  }
+}

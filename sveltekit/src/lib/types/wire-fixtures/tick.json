@@ -1,0 +1,205 @@
+{
+  "v": 2,
+  "type": "tick",
+  "instance": "smoke1",
+  "seq": 18342,
+  "tick": 18342,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "players": [
+      {
+        "index": 0,
+        "alive": true,
+        "respawn_in_ticks": null,
+        "pos": {
+          "x": 20,
+          "y": -1.5,
+          "z": 1.25
+        },
+        "vel": {
+          "x": 0.1,
+          "y": 0,
+          "z": 0
+        },
+        "aim": {
+          "x": 0.7,
+          "y": 0.7,
+          "z": 0
+        },
+        "zoom_level": -1,
+        "crouch_scale": 0,
+        "health": 1,
+        "shields": 0.85,
+        "max_health": 75,
+        "max_shields": 75,
+        "has_camo": false,
+        "has_overshield": false,
+        "frags": 2,
+        "plasmas": 1,
+        "selected_weapon_slot": 0,
+        "biped_tag": "characters\\cyborg_mp\\cyborg_mp",
+        "actions": {
+          "crouching": false,
+          "jumping": false,
+          "firing": true,
+          "flashlight": false,
+          "throwing_grenade": false,
+          "meleeing": false,
+          "using": false
+        },
+        "weapons": [
+          {
+            "slot": 0,
+            "tag": "weapons\\pistol\\pistol",
+            "object_id": 3232235521,
+            "ammo_mag": 9,
+            "ammo_pack": 60,
+            "charge": null,
+            "heat": 0,
+            "reloading": false
+          },
+          {
+            "slot": 1,
+            "tag": "weapons\\plasma rifle\\plasma rifle",
+            "object_id": 3232235522,
+            "ammo_mag": null,
+            "ammo_pack": null,
+            "charge": 0.92,
+            "heat": 0.1,
+            "reloading": false
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "alive": false,
+        "respawn_in_ticks": 120,
+        "pos": {
+          "x": 12.5,
+          "y": -3.25,
+          "z": 1.125
+        },
+        "vel": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "aim": {
+          "x": 1,
+          "y": 0,
+          "z": 0
+        },
+        "zoom_level": -1,
+        "crouch_scale": 0,
+        "health": 0,
+        "shields": 0,
+        "max_health": 75,
+        "max_shields": 75,
+        "has_camo": false,
+        "has_overshield": false,
+        "frags": 0,
+        "plasmas": 0,
+        "selected_weapon_slot": 0,
+        "biped_tag": "characters\\cyborg_mp\\cyborg_mp",
+        "actions": {
+          "crouching": false,
+          "jumping": false,
+          "firing": false,
+          "flashlight": false,
+          "throwing_grenade": false,
+          "meleeing": false,
+          "using": false
+        },
+        "weapons": []
+      }
+    ],
+    "power_items": [
+      {
+        "spawn_id": 0,
+        "status": "held",
+        "held_by": 0,
+        "pos": null,
+        "respawn_in_ticks": null
+      },
+      {
+        "spawn_id": 1,
+        "status": "respawning",
+        "held_by": null,
+        "pos": null,
+        "respawn_in_ticks": 600
+      }
+    ],
+    "ctf_flags": [
+      {
+        "team": 0,
+        "pos": {
+          "x": 40,
+          "y": -110,
+          "z": 1
+        },
+        "carrier": null,
+        "status": "home"
+      },
+      {
+        "team": 1,
+        "pos": {
+          "x": 60,
+          "y": -120,
+          "z": 1
+        },
+        "carrier": 0,
+        "status": "carried"
+      }
+    ],
+    "game_globals": {
+      "map_loaded": 1,
+      "active": 1,
+      "game_loading_in_progress": 0,
+      "precache_map_status": 1,
+      "stored_global_random": 3735928559
+    },
+    "locals": [
+      {
+        "local_index": 0,
+        "fp_weapon": {
+          "state": 1,
+          "animation_id": 4,
+          "animation_tick": 7
+        },
+        "observer_cam": {
+          "pos": {
+            "x": 20,
+            "y": -1.5,
+            "z": 1.9
+          },
+          "aim": {
+            "x": 0.7,
+            "y": 0.7,
+            "z": 0
+          },
+          "fov": 1.22
+        },
+        "input": {
+          "left_stick": {
+            "x": 0.5,
+            "y": 0
+          },
+          "right_stick": {
+            "x": 0,
+            "y": -0.1
+          },
+          "buttons": {
+            "a": false,
+            "b": true
+          }
+        },
+        "player_control": {
+          "desired_yaw": 0.78,
+          "desired_pitch": 0.01,
+          "zoom_level": -1,
+          "aim_assist_target": 3232235536
+        }
+      }
+    ]
+  }
+}

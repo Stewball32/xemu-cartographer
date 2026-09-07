@@ -59,11 +59,11 @@ element over the correct region at any resolution.
 This is the retail CE behaviour and is the priority case for this feature.
 
 The mapping is pure and deterministic:
-[`internal/scraper/viewport.go`](../internal/scraper/viewport.go) —
+[`xc-scraper/scraper/viewport.go`](../../xc-scraper/scraper/viewport.go) —
 `LocalViewport(count, localIndex)` + `AssignLocalViewports(players, count)`.
 Unit-tested for all four layouts, out-of-range indices, screen-tiling
 invariants, and the 2-player-is-horizontal guard in
-[`internal/scraper/viewport_test.go`](../internal/scraper/viewport_test.go).
+[`xc-scraper/scraper/viewport_test.go`](../../xc-scraper/scraper/viewport_test.go).
 A matching TS port (`localViewport`) lives in
 [`sveltekit/src/lib/types/scraper.ts`](../sveltekit/src/lib/types/scraper.ts)
 for overlay consumers.
@@ -82,9 +82,9 @@ Added to the wire (JSON tags):
   per-local list, so the tick stream is self-sufficient for overlay placement.
 
 Populated in CE by
-[`internal/scraper/haloce/reader.go`](../internal/scraper/haloce/reader.go)
+[`xc-scraper/haloce/reader.go`](../../xc-scraper/haloce/reader.go)
 (`composeGameData` — sets `local_count`, calls `AssignLocalViewports`) and
-[`internal/scraper/haloce/reader_locals.go`](../internal/scraper/haloce/reader_locals.go)
+[`xc-scraper/haloce/reader_locals.go`](../../xc-scraper/haloce/reader_locals.go)
 (`readLocals` — sets each `TickLocal.viewport`). The per-player `local_index`
 was already read at `reader.go` `readGamePlayer` (`OffPlrLocalIndex`).
 
@@ -146,6 +146,6 @@ splitscreen layout is identical across CE and H2).
   `halo-offset-mapper/docs/RUNTIME-PASS-2026-06-21-CE-STOCK.md` (local count = 2, 2-player splitscreen Prisoner).
 - H2 offsets: `halo-offset-mapper/offset-maps/h2-stock.offsets.json`,
   `halo-offset-mapper/docs/RUNTIME-PASS-2026-06-21-H2-STOCK.md`.
-- CE scraper: `internal/scraper/haloce/{offsets.go, reader.go, reader_locals.go, reader_globals.go}`.
-- Mapping + types: `internal/scraper/{viewport.go, viewport_test.go, types.go}`.
+- CE scraper: `xc-scraper/haloce/{offsets.go, reader.go, reader_locals.go, reader_globals.go}`.
+- Mapping + types: `xc-scraper/scraper/{viewport.go, viewport_test.go, types.go}`.
 - Test harness: `scripts/runtime/{padpool.py, xemu-test-harness.sh}`, `docs/XEMU-TEST-SETUP.md`.

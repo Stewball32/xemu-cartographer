@@ -21,6 +21,12 @@ tasks:
     # passed, which silently ignores PUBLIC_PB_PORT from .env. Pass the
     # flag explicitly so a non-8090 .env actually wins; mirrors the
     # dev:backend:lan recipe below.
+    #
+    # Hot reload also covers the sibling module: .air.toml's include_dir lists
+    # ../xc-scraper (go.mod `replace => ../xc-scraper`), so edits to the
+    # runner / readers / wire rebuild this binary. Air >= 1.65 watches
+    # out-of-root include_dir entries natively (a missing checkout is skipped);
+    # it does NOT follow a root-level symlink, so don't try that instead.
     cmds: ["air -c .air.toml -- --http=127.0.0.1:${PUBLIC_PB_PORT}"]
 
   dev:frontend:
@@ -50,14 +56,39 @@ tasks:
     dir: sveltekit
     cmds: ["pnpm typegen"]
 
+  # --- wire contract (owned by the sibling xc-scraper module) -----------------
+  # The WebSocket contract lives in ../xc-scraper/wire (Go source of truth,
+  # docs/wire.md, TS mirror, golden fixtures). The flagship vendors two
+  # artifacts so the frontend builds without the sibling checkout:
+  #   wire/ts/scraper-v2.ts   -> sveltekit/src/lib/types/scraper-v2.ts
+  #   wire/testdata/*.json    -> sveltekit/src/lib/types/wire-fixtures/
+  # Re-run `task sync-wire` after every wire change; `task sync-wire:check`
+  # (also a CI step) fails when the vendored copies drift.
   sync-wire:
-    desc: Vendor the wire TS types from the sibling xc-scraper checkout (../xc-scraper/wire/ts/scraper-v2.ts → sveltekit/src/lib/types/scraper-v2.ts)
+    desc: Vendor the wire TS types + golden fixtures from the sibling xc-scraper checkout (../xc-scraper/wire → sveltekit/src/lib/types/)
     vars:
       XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
     cmds:
       - cmd: 'test -f "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire/testdata" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/testdata not found (set XC_SCRAPER_DIR)"; exit 1; }'
       - cmd: 'cp "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts'
+      # Stale fixtures must go: the vendored dir mirrors testdata exactly
+      # (sync-wire:check diffs the whole directory).
+      - cmd: 'rm -rf sveltekit/src/lib/types/wire-fixtures && mkdir -p sveltekit/src/lib/types/wire-fixtures'
+      - cmd: 'cp "{{.XC_SCRAPER_DIR}}"/wire/testdata/*.json sveltekit/src/lib/types/wire-fixtures/'
       - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts -> sveltekit/src/lib/types/scraper-v2.ts"'
+      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/testdata/*.json -> sveltekit/src/lib/types/wire-fixtures/ ($(ls sveltekit/src/lib/types/wire-fixtures | wc -l) files)"'
+
+  sync-wire:check:
+    desc: Fail (with a diff) if the vendored wire TS types or fixtures differ from the sibling xc-scraper checkout
+    vars:
+      XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
+    cmds:
+      - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire" || { echo "sync-wire:check: {{.XC_SCRAPER_DIR}}/wire not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      # Same commands as the CI "Wire sync check" step (.github/workflows/ci.yml).
+      - cmd: 'diff -u "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts || { echo "sync-wire:check: sveltekit/src/lib/types/scraper-v2.ts is stale — run task sync-wire"; exit 1; }'
+      - cmd: 'diff -ru "{{.XC_SCRAPER_DIR}}/wire/testdata" sveltekit/src/lib/types/wire-fixtures || { echo "sync-wire:check: sveltekit/src/lib/types/wire-fixtures/ is stale — run task sync-wire"; exit 1; }'
+      - cmd: 'echo "sync-wire:check: vendored wire artifacts match {{.XC_SCRAPER_DIR}}/wire"'
 
   # --- migrations (schema source of truth — see docs/MIGRATIONS.md) -----------
   migrate:

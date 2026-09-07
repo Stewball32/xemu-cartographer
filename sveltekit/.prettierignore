@@ -14,3 +14,6 @@ src/lib/types/pocketbase-types.ts
 # Test output
 /test-results/
 /playwright-report/
+
+# Vendored wire fixtures (byte-identical to ../xc-scraper/wire/testdata; task sync-wire)
+src/lib/types/wire-fixtures/

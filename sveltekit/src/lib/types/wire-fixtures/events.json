@@ -1,0 +1,162 @@
+{
+  "v": 2,
+  "type": "events",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18342,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "phase": "live",
+    "since_tick": 18000,
+    "events": [
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18290,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18290,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "damage",
+          "kind": "hit",
+          "dealer": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "dealer_pos": {
+            "x": 20,
+            "y": -1.5,
+            "z": 1.25
+          },
+          "victim": {
+            "index": 1,
+            "name": "Player2",
+            "team": 1,
+            "armor_color": 5
+          },
+          "victim_pos": {
+            "x": 12.5,
+            "y": -3.25,
+            "z": 1.125
+          },
+          "amount": 0.25,
+          "weapon": "weapons\\pistol\\pistol"
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18300,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18300,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "death",
+          "victim": {
+            "index": 1,
+            "name": "Player2",
+            "team": 1,
+            "armor_color": 5
+          },
+          "victim_pos": {
+            "x": 12.5,
+            "y": -3.25,
+            "z": 1.125
+          },
+          "killer": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "killer_pos": {
+            "x": 20,
+            "y": -1.5,
+            "z": 1.25
+          },
+          "cause": "kill",
+          "weapon": "weapons\\pistol\\pistol",
+          "team_kill": false,
+          "respawn_in_ticks": 150
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18301,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18301,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "medal",
+          "kind": "kill_streak",
+          "player": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "count": 3
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18302,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18302,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "game_update",
+          "kind": "team_score",
+          "team": 0,
+          "score": 31
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18310,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18310,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "player_update",
+          "kind": "item_picked_up",
+          "player": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "pos": {
+            "x": 21,
+            "y": -2,
+            "z": 1.25
+          },
+          "item": {
+            "spawn_id": 0,
+            "tag": "weapons\\sniper rifle\\sniper rifle"
+          }
+        }
+      }
+    ]
+  }
+}

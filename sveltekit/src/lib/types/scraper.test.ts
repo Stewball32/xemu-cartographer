@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { localViewport } from './scraper';
 
-// Mirrors the Go scraper.LocalViewport unit tests (internal/scraper/viewport_test.go)
+// Mirrors the Go scraper.LocalViewport unit tests (xc-scraper/scraper/viewport_test.go)
 // so the overlay-facing TS port stays in lockstep with the wire mapping.
 describe('localViewport', () => {
 	it('1 player → full screen', () => {

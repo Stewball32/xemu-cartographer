@@ -53,7 +53,11 @@ schema, pre applies the migration first — see [MIGRATIONS.md](MIGRATIONS.md).
 
 What it does (see the script header for the full contract): builds the ref in a
 **temporary detached worktree** (only committed code ships — the repo checkout
-is never touched), installs `bin/server` + `pb_public/` + `tools/game-maps/`
+is never touched; **since the step 7 restructure `go.mod` resolves
+`github.com/xemu-cartographer/xc-scraper` via `replace => ../xc-scraper`, so the
+worktree's parent directory must also hold an `xc-scraper` checkout at the
+matching ref — `srv-pre.sh` and the `Containerfile` build context do not
+provide one yet; see the CHANGELOG restructure entry**), installs `bin/server` + `pb_public/` + `tools/game-maps/`
 into the tier, regenerates `run.sh`, writes `BUILD-INFO` with provenance
 verification, then (re)starts the `site-xemu-cartographer-pre` **user** unit
 (linger is on — survives reboots, no sudo) and polls `/api/health`. It never

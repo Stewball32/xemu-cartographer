@@ -42,6 +42,12 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 │  PB Hooks → WS Hub broadcasts                │
 │  PB Routes → Auth-gated page serving         │
 │                                              │
+│  ┌──────────────────────────────────────┐    │
+│  │  xc-scraper/runner  (sibling module) │    │
+│  │  per-xemu memory scrapers → wire     │    │
+│  │  envelopes → internal/leaguescraper  │    │
+│  │  → WS rooms / games persistence      │    │
+│  └──────────────────────────────────────┘    │
 └─────────┬────────────────────────────────────┘
           │ serves
 ┌─────────▼───────┐
@@ -50,18 +56,36 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 └─────────────────┘
 ```
 
+The live game-data feed — xemu QMP/memory readers, the per-game plugins, the scraper
+runner and the WebSocket **wire contract** — lives in the sibling module
+[`github.com/xemu-cartographer/xc-scraper`](../xc-scraper) (checkout expected at `../xc-scraper`;
+`go.mod` points there with a `replace` directive). This repo is the league server around it:
+PocketBase, Discord, the WebSocket hub and the glue in `internal/leaguescraper` that turns the
+runner's envelopes into rooms and persisted games. The wire contract is documented in
+[`xc-scraper/docs/wire.md`](../xc-scraper/docs/wire.md); its TS mirror + golden fixtures are
+vendored here by `task sync-wire`.
+
 ## Project Structure
 
 ```
 .
+├── ../xc-scraper/             # SIBLING REPO (github.com/xemu-cartographer/xc-scraper):
+│   ├── wire/                  #   the WebSocket contract (Go source of truth, TS mirror, fixtures)
+│   ├── runner/                #   the scraper runner (phase machine, caches, ports)
+│   ├── scraper/, haloce/, …   #   readers, game plugins, xemu/xbox primitives, discovery, hostrunner
+│   └── docs/wire.md           #   wire contract reference
 ├── cmd/server/                # Go entrypoint
 │   └── main.go
 ├── internal/
+│   ├── leaguescraper/         # League side of the runner's ports: emitter (WS rooms), demand,
+│   │                          #   WireAdapter (scraperiface.Service), game-end hook, capture policies,
+│   │                          #   roster config, PB sink
 │   ├── guards/                # Unified cross-system guards + Services DI
 │   │   ├── interfaces/
 │   │   │   ├── discord/       # Per-method Discord interfaces (one per file)
 │   │   │   ├── websocket/     # Per-method WS interfaces (one per file)
-│   │   │   └── pocketbase/    # Per-method PB interfaces (one per file)
+│   │   │   ├── pocketbase/    # Per-method PB interfaces (one per file)
+│   │   │   └── scraper/       # scraperiface — aliases of the runner's view types + Service
 │   │   ├── services.go        # Services struct (bundles all system interfaces)
 │   │   ├── guard.go           # GuardFunc type definition
 │   │   └── require_*.go       # Guard implementations
@@ -86,13 +110,16 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 │       ├── hub.go             # Client registry, rooms, message routing
 │       ├── handler.go         # WS upgrade with optional JWT auth
 │       ├── client.go          # Single connection read/write pumps
-│       ├── message.go         # Wire format for WS messages
+│       ├── message.go         # Aliases of wire.Message / wire.Type* (the frame is owned by xc-scraper/wire)
 │       ├── handlers/          # Self-registering message type handlers
-│       ├── rooms/             # Room type definitions with guard lists
+│       ├── rooms/             # Room type definitions with guard lists (names from xc-scraper/wire)
 │       └── resolvers/         # WS state lookups via Services
 ├── sveltekit/                 # SvelteKit frontend (Skeleton UI v5, adapter-static → pb_public/)
+│   └── src/lib/types/
+│       ├── scraper-v2.ts      # Vendored from ../xc-scraper/wire/ts (task sync-wire — do not edit)
+│       └── wire-fixtures/     # Vendored golden fixtures (task sync-wire; type-checked by wire-fixtures.test.ts)
 ├── .env.example               # Env template (shared by backend + frontend via envDir)
-├── .air.toml                  # Go hot reload config
+├── .air.toml                  # Go hot reload config (also watches ../xc-scraper)
 ├── .gitignore
 ├── Taskfile.yml               # Build orchestration
 ├── Containerfile              # Multi-stage Podman/Docker build
@@ -104,6 +131,7 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 ## Prerequisites
 
 - **Go 1.25+** — runs the backend; [go.dev/dl](https://go.dev/dl)
+- **The sibling `xc-scraper` checkout** — `go.mod` has `replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper`, so the backend does not build without `../xc-scraper` next to this repo (see Quick Start). Air hot-reloads on changes there too.
 - **pnpm** _(preferred)_ — package manager for the frontend; `npm install -g pnpm`. npm and yarn work but the project is developed with pnpm.
 - **Podman** _(optional)_ — for building and running containers; Docker works as a drop-in alternative.
 - **`qemu-img`** _(optional, only with containers)_ — the host needs `qemu-img` (`qemu-img`/`qemu-utils` package) so the provisioner can create each xemu instance's copy-on-write HDD overlay over the shared read-only root (`containers/xemu/shared/hdds/_default.qcow2`). See [CLAUDE.md → HDD overlays](CLAUDE.md).
@@ -119,6 +147,7 @@ Built on a prior Go+SvelteKit implementation preserved at [atlas/xemu-cartograph
 
    ```bash
    git clone https://github.com/Stewball32/xemu-cartographer.git
+   git clone https://github.com/xemu-cartographer/xc-scraper.git   # sibling module, must sit at ../xc-scraper
    cd xemu-cartographer
    ```
 
