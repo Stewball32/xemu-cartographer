@@ -14,8 +14,8 @@ import (
 // closed when the policy spec changes or the runner shuts down.
 //
 // applyPolicies is the single mutator; it accepts the full policy list
-// pushed in by Manager.setCapturePolicies (which already covers WS
-// reload races by serialising through reloadMu). write() is called
+// pushed in by Manager.SetCapturePolicies (the league-side provider
+// serialises its reloads, so pushes never interleave). write() is called
 // from the runner loop on every demand-gated emit; it's RLock-cheap so
 // classes without sinks pay nothing.
 type sinkManager struct {

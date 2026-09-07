@@ -168,6 +168,11 @@ type instanceCache struct {
 // condition (endReasonPostgame / endReasonLeftMatch / endReasonShutdown, see
 // previous_game.go). Events is the per-match log, oldest-first;
 // EventsTruncated flags a matchEventsCap overflow.
+//
+// The untagged fields are capture-time context for the finished_game
+// projection (finished_game.go): the runner name, the registry game key of
+// the reader that was bound, the final engine tick and the per-match stat
+// accumulator snapshot. They never reach the current_state wire shape.
 type previousGame struct {
 	GameData        *scraper.GameData  `json:"game_data,omitempty"`
 	Events          []scraper.Envelope `json:"events,omitempty"`
@@ -175,6 +180,11 @@ type previousGame struct {
 	EventsTruncated bool               `json:"events_truncated"`
 	GameUID         string             `json:"game_uid"`
 	EndReason       string             `json:"end_reason"`
+
+	Instance    string                      `json:"-"`
+	GameKey     string                      `json:"-"`
+	FinalTick   uint32                      `json:"-"`
+	PlayerAccum map[int]scraper.PlayerAccum `json:"-"`
 }
 
 // runner owns one xemu instance for its lifetime: from Manager.Start (which
@@ -295,9 +305,11 @@ type runner struct {
 
 	// Ports (ports.go), copied from the Manager in Start before the loop
 	// goroutine launches. emitter is never nil once wired (newRunner seeds
-	// nullEmitter); demand / rosterFilter are nil-safe at their call sites.
+	// nullEmitter); demand / onGameEnd / rosterFilter are nil-safe at their
+	// call sites.
 	emitter      Emitter
 	demand       Demand
+	onGameEnd    GameEnd
 	rosterFilter func(instance string) roster.Config
 
 	// seqMu guards seqByClass. Each envelope class has its own
@@ -331,10 +343,10 @@ type runner struct {
 	// defer.
 	sinks *sinkManager
 
-	// persistWG tracks in-flight game-end persistence goroutines
-	// (persistFinishedGame) so Manager.Stop can flush them — bounded by
-	// persistFlushTimeout — instead of letting a Ctrl-C at a match end race
-	// the write to process exit. Add always happens on the loop goroutine
+	// persistWG tracks in-flight GameEnd hook goroutines (fireGameEnd) so
+	// Manager.Stop can flush them — bounded by persistFlushTimeout — instead
+	// of letting a Ctrl-C at a match end race the league's persistence
+	// write to process exit. Add always happens on the loop goroutine
 	// before the loop exits (runLive's defer), so Stop's post-<-done Wait
 	// never races an Add.
 	persistWG sync.WaitGroup

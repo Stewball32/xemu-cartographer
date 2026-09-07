@@ -19,6 +19,16 @@ type scriptedReader struct {
 	exitState scraper.GameState
 	failAfter bool
 	reads     uint32
+	// readyState, when non-nil, is what the live loop's per-tick
+	// ReadReadyState refresh publishes into the cache (roster / scores).
+	readyState *scraper.GameData
+}
+
+func (s *scriptedReader) ReadReadyState() (scraper.GameData, error) {
+	if s.readyState != nil {
+		return *s.readyState, nil
+	}
+	return s.fakeReader.ReadReadyState()
 }
 
 func (s *scriptedReader) ReadGameState() (scraper.GameState, uint32, error) {
@@ -70,7 +80,7 @@ func TestRunLiveEndReasonByExitState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newLiveRunner(t, &scriptedReader{liveTicks: 2, exitState: tc.exitState})
 
-			if next := r.runLive(nil); next != PhaseReady {
+			if next := r.runLive(); next != PhaseReady {
 				t.Fatalf("runLive returned %q, want %q", next, PhaseReady)
 			}
 
@@ -97,7 +107,7 @@ func TestRunLiveShutdownEndReason(t *testing.T) {
 	r := newLiveRunner(t, &scriptedReader{})
 	r.cancel() // cancelled before entry — the loop's first select exits
 
-	if next := r.runLive(nil); next != PhaseLive {
+	if next := r.runLive(); next != PhaseLive {
 		t.Fatalf("runLive returned %q, want %q on ctx-cancel", next, PhaseLive)
 	}
 
@@ -121,7 +131,7 @@ func TestRunLiveShutdownEndReason(t *testing.T) {
 func TestRunLiveHeartbeatFailureNoArtifact(t *testing.T) {
 	r := newLiveRunner(t, &scriptedReader{liveTicks: 2, failAfter: true})
 
-	if next := r.runLive(nil); next != PhaseIdle {
+	if next := r.runLive(); next != PhaseIdle {
 		t.Fatalf("runLive returned %q, want %q after heartbeat failure", next, PhaseIdle)
 	}
 
@@ -139,7 +149,7 @@ func TestRunLiveHeartbeatFailureNoArtifact(t *testing.T) {
 // distinct game_uids.
 func TestRunLiveMatchLogResetBetweenMatches(t *testing.T) {
 	r := newLiveRunner(t, &scriptedReader{liveTicks: 2, exitState: scraper.GameStatePostGame})
-	if next := r.runLive(nil); next != PhaseReady {
+	if next := r.runLive(); next != PhaseReady {
 		t.Fatalf("first match: runLive returned %q, want %q", next, PhaseReady)
 	}
 	first := r.readCache().PreviousGame
@@ -148,7 +158,7 @@ func TestRunLiveMatchLogResetBetweenMatches(t *testing.T) {
 	}
 
 	r.reader = &scriptedReader{liveTicks: 3, exitState: scraper.GameStatePostGame}
-	if next := r.runLive(nil); next != PhaseReady {
+	if next := r.runLive(); next != PhaseReady {
 		t.Fatalf("second match: runLive returned %q, want %q", next, PhaseReady)
 	}
 	second := r.readCache().PreviousGame

@@ -90,8 +90,8 @@ func (s *PBSink) resolveCollection() (*core.Collection, error) {
 
 // RegisterPBSink wires the pb: scheme into the package-level registry.
 // Call once from main.go after PocketBase comes up but before
-// scraper.Manager.ReloadCapturePolicies — otherwise a policy with a
-// pb: spec loaded at startup would fail with "unknown scheme".
+// ReloadCapturePolicies — otherwise a policy with a pb: spec loaded at
+// startup would fail with "unknown scheme".
 func RegisterPBSink(app core.App) {
 	sinks.Register("pb", func(rest string, _ map[string]string) (sinks.Sink, error) {
 		if rest == "" {

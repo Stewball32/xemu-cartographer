@@ -31,7 +31,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/capture"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
@@ -55,12 +54,8 @@ var ErrInvalidName = errors.New("scraper: invalid instance name")
 // Manager owns a name → runner map and dispatches lifecycle operations.
 // Implements scraperiface.Service via structural typing.
 type Manager struct {
-	// svc is TEMPORARY (part 3c removes it): capture_loader, games_persist
-	// and hello still read svc.App. Broadcasting no longer goes through it.
-	svc *guards.Services
-
 	// Ports (ports.go). emitter is never nil (nullEmitter when unset);
-	// demand and rosterFilter are nil-safe at their call sites.
+	// demand, onGameEnd and rosterFilter are nil-safe at their call sites.
 	emitter      Emitter
 	demand       Demand
 	onGameEnd    GameEnd
@@ -79,15 +74,12 @@ type Manager struct {
 	// explicit offset_set rides that set; everything else rides the baseline.
 	offsetSetResolver func(instance string) string
 
-	// policyMu guards policies. Held separately from mu so the loader
-	// can update the Manager-level snapshot without contending with
-	// Start/Stop on the runners map. reloadMu serialises full reloads
-	// — only one ReloadCapturePolicies pass runs at a time so a slow
-	// FindAllRecords can't race with a fast one and leave runners on
-	// stale slices.
+	// policyMu guards policies. Held separately from mu so a provider
+	// (internal/leaguescraper.ReloadCapturePolicies) can update the
+	// Manager-level snapshot via SetCapturePolicies without contending
+	// with Start/Stop on the runners map.
 	policyMu sync.RWMutex
 	policies []capture.Policy
-	reloadMu sync.Mutex
 
 	// Host-runner wiring (player-hosting, ADR-0003). Set once at boot via
 	// SetHostRunner before any Start. When hostEnabled, each Start attaches a
@@ -121,7 +113,6 @@ func New(o Options) *Manager {
 		emitter = nullEmitter{}
 	}
 	m := &Manager{
-		svc:               o.Services,
 		emitter:           emitter,
 		demand:            o.Demand,
 		onGameEnd:         o.OnGameEnd,
@@ -327,7 +318,7 @@ func (m *Manager) Start(name, sock string) error {
 	// its first tick already has the right demand evaluation. A reload
 	// firing concurrently re-pushes (last write wins); the worst case
 	// is a single tick on a slightly stale slice.
-	r.setPolicies(m.getCapturePolicies())
+	r.setPolicies(m.CapturePolicies())
 
 	// Seed the aggregator immediately so host:all subscribers see a fresh
 	// Idle entry without waiting for the runner's first heartbeat tick.
@@ -340,11 +331,12 @@ func (m *Manager) Start(name, sock string) error {
 	// Visible to the loop goroutine before it starts (happens-before via go).
 	r.overlayFor = m.overlayResolver
 
-	// Ports: transport, subscriber demand and the roster filter. Set before
-	// the loop goroutine starts (happens-before via go) so they are never
-	// touched concurrently.
+	// Ports: transport, subscriber demand, the game-end hook and the roster
+	// filter. Set before the loop goroutine starts (happens-before via go)
+	// so they are never touched concurrently.
 	r.emitter = m.emitter
 	r.demand = m.demand
+	r.onGameEnd = m.onGameEnd
 	r.rosterFilter = m.rosterFilter
 
 	// Attach the player-hosting runner (ADR-0003). Created before the loop
@@ -355,7 +347,7 @@ func (m *Manager) Start(name, sock string) error {
 	// writes off the loop goroutine.
 	m.attachHostRunner(r)
 
-	go r.loop(m.svc)
+	go r.loop()
 	return nil
 }
 
@@ -414,10 +406,10 @@ func (m *Manager) Stop(name string) error {
 	r.cancel()
 	<-r.done
 
-	// Flush any in-flight game-end persist (fired by runLive's deferred
-	// persistFinishedGame just before the loop exited) so stopping a runner
-	// — or shutting the daemon down — right at a match end doesn't drop the
-	// artifact. Bounded: a wedged DB must not be able to hang teardown.
+	// Flush any in-flight GameEnd hook call (fired by runLive's deferred
+	// fireGameEnd just before the loop exited) so stopping a runner — or
+	// shutting the daemon down — right at a match end doesn't drop the
+	// artifact. Bounded: a wedged consumer must not be able to hang teardown.
 	if !r.awaitPersists(persistFlushTimeout) {
 		log.Printf("scraper[%s]: stop: game-end persist still in flight after %v — abandoning", name, persistFlushTimeout)
 	}

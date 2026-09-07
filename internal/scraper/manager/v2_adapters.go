@@ -578,7 +578,9 @@ func buildDebugPayload(c *instanceCache) *DebugPayload {
 // captured (cache.PreviousGame == nil). Wraps the v1-stored previous
 // game data in the v2 payload shape; events ride through unchanged
 // (the v1 event log was already a []scraper.Envelope which itself now
-// carries the v2 envelope shape from PR 4).
+// carries the v2 envelope shape from PR 4). The finished_game artifact
+// (finished_game.go) is embedded whenever the capture holds game data —
+// the same value the GameEnd hook receives — so join replay carries it too.
 func buildPreviousGamePayload(c *instanceCache) *PreviousGamePayload {
 	if c.PreviousGame == nil {
 		return nil
@@ -590,6 +592,9 @@ func buildPreviousGamePayload(c *instanceCache) *PreviousGamePayload {
 		EventsTruncated: prev.EventsTruncated,
 		GameUID:         prev.GameUID,
 		EndReason:       prev.EndReason,
+	}
+	if fg, ok := finishedGameFromPrevious(prev.Instance, prev); ok {
+		p.FinishedGame = &fg
 	}
 	// Build a synthetic GamePayload from the snapshot's GameData. The
 	// previous game doesn't carry a separate snapshot's phase or

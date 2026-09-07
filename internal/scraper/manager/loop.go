@@ -6,7 +6,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/scraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
 	"github.com/xemu-cartographer/xc-scraper/xbox"
@@ -114,9 +113,9 @@ func (g *consecutiveFailureGate) ok() {
 // so consumers (Inspect endpoint, future M5 5c emission layer) can observe
 // the runner's state independently of GameState.
 //
-// svc is TEMPORARY (part 3b): it only reaches runLive → persistFinishedGame
-// (svc.App). Broadcasting goes through the runner's Emitter / Demand ports.
-func (r *runner) loop(svc *guards.Services) {
+// Everything league-specific leaves through the runner's ports: broadcasts
+// via Emitter / Demand, the finished match via the GameEnd hook (fireGameEnd).
+func (r *runner) loop() {
 	defer close(r.done)
 	defer r.inst.Close()
 	defer func() {
@@ -160,7 +159,7 @@ func (r *runner) loop(svc *guards.Services) {
 		case PhaseReady:
 			phase = r.runReady()
 		case PhaseLive:
-			phase = r.runLive(svc)
+			phase = r.runLive()
 		default:
 			log.Printf("scraper[%s]: unknown phase %q — defaulting to idle", r.name, phase)
 			phase = PhaseIdle
@@ -475,16 +474,16 @@ func (r *runner) refreshLowTranslations() {
 // returning, so a panic / ctx-cancel / xemu-vanishes scenario still moves
 // the data rather than dropping it. Ready inherits the populated
 // PreviousGame slot; Idle clears it (handled in releaseReader).
-func (r *runner) runLive(svc *guards.Services) (next Phase) {
+func (r *runner) runLive() (next Phase) {
 	// endReason is the observed exit condition captured into PreviousGame.
 	// The state-observed exits below overwrite it; a ctx-cancel (or panic)
 	// unwind leaves the shutdown default. Read by the deferred capture via
 	// closure because defer arguments are evaluated at defer time.
 	endReason := endReasonShutdown
 
-	// LIFO: persistFinishedGame runs after captureLiveAsPrevious, so
-	// cache.PreviousGame is populated when it reads it (M13 game-end trigger).
-	defer r.persistFinishedGame(svc)
+	// LIFO: fireGameEnd runs after captureLiveAsPrevious, so
+	// cache.PreviousGame is populated when it reads it (game-end trigger).
+	defer r.fireGameEnd()
 	defer func() { r.captureLiveAsPrevious(endReason) }()
 
 	// Fresh match → fresh stat accumulator + activity latches + per-match
@@ -635,6 +634,11 @@ func (r *runner) captureLiveAsPrevious(endReason string) {
 		EndedAt:         time.Now(),
 		GameUID:         newGameUID(),
 		EndReason:       endReason,
+
+		Instance:    r.name,
+		GameKey:     scraper.GameKey(r.cache.TitleID),
+		FinalTick:   r.cache.EngineTick,
+		PlayerAccum: r.cache.PlayerAccum,
 	}
 	r.cache.LatestTick = nil
 	r.cache.Events = nil

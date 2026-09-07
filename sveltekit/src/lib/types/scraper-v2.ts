@@ -679,6 +679,88 @@ export interface PreviousGamePayload {
 	 * never broadcast (only a join-replay from a runner that panicked
 	 * mid-match can carry one). Absent on older servers. */
 	end_reason?: string;
+	/** The self-contained finished_game artifact (schema
+	 * "xc.finished_game/1") distilled from this same capture — same game_uid,
+	 * same end_reason. Absent (not null) when the server could not build one
+	 * (no game data captured) and on older servers; fall back to distilling
+	 * `game` + `events` yourself. */
+	finished_game?: FinishedGame;
+}
+
+// =============================================================================
+// finished_game artifact — STABLE-CORE record of one completed match
+// (mirrors wire/finished_game.go; upsert on game_uid)
+// =============================================================================
+
+/** Value of FinishedGame.schema. Moves only on a breaking change. */
+export const SCHEMA_FINISHED_GAME = 'xc.finished_game/1';
+
+export interface FinishedGame {
+	schema: string;
+	/** ULID/UUIDv7 minted once at capture, stable across replays — the
+	 * dedupe key. */
+	game_uid: string;
+	instance: string;
+	/** Registry gameKey ("haloce", "halo2", ...). Open set. */
+	game: string;
+	/** Local machine's name in the system-link roster; "" if unknown. */
+	host_machine_name: string;
+	map: string;
+	gametype: string;
+	/** "" if none. */
+	variant_name: string;
+	is_team_game: boolean;
+	score_limit: number;
+	/** RFC3339 or null — null today (known gap; do not require). */
+	started_at: string | null;
+	ended_at: string;
+	/** 'postgame' | 'left_match' | 'shutdown'. Open set. */
+	end_reason: string;
+	/** Final engine tick. */
+	duration_ticks: number;
+	/** Per-game constant so ticks -> seconds is self-contained. */
+	tick_rate_hz: number;
+	/** null for FFA or a tie. */
+	winner_team: number | null;
+	team_scores: GameTeamScore[];
+	/** Display string; no parse promise. */
+	score_summary: string;
+	players: FinishedGamePlayer[];
+	/** true if the companion previous_game event log overflowed the cap. */
+	events_truncated: boolean;
+	/** Emitting producer ("xc-scraper", a replay tool, ...). Open set;
+	 * omitted when unset. */
+	origin?: string;
+	/** Game-profile extension valve keyed by gameKey. */
+	ext?: Record<string, unknown>;
+}
+
+/** One roster row of a FinishedGame. `name` is the ENGINE player name;
+ * account / gamertag mapping is consumer-side. */
+export interface FinishedGamePlayer {
+	index: number;
+	name: string;
+	team: number;
+	score: number;
+	kills: number;
+	deaths: number;
+	assists: number;
+	suicides: number;
+	team_kills: number;
+	/** null when the engine did not expose them for this player. */
+	is_local: boolean | null;
+	machine_index: number | null;
+	controller_index: number | null;
+	// Halo-profile optionals — omitted for game profiles that do not track them.
+	ctf_score?: number;
+	best_kill_streak?: number;
+	multikill?: number;
+	acc_shots_fired?: number;
+	acc_melees?: number;
+	acc_damage_dealt?: number;
+	acc_damage_received?: number;
+	/** Reserved — null until implemented. */
+	time_alive_ms: number | null;
 }
 
 // =============================================================================

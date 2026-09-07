@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	"github.com/xemu-cartographer/xc-scraper/wire"
@@ -28,8 +27,13 @@ type Demand interface {
 	Wants(instance, class string) bool
 }
 
-// GameEnd is invoked once per finished match with the wire-shaped record.
-// Defined now, wired in part 3b (games_persist still writes through svc.App).
+// GameEnd is invoked once per finished match (the Live→Ready edge) with the
+// wire.FinishedGame artifact the runner distilled from its previous_game
+// capture — the same value embedded in the previous_game payload. It runs on
+// its own goroutine (never on the scraper loop) and Manager.Stop flushes
+// in-flight calls, bounded by persistFlushTimeout. Only games with at least
+// one player are delivered. The league server's adapter
+// (internal/leaguescraper.GameEndHook) persists it.
 type GameEnd func(fg wire.FinishedGame)
 
 // Options is everything a Manager can be configured with at construction.
@@ -41,7 +45,8 @@ type Options struct {
 	Emitter Emitter
 	// Demand gates the per-poll classes. nil → permissive.
 	Demand Demand
-	// OnGameEnd fires once per finished match (part 3b).
+	// OnGameEnd fires once per finished match. nil → finished games are
+	// only embedded in previous_game, never delivered out-of-band.
 	OnGameEnd GameEnd
 	// RosterFilter resolves the dummy-filter config for an instance. nil →
 	// roster.Config{} (no filtering). Consulted behind a 10 s TTL cache.
@@ -60,9 +65,6 @@ type Options struct {
 	// register without enabling).
 	HostURL      func(instance string) (string, bool)
 	HostRegistry *hostrunner.Registry
-	// Services is TEMPORARY (removed in part 3c): capture_loader,
-	// games_persist and hello still read svc.App directly.
-	Services *guards.Services
 }
 
 // nullEmitter drops everything. Installed when Options.Emitter is nil so the

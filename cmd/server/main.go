@@ -122,18 +122,19 @@ func main() {
 
 		// Scraper manager: always available. The league glue (internal/
 		// leaguescraper) plugs the WebSocket hub in through the Emitter / Demand
-		// ports and the roster filter through RosterFilter; the adapters read
-		// svc.WS at call time, so broadcasts safely no-op until svc.WS is
-		// populated below. The blank import of xc-scraper/haloce above triggers
+		// ports, the roster filter through RosterFilter and the games
+		// persistence chain through OnGameEnd; the WS adapters read svc.WS at
+		// call time, so broadcasts safely no-op until svc.WS is populated
+		// below. The blank import of xc-scraper/haloce above triggers
 		// haloce.init(), which registers Halo: CE's title ID with scraper.Lookup
 		// so manager.Start() can detect it.
 		scrMgr = scrapermgr.New(scrapermgr.Options{
-			Emitter: leaguescraper.NewEmitter(svc),
-			Demand:  leaguescraper.NewDemand(svc),
+			Emitter:   leaguescraper.NewEmitter(svc),
+			Demand:    leaguescraper.NewDemand(svc),
+			OnGameEnd: leaguescraper.GameEndHook(app),
 			RosterFilter: func(inst string) roster.Config {
 				return leaguescraper.LoadRosterConfig(app, inst)
 			},
-			Services: svc,
 		})
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
@@ -244,8 +245,8 @@ func main() {
 		// policy carrying "pb:game_events" loaded against an empty registry
 		// would error with "unknown scheme" and silently drop captures.
 		leaguescraper.RegisterPBSink(app)
-		scrMgr.RegisterCapturePolicyHooks()
-		if err := scrMgr.ReloadCapturePolicies(); err != nil {
+		leaguescraper.RegisterCapturePolicyHooks(app, scrMgr)
+		if err := leaguescraper.ReloadCapturePolicies(app, scrMgr); err != nil {
 			log.Printf("scraper: initial capture-policy load: %v", err)
 		}
 
