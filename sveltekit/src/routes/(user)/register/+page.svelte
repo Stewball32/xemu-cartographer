@@ -4,11 +4,12 @@
 	import { OAUTH_PROVIDERS } from '$lib/config/app';
 	import { buildLoginUrl } from '$lib/utils/redirect';
 	import pb from '$lib/pocketbase';
-	import { UserPlusIcon, MailIcon, LockIcon, LoaderIcon } from '@lucide/svelte';
+	import { UserPlusIcon, UserIcon, MailIcon, LockIcon, LoaderIcon } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
 
+	let username = $state('');
 	let email = $state('');
 	let password = $state('');
 	let passwordConfirm = $state('');
@@ -49,7 +50,7 @@
 
 		loading = true;
 		try {
-			await auth.register(email, password, passwordConfirm);
+			await auth.register(username.trim(), email, password, passwordConfirm);
 			// data.redirectTo is runtime-validated in +page.ts via safeRedirectTarget
 			// eslint-disable-next-line svelte/no-navigation-without-resolve
 			goto(data.redirectTo);
@@ -96,6 +97,28 @@
 
 			<!-- Form -->
 			<form class="space-y-4" onsubmit={handleRegister}>
+				<!-- users.username is required + immutable (min 2 / max 34,
+				     migrations snapshot + users_username_immutable hook); it also
+				     seeds the default gamertag. Without it the create 400s. -->
+				<label class="label">
+					<span>Username</span>
+					<div class="field-group grid-cols-[auto_1fr_auto]">
+						<div class="flex items-center justify-center preset-tonal px-3">
+							<UserIcon class="size-4" />
+						</div>
+						<input
+							type="text"
+							class="input"
+							placeholder="your handle (cannot be changed later)"
+							bind:value={username}
+							minlength="2"
+							maxlength="34"
+							autocomplete="username"
+							required
+						/>
+					</div>
+				</label>
+
 				<label class="label">
 					<span>Email</span>
 					<div class="field-group grid-cols-[auto_1fr_auto]">
