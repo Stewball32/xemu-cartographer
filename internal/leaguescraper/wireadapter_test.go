@@ -12,14 +12,14 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
-// These tests own every wire.Message-framing assertion that used to live in
-// the manager package (wire_test.go, hello_test.go, hello_filter_test.go,
-// events_test.go, aggregator_test.go) before step 7 part 3c moved the frame
-// + room choice into the WireAdapter. The manager cannot be populated with
-// runners from outside its package (that needs an xemu instance), so the
-// room / frame assertions run against the framing helpers with synthetic
-// runner.Reply values, and the Manager-facing methods are exercised through
-// an empty Manager (whose summary replay and hello are real).
+// These tests cover the in-process WireAdapter's hello + summary framing
+// (the R1 path, deleted at R2). The reply-room / frame tables that used to
+// live here moved to xc-scraper hub/frame_test.go with the daemon (step 8,
+// X3); the per-principal hello table for the wire-mode Adapter is in
+// adapter_test.go. The manager cannot be populated with runners from
+// outside its package (that needs an xemu instance), so the Manager-facing
+// methods are exercised through an empty Manager (whose summary replay and
+// hello are real).
 
 // envelopeBytes marshals a minimal envelope for class/instance.
 func envelopeBytes(t *testing.T, class, instance string, tick uint32) []byte {
@@ -45,100 +45,6 @@ func decodeFramed(t *testing.T, data []byte) (websocket.Message, scraper.Envelop
 		t.Fatalf("unmarshal scraper.Envelope: %v", err)
 	}
 	return msg, env
-}
-
-// TestReplyRoomTable pins the room every reply class is framed for: the
-// per-class room for state classes (what the pre-3c join replay used), the
-// legacy bare host:<inst> for the events + probe request/reply channels
-// (protocol bug 4 — preserved on purpose), and host:summary for the
-// cross-instance summary.
-func TestReplyRoomTable(t *testing.T) {
-	cases := []struct {
-		rep  runner.Reply
-		want string
-	}{
-		{runner.Reply{Instance: "bravo", Class: "tick"}, "host:bravo:tick"},
-		{runner.Reply{Instance: "alpha", Class: "game"}, "host:alpha:game"},
-		{runner.Reply{Instance: "alpha", Class: wire.ClassGameFiltered}, "host:alpha:game_filtered"},
-		{runner.Reply{Instance: "alpha", Class: wire.ClassPreviousGame}, "host:alpha:previous_game"},
-		{runner.Reply{Instance: "alpha", Class: wire.ClassEvents}, "host:alpha"},
-		{runner.Reply{Instance: "alpha", Class: wire.ClassProbe}, "host:alpha"},
-		{runner.Reply{Instance: "", Class: wire.ClassSummary}, wire.SummaryRoom},
-	}
-	for _, tc := range cases {
-		got, ok := replyRoom(tc.rep)
-		if !ok || got != tc.want {
-			t.Fatalf("replyRoom(%+v) = (%q, %v), want (%q, true)", tc.rep, got, ok, tc.want)
-		}
-	}
-	if room, ok := replyRoom(runner.Reply{Instance: "alpha", Class: "nope"}); ok {
-		t.Fatalf("replyRoom(unknown class) = (%q, true), want unroutable", room)
-	}
-}
-
-// TestFrameReplyWrapsEnvelopeUnchanged: the framed bytes are
-// wire.Message{type:"scraper", room:<room>, payload:<envelope>} with the
-// envelope byte-identical inside — the same three-layer shape the manager
-// framed before 3c (tick → host:bravo:tick, events → host:alpha).
-func TestFrameReplyWrapsEnvelopeUnchanged(t *testing.T) {
-	env := envelopeBytes(t, "tick", "bravo", 1234)
-	data, ok := frameReply(runner.Reply{Instance: "bravo", Class: "tick", Envelope: env})
-	if !ok {
-		t.Fatal("frameReply: ok=false")
-	}
-	msg, inner := decodeFramed(t, data)
-	if msg.Type != "scraper" {
-		t.Fatalf("msg.type = %q, want %q", msg.Type, "scraper")
-	}
-	if msg.Room != "host:bravo:tick" {
-		t.Fatalf("tick room = %q, want %q", msg.Room, "host:bravo:tick")
-	}
-	if string(msg.Payload) != string(env) {
-		t.Fatalf("payload bytes changed by framing:\n got %s\nwant %s", msg.Payload, env)
-	}
-	if inner.Type != "tick" || inner.Instance != "bravo" || inner.V != scraper.ProtocolVersion || inner.Tick != 1234 {
-		t.Fatalf("inner envelope = %+v", inner)
-	}
-
-	env = envelopeBytes(t, wire.ClassEvents, "alpha", 100)
-	data, ok = frameReply(runner.Reply{Instance: "alpha", Class: wire.ClassEvents, Envelope: env})
-	if !ok {
-		t.Fatal("frameReply(events): ok=false")
-	}
-	msg, inner = decodeFramed(t, data)
-	if msg.Room != "host:alpha" {
-		t.Fatalf("events msg.room = %q, want %q", msg.Room, "host:alpha")
-	}
-	if inner.Type != wire.ClassEvents || inner.Instance != "alpha" || inner.Tick != 100 {
-		t.Fatalf("events inner envelope = %+v", inner)
-	}
-}
-
-// TestFrameRepliesPreservesNilAndOrder: a nil reply list (runner does not
-// exist) stays nil so the WS handlers' "nothing to replay" branch is
-// unchanged; a populated list is framed in order with unroutable entries
-// dropped.
-func TestFrameRepliesPreservesNilAndOrder(t *testing.T) {
-	if got := frameReplies(nil); got != nil {
-		t.Fatalf("frameReplies(nil) = %v, want nil", got)
-	}
-	if got := frameReplies([]runner.Reply{}); got == nil || len(got) != 0 {
-		t.Fatalf("frameReplies(empty) = %v, want empty non-nil", got)
-	}
-	reps := []runner.Reply{
-		{Instance: "a", Class: "xbox", Envelope: envelopeBytes(t, "xbox", "a", 0)},
-		{Instance: "a", Class: "bogus", Envelope: envelopeBytes(t, "bogus", "a", 0)},
-		{Instance: "a", Class: "game", Envelope: envelopeBytes(t, "game", "a", 0)},
-	}
-	got := frameReplies(reps)
-	if len(got) != 2 {
-		t.Fatalf("frameReplies: %d messages, want 2 (bogus dropped)", len(got))
-	}
-	m0, _ := decodeFramed(t, got[0])
-	m1, _ := decodeFramed(t, got[1])
-	if m0.Room != "host:a:xbox" || m1.Room != "host:a:game" {
-		t.Fatalf("rooms = [%q %q], want [host:a:xbox host:a:game]", m0.Room, m1.Room)
-	}
 }
 
 // TestAdapterJoinReplayForHostAll: through a real (empty) Manager the
@@ -254,7 +160,7 @@ func helloNames(p wire.HelloPayload) []string {
 // exercised through the same keep function the adapter installs
 // (authz.JoinableInstances), and the adapter method itself is checked to
 // yield [] (not nil) for every principal.
-func TestHelloPayloadForFiltersByPrincipal(t *testing.T) {
+func TestWireAdapterHelloPayloadForFiltersByPrincipal(t *testing.T) {
 	m := runner.New(runner.Options{})
 	defer m.Close()
 	a := NewWireAdapter(m)
