@@ -141,6 +141,8 @@ type Manager struct {
 	store      Store
 	containers map[string]*ContainerInfo
 	mu         sync.Mutex
+	hooksMu    sync.RWMutex
+	hooks      Hooks // lifecycle callbacks (hooks.go); fired outside mu
 }
 
 // NewManager loads persisted state via store and returns a ready Manager.
@@ -162,10 +164,11 @@ func (m *Manager) Create(name string) (*ContainerInfo, error) {
 	return m.CreateWithOptions(name, CreateOptions{})
 }
 
-// CreateWithOptions provisions a new xemu + browser container pair without
+// createWithOptions provisions a new xemu + browser container pair without
 // starting them, optionally attaching a per-instance game ISO as the DVD (see
-// CreateOptions.GameISO).
-func (m *Manager) CreateWithOptions(name string, opts CreateOptions) (*ContainerInfo, error) {
+// CreateOptions.GameISO). CreateWithOptions (hooks.go) wraps it with the
+// Created lifecycle hook, which runs after mu is released.
+func (m *Manager) createWithOptions(name string, opts CreateOptions) (*ContainerInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -578,8 +581,9 @@ func (m *Manager) Stop(name string) error {
 	return nil
 }
 
-// Remove stops and removes both containers, then removes them from state.
-func (m *Manager) Remove(name string) error {
+// remove stops and removes both containers, then removes them from state.
+// Remove (hooks.go) wraps it with the Removed lifecycle hook.
+func (m *Manager) remove(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
