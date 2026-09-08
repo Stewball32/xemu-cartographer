@@ -22,6 +22,8 @@ type HostControl interface {
 
 // HostRunners is the injected control surface (nil until wired — endpoints then
 // return 503, keeping the server bootable without the host-runner subsystem).
+// In wire mode it is the leaguescraper.Adapter (proxies to the daemon's
+// hostrunner, D-9); the endpoints answer 503 while the daemon is away.
 var HostRunners HostControl
 
 // SetHostControl wires the host-runner registry. Call before RegisterAll.
@@ -39,6 +41,9 @@ func init() {
 			if name == "" {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 			}
+			if UpstreamDown(HostRunners) {
+				return Unavailable(e)
+			}
 			return e.JSON(http.StatusOK, HostRunners.Status(name))
 		})
 
@@ -48,7 +53,8 @@ func init() {
 		//              the SAME vncinput channel natively — no takeover plumbing)
 		//   runner   = release control back to the auto-host runner
 		//   disabled = turn auto-hosting off
-		// 200 with the new Status; 404 when no runner is attached for the name.
+		// 200 with the new Status; 404 when no runner is attached for the name
+		// (or, in wire mode, when the daemon runs without --hostrunner).
 		Group.POST("/{name}/host", func(e *core.RequestEvent) error {
 			if HostRunners == nil {
 				return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "host-runner subsystem not enabled"})
@@ -66,6 +72,9 @@ func init() {
 			auth, ok := hostrunner.ParseAuthority(body.Authority)
 			if !ok {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "authority must be one of: runner, admin, disabled"})
+			}
+			if UpstreamDown(HostRunners) {
+				return Unavailable(e)
 			}
 			if !HostRunners.SetAuthority(name, auth) {
 				return e.JSON(http.StatusNotFound, map[string]string{"error": "no host runner attached for " + name})

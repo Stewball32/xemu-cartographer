@@ -196,7 +196,9 @@
 		try {
 			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/start`), {
 				loading: { title: 'Starting', description: name },
-				success: { title: 'Started', description: name },
+				// The scraper attaches asynchronously (wire mode answers 202): the
+				// tile keeps saying "attaching…" until the list phase changes.
+				success: { title: 'Started', description: `${name} · scraper attaching…` },
 				errorTitle: 'Start failed'
 			});
 		} catch {
@@ -774,7 +776,7 @@
 								<div
 									class="text-surface-500-400 flex flex-1 items-center justify-center py-6 text-sm italic"
 								>
-									Not running
+									{row.status === 'running' && !row.phase ? 'Attaching…' : 'Not running'}
 								</div>
 							{/if}
 

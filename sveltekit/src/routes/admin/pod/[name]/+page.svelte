@@ -128,7 +128,9 @@
 		try {
 			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/start`), {
 				loading: { title: 'Starting', description: name },
-				success: { title: 'Started', description: name },
+				// The scraper attaches asynchronously (wire mode answers 202): the
+				// phase tile reads "attaching…" until the list phase changes.
+				success: { title: 'Started', description: `${name} · scraper attaching…` },
 				errorTitle: 'Start failed'
 			});
 		} catch {
@@ -283,9 +285,9 @@
 		/>
 		<StatTile
 			label="scraper phase"
-			display={phase ?? '—'}
+			display={phase ?? (isRunning ? 'attaching…' : '—')}
 			statusKind={phaseTileKind}
-			title={isRunning ? `scraper running · phase ${phase ?? 'unknown'}` : 'scraper stopped'}
+			title={isRunning ? `scraper running · phase ${phase ?? 'attaching'}` : 'scraper stopped'}
 			icon={phaseIcon}
 		/>
 		<StatTile

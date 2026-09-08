@@ -1,12 +1,14 @@
 package scraper
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
@@ -118,6 +120,9 @@ func init() {
 			if name == "" {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 			}
+			if ctl := Wire(HostRunners); ctl != nil {
+				return wireDiagnostics(e, ctl, name)
+			}
 			resp := diagnosticsResponse{Diagnostics: HostRunners.Diagnostics(name)}
 			// Overlay the CURRENT tick's reads so the panel is live even when no host
 			// runner is attached (registry events only flow while a runner ticks).
@@ -145,4 +150,40 @@ func init() {
 			return e.JSON(http.StatusOK, resp)
 		})
 	})
+}
+
+// wireDiagnostics is the wire-mode branch: the daemon composes the same
+// snapshot server-side (GET /api/instances/{n}/diagnostics — registry
+// snapshot → live readout overlay → health → map list, §6.1), so one
+// proxied call replaces the four source reads above. The JSON shape stays
+// diagnosticsResponse. 503 while the daemon is away, 404 when nothing is
+// attached under name (the daemon's not_found), 502 for any other failure.
+func wireDiagnostics(e *core.RequestEvent, ctl *xcclient.Ctl, name string) error {
+	d, err := ctl.Diagnostics(e.Request.Context(), name)
+	if err != nil {
+		if IsUpstreamDown(err) {
+			return Unavailable(e)
+		}
+		if errors.Is(err, &xcclient.Error{Status: http.StatusNotFound}) {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "no runner attached for " + name})
+		}
+		return e.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
+	}
+	resp := diagnosticsResponse{Diagnostics: d.HostRunner}
+	if resp.Instance == "" {
+		resp.Instance = name
+	}
+	// The daemon already applied the readout overlay to host_runner; Present
+	// travels alongside it.
+	resp.Present = resp.Present || d.Present
+	if d.Health != nil {
+		hh := *d.Health
+		resp.HostHealth = &hh
+		resp.HostHealthAgeMs = d.HealthAgeMs
+	}
+	resp.EnumeratedMaps = optionNames(d.Maps.Maps)
+	resp.EnumeratedGametypes = optionNames(d.Maps.Gametypes)
+	resp.HighlightedMap = nameAtCursor(resp.EnumeratedMaps, resp.MapCursor.Index, resp.MapCursor.Count)
+	resp.HighlightedGametype = nameAtCursor(resp.EnumeratedGametypes, resp.GametypeCursor.Index, resp.GametypeCursor.Count)
+	return e.JSON(http.StatusOK, resp)
 }

@@ -1,6 +1,7 @@
 package play
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 )
 
@@ -24,10 +27,16 @@ func init() {
 }
 
 // requireHost guards the endpoints that need the host-runner subsystem. Returns
-// false (after writing 503) when it isn't wired.
+// false (after writing 503) when it isn't wired, or — in wire mode, where the
+// control surface proxies to the daemon (D-9) — while the daemon is away (§16
+// "503 while daemon down").
 func requireHost(e *core.RequestEvent) bool {
 	if HostRunners == nil {
 		_ = e.JSON(http.StatusServiceUnavailable, map[string]string{"error": "host-runner subsystem not enabled"})
+		return false
+	}
+	if scraperroutes.UpstreamDown(HostRunners) {
+		_ = scraperroutes.Unavailable(e)
 		return false
 	}
 	return true
@@ -200,6 +209,12 @@ func registerSelection() {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "both map and gametype must be chosen"})
 		}
 
+		// Wire mode (§6.2): only the two names travel. The daemon owns the live
+		// carousel and computes the steps itself.
+		if ctl := scraperroutes.Wire(HostRunners); ctl != nil {
+			return wireSelection(e, ctl, name, mapName, gametype)
+		}
+
 		// Validate the pick against the LIVE list (reject maps/gametypes not on this
 		// disc); accept free-form when the instance isn't enumerable yet. Each list's
 		// Steps is the ABSOLUTE carousel index (position), which becomes the runner's
@@ -226,6 +241,34 @@ func registerSelection() {
 		}
 		return e.JSON(http.StatusOK, HostRunners.Status(name))
 	})
+}
+
+// wireSelection forwards {map, gametype} to PUT /api/ctl/instances/{n}/host/
+// selection and maps the daemon's answers onto today's route contract:
+// 409 not_in_carousel → 400 (a pick that is not on this disc), 404 no_maps →
+// 409 (the carousel is not enumerated yet — in-process accepted the names
+// free-form; the daemon does not, §6.2), 404 otherwise → 404 (no host runner
+// attached / --hostrunner off), daemon away → 503, anything else → 502.
+func wireSelection(e *core.RequestEvent, ctl *xcclient.Ctl, name, mapName, gametype string) error {
+	st, err := ctl.SetSelection(e.Request.Context(), name, mapName, gametype)
+	if err == nil {
+		return e.JSON(http.StatusOK, st)
+	}
+	if scraperroutes.IsUpstreamDown(err) {
+		return scraperroutes.Unavailable(e)
+	}
+	var de *xcclient.Error
+	if errors.As(err, &de) {
+		switch {
+		case de.Code == "not_in_carousel":
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": de.Message})
+		case de.Code == "no_maps":
+			return e.JSON(http.StatusConflict, map[string]string{"error": de.Message})
+		case de.Status == http.StatusNotFound:
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "no host runner attached for " + name})
+		}
+	}
+	return e.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 }
 
 // liveMaps returns the per-instance live map list, or an empty (unavailable) list

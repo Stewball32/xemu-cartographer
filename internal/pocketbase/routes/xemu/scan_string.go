@@ -66,6 +66,16 @@ func init() {
 					"error": "sock and q query parameters are required",
 				})
 			}
+			// Wire mode: forwarded as POST /api/ctl/xemu/scan_string.
+			if ctl := wireCtl(); ctl != nil {
+				body := map[string]any{"addr": addrOf(sock), "q": needle}
+				strKnob(body, q, "start")
+				strKnob(body, q, "end")
+				strKnob(body, q, "encoding")
+				intKnob(body, q, "max")
+				intKnob(body, q, "context")
+				return proxy(e, ctl, "scan_string", body)
+			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("sock %q not accessible: %v", sock, err),

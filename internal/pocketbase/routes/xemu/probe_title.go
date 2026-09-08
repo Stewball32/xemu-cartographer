@@ -57,6 +57,14 @@ func init() {
 					"error": "sock query parameter is required",
 				})
 			}
+			// Wire mode: forwarded as POST /api/ctl/xemu/probe_title.
+			if ctl := wireCtl(); ctl != nil {
+				q := e.Request.URL.Query()
+				body := map[string]any{"addr": addrOf(sock)}
+				intKnob(body, q, "samples")
+				intKnob(body, q, "interval_ms")
+				return proxy(e, ctl, "probe_title", body)
+			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("sock %q not accessible: %v", sock, err),

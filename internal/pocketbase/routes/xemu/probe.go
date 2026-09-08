@@ -37,6 +37,10 @@ func init() {
 					"error": "sock query parameter is required",
 				})
 			}
+			// Wire mode: the daemon owns the socket (attached instances only).
+			if ctl := wireCtl(); ctl != nil {
+				return proxy(e, ctl, "probe", map[string]any{"addr": addrOf(sock)})
+			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("sock %q not accessible: %v", sock, err),

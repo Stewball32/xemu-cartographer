@@ -1,5 +1,7 @@
 // Package xemu exposes /api/admin/xemu/* endpoints for smoke-testing the
-// memory bridge against a running xemu instance.
+// memory bridge against a running xemu instance. In-process they open the
+// QMP socket themselves; in wire mode (XC_SCRAPER_URL set) each GET is
+// relayed to the daemon's POST /api/ctl/xemu/{tool} — see proxy.go.
 package xemu
 
 import (
