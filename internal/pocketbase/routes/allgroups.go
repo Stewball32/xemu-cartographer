@@ -14,6 +14,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/team_membership_requests"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/teams"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/tokens"
+	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/xc"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/xemu"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -34,5 +35,6 @@ func registerAllGroups(se *core.ServeEvent) {
 	team_membership_requests.RegisterAll(se)
 	teams.RegisterAll(se)
 	tokens.RegisterAll(se)
+	xc.RegisterAll(se)
 	xemu.RegisterAll(se)
 }

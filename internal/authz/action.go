@@ -18,6 +18,7 @@ const (
 	ActionScraperProbe  Action = "scraper.probe"  // ResInstance
 	ActionScraperEvents Action = "scraper.events" // ResInstance
 	ActionScraperState  Action = "scraper.state"  // ResInstance
+	ActionScraperIngest Action = "scraper.ingest" // ResGlobal; POST /api/xc/finished_game (daemon webhook)
 
 	// Overlay
 	ActionOverlayReadState    Action = "overlay.read_state"    // ResInstance
@@ -92,6 +93,7 @@ var allActions = []Action{
 	ActionScraperProbe,
 	ActionScraperEvents,
 	ActionScraperState,
+	ActionScraperIngest,
 	ActionOverlayReadState,
 	ActionOverlayListConsoles,
 	ActionOverlayMint,

@@ -167,6 +167,11 @@ func main() {
 		// machine key carrying lan.saves.* + lan.sync.* so existing LAN stations
 		// keep working; the boot report below nags to rotate it.
 		authzpb.ImportLegacyEnv(authzDeps, os.Getenv)
+		// XC_SCRAPER_WEBHOOK_TOKEN (step 8 §7.2): imported as the in-memory
+		// "webhook-env" machine key carrying scraper.ingest so the xc-scraper
+		// daemon's finished_game webhook (POST /api/xc/finished_game) works in
+		// every tier without UI minting; the boot report nags to mint a real key.
+		webhookImported := authzpb.ImportWebhookEnv(authzDeps, os.Getenv)
 
 		if err := seed.Run(app); err != nil {
 			return err
@@ -189,6 +194,7 @@ func main() {
 		// anonymous-scopes row reflect what this boot actually ends up with.
 		authzDeps.InvalidateRoles()
 		authzpb.LogStartup(authzpb.Inspect(app, authzDeps), log.Printf)
+		authzpb.LogWebhookEnv(webhookImported, log.Printf)
 
 		// Player-hosting (ADR-0003): the host-runner Registry owns the per-instance
 		// state-aware runners and fans their observable stream to the admin WS room.
