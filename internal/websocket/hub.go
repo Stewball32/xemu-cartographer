@@ -1,11 +1,15 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 
+	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
@@ -40,7 +44,28 @@ type Hub struct {
 
 	done chan struct{}
 	once sync.Once
+
+	// Room occupancy observer (SetRoomObserver). Membership mutations post
+	// the room name to roomEvents AFTER releasing mu (non-blocking; a full
+	// channel sets dirty instead of dropping) and the observer goroutine
+	// recomputes occupancy through RoomHasMembers before firing the hook —
+	// so the hook never runs under mu and a lost post cannot leave an edge
+	// unreported. observed is the observer goroutine's own record of the
+	// rooms it last reported occupied (touched by nobody else).
+	observer   atomic.Pointer[RoomObserver]
+	roomEvents chan string
+	dirty      atomic.Bool
+	observed   map[string]bool
+	obsOnce    sync.Once
 }
+
+// RoomObserver is the occupancy hook SetRoomObserver installs: occupied is
+// true on a room's 0→1 edge and false on its 1→0 edge.
+type RoomObserver func(room string, occupied bool)
+
+// roomEventBuf bounds the posts queued for the observer goroutine; a burst
+// beyond it (a mass disconnect) sets dirty and triggers a full re-walk.
+const roomEventBuf = 1024
 
 // incomingMsg pairs a message with the client that sent it.
 type incomingMsg struct {
@@ -77,6 +102,8 @@ func NewHub(app core.App) *Hub {
 		joinRoom:   make(chan roomOp),
 		leaveRoom:  make(chan roomOp),
 		done:       make(chan struct{}),
+		roomEvents: make(chan string, roomEventBuf),
+		observed:   make(map[string]bool),
 	}
 }
 
@@ -141,25 +168,35 @@ func (h *Hub) requestUnregister(c *Client) {
 // it in the room index.
 func (h *Hub) addToRoom(c *Client, room string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if !h.clients[c] {
+		h.mu.Unlock()
 		return
 	}
-	if h.rooms[room] == nil {
+	edge := h.rooms[room] == nil
+	if edge {
 		h.rooms[room] = make(map[*Client]bool)
 	}
 	h.rooms[room][c] = true
+	h.mu.Unlock()
+	if edge {
+		h.noteRoomEdge(room)
+	}
 }
 
 // removeFromRoom drops the client's membership of room (no-op if absent).
 func (h *Hub) removeFromRoom(c *Client, room string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	edge := false
 	if members, ok := h.rooms[room]; ok {
 		delete(members, c)
 		if len(members) == 0 {
 			delete(h.rooms, room)
+			edge = true
 		}
+	}
+	h.mu.Unlock()
+	if edge {
+		h.noteRoomEdge(room)
 	}
 }
 
@@ -593,14 +630,19 @@ func (h *Hub) trySend(client *Client, data []byte) {
 // to stop. Runs on the Run goroutine only; idempotent.
 func (h *Hub) removeClient(client *Client) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if _, ok := h.clients[client]; !ok {
+		h.mu.Unlock()
 		return
 	}
+	var emptied []string
 	for room, members := range h.rooms {
+		if !members[client] {
+			continue
+		}
 		delete(members, client)
 		if len(members) == 0 {
 			delete(h.rooms, room)
+			emptied = append(emptied, room)
 		}
 	}
 	if uid := client.UserID(); uid != "" {
@@ -611,4 +653,116 @@ func (h *Hub) removeClient(client *Client) {
 	}
 	delete(h.clients, client)
 	client.markClosed()
+	h.mu.Unlock()
+	for _, room := range emptied {
+		h.noteRoomEdge(room)
+	}
+}
+
+// --- Room occupancy observer + eviction (DESIGN-STEP8 §8.3) ---
+
+// SetRoomObserver installs fn as the occupancy hook: it is called with
+// occupied=true when a room gains its first member and occupied=false when
+// its last member leaves (removeFromRoom, or removeClient for every room the
+// departing client emptied). fn runs on the Hub's observer goroutine, never
+// under mu, and never twice in a row with the same value for one room: the
+// goroutine recomputes occupancy through RoomHasMembers for every posted
+// room rather than trusting an edge value, so a burst that overflows the
+// post queue (dirty) is repaired by a re-walk of every room it reported
+// occupied plus every room the Hub currently holds. A nil fn stops the
+// notifications; the goroutine exits with Stop.
+func (h *Hub) SetRoomObserver(fn RoomObserver) {
+	if fn == nil {
+		h.observer.Store(nil)
+		return
+	}
+	h.observer.Store(&fn)
+	h.obsOnce.Do(func() { go h.observeRooms() })
+}
+
+// noteRoomEdge posts a room whose occupancy just crossed an edge. Callers
+// must NOT hold mu. Non-blocking: on overflow it sets dirty so the observer
+// re-walks instead of silently losing the edge.
+func (h *Hub) noteRoomEdge(room string) {
+	if h.observer.Load() == nil {
+		return
+	}
+	select {
+	case h.roomEvents <- room:
+	default:
+		h.dirty.Store(true)
+	}
+}
+
+// observeRooms is the observer goroutine: drain posts, recompute, fire.
+func (h *Hub) observeRooms() {
+	for {
+		if h.dirty.Swap(false) {
+			h.rewalkRooms()
+		}
+		select {
+		case room := <-h.roomEvents:
+			h.checkRoom(room)
+		case <-h.done:
+			return
+		}
+	}
+}
+
+// checkRoom recomputes one room's occupancy and fires the hook on change.
+func (h *Hub) checkRoom(room string) {
+	occupied := h.RoomHasMembers(room)
+	if h.observed[room] == occupied {
+		return
+	}
+	if occupied {
+		h.observed[room] = true
+	} else {
+		delete(h.observed, room)
+	}
+	if fn := h.observer.Load(); fn != nil {
+		(*fn)(room, occupied)
+	}
+}
+
+// rewalkRooms re-checks every room the observer reported occupied (a lost
+// 1→0 edge) and every room the Hub currently holds (a lost 0→1 edge).
+func (h *Hub) rewalkRooms() {
+	rooms := make(map[string]bool, len(h.observed))
+	for room := range h.observed {
+		rooms[room] = true
+	}
+	h.mu.RLock()
+	for room := range h.rooms {
+		rooms[room] = true
+	}
+	h.mu.RUnlock()
+	for room := range rooms {
+		h.checkRoom(room)
+	}
+}
+
+// EvictRoomPrefix closes the socket of every client holding a room whose
+// name starts with prefix — the wire-mode consumer's "upstream resync"
+// (1012 + reason, no error frame: wire.md has no resync code, and the
+// frontend reconnects on any close it did not see session_revoked before).
+// Each close runs on its own goroutine so a stalled peer cannot hold the
+// others up; the client leaves the Hub when its readPump ends, as with any
+// disconnect. Returns the number of clients evicted.
+func (h *Hub) EvictRoomPrefix(prefix string, status websocket.StatusCode, reason string) int {
+	victims := map[*Client]bool{}
+	h.mu.RLock()
+	for room, members := range h.rooms {
+		if !strings.HasPrefix(room, prefix) {
+			continue
+		}
+		for c := range members {
+			victims[c] = true
+		}
+	}
+	h.mu.RUnlock()
+	for c := range victims {
+		go c.evictWith(context.Background(), status, "", reason)
+	}
+	return len(victims)
 }

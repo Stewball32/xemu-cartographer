@@ -8,7 +8,23 @@ import (
 )
 
 func init() {
-	register("request_events", handleRequestEvents)
+	register("request_events", async(handleRequestEvents))
+}
+
+// async wraps a request handler so it runs off the Hub's dispatch goroutine
+// (DESIGN-STEP8 §8.5, F2). request_events / request_probe end in a scraper
+// round-trip that in wire mode is an HTTP hop to the daemon; run inline it
+// would stall the Run loop — and every other client's frames — for the
+// duration of that upstream I/O. Everything the handler touches is
+// goroutine-safe: the principal is a value copy, the authz deps and the
+// scraper adapter serve HTTP handlers concurrently already, Rooms reads
+// under the Hub's RLock and SendRaw is trySend, which after the client's
+// removal drops the frame rather than sending on a closed channel (send is
+// never closed). The dispatch-time decisions (registered sender, kind
+// whitelist) already ran on the Run goroutine before the handler was
+// looked up.
+func async(fn HandlerFunc) HandlerFunc {
+	return func(e *Event) { go fn(e) }
 }
 
 // requestEventsPayload mirrors the inbound WebSocket payload shape:
@@ -23,7 +39,8 @@ type requestEventsPayload struct {
 // handleRequestEvents replies to the requester with the recent event log
 // for each host:<name> room they are subscribed to, filtered by the
 // optional since_tick + types parameters in the request payload. M5
-// stage 5d.
+// stage 5d. Registered through async: the Hub dispatches it on its own
+// goroutine, so a slow Replayer never blocks the Run loop.
 //
 // Reply shape: one envelope per host:<name> room the requester is in,
 // of inner type "events" (plural; distinct from per-event live "event"

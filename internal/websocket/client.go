@@ -157,15 +157,32 @@ func (c *Client) writePump(ctx context.Context) {
 }
 
 // evict tells the browser why it is being cut off and closes the socket
-// with closeSessionRevoked. The error frame is written directly (not queued
-// on send) so it is on the wire before the close frame; coder/websocket
-// serialises concurrent writers. readPump's exit then unregisters the
-// client from the Hub.
+// with closeSessionRevoked (error frame {code, message} first, then the
+// close frame carrying code as its reason).
 func (c *Client) evict(ctx context.Context, code, message string) {
+	c.evictWith(ctx, closeSessionRevoked, code, message)
+}
+
+// evictWith closes the socket with status. When errCode is set an error
+// frame {errCode, message} goes first, written directly (not queued on
+// send) so it is on the wire before the close frame — coder/websocket
+// serialises concurrent writers — and the close reason echoes errCode; with
+// errCode empty no error frame is sent and message is the close reason
+// (the 1012 "upstream resync" path, which the frontend treats as a plain
+// reconnect). readPump's exit then unregisters the client from the Hub.
+// A client without a socket (test fixtures) is left alone.
+func (c *Client) evictWith(ctx context.Context, status websocket.StatusCode, errCode, message string) {
+	if c.conn == nil {
+		return
+	}
 	writeCtx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
-	if data, ok := errorMessage("", code, message); ok {
-		_ = c.conn.Write(writeCtx, websocket.MessageText, data)
+	reason := message
+	if errCode != "" {
+		reason = errCode
+		if data, ok := errorMessage("", errCode, message); ok {
+			_ = c.conn.Write(writeCtx, websocket.MessageText, data)
+		}
 	}
-	_ = c.conn.Close(closeSessionRevoked, code)
+	_ = c.conn.Close(status, reason)
 }

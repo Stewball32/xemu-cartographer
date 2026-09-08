@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	register("request_probe", handleRequestProbe)
+	register("request_probe", async(handleRequestProbe))
 }
 
 // requestProbePayload mirrors the inbound WebSocket payload shape.
@@ -23,7 +23,9 @@ type requestProbePayload struct {
 
 // handleRequestProbe replies to the requester with the on-demand
 // probe envelope for the named instance (or every host:<name> room
-// the requester is in, if no instance was specified).
+// the requester is in, if no instance was specified). Registered through
+// async (request_events.go): the probe round-trip runs off the Hub's Run
+// goroutine.
 //
 // Reply shape: one envelope of inner type "probe" per matched
 // instance, addressed to room host:<name>. Payload is the
