@@ -2,6 +2,7 @@ package xemu
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -111,6 +112,31 @@ func TestParityRealDaemon(t *testing.T) {
 	if code, _ := do(http.MethodPost, "/api/admin/scraper/start", start); code != http.StatusConflict {
 		t.Errorf("second start: %d, want 409", code)
 	}
+	// Pod list row (§6.1 / §16): the list is the daemon's read-API view, so
+	// the retrying attach is visible as phase "attaching" with its sock and
+	// last error — the stream mirror alone would never show it.
+	listRows := func() []xcclient.InstanceRow {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/scraper", nil)
+		req.Header.Set("Authorization", tok)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+		}
+		var rows []xcclient.InstanceRow
+		if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+			t.Fatalf("list decode: %v", err)
+		}
+		return rows
+	}
+	waitFor(t, "attach error recorded", func() bool { // 1 s cache; the loop's first failure lands right after the 202
+		rows := listRows()
+		return len(rows) == 1 && rows[0].Error != ""
+	})
+	if rows := listRows(); len(rows) != 1 || rows[0].Name != "nox" || rows[0].Phase != scraperroutes.PhaseAttaching || rows[0].Sock != sock || rows[0].Running {
+		t.Errorf("list while attaching: %+v", rows)
+	}
 	// The daemon's bad_addr (relative unix path) maps onto ErrInvalidName → 400.
 	if code, body := do(http.MethodPost, "/api/admin/scraper/start", `{"name":"nox","sock":"relative.sock"}`); code != http.StatusBadRequest {
 		t.Errorf("relative sock: %d %v, want 400 (daemon bad_addr)", code, body)
@@ -143,10 +169,18 @@ func TestParityRealDaemon(t *testing.T) {
 			t.Errorf("stop #%d: %d, want 204", i+1, code)
 		}
 	}
-	// NOTE: an immediate re-start here answers 409 — the daemon's Detach does
-	// not cancel a still-retrying attach loop (daemon/api.go launchAttach /
-	// server.go Detach), so the name stays pending until the loop gives up.
-	// Recorded as a follow-up for the daemon; not asserted either way.
+	// Stop cancelled the retrying loop (post-verification fix): the row
+	// reads "detached" (Stop drops the 1 s cache) and an immediate re-start
+	// is accepted, not 409.
+	if rows := listRows(); len(rows) != 1 || rows[0].Phase != daemon.PhaseDetached || rows[0].Sock != sock {
+		t.Errorf("list after stop: %+v", rows)
+	}
+	if code, body := do(http.MethodPost, "/api/admin/scraper/start", start); code != http.StatusAccepted {
+		t.Errorf("re-start after stop: %d %v, want 202", code, body)
+	}
+	if code, _ := do(http.MethodPost, "/api/admin/scraper/nox/stop", ""); code != http.StatusNoContent {
+		t.Errorf("stop relaunched loop: %d, want 204", code)
+	}
 
 	// 503 while daemon down (Play picker / Admin rows): kill the daemon, wait
 	// for the stream gate to drop, and every proxied route must fail fast.
@@ -172,8 +206,13 @@ func TestParityRealDaemon(t *testing.T) {
 			t.Errorf("%s %s while down: %d %v, want 503", tc.method, tc.path, code, body)
 		}
 	}
-	if code, _ := do(http.MethodGet, "/api/admin/scraper", ""); code != http.StatusOK {
-		t.Errorf("list while down: %d, want 200 (mirror)", code)
+	// The list 503s too (§11 / §12); /upstream keeps answering with the
+	// disconnect timestamp — that is its point.
+	if code, body := do(http.MethodGet, "/api/admin/scraper", ""); code != http.StatusServiceUnavailable || body["error"] != scraperroutes.UnavailableMessage {
+		t.Errorf("list while down: %d %v, want 503", code, body)
+	}
+	if code, body := do(http.MethodGet, "/api/admin/scraper/upstream", ""); code != http.StatusOK || body["mode"] != scraperroutes.ModeWire || body["connected"] != false {
+		t.Errorf("upstream while down: %d %v, want 200 mode=wire connected=false", code, body)
 	}
 }
 

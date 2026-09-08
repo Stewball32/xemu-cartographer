@@ -16,6 +16,7 @@ import (
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
+	"github.com/xemu-cartographer/xc-scraper/daemon"
 	"github.com/xemu-cartographer/xc-scraper/hosthealth"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/runner"
@@ -83,6 +84,15 @@ func newFakeDaemon(t *testing.T) *fakeDaemon {
 		return hostrunner.Status{Instance: name, Present: true, Authority: "runner", SelectedMap: "Blood Gulch"}
 	}
 
+	mux.HandleFunc("GET /api/instances", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		writeJSON(w, http.StatusOK, []xcclient.InstanceRow{
+			{Info: runner.Info{Name: "smoke1", Sock: "/run/smoke1.sock"}, Phase: "ready", Running: true,
+				Attach: daemon.AttachInfo{Kind: "unix", Addr: "/run/smoke1.sock"}},
+			{Info: runner.Info{Name: "bogus", Sock: "/run/bogus.sock"}, Phase: daemon.PhaseAttaching,
+				Attach: daemon.AttachInfo{Kind: "unix", Addr: "/run/bogus.sock"}, Error: "dial unix /run/bogus.sock: no such file or directory"},
+		})
+	})
 	mux.HandleFunc("GET /api/instances/{name}/inspect", func(w http.ResponseWriter, r *http.Request) {
 		if name, ok := attached(w, r); ok {
 			writeJSON(w, http.StatusOK, runner.InspectState{Info: runner.Info{Name: name}, Phase: "ready"})

@@ -1,12 +1,15 @@
 package scraper
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 )
 
@@ -173,8 +176,13 @@ func TestWireUpstreamDown503(t *testing.T) {
 	if path, _, _ := f.daemon.last(); path != "" {
 		t.Errorf("daemon was called while down: %s", path)
 	}
-	if code, _ := call(t, mux, tok, http.MethodGet, "/api/admin/scraper", ""); code != http.StatusOK {
-		t.Errorf("list while down: %d, want 200 (mirror)", code)
+	// The list 503s too (§11 / §12) — an empty mirror must not read as
+	// "no instances" — while /upstream keeps answering (that is its point).
+	if code, body := call(t, mux, tok, http.MethodGet, "/api/admin/scraper", ""); code != http.StatusServiceUnavailable || body["error"] != UnavailableMessage {
+		t.Errorf("list while down: %d %v, want 503", code, body)
+	}
+	if code, body := call(t, mux, tok, http.MethodGet, "/api/admin/scraper/upstream", ""); code != http.StatusOK || body["mode"] != ModeWire || body["connected"] != false {
+		t.Errorf("upstream while down: %d %v, want 200 mode=wire connected=false", code, body)
 	}
 
 	// Back up: the same routes work again without a rebuild.
@@ -194,5 +202,57 @@ func TestInProcessDiagnosticsUnchanged(t *testing.T) {
 	}
 	if code, _ := call(t, mux, tok, http.MethodGet, "/api/admin/scraper/box1/host", ""); code != http.StatusOK {
 		t.Errorf("host: %d, want 200", code)
+	}
+}
+
+// TestWireListRows pins the wire-mode list source (§6.1 / §16): the daemon's
+// GET /api/instances rows, so an attach the daemon is still retrying shows
+// up with phase "attaching" and its last error instead of vanishing from
+// the (stream-fed) mirror.
+func TestWireListRows(t *testing.T) {
+	f := newWireFixture(t)
+	mux, tok := newMux(t, f.adapter, f.adapter)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/scraper", nil)
+	req.Header.Set("Authorization", tok)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var rows []xcclient.InstanceRow
+	if err := json.Unmarshal(rec.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Name != "smoke1" || !rows[0].Running || rows[0].Phase != "ready" {
+		t.Fatalf("rows: %+v", rows)
+	}
+	if rows[1].Name != "bogus" || rows[1].Phase != PhaseAttaching || rows[1].Running || rows[1].Error == "" || rows[1].Sock != "/run/bogus.sock" {
+		t.Fatalf("attaching row: %+v", rows[1])
+	}
+	if path, _, _ := f.daemon.last(); path != "/api/instances" {
+		t.Errorf("daemon path: %q, want /api/instances", path)
+	}
+}
+
+// TestUpstreamStatus pins GET /api/admin/scraper/upstream in both modes.
+func TestUpstreamStatus(t *testing.T) {
+	f := newWireFixture(t)
+	mux, tok := newMux(t, f.adapter, f.adapter)
+	code, body := call(t, mux, tok, http.MethodGet, "/api/admin/scraper/upstream", "")
+	if code != http.StatusOK || body["mode"] != ModeWire {
+		t.Fatalf("wire upstream: %d %v", code, body)
+	}
+	for _, k := range []string{"connected", "since", "reconnects", "last_frame_at", "seq_gaps", "shed", "stale"} {
+		if _, ok := body[k]; !ok {
+			t.Errorf("wire upstream: missing %q in %v", k, body)
+		}
+	}
+
+	src := &inProcessScraper{FakeScraper: &pbtest.FakeScraper{}}
+	mux, tok = newMux(t, src, stubHost{})
+	code, body = call(t, mux, tok, http.MethodGet, "/api/admin/scraper/upstream", "")
+	if code != http.StatusOK || body["mode"] != ModeInProcess || len(body) != 1 {
+		t.Fatalf("in-process upstream: %d %v", code, body)
 	}
 }

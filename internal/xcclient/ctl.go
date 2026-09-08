@@ -205,9 +205,15 @@ func ctlInstancePath(name, suffix string) string {
 	return "/api/ctl/instances/" + url.PathEscape(name) + suffix
 }
 
+// InstanceRow is one GET /api/instances entry (runner.Info + phase, running,
+// attach{kind,addr}, error). Aliased here so route packages name the row
+// through xcclient only; at R2 (D-15) this is the one place to re-point
+// when the daemon's body types move to a leaf package.
+type InstanceRow = daemon.InstanceRow
+
 // Instances is GET /api/instances.
-func (c *Ctl) Instances(ctx context.Context) ([]daemon.InstanceRow, error) {
-	var rows []daemon.InstanceRow
+func (c *Ctl) Instances(ctx context.Context) ([]InstanceRow, error) {
+	var rows []InstanceRow
 	err := c.Get(ctx, "/api/instances", &rows)
 	return rows, err
 }

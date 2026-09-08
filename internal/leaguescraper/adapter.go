@@ -43,6 +43,7 @@ type Adapter struct {
 
 	inspect *memo[runner.InspectState]
 	maps    *memo[runner.MapList]
+	rows    *memo[[]xcclient.InstanceRow]
 
 	logf func(string, ...any)
 }
@@ -57,6 +58,9 @@ const (
 	inspectTTL = 250 * time.Millisecond
 	// mapsTTL is the AvailableMaps cache window (§9: 2 s).
 	mapsTTL = 2 * time.Second
+	// rowsTTL is the Rows (GET /api/instances) cache window (§6.1: the
+	// admin list reads the daemon's read API through a 1 s cache).
+	rowsTTL = time.Second
 )
 
 // NewAdapter builds the adapter over c's mirror and the control client ctl
@@ -68,6 +72,7 @@ func NewAdapter(c *xcclient.Client, ctl *xcclient.Ctl) *Adapter {
 		ctl:     ctl,
 		inspect: newMemo[runner.InspectState](inspectTTL),
 		maps:    newMemo[runner.MapList](mapsTTL),
+		rows:    newMemo[[]xcclient.InstanceRow](rowsTTL),
 		logf:    log.Printf,
 	}
 	a.hello.reset()
@@ -137,6 +142,28 @@ func (a *Adapter) Inspect(name string) (runner.InspectState, bool) {
 			return runner.InspectState{}, false
 		}
 		return st, true
+	})
+}
+
+// Rows proxies GET /api/instances through a 1 s single-flight cache (§6.1,
+// §16 pod list): every running instance's Info plus the rows the daemon's
+// attach side is still retrying or holding — phase "attaching"/"detached",
+// attach{kind,addr} and the last attach error — which the stream mirror
+// (List) never sees. ok=false while the daemon is away or the read fails;
+// the admin list route answers 503 then rather than an empty mirror.
+func (a *Adapter) Rows() ([]xcclient.InstanceRow, bool) {
+	return a.rows.get("", func() ([]xcclient.InstanceRow, bool) {
+		ctx, cancel := a.ctx()
+		defer cancel()
+		rows, err := a.ctl.Instances(ctx)
+		if err != nil {
+			a.note("instances", "", err)
+			return nil, false
+		}
+		if rows == nil {
+			rows = []xcclient.InstanceRow{}
+		}
+		return rows, true
 	})
 }
 
@@ -243,6 +270,9 @@ func (a *Adapter) Start(name, sock string) error {
 	ctx, cancel := a.ctx()
 	defer cancel()
 	_, err := a.ctl.Attach(ctx, name, "unix:"+sock)
+	if err == nil {
+		a.rows.drop("") // the accepted attach is a new list row
+	}
 	return mapControlErr(err)
 }
 
@@ -252,6 +282,9 @@ func (a *Adapter) Stop(name string) error {
 	ctx, cancel := a.ctx()
 	defer cancel()
 	err := a.ctl.Detach(ctx, name)
+	if err == nil {
+		a.rows.drop("") // the row's phase just changed
+	}
 	if errors.Is(err, &xcclient.Error{Status: http.StatusNotFound}) {
 		return nil
 	}
@@ -410,6 +443,16 @@ func (m *memo[T]) get(name string, fetch func() (T, bool)) (T, bool) {
 	m.mu.Unlock()
 	close(done)
 	return val, ok
+}
+
+// drop forgets name's settled entry so the next get refetches (an
+// in-flight fetch is left to publish; it is already newer than the caller).
+func (m *memo[T]) drop(name string) {
+	m.mu.Lock()
+	if e := m.entries[name]; e != nil && e.done == nil {
+		delete(m.entries, name)
+	}
+	m.mu.Unlock()
 }
 
 // prune drops settled entries older than a minute (called under mu).

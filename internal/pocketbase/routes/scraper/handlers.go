@@ -48,6 +48,32 @@ func Unavailable(e *core.RequestEvent) error {
 	return e.JSON(http.StatusServiceUnavailable, map[string]string{"error": UnavailableMessage})
 }
 
+// RowSource is the wire Adapter's read-API list (§6.1 / §16): the daemon's
+// GET /api/instances rows through a 1 s cache. Structural like Wire — the
+// in-process WireAdapter does not have it and keeps serving Manager.List().
+type RowSource interface {
+	Rows() ([]xcclient.InstanceRow, bool)
+}
+
+// StatusSource is the wire Adapter's upstream stream client, whose Status()
+// answers GET /api/admin/scraper/upstream (§12).
+type StatusSource interface {
+	Client() *xcclient.Client
+}
+
+// ModeWire / ModeInProcess are the "mode" values of GET …/upstream.
+const (
+	ModeWire      = "wire"
+	ModeInProcess = "in-process"
+)
+
+// upstreamStatus is the GET /api/admin/scraper/upstream body in wire mode:
+// xcclient.Status flattened under a "mode" discriminator.
+type upstreamStatus struct {
+	Mode string `json:"mode"`
+	xcclient.Status
+}
+
 // PhaseAttaching is the phase POST /start reports in wire mode: the daemon
 // accepted the attach (202) and the outcome surfaces in the list phase.
 const PhaseAttaching = "attaching"
@@ -62,10 +88,40 @@ type startAccepted struct {
 func init() {
 	register(func() {
 		// GET /api/admin/scraper — list every running scraper.
-		// Sorted by name (Manager.List handles ordering). In wire mode the list
-		// is the mirror, which keeps serving until the stale clear (D-12).
+		// In-process: Manager.List() (sorted by name). Wire mode (§6.1 / §16):
+		// the daemon's GET /api/instances rows (1 s cache) — runner.Info plus
+		// phase / running / attach{kind,addr} / error, so an attach the daemon
+		// is still retrying (typo'd socket, box not up yet) or holding shows
+		// up as phase "attaching" / "detached" with its last error instead of
+		// vanishing; 503 while the daemon is away (§11 / §12), never an empty
+		// list an operator could mistake for "no instances".
 		Group.GET("", func(e *core.RequestEvent) error {
+			if UpstreamDown(Manager) {
+				return Unavailable(e)
+			}
+			if src, ok := Manager.(RowSource); ok && Wire(Manager) != nil {
+				rows, ok := src.Rows()
+				if !ok {
+					return Unavailable(e)
+				}
+				return e.JSON(http.StatusOK, rows)
+			}
 			return e.JSON(http.StatusOK, Manager.List())
+		})
+
+		// GET /api/admin/scraper/upstream — the daemon stream's health (§12:
+		// Client.Status()): {"mode":"wire", connected, since, reconnects,
+		// last_frame_at, seq_gaps, shed, stale}. Answers in every state of
+		// the stream (it is the one scraper route that must not 503 while
+		// the daemon is away — "disconnected since …" is its point).
+		// In-process: {"mode":"in-process"} — there is no upstream.
+		Group.GET("/upstream", func(e *core.RequestEvent) error {
+			if src, ok := Manager.(StatusSource); ok && Wire(Manager) != nil {
+				if c := src.Client(); c != nil {
+					return e.JSON(http.StatusOK, upstreamStatus{Mode: ModeWire, Status: c.Status()})
+				}
+			}
+			return e.JSON(http.StatusOK, map[string]string{"mode": ModeInProcess})
 		})
 
 		// POST /api/admin/scraper/start — body {"name":"...","sock":"/path/to/qmp.sock"}.
