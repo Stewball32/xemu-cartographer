@@ -9,7 +9,96 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
+
+// reaperSource picks the reaper's activity source for the feed's mode: the
+// embedded manager + host-runner registry in-process, the mirror + daemon
+// /host route in wire mode (DESIGN-STEP8 §9). hostReg is nil in wire mode.
+func (f *scraperFeed) reaperSource(hostReg *hostrunner.Registry) reaper.Source {
+	if f.wire != nil {
+		src := mirrorReaperSource{mirror: f.wire.Client.Mirror()}
+		if f.hostrunner {
+			src.host = f.wire.Adapter.Status
+		}
+		return src
+	}
+	return reaperSource{scr: f.mgr, host: hostReg}
+}
+
+// reaperRemover picks the remover: stop-then-remove in-process, podman
+// remove alone in wire mode (the daemon detaches when the socket vanishes).
+func (f *scraperFeed) reaperRemover(pod *podman.Manager) reaper.Remover {
+	if f.wire != nil {
+		return podmanReaperRemover{pod: pod}
+	}
+	return reaperRemover{scr: f.mgr, pod: pod}
+}
+
+// mirrorView is the slice of *xcclient.Mirror the wire-mode source reads.
+type mirrorView interface {
+	Instances() []string
+	Summary() (wire.SummaryPayload, bool)
+	Game(name string) *wire.GamePayload
+}
+
+// mirrorReaperSource implements reaper.Source over the wire-mode mirror:
+// the instance set and phase come from the mirrored summary / game frames,
+// the guest-machine count from the game roster, and the host-runner's
+// machine count through the daemon's GET …/host (one call per instance per
+// poll; host is nil when HOSTRUNNER_ENABLED is off and the Adapter answers
+// zero values while the upstream is down, which reads as "not present").
+type mirrorReaperSource struct {
+	mirror mirrorView
+	host   func(name string) hostrunner.Status
+}
+
+func (s mirrorReaperSource) Snapshot() []reaper.Snapshot {
+	names := s.mirror.Instances()
+	out := make([]reaper.Snapshot, 0, len(names))
+	for _, name := range names {
+		out = append(out, reaper.Snapshot{Instance: name, Active: s.active(name)})
+	}
+	return out
+}
+
+func (s mirrorReaperSource) active(name string) bool {
+	if s.phase(name) == wire.PhaseLive {
+		return true
+	}
+	if g := s.mirror.Game(name); g != nil && len(g.Machines) >= 2 {
+		return true
+	}
+	if s.host != nil {
+		if st := s.host(name); st.Present && st.MachineCount >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+// phase prefers the summary row (the aggregate the daemon keeps fresh even
+// when no per-instance game frame has been demanded), then the game frame.
+func (s mirrorReaperSource) phase(name string) wire.Phase {
+	if sum, ok := s.mirror.Summary(); ok {
+		for _, h := range sum.Hosts {
+			if h.Instance == name {
+				return h.Phase
+			}
+		}
+	}
+	if g := s.mirror.Game(name); g != nil {
+		return g.Phase
+	}
+	return ""
+}
+
+// podmanReaperRemover is the wire-mode reaper.Remover: remove the container
+// only — the daemon's --watch-dir detaches the runner when its QMP socket
+// disappears, so there is nothing to stop league-side.
+type podmanReaperRemover struct{ pod *podman.Manager }
+
+func (r podmanReaperRemover) Reap(instance string) error { return r.pod.Remove(instance) }
 
 // reaperSource implements reaper.Source over the live scraper + host-runner
 // state. A box counts as ACTIVE (idle clock reset) when a match is live on it,

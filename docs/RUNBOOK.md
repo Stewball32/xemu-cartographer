@@ -69,6 +69,38 @@ authz: WS_ALLOWED_ORIGINS unset — fail-open (PD-15), set it before exposing /a
 | 7 `/api/lan/* fail-closed: <n> live machine keys` | `n ≥ 1` (or line 5 says imported). | `authz: WARNING /api/lan/* has no valid key — all LAN clients will get 401` — every LAN station is locked out; mint a machine key before the next LAN night. |
 | 8 `WS_ALLOWED_ORIGINS unset — fail-open (PD-15) …` | Absent (the variable is set). | Set `WS_ALLOWED_ORIGINS` to your public origin(s) before exposing `/api/ws`; the handshake accepts every origin until you do. |
 
+### The `leaguescraper:` line (step 8 R1)
+
+Right after the `authz:` block (and F1's ninth `authz: XC_SCRAPER_WEBHOOK_TOKEN …` line) the boot prints one `leaguescraper:` line that says which scraper feed this process runs (DESIGN-STEP8 §12):
+
+```
+leaguescraper: mode=in-process (XC_SCRAPER_URL unset)
+leaguescraper: mode=wire url=http://127.0.0.1:8990 token=set control=set
+```
+
+| Line | Healthy | Act on |
+| --- | --- | --- |
+| `mode=in-process (XC_SCRAPER_URL unset)` | The embedded runner + discovery watcher, as before R1. | If you meant to run the daemon, `XC_SCRAPER_URL` is unset or blank in this unit's environment. |
+| `mode=wire url=… token=set control=set` | The league consumes the xc-scraper daemon at `url`; no runner, no league-side discovery. `token=unset` / `control=unset` only when the daemon really runs without `--token` / `--control-token`. | The daemon may still be down at this point — the client reconnects forever and the mirror is empty until it connects; nothing else to do. A boot **error** `leaguescraper: XC_SCRAPER_URL must be http(s)://host[:port]` means the value carries a `ws://` scheme or a path; `XC_SCRAPER_STALE_AFTER must be a positive duration` means a bad Go duration. |
+
+## Switch the scraper feed to the xc-scraper daemon (R1) — and roll it back
+
+R1 is a per-process flag (DESIGN-STEP8 D-4): the same binary runs either the embedded runner or the daemon consumer, decided by `XC_SCRAPER_URL` at boot. The daemon and the league must never both attach to the same QMP directory — each attacher persists every finished game, so two attachers write every game twice.
+
+**Cut over**
+
+1. Start the daemon unit (`xc-scraper --watch-dir <the league's CONTAINERS_SOCKET_DIR> --token … --control-token … --game-webhook http://<league>/api/xc/finished_game --webhook-token …`, plus `--hostrunner --host-drive-marker play-` when the league runs with `HOSTRUNNER_ENABLED` — the daemon logs the flag as ignored until its in-daemon host runner lands, X10) and confirm its `xc-scraper:` boot line + `GET /api/health`.
+2. Set `XC_SCRAPER_URL=http://<daemon-host>[:port]`, `XC_SCRAPER_TOKEN`, `XC_SCRAPER_CONTROL_TOKEN`, `XC_SCRAPER_WEBHOOK_TOKEN` (same values as the daemon's flags) in the league unit's environment; leave `CONTAINERS_*` as they are (the pod lifecycle stays league-side).
+3. Restart the league and read `leaguescraper: mode=wire …`. Once the stream connects the daemon's instances appear on `/admin/pod/`; the next finished game arrives through `POST /api/xc/finished_game` (a `games` row, no runner log lines on the league side).
+
+**Roll back** (order matters):
+
+1. **Stop the daemon unit first** — or at least restart it without `--game-webhook` — so it can no longer attach or post games.
+2. Unset `XC_SCRAPER_URL` in the league unit's environment (the other `XC_SCRAPER_*` values may stay; `XC_SCRAPER_WEBHOOK_TOKEN` keeps the ingest key alive, which is harmless).
+3. Restart the league and read `leaguescraper: mode=in-process (XC_SCRAPER_URL unset)`; the discovery watcher re-attaches every socket in `CONTAINERS_SOCKET_DIR` within one poll.
+
+Doing 2–3 before 1 leaves the daemon and the embedded runner attached to the same sockets: both persist every finished game (duplicate `games` rows) until the daemon is stopped.
+
 ## Retire `LAN_SAVES_TOKEN` and close the console door
 
 The authz batch removed LAN "open mode" and made every LAN / overlay credential an `api_tokens` row. Both `roles.scopes` and `api_tokens` are **additive** — reverting the binary leaves them inert, so there is no rollback step beyond redeploying the previous release. Do the steps in this order; each one is safe to pause on.

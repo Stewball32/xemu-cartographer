@@ -2,16 +2,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/migrateconf"
@@ -51,6 +54,9 @@ func main() {
 	var hub *ws.Hub
 	var watcherCancel context.CancelFunc
 	var reaperCancel context.CancelFunc
+	// feed is the R1 scraper feed (wire or in-process); scrMgr is its
+	// embedded manager, nil in wire mode.
+	var feed *scraperFeed
 	var scrMgr *scrapermgr.Manager
 	// podMgr is set below only when CONTAINERS_ENABLED; the host-runner URL
 	// resolver reads it at call time (through a getter) so it can be wired before
@@ -120,26 +126,31 @@ func main() {
 			return raw, true
 		})
 
-		// Scraper manager: always available. The league glue (internal/
-		// leaguescraper) plugs the WebSocket hub in through the Emitter / Demand
-		// ports, the roster filter through RosterFilter and the games
-		// persistence chain through OnGameEnd; the WS adapters read svc.WS at
-		// call time, so broadcasts safely no-op until svc.WS is populated
-		// below. The blank import of xc-scraper/haloce above triggers
-		// haloce.init(), which registers Halo: CE's title ID with scraper.Lookup
-		// so runner.Start() can detect it.
-		scrMgr = scrapermgr.New(scrapermgr.Options{
-			Emitter:   leaguescraper.NewEmitter(svc),
-			Demand:    leaguescraper.NewDemand(svc),
-			OnGameEnd: leaguescraper.GameEndHook(app),
-			RosterFilter: func(inst string) roster.Config {
-				return leaguescraper.LoadRosterConfig(app, inst)
-			},
-		})
-		// The league adapter frames the manager's bare reply envelopes for the
-		// WS rooms and filters the hello per principal; it is what every
-		// scraperiface.Service consumer sees (step 7 part 3c).
-		scrAdapter := leaguescraper.NewWireAdapter(scrMgr)
+		// WebSocket hub — constructed here (Run + /api/ws mount happen below,
+		// after the scraper feed exists for the hello hook) so wire mode can
+		// hand it to xcclient as its rebroadcast / eviction port.
+		hub = ws.NewHub(app)
+
+		// Scraper feed (DESIGN-STEP8 D-4, R1 dual mode): XC_SCRAPER_URL set ⇒
+		// wire mode — the league consumes the xc-scraper daemon through
+		// internal/xcclient + the leaguescraper Adapter and never builds a
+		// runner, a discovery watcher or a host-runner registry; unset ⇒ the
+		// in-process manager exactly as before (the league glue plugs the hub
+		// in through the Emitter / Demand ports, the roster filter through
+		// RosterFilter and the games persistence chain through OnGameEnd; the
+		// WS adapters read svc.WS at call time, so broadcasts safely no-op
+		// until svc.WS is populated below). Either way the adapter is what
+		// every scraperiface.Service consumer sees (step 7 part 3c). The blank
+		// import of xc-scraper/haloce above triggers haloce.init(), which
+		// registers Halo: CE's title ID with scraper.Lookup so the embedded
+		// runner.Start() can detect it.
+		booted, err := bootScraperFeed(app, svc, hub, os.Getenv, func() *podman.Manager { return podMgr })
+		if err != nil {
+			return err
+		}
+		feed = booted
+		scrMgr = feed.mgr // nil in wire mode
+		scrAdapter := feed.adapter
 		svc.Scraper = scrAdapter
 		scraperroutes.SetManager(scrAdapter)
 
@@ -195,80 +206,104 @@ func main() {
 		authzDeps.InvalidateRoles()
 		authzpb.LogStartup(authzpb.Inspect(app, authzDeps), log.Printf)
 		authzpb.LogWebhookEnv(webhookImported, log.Printf)
+		log.Print(feed.line) // leaguescraper: mode=wire … | mode=in-process (§12)
 
-		// Player-hosting (ADR-0003): the host-runner Registry owns the per-instance
-		// state-aware runners and fans their observable stream to the admin WS room.
-		// It's wired to both the admin arbitration endpoints (/api/admin/scraper/
-		// {name}/host) and the player-scoped /api/play/* group. The Manager attaches
-		// a runner + vncinput input pump per instance on Start when HOSTRUNNER_ENABLED
-		// — resolving each container's websockify URL through the podman manager
-		// (nil-safe: no URL → runner ticks + emits state but presses nothing).
-		hostReg := hostrunner.NewRegistry(newHostRunnerSink(svc))
-		scraperroutes.SetHostControl(hostReg)
 		playroutes.SetScraper(scrAdapter)
-		playroutes.SetHostControl(hostReg)
-		// The play map picker is sourced LIVE per instance from the scraper (never
-		// a stock table) — the Manager satisfies playroutes.MapSource.
-		playroutes.SetMapSource(scrMgr)
-		// The admin diagnostics panel shows the same enumerated carousel, and reads the
-		// LIVE per-tick readout (not the host runner's last event) so it stays live on
-		// an observed-only box.
-		scraperroutes.SetMapSource(scrMgr)
-		scraperroutes.SetReadoutSource(scrMgr)
-		// ...and the rolling observed-vs-expected engine tick rate, so "is this host
-		// keeping up?" is answerable from the panel instead of a manual capture.
-		scraperroutes.SetHealthSource(scrMgr)
-		scrMgr.SetHostRunner(
-			hostReg,
-			hostRunnerURLResolver(func() *podman.Manager { return podMgr }),
-			envBool("HOSTRUNNER_ENABLED", false),
-		)
-		// Host/client scoping (pod-hijack fix): AUTO-DRIVE only player-hosted
-		// boxes — the ones /api/play/request provisions as "<prefix>play-<uid>"
-		// (the same "play-" marker the reaper scopes idle-out to). Every other
-		// box (admin/manual — e.g. a client pod created to JOIN a System Link
-		// lobby) attaches observe-only and is never driven until an admin
-		// promotes it via the host control endpoint. Marker is env-tunable for
-		// non-standard deployments.
-		driveMarker := envStr("HOSTRUNNER_DRIVE_MARKER", "play-")
-		scrMgr.SetHostDrivePolicy(func(name string) bool {
-			return strings.Contains(name, driveMarker)
-		})
-		// Host-side custom gametype variant enumeration (part C): resolve a box's
-		// overlay qcow2 so the runner can read its saved variants off disk (the
-		// SELECT GAMETYPE carousel keeps only rendered cards resident). nil-safe —
-		// no podman manager (CONTAINERS_ENABLED off) → built-in gametypes only.
-		scrMgr.SetOverlayResolver(func(name string) (string, bool) {
-			if podMgr == nil {
-				return "", false
-			}
-			return podMgr.OverlayPath(name)
-		})
+		// Player-hosting (ADR-0003) + the play / diagnostics sources. hostReg
+		// exists only in in-process mode; wire mode's Adapter proxies the same
+		// surfaces to the daemon (hostrunner runs inside the daemon, D-9).
+		var hostReg *hostrunner.Registry
+		if feed.wire != nil {
+			a := feed.wire.Adapter
+			scraperroutes.SetHostControl(a)
+			playroutes.SetHostControl(a)
+			playroutes.SetMapSource(a)
+			scraperroutes.SetMapSource(a)
+			scraperroutes.SetReadoutSource(a)
+			scraperroutes.SetHealthSource(a)
+		} else {
+			// The host-runner Registry owns the per-instance state-aware runners
+			// and fans their observable stream to the admin WS room. It's wired
+			// to both the admin arbitration endpoints (/api/admin/scraper/
+			// {name}/host) and the player-scoped /api/play/* group. The Manager
+			// attaches a runner + vncinput input pump per instance on Start when
+			// HOSTRUNNER_ENABLED — resolving each container's websockify URL
+			// through the podman manager (nil-safe: no URL → runner ticks +
+			// emits state but presses nothing).
+			hostReg = hostrunner.NewRegistry(newHostRunnerSink(svc))
+			scraperroutes.SetHostControl(hostReg)
+			playroutes.SetHostControl(hostReg)
+			// The play map picker is sourced LIVE per instance from the scraper
+			// (never a stock table) — the Manager satisfies playroutes.MapSource.
+			playroutes.SetMapSource(scrMgr)
+			// The admin diagnostics panel shows the same enumerated carousel, and
+			// reads the LIVE per-tick readout (not the host runner's last event)
+			// so it stays live on an observed-only box.
+			scraperroutes.SetMapSource(scrMgr)
+			scraperroutes.SetReadoutSource(scrMgr)
+			// ...and the rolling observed-vs-expected engine tick rate, so "is
+			// this host keeping up?" is answerable from the panel instead of a
+			// manual capture.
+			scraperroutes.SetHealthSource(scrMgr)
+			scrMgr.SetHostRunner(
+				hostReg,
+				hostRunnerURLResolver(func() *podman.Manager { return podMgr }),
+				envBool("HOSTRUNNER_ENABLED", false),
+			)
+			// Host/client scoping (pod-hijack fix): AUTO-DRIVE only player-hosted
+			// boxes — the ones /api/play/request provisions as "<prefix>play-<uid>"
+			// (the same "play-" marker the reaper scopes idle-out to). Every other
+			// box (admin/manual — e.g. a client pod created to JOIN a System Link
+			// lobby) attaches observe-only and is never driven until an admin
+			// promotes it via the host control endpoint. Marker is env-tunable
+			// for non-standard deployments (wire mode pushes the same marker to
+			// the daemon per instance, §10).
+			driveMarker := envStr("HOSTRUNNER_DRIVE_MARKER", "play-")
+			scrMgr.SetHostDrivePolicy(func(name string) bool {
+				return strings.Contains(name, driveMarker)
+			})
+			// Host-side custom gametype variant enumeration (part C): resolve a
+			// box's overlay qcow2 so the runner can read its saved variants off
+			// disk (the SELECT GAMETYPE carousel keeps only rendered cards
+			// resident). nil-safe — no podman manager (CONTAINERS_ENABLED off)
+			// → built-in gametypes only.
+			scrMgr.SetOverlayResolver(func(name string) (string, bool) {
+				if podMgr == nil {
+					return "", false
+				}
+				return podMgr.OverlayPath(name)
+			})
 
-		// Capture-policy loader: read the persisted (instance, class) rows
-		// now so runners started immediately after this (auto-start via the
-		// discovery watcher, manual /api/admin/scraper/start) inherit the
-		// current snapshot. The hook bind keeps them in sync as operators
-		// edit policies through the PB dashboard.
-		//
-		// pb: sink scheme must register BEFORE the initial reload — a
-		// policy carrying "pb:game_events" loaded against an empty registry
-		// would error with "unknown scheme" and silently drop captures.
-		leaguescraper.RegisterPBSink(app)
-		leaguescraper.RegisterCapturePolicyHooks(app, scrMgr)
-		if err := leaguescraper.ReloadCapturePolicies(app, scrMgr); err != nil {
-			log.Printf("scraper: initial capture-policy load: %v", err)
+			// Capture-policy loader: read the persisted (instance, class) rows
+			// now so runners started immediately after this (auto-start via the
+			// discovery watcher, manual /api/admin/scraper/start) inherit the
+			// current snapshot. The hook bind keeps them in sync as operators
+			// edit policies through the PB dashboard. (Wire mode registers the
+			// same hooks against its event writer inside leaguescraper.Boot.)
+			//
+			// pb: sink scheme must register BEFORE the initial reload — a
+			// policy carrying "pb:game_events" loaded against an empty registry
+			// would error with "unknown scheme" and silently drop captures.
+			leaguescraper.RegisterPBSink(app)
+			leaguescraper.RegisterCapturePolicyHooks(app, scrMgr)
+			if err := leaguescraper.ReloadCapturePolicies(app, scrMgr); err != nil {
+				log.Printf("scraper: initial capture-policy load: %v", err)
+			}
 		}
 
-		// WebSocket hub — created and published on svc.WS BEFORE the discovery
+		// WebSocket hub — run and published on svc.WS BEFORE the discovery
 		// watcher below starts. The watcher's goroutines (scrMgr.Start → runner
 		// loop / aggregator → leaguescraper emitter + demand) read svc.WS at
 		// call time; the `go w.Run(ctx)` statement is the happens-before edge
-		// that makes this write visible to them without a lock.
-		hub = ws.NewHub(app)
+		// that makes this write visible to them without a lock. Wire mode's
+		// room observer (demand-gated upstream joins, §8.3) must be installed
+		// before Run.
+		if feed.wire != nil {
+			hub.SetRoomObserver(feed.wire.Demand.Observe)
+		}
 		go hub.Run()
 		ws.SetInstance(hub)
-		se.Router.GET("/api/ws", ws.NewHandler(hub, app, scrAdapter.SendHelloOn))
+		se.Router.GET("/api/ws", ws.NewHandler(hub, app, feed.hello))
 		svc.WS = hub
 		hub.SetServices(svc)
 
@@ -290,19 +325,25 @@ func main() {
 			// GameISO basename IS the record id — no extra linkage. Empty (or
 			// any lookup miss) means the detected game's baseline; boxes whose
 			// GameISO is unknown (e.g. attached before a server restart) also
-			// fall back to the baseline. Fail-soft by design.
-			scrMgr.SetOffsetSetResolver(func(instance string) string {
-				info, ok := mgr.Get(instance)
-				if !ok || info.GameISO == "" {
-					return ""
-				}
-				id := strings.TrimSuffix(filepath.Base(info.GameISO), ".iso")
-				rec, err := app.FindRecordById("isos", id)
-				if err != nil {
-					return ""
-				}
-				return rec.GetString("offset_set")
-			})
+			// fall back to the baseline. Fail-soft by design. Wire mode pushes
+			// the same mapping to the daemon per instance (§10): the pusher's
+			// pod hooks PUT the instance config at Create and drop it at Remove.
+			if feed.wire != nil {
+				mgr.SetHooks(feed.wire.Pusher.PodHooks())
+			} else {
+				scrMgr.SetOffsetSetResolver(func(instance string) string {
+					info, ok := mgr.Get(instance)
+					if !ok || info.GameISO == "" {
+						return ""
+					}
+					id := strings.TrimSuffix(filepath.Base(info.GameISO), ".iso")
+					rec, err := app.FindRecordById("isos", id)
+					if err != nil {
+						return ""
+					}
+					return rec.GetString("offset_set")
+				})
+			}
 			containers.SetManager(mgr)
 			containers.SetServices(svc)
 			// Player request-instance flow: provisions a fresh box booting the
@@ -316,11 +357,14 @@ func main() {
 			// are never auto-reaped. Reads activity from the scraper + host-runner;
 			// removes through this podman manager. A disabled config makes Run a
 			// no-op, so the wiring is unconditional and just doesn't spin a
-			// goroutine.
+			// goroutine. Wire mode reads phase / machines from the mirror and
+			// the host-runner machine count through the daemon's /host route
+			// (once per poll); the remover is podman.Remove alone — the daemon
+			// detaches on its own when the QMP socket disappears.
 			reap := reaper.New(
 				reaperConfigFromEnv(),
-				reaperSource{scr: scrMgr, host: hostReg},
-				reaperRemover{scr: scrMgr, pod: mgr},
+				feed.reaperSource(hostReg),
+				feed.reaperRemover(mgr),
 				reaper.WithLogger(log.Printf),
 			)
 			if reap.Enabled() {
@@ -333,7 +377,7 @@ func main() {
 				log.Printf("reaper: idle-out enabled (REAPER_* env controls timeout/prefix)")
 			}
 
-			if podmanCfg.SocketDir != "" {
+			if feed.wantsDiscovery(podmanCfg.SocketDir) {
 				ctx, cancel := context.WithCancel(context.Background())
 				watcherCancel = cancel
 
@@ -386,11 +430,15 @@ func main() {
 			}
 		}
 
+		// Wire mode: dial the daemon now that the hub runs and the podman
+		// manager (if any) exists — the first connect pushes the config
+		// document (§10) and evicts host:* downstream for a clean replay.
+		feed.start()
+
 		se.Router.BindFunc(authzpb.RejectBannedAuth) // banned / soft-deleted JWT ⇒ guest on every route
 		routes.RegisterAll(se)
 
 		// Start Disgo bot (non-blocking)
-		var err error
 		bot, err = discordbot.NewBot()
 		if err != nil {
 			log.Printf("Warning: Discord bot not started: %v", err)
@@ -425,14 +473,11 @@ func main() {
 		// Stop scrapers BEFORE the hub so in-flight tick broadcasts don't try to
 		// write to a closing channel. Manager.Stop blocks until each runner's
 		// tick goroutine exits. After all runners are gone, Close() stops the
-		// host:all aggregator goroutine so the process can exit cleanly.
-		if scrMgr != nil {
-			for _, info := range scrMgr.List() {
-				if err := scrMgr.Stop(info.Name); err != nil {
-					log.Printf("scraper: stop %s on shutdown: %v", info.Name, err)
-				}
-			}
-			scrMgr.Close()
+		// host:all aggregator goroutine so the process can exit cleanly. Wire
+		// mode instead closes the upstream stream (the daemon keeps running —
+		// nothing is stopped remotely) before the hub goes away.
+		if feed != nil {
+			feed.stop()
 		}
 
 		if hub != nil {
@@ -450,4 +495,153 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// scraperFeed is what the OnServe block builds for the scraper feed in
+// either R1 mode (DESIGN-STEP8 D-4). Exactly one of mgr / wire is set; the
+// adapter is the scraperiface.Service every consumer sees and hello the
+// per-principal handshake hook for /api/ws.
+type scraperFeed struct {
+	mode    leaguescraper.Mode
+	mgr     *scrapermgr.Manager // in-process only
+	wire    *leaguescraper.Wire // wire only
+	adapter scraperiface.Service
+	hello   ws.ConnectHook
+	line    string // the §12 boot line
+	// hostrunner is HOSTRUNNER_ENABLED: in wire mode the client joins
+	// xc:hostrunner and the reaper polls the daemon's /host route.
+	hostrunner bool
+}
+
+// feedEnv are the league-side wire-mode variables (§11); HOSTRUNNER_* are
+// shared with the in-process path and read for the config push.
+const (
+	envScraperToken        = "XC_SCRAPER_TOKEN"
+	envScraperControlToken = "XC_SCRAPER_CONTROL_TOKEN"
+	envScraperStaleAfter   = "XC_SCRAPER_STALE_AFTER"
+)
+
+// bootScraperFeed picks the mode from env — XC_SCRAPER_URL set ⇒ wire (a
+// malformed URL is a boot error, §11), unset ⇒ in-process — and builds the
+// feed. hub is the league hub (constructed, not yet running); pods
+// late-binds the podman manager for wire mode's config push. Nothing
+// touches the network until start.
+func bootScraperFeed(app core.App, svc *guards.Services, hub *ws.Hub, env func(string) string, pods func() *podman.Manager) (*scraperFeed, error) {
+	rawURL := strings.TrimSpace(env(leaguescraper.EnvUpstreamURL))
+	if rawURL == "" {
+		mgr := scrapermgr.New(scrapermgr.Options{
+			Emitter:   leaguescraper.NewEmitter(svc),
+			Demand:    leaguescraper.NewDemand(svc),
+			OnGameEnd: leaguescraper.GameEndHook(app),
+			RosterFilter: func(inst string) roster.Config {
+				return leaguescraper.LoadRosterConfig(app, inst)
+			},
+		})
+		// The league adapter frames the manager's bare reply envelopes for the
+		// WS rooms and filters the hello per principal.
+		a := leaguescraper.NewWireAdapter(mgr)
+		return &scraperFeed{
+			mode:    leaguescraper.ModeInProcess,
+			mgr:     mgr,
+			adapter: a,
+			hello:   a.SendHelloOn,
+			line:    leaguescraper.BootLine(leaguescraper.ModeInProcess, "", "", ""),
+		}, nil
+	}
+
+	token := env(envScraperToken)
+	control := env(envScraperControlToken)
+	var stale time.Duration
+	if v := strings.TrimSpace(env(envScraperStaleAfter)); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return nil, fmt.Errorf("leaguescraper: %s must be a positive duration (got %q)", envScraperStaleAfter, v)
+		}
+		stale = d
+	}
+	hostRunner := parseBool(env("HOSTRUNNER_ENABLED"), false)
+	w, err := leaguescraper.Boot(app, leaguescraper.BootConfig{
+		URL:             rawURL,
+		Token:           token,
+		ControlToken:    control,
+		StaleAfter:      stale,
+		Hostrunner:      hostRunner,
+		HostDriveMarker: firstNonEmpty(env("HOSTRUNNER_DRIVE_MARKER"), "play-"),
+		Hub:             hub,
+		Pods: func() leaguescraper.PodSource {
+			if pods == nil {
+				return nil
+			}
+			if m := pods(); m != nil {
+				return m
+			}
+			return nil
+		},
+		Logf: log.Printf,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &scraperFeed{
+		mode:       leaguescraper.ModeWire,
+		wire:       w,
+		adapter:    w.Adapter,
+		hello:      w.Adapter.SendHelloOn,
+		line:       leaguescraper.BootLine(leaguescraper.ModeWire, rawURL, token, control),
+		hostrunner: hostRunner,
+	}, nil
+}
+
+// wantsDiscovery reports whether main should run the league-side socket
+// watcher: in-process only, and only with a socket dir. In wire mode the
+// daemon's --watch-dir attaches (§9); CONTAINERS_SOCKET_DIR stays for the
+// podman bind mount.
+func (f *scraperFeed) wantsDiscovery(socketDir string) bool {
+	return f.wire == nil && f.mgr != nil && socketDir != ""
+}
+
+// start dials the daemon in wire mode; a no-op in-process (runners start
+// through discovery / the admin routes).
+func (f *scraperFeed) start() {
+	if f.wire != nil {
+		f.wire.Start()
+	}
+}
+
+// stop tears the feed down at OnTerminate: wire mode closes the upstream
+// stream + demand/pusher timers; in-process stops every runner, then the
+// manager's aggregator.
+func (f *scraperFeed) stop() {
+	if f.wire != nil {
+		f.wire.Close()
+		return
+	}
+	if f.mgr == nil {
+		return
+	}
+	for _, info := range f.mgr.List() {
+		if err := f.mgr.Stop(info.Name); err != nil {
+			log.Printf("scraper: stop %s on shutdown: %v", info.Name, err)
+		}
+	}
+	f.mgr.Close()
+}
+
+// parseBool is envBool over an explicit value (tests hand in their own env).
+func parseBool(v string, def bool) bool {
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+func firstNonEmpty(v, def string) string {
+	if v != "" {
+		return v
+	}
+	return def
 }
