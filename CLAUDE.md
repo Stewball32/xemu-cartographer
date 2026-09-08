@@ -30,13 +30,19 @@ Before writing or reviewing code that touches a third-party library where the AP
 sudo env GOBIN=/usr/local/bin go install github.com/go-task/task/v3/cmd/task@latest
 sudo env GOBIN=/usr/local/bin go install github.com/air-verse/air@latest
 
-# Run both backend and frontend dev servers
+# Run the three dev processes in parallel: the xc-scraper daemon (Air in
+# ../xc-scraper, port 8992), the Go backend (Air, -tags dev) and the SvelteKit
+# dev server. `task dev:scraper` alone runs just the daemon.
 
 task dev
 
-# Backend only (hot reload). Booting a binary built by the local go1.27
-# toolchain currently needs GOEXPERIMENT=nodwarf5,nojsonv2 exported in your
-# shell (builds/tests do not) — nothing in the repo sets it.
+# Backend only (hot reload). A league binary BUILT by the local go1.27
+# toolchain with its default experiments crashes at boot (jsonv2 makes
+# PocketBase's Collection.UnmarshalJSON recurse: "fatal error: stack
+# overflow" in migrations.init) — export GOEXPERIMENT=nodwarf5,nojsonv2 in
+# the shell that runs Air / `task build` / `go build` for anything you will
+# boot. Tests do not need it, and neither does the xc-scraper daemon (no
+# PocketBase). Nothing in the repo sets it (2026-09-07 finding, D1).
 
 task dev:backend
 
@@ -44,9 +50,14 @@ task dev:backend
 
 task dev:frontend
 
-# Build for production
+# Build for production: bin/server (league) + bin/xc-scraper (the daemon, via
+# build:scraper from ../xc-scraper with -X main.version=<git describe>;
+# `bin/xc-scraper --version` prints it). The frontend step needs
+# PUBLIC_PB_PORT in the environment (root .env or exported). If .task/ is
+# root-owned from an earlier `sudo task dev`, run with TASK_TEMP_DIR=/tmp/xc-task.
 
 task build
+task build:scraper      # just the daemon
 
 # Build and run container (the backend stage needs ../xc-scraper: task passes it
 # as a named build context; XC_SCRAPER_DIR overrides the path. .containerignore
@@ -80,16 +91,23 @@ go test -tags dev ./internal/pocketbase/seed/...   # the dev-only seeder (Air bu
 cd ../xc-scraper && go build ./... && go vet ./... && go test ./...
 
 # Step 8 R1 (DESIGN-STEP8 D-4): the league can consume the xc-scraper DAEMON
-# instead of the embedded runner. Build it with `task build:scraper` (D1, →
-# ../xc-scraper/bin/xc-scraper; until that task lands: `cd ../xc-scraper &&
-# go build -o bin/xc-scraper ./cmd/xc-scraper`), run it on its own port (`--watch-dir` on the
-# league's CONTAINERS_SOCKET_DIR, `--token/--control-token/--webhook-token`,
-# `--game-webhook http://<league>/api/xc/finished_game`), then boot the league
-# with XC_SCRAPER_URL=http://127.0.0.1:<port> (+ XC_SCRAPER_TOKEN,
+# instead of the embedded runner. `task dev` already runs one (dev:scraper =
+# `air -c .air.toml` in ../xc-scraper with XC_SCRAPER_LISTEN=127.0.0.1:8992,
+# XC_SCRAPER_WATCH_DIR=<repo>/containers/xemu/qmp, XC_SCRAPER_GAME_WEBHOOK=
+# http://127.0.0.1:$PUBLIC_PB_PORT/api/xc/finished_game, state under
+# ../xc-scraper/tmp/xc-scraper-state; tokens/--hostrunner come from the
+# XC_SCRAPER_* env twins in .env). Production: `task build` → bin/xc-scraper,
+# systemd unit template + install steps in ../xc-scraper/deploy/README.md
+# (ports 8990 prod / 8991 pre / 8992 dev). The league consumes it only when
+# booted with XC_SCRAPER_URL=http://127.0.0.1:<port> (+ XC_SCRAPER_TOKEN,
 # XC_SCRAPER_CONTROL_TOKEN, XC_SCRAPER_WEBHOOK_TOKEN, XC_SCRAPER_STALE_AFTER —
-# see .env.example). Unset XC_SCRAPER_URL ⇒ in-process, as before. The boot
-# line `leaguescraper: mode=wire|in-process …` + the rollback order (daemon
-# off FIRST) are in docs/RUNBOOK.md.
+# see .env.example). Unset XC_SCRAPER_URL ⇒ in-process, as before — but with
+# CONTAINERS_ENABLED=true the dev daemon and the league would then BOTH attach
+# the qmp dir (every finished game persisted twice): set XC_SCRAPER_URL in
+# .env, or run `task dev:backend` + `task dev:frontend` without the daemon.
+# The boot line `leaguescraper: mode=wire|in-process …` + the rollback order
+# (daemon off FIRST) are in docs/RUNBOOK.md; the daemon's HTTP surfaces are
+# ../xc-scraper/docs/wire.md appendix A + ../xc-scraper/docs/control.md.
 
 # Wire contract artifacts are vendored from ../xc-scraper/wire into
 # sveltekit/src/lib/types/ (scraper-v2.ts + wire-fixtures/*.json). Re-run
@@ -275,7 +293,7 @@ The scraper manager is special the other way round: it holds **no** `*guards.Ser
 - **Dev vs prod builds:** `air` (dev) compiles with `-tags dev`; `task build:backend` compiles without it. The `//go:build dev` constraint in `internal/pocketbase/seed/` means the seeder is a no-op in production binaries.
 - **Dev DB is ephemeral:** Air compiles the server to `tmp/server.exe` and `clean_on_exit = true` wipes `tmp/` on exit — including `tmp/pb_data/` where PocketBase stores its dev database. This is intentional: each `task dev` session starts with a clean slate. TypeScript type generation (`task typegen`) therefore uses `--url` mode against the live server rather than reading the DB file directly.
 - **`atlas/` directory:** Snapshots of predecessor projects (`HaloCaster`, `xemu-cartographer-legacy`) kept as porting reference. **Treat every artifact here as unverified** — offsets, patterns, and APIs must be re-confirmed against current xemu/library behavior before being copied into the live tree. Not part of the build, not imported, not modified. When in doubt, read `atlas/README.md` first. Contents are gitignored (local-only) by default.
-- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main` + `beta`. Every job checks this repo out under `xemu-cartographer/`, and **frontend** + **backend** also check out `xemu-cartographer/xc-scraper@main` under `xc-scraper/` so `go.mod`'s `replace => ../xc-scraper` resolves (until the owner pushes that repo to GitHub, those two jobs fail at the checkout step). **frontend** runs the wire sync check (`diff` of the vendored `scraper-v2.ts` + `wire-fixtures/` against `../xc-scraper/wire`, same commands as `task sync-wire:check`), then `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...`, `go test ./cmd/... ./internal/...` and `go build`; **e2e** downloads the built `pb_public/` and runs Playwright. CI does not run xc-scraper's own tests — run `cd ../xc-scraper && go test ./...` before pushing changes there.
+- **CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): three jobs gate `main` + `beta`. Every job checks this repo out under `xemu-cartographer/`, and **frontend** + **backend** also check out `xemu-cartographer/xc-scraper@main` under `xc-scraper/` so `go.mod`'s `replace => ../xc-scraper` resolves (until the owner pushes that repo to GitHub, those two jobs fail at the checkout step). **frontend** runs the wire sync check (`diff` of the vendored `scraper-v2.ts` + `wire-fixtures/` against `../xc-scraper/wire`, same commands as `task sync-wire:check`), then `pnpm lint`, `pnpm check`, `pnpm test`, `pnpm build`; **backend** runs `go vet ./...`, `go test ./cmd/... ./internal/...`, `go test -race ./internal/websocket/... ./internal/xcclient/...` (the two packages with real goroutine choreography, booted against an in-process xc daemon), `go build` and the daemon build (`bin/xc-scraper` from the sibling checkout, same as `task build:scraper`); **e2e** downloads the built `pb_public/` and runs Playwright. CI does not run xc-scraper's own tests — that repo has its own workflow (`../xc-scraper/.github/workflows/ci.yml`: gofmt, vet, build, test, race, dependency pin); run `cd ../xc-scraper && go test ./...` before pushing changes there.
 - **pnpm pinned to v11:** both `Containerfile` (`corepack prepare pnpm@11`) and `.github/workflows/ci.yml` (`pnpm/action-setup` `version: 11`); pnpm v11 requires Node 22+ (already the baseline). The dependency build-script allowlist lives in `sveltekit/pnpm-workspace.yaml` under v11's `allowBuilds` map (`esbuild: true`, `sqlite3: true`), which replaced v10's `onlyBuiltDependencies` list; pnpm ignores a `pnpm` block in `package.json`, and the `Containerfile`'s frontend stage must copy this file into the build context. `pnpm-lock.yaml` (`lockfileVersion: '9.0'`) is unchanged — v11 reads the existing lockfile as-is, so there's no lockfile churn — but because build-script approvals now use v11's `allowBuilds` syntax (which v10 doesn't recognize), the project targets v11.
 
 ## Containers (xemu + browser pairs)

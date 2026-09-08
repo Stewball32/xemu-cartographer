@@ -119,8 +119,21 @@ jobs:
         # load-bearing on every push/PR.
         run: go test ./cmd/... ./internal/...
 
+      - name: Race
+        # The two packages with real goroutine choreography (DESIGN-STEP8 §13):
+        # the WS hub's room observer / eviction / async request handlers and
+        # the xc-scraper stream client (mirror, demand, rebroadcast). The
+        # race runs against a real xc/hub + xc/daemon booted in-process.
+        run: go test -race ./internal/websocket/... ./internal/xcclient/...
+
       - name: Build
         run: CGO_ENABLED=0 go build -o bin/server ./cmd/server
+
+      - name: Build xc-scraper
+        # Same as `task build:scraper`: the daemon is a first-class tier
+        # artifact next to bin/server (built from the sibling checkout).
+        working-directory: xc-scraper
+        run: CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=ci-${GITHUB_SHA::7}" -o ../xemu-cartographer/bin/xc-scraper ./cmd/xc-scraper
 
   e2e:
     name: E2E Tests

@@ -15,8 +15,8 @@ The release workflow is a single sequence — `git tag` is the trigger, everythi
 2. **Commit:** `git commit -m "chore(release): vX.Y.Z"`.
 3. **Tag:** `git tag vX.Y.Z && git push origin main vX.Y.Z`.
 4. **Build:**
-   - Binary: `task build` → `./bin/server` self-reports the new version.
-   - Container: `task container:build` → image tagged `yourproject:vX.Y.Z` and `yourproject:latest`.
+   - Binaries: `task build` → `./bin/server` self-reports the new version and `./bin/xc-scraper --version` prints the same `git describe` string (the daemon is built from the sibling `../xc-scraper` checkout by `build:scraper`; the frontend step needs `PUBLIC_PB_PORT` in the environment).
+   - Container: `task container:build` → image tagged `yourproject:vX.Y.Z` and `yourproject:latest` (league only — the daemon runs natively, [DEPLOYMENTS.md](DEPLOYMENTS.md)).
 5. **Verify locally:**
 
    ```sh
@@ -25,7 +25,7 @@ The release workflow is a single sequence — `git tag` is the trigger, everythi
    # {"version":"vX.Y.Z","commit":"abc1234","date":"..."}
    ```
 
-6. **Deploy** per your environment (push the image to a registry, restart the service, etc.).
+6. **Deploy** per your environment (push the image to a registry, restart the service, etc.). A tier on wire mode also gets the new `bin/xc-scraper` + `sudo systemctl restart xc-scraper-<tier>` (unit template and install steps: `../xc-scraper/deploy/README.md`); order relative to the league restart does not matter — the daemon spools finished games and the league reconnects.
 
 > If you tag without changing source, `task build` may skip the rebuild because Task's source-cache doesn't track the git tag. Workaround: `task clean && task build`, or touch any `.go` file.
 
@@ -89,7 +89,7 @@ R1 is a per-process flag (DESIGN-STEP8 D-4): the same binary runs either the emb
 
 **Cut over**
 
-1. Start the daemon unit (`xc-scraper --watch-dir <the league's CONTAINERS_SOCKET_DIR> --token … --control-token … --game-webhook http://<league>/api/xc/finished_game --webhook-token …`, plus `--hostrunner --host-drive-marker play-` when the league runs with `HOSTRUNNER_ENABLED` — the daemon logs the flag as ignored until its in-daemon host runner lands, X10) and confirm its `xc-scraper:` boot line + `GET /api/health`.
+1. Start the daemon unit (`xc-scraper-<tier>`, from the template in `../xc-scraper/deploy/xc-scraper.service`: `xc-scraper --watch-dir <the league's CONTAINERS_SOCKET_DIR> --listen 127.0.0.1:<8990 prod | 8991 pre> --state-dir ./xc-scraper-state --game-webhook http://127.0.0.1:<league port>/api/xc/finished_game`, tokens from the tier's `.env` as `XC_SCRAPER_TOKEN` / `XC_SCRAPER_CONTROL_TOKEN` / `XC_SCRAPER_WEBHOOK_TOKEN`, plus `XC_SCRAPER_HOSTRUNNER=true` and `XC_SCRAPER_HOST_DRIVE_MARKER=play-` when the league runs with `HOSTRUNNER_ENABLED`) and confirm its `xc-scraper: listen=… token=set control=set … webhook=set … hostrunner=on|off` boot line + `GET /api/health` (`{"ok":true,…}`, no token needed).
 2. Set `XC_SCRAPER_URL=http://<daemon-host>[:port]`, `XC_SCRAPER_TOKEN`, `XC_SCRAPER_CONTROL_TOKEN`, `XC_SCRAPER_WEBHOOK_TOKEN` (same values as the daemon's flags) in the league unit's environment; leave `CONTAINERS_*` as they are (the pod lifecycle stays league-side).
 3. Restart the league and read `leaguescraper: mode=wire …`. Once the stream connects the daemon's instances appear on `/admin/pod/`; the next finished game arrives through `POST /api/xc/finished_game` (a `games` row, no runner log lines on the league side).
 
@@ -141,3 +141,20 @@ task dev                # fresh seed each run (Air uses -tags dev)
 ```
 
 Dev DB is ephemeral — `tmp/pb_data/` is wiped by Air on exit. See CLAUDE.md for the full story.
+
+## The dev loop (step 8): three processes
+
+`task dev` (or `task dev:lan`) runs three things in parallel, each with hot reload:
+
+| process | task | listens | how to check |
+| --- | --- | --- | --- |
+| xc-scraper daemon | `dev:scraper` — `air -c .air.toml` in `../xc-scraper` | `127.0.0.1:8992` | `curl -s 127.0.0.1:8992/api/health` → `{"ok":true,"version":"dev",…}`; boot line `xc-scraper: listen=127.0.0.1:8992 …` |
+| Go backend | `dev:backend` — Air, `-tags dev` | `PUBLIC_PB_PORT` | `curl -s 127.0.0.1:$PUBLIC_PB_PORT/api/health`; boot line `leaguescraper: mode=wire\|in-process …` |
+| SvelteKit | `dev:frontend` — Vite | `5173` (Vite default; `./run-dev.sh` uses `19099`) | the browser |
+
+- The daemon's env comes from the Taskfile (`XC_SCRAPER_LISTEN`, `XC_SCRAPER_WATCH_DIR=<repo>/containers/xemu/qmp`, `XC_SCRAPER_GAME_WEBHOOK=http://127.0.0.1:$PUBLIC_PB_PORT/api/xc/finished_game`, `XC_SCRAPER_STATE_DIR=../xc-scraper/tmp/xc-scraper-state`) plus whatever `XC_SCRAPER_*` twins are in `.env` (tokens, `XC_SCRAPER_HOSTRUNNER=true`, …). The state dir lives under xc-scraper's `tmp/` on purpose: `task clean` here does not wipe it, so a pushed control document and spooled games survive a league restart the way they do on a tier.
+- The league only **consumes** the dev daemon when `.env` has `XC_SCRAPER_URL=http://127.0.0.1:8992`. Without it the backend boots in-process and, with `CONTAINERS_ENABLED=true`, both would attach `containers/xemu/qmp/` — set the URL, or run `task dev:backend` + `task dev:frontend` without the daemon.
+- `task dev` still needs `sudo` when containers are on (D-13: the PUID story), so the tools must be on root's `PATH` (`/usr/local/bin`, README Prerequisites). After a `sudo task dev` the `.task/` cache dir is root-owned; a later unprivileged `task build` fails with `open .task/checksum/…: permission denied` — run it with `TASK_TEMP_DIR=/tmp/xc-task` (or `sudo chown -R $USER .task`).
+- Air kills the daemon with SIGINT on every rebuild (`send_interrupt`, 6 s grace); the attach loop re-attaches the sockets on the next boot and the league reconnects within its backoff.
+
+Without Task/Air (or when `sudo` is not available): build both binaries (`task build` or `go build`) and run them by hand — `bin/xc-scraper --allow-empty --listen 127.0.0.1:8992 --state-dir /tmp/xc-dev/state` and `XC_SCRAPER_URL=http://127.0.0.1:8992 bin/server serve --http=127.0.0.1:8149 --dir /tmp/xc-dev/pb_data` (`--allow-empty` lets the daemon idle with no `--watch-dir`). On the local go1.27 toolchain the **league** binary must be *built* with `GOEXPERIMENT=nodwarf5,nojsonv2` exported — a default-experiment build dies at boot with `fatal error: stack overflow` in `migrations.init` (jsonv2 vs PocketBase's `Collection.UnmarshalJSON`); the daemon has no PocketBase and does not care. Verified 2026-09-07: daemon `--allow-empty` on `:8992` + league on `:8149` with `XC_SCRAPER_URL` prints `leaguescraper: mode=wire url=http://127.0.0.1:8992 …`, `xcclient: connected …`, `xcclient: hello: 0 instance(s), 1 room(s) joined`, then `configpush: … 403 control_disabled` until the daemon gets a `--control-token` (expected).

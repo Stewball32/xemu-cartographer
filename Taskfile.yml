@@ -16,8 +16,38 @@ vars:
 
 tasks:
   dev:
-    desc: Run Go backend (Air) and SvelteKit dev server in parallel
-    deps: [dev:backend, dev:frontend]
+    desc: Run the xc-scraper daemon (Air), Go backend (Air) and SvelteKit dev server in parallel
+    deps: [dev:scraper, dev:backend, dev:frontend]
+
+  dev:scraper:
+    desc: Run the xc-scraper daemon with hot reload (sibling checkout, port 8992; the backend consumes it when XC_SCRAPER_URL is set)
+    # Step 8 R1 (DESIGN-STEP8 §11, D-13): the daemon runs from the sibling
+    # checkout under its own Air config (../xc-scraper/.air.toml builds
+    # ./cmd/xc-scraper -> tmp/xc-scraper). Every daemon flag has an
+    # XC_SCRAPER_<UPPER_SNAKE> env twin, so the recipe is pure environment:
+    #   listen        127.0.0.1:8992 (D-14 dev port; XC_SCRAPER_URL in .env must match)
+    #   watch-dir     this repo's containers/xemu/qmp (what the podman stack bind-mounts)
+    #   game-webhook  the backend's ingest route on PUBLIC_PB_PORT
+    #   state-dir     ../xc-scraper/tmp/xc-scraper-state — NOT under this repo's tmp/:
+    #                 our .air.toml has clean_on_exit=true and would wipe the
+    #                 daemon's spool + control.json on every `task dev` exit.
+    # Tokens (XC_SCRAPER_TOKEN / _CONTROL_TOKEN / _WEBHOOK_TOKEN) come from the
+    # root .env via `dotenv` — the same values the backend reads. Booting the
+    # binary needs GOEXPERIMENT=nodwarf5,nojsonv2 exported, like dev:backend.
+    dir: '{{.XC_SCRAPER_DIR}}'
+    vars:
+      # Absolute sibling path (XC_SCRAPER_DIR may be relative): resolved from
+      # this repo's root, where the default ../xc-scraper is anchored.
+      XC_SCRAPER_ABS:
+        sh: cd "{{.ROOT_DIR}}" && cd "{{.XC_SCRAPER_DIR}}" && pwd
+    env:
+      XC_SCRAPER_LISTEN: "127.0.0.1:8992"
+      XC_SCRAPER_WATCH_DIR: "{{.ROOT_DIR}}/containers/xemu/qmp"
+      XC_SCRAPER_GAME_WEBHOOK: 'http://127.0.0.1:{{.PUBLIC_PB_PORT | default "8090"}}/api/xc/finished_game'
+      XC_SCRAPER_STATE_DIR: "{{.XC_SCRAPER_ABS}}/tmp/xc-scraper-state"
+    cmds:
+      - cmd: 'test -f .air.toml || { echo "dev:scraper: {{.XC_SCRAPER_DIR}}/.air.toml not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: "air -c .air.toml"
 
   dev:backend:
     desc: Run Go backend with hot reload
@@ -41,8 +71,8 @@ tasks:
       - cmd: "pnpm dev"
 
   dev:lan:
-    desc: Run dev servers bound to all interfaces — reachable from other devices on the LAN
-    deps: [dev:backend:lan, dev:frontend:lan]
+    desc: Run dev servers bound to all interfaces — reachable from other devices on the LAN (the daemon stays on loopback)
+    deps: [dev:scraper, dev:backend:lan, dev:frontend:lan]
 
   dev:backend:lan:
     desc: Run Go backend with hot reload, bound to 0.0.0.0
@@ -121,10 +151,11 @@ tasks:
     cmds: ["./scripts/migrate-verify.sh {{.CLI_ARGS}}"]
 
   build:
-    desc: Build production binary with static frontend
+    desc: Build production binaries (bin/server + bin/xc-scraper) with static frontend
     cmds:
       - task: build:frontend
       - task: build:backend
+      - task: build:scraper
 
   build:frontend:
     desc: Build SvelteKit static output
@@ -156,6 +187,22 @@ tasks:
         "{{.XC_SCRAPER_DIR}}/go.sum",
       ]
     generates: ["bin/server"]
+
+  build:scraper:
+    desc: Build the xc-scraper daemon from the sibling checkout into bin/xc-scraper (version baked in via ldflags)
+    # A first-class tier artifact next to bin/server (DESIGN-STEP8 §11): the
+    # tier's systemd unit (../xc-scraper/deploy/xc-scraper.service) runs it.
+    # main.version backs `bin/xc-scraper --version` and /api/health.version.
+    dir: '{{.XC_SCRAPER_DIR}}'
+    cmds:
+      - CGO_ENABLED=0 go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.ROOT_DIR}}/bin/xc-scraper ./cmd/xc-scraper
+    sources:
+      [
+        "{{.XC_SCRAPER_DIR}}/**/*.go",
+        "{{.XC_SCRAPER_DIR}}/go.mod",
+        "{{.XC_SCRAPER_DIR}}/go.sum",
+      ]
+    generates: ["{{.ROOT_DIR}}/bin/xc-scraper"]
 
   test:
     desc: Run Go tests and frontend type-check
