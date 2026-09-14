@@ -51,7 +51,7 @@ func (c *Client) Run(ctx context.Context) error {
 			backoff = c.backoffMin
 		}
 		wait := jitter(backoff)
-		c.logf("xcclient: upstream %s: %v; reconnect in %s", c.base.Host, err, wait.Round(time.Millisecond))
+		c.logf("xcclient: upstream %s: %v; reconnect in %s", c.base.Host, c.redact(err), wait.Round(time.Millisecond))
 		select {
 		case <-ctx.Done():
 		case <-time.After(wait):
@@ -317,7 +317,7 @@ func (c *Client) handleScraper(ctx context.Context, raw []byte, env *wire.Envelo
 			c.onInstanceAdded(ctx, env.Instance, "frame")
 		}
 		if res.Regression {
-			c.onEpoch(ctx, env.Instance, "seq regression on "+env.Type)
+			c.onRegression(ctx, raw, env)
 		}
 		if res.Gap > 0 {
 			c.noteSeqGap(env.Instance, env.Type, res.Gap)
@@ -416,13 +416,68 @@ func (c *Client) onInstanceAdded(ctx context.Context, name, via string) {
 	c.evict(wire.HostRoomPrefix+":"+name, "instance appeared")
 }
 
-// onEpoch handles a per-instance seq regression: the mirror already reset
-// the instance; re-read started_at and evict its downstream clients.
-func (c *Client) onEpoch(ctx context.Context, name, why string) {
-	c.logf("xcclient: %s: %s; epoch change", name, why)
-	c.mirror.MarkPlaceholder(name)
-	c.refreshPlaceholders(ctx, true)
+// onRegression handles a frame whose seq went backwards (the mirror did not
+// cache it). wire.md calls a lower seq "stale" and names started_at as the
+// restart signal, and the daemon allocates a seq and enqueues the frame
+// non-atomically — a join replay can land behind a broadcast that took the
+// next seq — so a bare inversion is not an epoch. Confirm it through
+// GET /api/instances: an unchanged started_at means the frame is stale and
+// the cache stands; a changed one is a runner restart (the mirror reset the
+// instance) and the frame is stored as the new epoch's first, followed by
+// the downstream eviction. When the read cannot decide (placeholder
+// started_at, read failure, instance not listed) the regression is taken as
+// a restart, as before: a frozen instance would be worse than a spurious
+// resync.
+func (c *Client) onRegression(ctx context.Context, raw []byte, env *wire.Envelope) {
+	name, why := env.Instance, "seq regression on "+env.Type
+	switch c.confirmEpoch(ctx, name) {
+	case epochNo:
+		c.logf("xcclient: %s: %s; started_at unchanged, stale frame dropped", name, why)
+		return
+	case epochYes:
+		c.logf("xcclient: %s: %s; epoch change", name, why)
+	case epochUnknown:
+		c.logf("xcclient: %s: %s; epoch change (started_at unconfirmed)", name, why)
+		c.mirror.ClearInstance(name)
+		c.mirror.MarkPlaceholder(name)
+		c.refreshPlaceholders(ctx, false) // rate-limited: confirmEpoch may just have failed the read
+	}
+	c.mirror.Store(name, env.Type, raw, env)
 	c.evict(wire.HostRoomPrefix+":"+name, why)
+}
+
+type epochVerdict int
+
+const (
+	epochUnknown epochVerdict = iota
+	epochNo
+	epochYes
+)
+
+// confirmEpoch compares the daemon's started_at for name (GET /api/instances,
+// forced) with the mirror's. epochYes means it changed — Mirror.SetInstance
+// has already reset the instance; epochNo means it is the same epoch;
+// epochUnknown when the mirror only holds a placeholder or the read failed.
+func (c *Client) confirmEpoch(ctx context.Context, name string) epochVerdict {
+	if c.mirror.Placeholder(name) {
+		return epochUnknown
+	}
+	c.mu.Lock()
+	c.fetchAt = time.Now()
+	c.mu.Unlock()
+	rows, err := c.fetchInstances(ctx)
+	if err != nil {
+		c.logf("xcclient: %s: started_at unavailable (%v)", name, err)
+		return epochUnknown
+	}
+	at, ok := rows[name]
+	if !ok || at.IsZero() {
+		return epochUnknown
+	}
+	if c.mirror.SetInstance(name, at, false) {
+		return epochYes
+	}
+	return epochNo
 }
 
 func dedupe(rooms []string) []string {

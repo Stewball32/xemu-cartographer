@@ -21,12 +21,11 @@ import (
 // envelope of each (instance, class) in frames, host:all/summary replay
 // serves the summary fixture when present.
 type fixtureReplayer struct {
+	mu        sync.Mutex
 	startedAt time.Time
-
-	mu     sync.Mutex
-	names  []string
-	frames map[string]map[string][]byte // instance → class → envelope
-	summ   []byte
+	names     []string
+	frames    map[string]map[string][]byte // instance → class → envelope
+	summ      []byte
 }
 
 func newFixtureReplayer(t *testing.T, names ...string) *fixtureReplayer {
@@ -62,6 +61,7 @@ func (r *fixtureReplayer) serve(t *testing.T, name string) []byte {
 func (r *fixtureReplayer) HelloPayloadFiltered(keep func([]string) []string) wire.HelloPayload {
 	r.mu.Lock()
 	names := append([]string(nil), r.names...)
+	startedAt := r.startedAt
 	r.mu.Unlock()
 	if keep != nil {
 		names = keep(names)
@@ -69,9 +69,17 @@ func (r *fixtureReplayer) HelloPayloadFiltered(keep func([]string) []string) wir
 	hp := wire.HelloPayload{ProtocolVersion: wire.ProtocolVersion, ServerTime: time.Now().UTC(), Classes: wire.AllClasses()}
 	hp.Instances = make([]wire.HelloInstance, 0, len(names))
 	for _, n := range names {
-		hp.Instances = append(hp.Instances, wire.HelloInstance{Name: n, StartedAt: r.startedAt})
+		hp.Instances = append(hp.Instances, wire.HelloInstance{Name: n, StartedAt: startedAt})
 	}
 	return hp
+}
+
+// restart moves every instance's started_at (a daemon-side instance restart
+// as GET /api/instances and the next hello would report it).
+func (r *fixtureReplayer) restart(at time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.startedAt = at
 }
 
 func (r *fixtureReplayer) JoinReplayForInstance(name string) []runner.Reply {

@@ -2,6 +2,8 @@ package leaguescraper
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -61,6 +64,9 @@ type Wire struct {
 	Rebroadcast *xcclient.Rebroadcaster
 	Pusher      *ConfigPusher
 	Events      *EventWriter
+	// Finished is the D-7 webhook-misconfiguration detector (§7.2): a
+	// previous_game uid that never lands in games logs one line after 30 s.
+	Finished *xcclient.FinishedGameDetector
 
 	logf   func(string, ...any)
 	cancel context.CancelFunc
@@ -115,6 +121,7 @@ func Boot(app core.App, cfg BootConfig) (*Wire, error) {
 		Instances: client.Mirror().Instances,
 		Logf:      logf,
 	})
+	w.Finished = xcclient.NewFinishedGameDetector(gameExists(app), logf)
 	client.OnConnect(w.Pusher.OnConnect)
 	w.Pusher.RegisterHooks(app)
 	// Same provider as embedded mode, pointed at the writer: pb: rows stay
@@ -132,6 +139,17 @@ func (w *Wire) onFrame(f xcclient.Frame) {
 	w.Adapter.OnFrame(f)
 	w.Rebroadcast.OnFrame(f)
 	w.Events.OnFrame(f)
+	w.Finished.OnFrame(f)
+}
+
+// gameExists is the D-7 detector's games lookup: the same game_uid match
+// the ingest route's dedupe uses (internal/games.PersistFinishedGame).
+func gameExists(app core.App) func(uid string) bool {
+	return func(uid string) bool {
+		_, err := app.FindFirstRecordByFilter("games", "game_uid = {:uid}", dbx.Params{"uid": uid})
+		// Only a definite miss counts: a read error must not fake the D-7 line.
+		return !errors.Is(err, sql.ErrNoRows)
+	}
 }
 
 // Start runs the stream (reconnect loop) on its own goroutine until Close.

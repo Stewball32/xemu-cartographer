@@ -17,7 +17,7 @@ func wantedRooms(c *Client) map[string]bool {
 	defer c.mu.Unlock()
 	out := make(map[string]bool, len(c.wanted))
 	for k, v := range c.wanted {
-		out[k] = v
+		out[k] = v > 0
 	}
 	return out
 }
@@ -159,16 +159,37 @@ func TestRoundTripHub(t *testing.T) {
 		t.Fatal("always-class frame must survive a 1→0 on its room")
 	}
 
-	// epoch change: a seq regression evicts host:<inst> with 1012 only.
+	// seq inversion with the same started_at (join replay racing a
+	// broadcast, wire.md "About seq"): the stale frame is dropped from the
+	// mirror, relayed downstream as-is, and nobody is evicted.
 	before := sink.evictedPrefix(wire.HostRoomPrefix + ":smoke1")
+	kept := c.Mirror().Frame("smoke1", wire.ClassGame)
 	up.hub.SendToRoomRaw(gameRoom, hub.Frame(gameRoom, mutated(t, "game", map[string]any{"seq": 40})))
+	waitFor(t, "stale frame logged", func() bool { return logs.has("stale frame dropped") })
+	if got := sink.sent(gameRoom); len(got) != 2 {
+		t.Fatalf("stale frame still rebroadcast: %d frame(s)", len(got))
+	}
+	if sink.evictedPrefix(wire.HostRoomPrefix+":smoke1") != before {
+		t.Fatal("same started_at must not evict")
+	}
+	if got := c.Mirror().Frame("smoke1", wire.ClassGame); !bytes.Equal(got, kept) {
+		t.Fatal("stale frame replaced the cached game frame")
+	}
+
+	// epoch change: a seq regression whose started_at moved evicts
+	// host:<inst> with 1012 only.
+	rp.restart(time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	up.hub.SendToRoomRaw(gameRoom, hub.Frame(gameRoom, mutated(t, "game", map[string]any{"seq": 39})))
 	waitFor(t, "epoch eviction", func() bool { return sink.evictedPrefix(wire.HostRoomPrefix+":smoke1") > before })
 	expectResync(t, sink, wire.HostRoomPrefix+":smoke1")
-	if got := sink.sent(gameRoom); len(got) != 2 {
-		t.Fatalf("regressing frame still rebroadcast: %d frame(s)", len(got))
+	if got := sink.sent(gameRoom); len(got) != 3 {
+		t.Fatalf("epoch frame still rebroadcast: %d frame(s)", len(got))
 	}
-	if !logs.has("seq regression") {
-		t.Fatal("expected a seq regression log line")
+	if !logs.has("seq regression on game; epoch change") {
+		t.Fatal("expected a seq regression epoch log line")
+	}
+	if got := c.Mirror().Frame("smoke1", wire.ClassGame); bytes.Equal(got, kept) {
+		t.Fatal("epoch frame must replace the cached game frame")
 	}
 
 	// stale clear: upstream gone longer than StaleAfter empties the mirror.

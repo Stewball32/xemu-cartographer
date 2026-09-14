@@ -113,9 +113,13 @@ type Client struct {
 	seqGaps  atomic.Uint64
 	frameBuf int
 
-	mu          sync.Mutex
-	conn        *websocket.Conn
-	wanted      map[string]bool
+	mu   sync.Mutex
+	conn *websocket.Conn
+	// wanted is the demand set as a refcount per room: the demand observer
+	// (downstream viewers) and the pb: event writer (sink rows) share one
+	// client and each contributes one reference per room it needs, so
+	// neither side's Leave can drop a room the other still wants.
+	wanted      map[string]int
 	hooks       []func()
 	connected   bool
 	since       time.Time
@@ -149,7 +153,7 @@ func New(cfg Config) (*Client, error) {
 		mirror:       NewMirror(),
 		logf:         cfg.Log,
 		frameBuf:     DefaultFrameBuffer,
-		wanted:       make(map[string]bool),
+		wanted:       make(map[string]int),
 		staleAfter:   cfg.StaleAfter,
 		pingEvery:    pingInterval,
 		backoffMin:   backoffMin,
@@ -222,23 +226,33 @@ func (c *Client) OnConnect(fn func()) {
 	c.mu.Unlock()
 }
 
-// Join adds room to the demand set (re-joined on every reconnect) and sends
-// join_room upstream when connected (demand layer, F3b).
+// Join adds one reference to room in the demand set (re-joined on every
+// reconnect) and sends join_room upstream on the 0→1 edge when connected
+// (demand layer, F3b). Every Join must be paired with one Leave by the same
+// owner; both owners (Demand, the pb: event writer) hold at most one
+// reference per room.
 func (c *Client) Join(room string) {
 	c.mu.Lock()
-	c.wanted[room] = true
+	c.wanted[room]++
+	first := c.wanted[room] == 1
 	conn := c.conn
 	c.mu.Unlock()
-	if conn != nil {
+	if first && conn != nil {
 		c.send(conn, wire.Message{Type: wire.TypeJoinRoom, Room: room})
 	}
 }
 
-// Leave removes room from the demand set and sends leave_room upstream
-// unless the room is an always-room (host:summary, always-classes,
-// xc:hostrunner), which are never left.
+// Leave drops one reference to room and, on the 1→0 edge, sends leave_room
+// upstream — unless the room is an always-room (host:summary,
+// always-classes, xc:hostrunner), which are never left. A room another
+// owner still holds stays joined.
 func (c *Client) Leave(room string) {
 	c.mu.Lock()
+	if n := c.wanted[room]; n > 1 {
+		c.wanted[room] = n - 1
+		c.mu.Unlock()
+		return
+	}
 	delete(c.wanted, room)
 	conn := c.conn
 	c.mu.Unlock()
@@ -247,6 +261,37 @@ func (c *Client) Leave(room string) {
 	}
 	c.send(conn, wire.Message{Type: wire.TypeLeaveRoom, Room: room})
 }
+
+// wants reports whether any owner still holds room in the demand set.
+func (c *Client) wants(room string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.wanted[room] > 0
+}
+
+// redact hides the feed token in err's text. The stream URL carries it as
+// ?token= and coder/websocket wraps the transport-level *url.Error, whose
+// message quotes the full request URL (Go strips only userinfo), so a
+// refused dial would otherwise print the secret on every backoff cycle.
+// The error chain is kept for errors.Is/As.
+func (c *Client) redact(err error) error {
+	if err == nil || c.cfg.Token == "" {
+		return err
+	}
+	msg := err.Error()
+	for _, needle := range []string{url.QueryEscape(c.cfg.Token), c.cfg.Token} {
+		msg = strings.ReplaceAll(msg, needle, "***")
+	}
+	return &redactedError{msg: msg, err: err}
+}
+
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.err }
 
 func (c *Client) isAlwaysRoom(room string) bool {
 	if room == wire.SummaryRoom || (room == HostrunnerRoom && c.cfg.Hostrunner) {

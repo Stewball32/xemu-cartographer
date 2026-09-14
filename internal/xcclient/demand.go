@@ -112,8 +112,10 @@ func (d *Demand) Observe(room string, occupied bool) {
 	d.pending[room] = time.AfterFunc(d.linger, func() { d.release(room, rm) })
 }
 
-// release runs when a linger timer expires: leave upstream + drop the cached
-// frame, unless the room was re-occupied (timer cancelled) meanwhile.
+// release runs when a linger timer expires: drop this owner's reference
+// upstream and, when no other owner (the pb: event writer) still wants the
+// room, drop the cached frame — unless the room was re-occupied (timer
+// cancelled) meanwhile.
 func (d *Demand) release(room string, rm wire.Room) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -126,6 +128,10 @@ func (d *Demand) release(room string, rm wire.Room) {
 	}
 	delete(d.joined, room)
 	d.client.Leave(room)
+	if d.client.wants(room) {
+		d.logf("xcclient: demand release %s after %s idle (still wanted by a sink)", room, d.linger)
+		return
+	}
 	d.client.Mirror().Drop(rm.Instance, rm.Class)
 	d.logf("xcclient: demand leave %s after %s idle", room, d.linger)
 }

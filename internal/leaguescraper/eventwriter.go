@@ -41,7 +41,11 @@ type EventWriter struct {
 	failed  atomic.Uint64
 }
 
-// DemandPort is the upstream demand set (*xcclient.Client satisfies it).
+// DemandPort is the upstream demand set (*xcclient.Client satisfies it). It
+// is refcounted per room and shared with the demand observer (downstream
+// viewers): the writer holds exactly one reference per room it wants
+// (Resync keeps Join/Leave balanced), so a viewer's linger leave cannot
+// drop a room the sink still needs and vice versa.
 type DemandPort interface {
 	Join(room string)
 	Leave(room string)

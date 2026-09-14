@@ -229,14 +229,28 @@ func TestMirrorSeqTracking(t *testing.T) {
 		t.Fatalf("gap frame: %+v", res)
 	}
 	store(t, m, frame(t, "scenario"))
-	if res := store(t, m, game(2)); !res.Regression || res.New {
+	kept := m.Frame("smoke1", wire.ClassGame)
+	if res := store(t, m, game(2)); !res.Regression || res.Cached || res.New {
 		t.Fatalf("regression frame: %+v", res)
 	}
-	if m.Frame("smoke1", wire.ClassScenario) != nil {
-		t.Fatal("regression did not clear the other classes")
+	if m.Frame("smoke1", wire.ClassScenario) == nil {
+		t.Fatal("regression must not clear the other classes (stale frame, wire.md)")
 	}
-	if m.Frame("smoke1", wire.ClassGame) == nil {
-		t.Fatal("regression dropped the new frame")
+	if got := m.Frame("smoke1", wire.ClassGame); !bytes.Equal(got, kept) {
+		t.Fatal("regression replaced the cached game frame")
+	}
+	if res := store(t, m, game(46)); res.Regression || res.Gap != 0 {
+		t.Fatalf("seq state moved on a stale frame: %+v", res)
+	}
+	// a confirmed epoch (real started_at moved) resets the class seq state
+	if m.SetInstance("smoke1", time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC), false) {
+		t.Fatal("placeholder → real is not an epoch change")
+	}
+	if !m.SetInstance("smoke1", time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC), false) {
+		t.Fatal("moved started_at must be an epoch change")
+	}
+	if res := store(t, m, game(2)); res.Regression || !res.Cached {
+		t.Fatalf("first frame of the new epoch: %+v", res)
 	}
 	for i := 0; i < 2; i++ {
 		if res := store(t, m, frame(t, "event_death")); res.Cached || res.Regression || res.Gap != 0 {

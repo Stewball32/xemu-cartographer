@@ -41,7 +41,7 @@ type mirrorInstance struct {
 // act on epoch changes (Regression) and instance discovery (New).
 type StoreResult struct {
 	New        bool   // the instance was unknown; created with a placeholder started_at
-	Regression bool   // seq went backwards: the instance's cache was cleared before storing
+	Regression bool   // seq went backwards: the frame was NOT cached (stale per wire.md); the caller decides whether it is a restart
 	Gap        uint64 // frames skipped since the last seq (0 = contiguous or untracked)
 	Cached     bool   // the frame is now the instance's cached frame for its class
 }
@@ -124,6 +124,15 @@ func (m *Mirror) MarkPlaceholder(name string) {
 	}
 }
 
+// Placeholder reports whether name's started_at is a placeholder (false for
+// an unknown instance).
+func (m *Mirror) Placeholder(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mi, ok := m.insts[name]
+	return ok && mi.placeholder
+}
+
 // Clear empties the mirror (stale upstream, §8.2).
 func (m *Mirror) Clear() {
 	m.mu.Lock()
@@ -158,9 +167,12 @@ func (mi *mirrorInstance) reset() {
 // Store records a per-instance frame: raw is the framed wire.Message exactly
 // as received, env its decoded envelope. Unknown instances are created with
 // env.Ts as a placeholder started_at (New=true). Seq is tracked for state
-// classes only (events always carry seq 0); a regression clears the
-// instance first. Only wire.StateClasses frames are cached — events are a
-// log, not state, and are never replayed on join.
+// classes only (events always carry seq 0); a frame whose seq went
+// backwards is stale (wire.md "About seq") and is not cached — the cache
+// and seq state stand, Regression is reported, and the stream worker
+// decides through started_at whether the runner restarted (then it clears
+// the instance and stores the frame again). Only wire.StateClasses frames
+// are cached — events are a log, not state, and are never replayed on join.
 func (m *Mirror) Store(name, class string, raw []byte, env *wire.Envelope) StoreResult {
 	var res StoreResult
 	if name == "" || !stateClassSet[class] {
@@ -178,8 +190,8 @@ func (m *Mirror) Store(name, class string, raw []byte, env *wire.Envelope) Store
 		if last, seen := mi.seq[class]; seen {
 			switch {
 			case env.Seq < last:
-				mi.reset()
 				res.Regression = true
+				return res
 			case env.Seq > last+1:
 				res.Gap = env.Seq - last - 1
 			}
@@ -395,7 +407,7 @@ func (m *Mirror) Game(name string) *wire.GamePayload {
 	return nil
 }
 
-// PreviousGame returns the decoded previous_game payload (D-7 detector).
+// PreviousGame returns the decoded previous_game payload.
 func (m *Mirror) PreviousGame(name string) *wire.PreviousGamePayload {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
