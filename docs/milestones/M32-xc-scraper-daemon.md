@@ -85,3 +85,8 @@ _Append-only. Never edit past entries; add a new dated line._
 - 2026-09-07: created (D1 slice of the step-8 build). Daemon, league consumer and
   the dev/build/deploy/CI surfaces landed on `feat/xc-restructure` + xc-scraper
   `main`; owner gates (push, ports, units) still open.
+- 2026-09-14: step-8 polish (flagship) — shutdown sends `1001 league shutdown`
+  instead of dropping the socket, `GET /api/admin/scraper/upstream` gains
+  `attempts` / `last_error` / `auth_rejected` (a refused `XC_SCRAPER_TOKEN` no
+  longer looks like a healthy silent stream), and `/admin/pod/` + `/admin/pod/<name>/`
+  show the §12 upstream banner (`UpstreamBanner.svelte`, 5 s poll, wire mode only).

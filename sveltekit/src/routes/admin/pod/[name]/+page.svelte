@@ -25,6 +25,7 @@
 	import type { EnvelopeTypeV2 } from '$lib/types/scraper-v2';
 	import type { ContainerDetail, ContainerStatus } from '$lib/types/containers';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import UpstreamBanner from '$lib/components/ui/UpstreamBanner.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
 
@@ -267,6 +268,8 @@
 			</button>
 		{/snippet}
 	</PageHeader>
+
+	<UpstreamBanner />
 
 	{#snippet wsIcon()}<WifiIcon class="size-3.5" />{/snippet}
 	{#snippet phaseIcon()}<ActivityIcon class="size-3.5" />{/snippet}

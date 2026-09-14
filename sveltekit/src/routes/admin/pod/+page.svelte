@@ -20,6 +20,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import UpstreamBanner from '$lib/components/ui/UpstreamBanner.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import DataTable from '$lib/components/ui/DataTable.svelte';
@@ -561,6 +562,8 @@
 			</button>
 		{/snippet}
 	</PageHeader>
+
+	<UpstreamBanner />
 
 	{#if selectedCount > 0}
 		<div

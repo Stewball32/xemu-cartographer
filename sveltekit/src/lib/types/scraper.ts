@@ -701,3 +701,27 @@ export interface TickProjectile {
 	rotation_sine: number;
 	rotation_cosine: number;
 }
+
+// GET /api/admin/scraper/upstream — the daemon stream's health in wire mode
+// (internal/xcclient.Status flattened under a "mode" discriminator; the
+// in-process body is {"mode":"in-process"} alone). Read by the studio
+// "upstream disconnected" banner (DESIGN-STEP8 §12).
+export interface UpstreamStatus {
+	mode: 'wire' | 'in-process';
+	connected?: boolean;
+	// When `connected` last changed: "connected since" when up, "disconnected
+	// since" when down.
+	since?: string;
+	reconnects?: number;
+	last_frame_at?: string;
+	seq_gaps?: number;
+	shed?: number;
+	stale?: boolean;
+	// Failed dials since the stream was last up (0 while connected).
+	attempts?: number;
+	// The last (token-redacted) failure; "" once a connection is up again.
+	last_error?: string;
+	// The daemon admitted the socket but refused the feed token: connected,
+	// yet nothing streams (hello lists no instances, every join forbidden).
+	auth_rejected?: boolean;
+}
