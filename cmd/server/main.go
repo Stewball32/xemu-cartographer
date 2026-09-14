@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
@@ -60,8 +61,9 @@ func main() {
 	var scrMgr *scrapermgr.Manager
 	// podMgr is set below only when CONTAINERS_ENABLED; the host-runner URL
 	// resolver reads it at call time (through a getter) so it can be wired before
-	// podman is constructed.
-	var podMgr *podman.Manager
+	// podman is constructed. Atomic because the getters run on scraper /
+	// request goroutines that may already be up when the store happens.
+	var podMgr atomic.Pointer[podman.Manager]
 
 	// Database migrations are the SOURCE OF TRUTH for schema (docs/MIGRATIONS.md).
 	// Pending migrations in migrations/ are applied automatically on boot — BEFORE
@@ -144,7 +146,7 @@ func main() {
 		// import of xc-scraper/haloce above triggers haloce.init(), which
 		// registers Halo: CE's title ID with scraper.Lookup so the embedded
 		// runner.Start() can detect it.
-		booted, err := bootScraperFeed(app, svc, hub, os.Getenv, func() *podman.Manager { return podMgr })
+		booted, err := bootScraperFeed(app, svc, hub, os.Getenv, podMgr.Load)
 		if err != nil {
 			return err
 		}
@@ -247,7 +249,7 @@ func main() {
 			scraperroutes.SetHealthSource(scrMgr)
 			scrMgr.SetHostRunner(
 				hostReg,
-				hostRunnerURLResolver(func() *podman.Manager { return podMgr }),
+				hostRunnerURLResolver(podMgr.Load),
 				envBool("HOSTRUNNER_ENABLED", false),
 			)
 			// Host/client scoping (pod-hijack fix): AUTO-DRIVE only player-hosted
@@ -268,10 +270,11 @@ func main() {
 			// resident). nil-safe — no podman manager (CONTAINERS_ENABLED off)
 			// → built-in gametypes only.
 			scrMgr.SetOverlayResolver(func(name string) (string, bool) {
-				if podMgr == nil {
+				pm := podMgr.Load()
+				if pm == nil {
 					return "", false
 				}
-				return podMgr.OverlayPath(name)
+				return pm.OverlayPath(name)
 			})
 
 			// Capture-policy loader: read the persisted (instance, class) rows
@@ -317,7 +320,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			podMgr = mgr // host-runner URL resolver reads this to find websockify ports
+			podMgr.Store(mgr) // host-runner URL resolver reads this to find websockify ports
 
 			// Offset-set selection (offset versioning): map an instance to the
 			// offset-set id its catalog row assigns. Under the managed ingest

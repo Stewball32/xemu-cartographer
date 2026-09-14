@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -24,9 +25,10 @@ const testControlToken = "ctl-secret"
 // not_attached unless the addr names smoke1, otherwise it echoes what it
 // received so the test can assert the query → body re-encoding.
 type xemuDaemon struct {
-	srv  *httptest.Server
-	mu   sync.Mutex
-	last map[string]any
+	srv   *httptest.Server
+	mu    sync.Mutex
+	last  map[string]any
+	delay time.Duration // how long each tool takes to answer
 }
 
 func newXemuDaemon(t *testing.T) *xemuDaemon {
@@ -45,7 +47,13 @@ func newXemuDaemon(t *testing.T) *xemuDaemon {
 		_ = json.Unmarshal(raw, &body)
 		d.mu.Lock()
 		d.last = body
+		delay := d.delay
 		d.mu.Unlock()
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
 		addr, _ := body["addr"].(string)
 		if !strings.HasSuffix(addr, "/smoke1.sock") {
 			w.WriteHeader(http.StatusNotFound)
@@ -219,5 +227,43 @@ func TestProxyUpstreamDownAndInProcess(t *testing.T) {
 	code, body := get(t, mux, tok, "/api/admin/xemu/probe?sock=/nonexistent/smoke1.sock")
 	if code != http.StatusBadRequest || !strings.Contains(body["error"].(string), "not accessible") {
 		t.Fatalf("in-process probe: %d %v, want 400 not accessible", code, body)
+	}
+}
+
+// TestProxyOutlivesCtlTimeout: a probe relay runs on its own budget — a
+// daemon-side sampling longer than the 2 s control timeout still answers 200
+// instead of a 502 context deadline, and the knobs widen the budget.
+func TestProxyOutlivesCtlTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sleeps past DefaultCtlTimeout")
+	}
+	d, adapter, ctl := newWire(t)
+	mux, tok := mount(t, adapter)
+	d.mu.Lock()
+	d.delay = xcclient.DefaultCtlTimeout + 500*time.Millisecond
+	d.mu.Unlock()
+
+	code, body := get(t, mux, tok, "/api/admin/xemu/probe-title?sock=/run/smoke1.sock&samples=100&interval_ms=50")
+	if code != http.StatusOK || body["tool"] != "probe_title" {
+		t.Fatalf("probe_title past the control timeout: %d %v, want 200", code, body)
+	}
+	if ctl.Timeout != 0 {
+		t.Fatalf("shared Ctl timeout mutated to %s", ctl.Timeout)
+	}
+
+	cases := []struct {
+		body map[string]any
+		want time.Duration
+	}{
+		{map[string]any{"addr": "unix:/x"}, probeBudgetBase},
+		{map[string]any{"samples": 100, "interval_ms": 50}, probeBudgetBase + 5*time.Second},
+		{map[string]any{"interval_ms": 1000}, probeBudgetBase + time.Second},
+		{map[string]any{"samples": 1 << 20, "interval_ms": 1 << 20}, probeBudgetBase + 6000*time.Second},
+		{map[string]any{"samples": -3, "interval_ms": -1}, probeBudgetBase},
+	}
+	for _, tc := range cases {
+		if got := probeBudget(tc.body); got != tc.want {
+			t.Errorf("probeBudget(%v) = %s, want %s", tc.body, got, tc.want)
+		}
 	}
 }

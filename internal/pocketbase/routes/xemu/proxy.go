@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 
@@ -51,16 +52,36 @@ func strKnob(body map[string]any, q url.Values, key string) {
 	}
 }
 
+// probeBudgetBase is the relay timeout floor for one probe call. The daemon
+// runs each tool synchronously, so the 2 s control-call timeout
+// (xcclient.DefaultCtlTimeout, §8.5) fits probe / scan_string but not
+// probe_title (samples × interval_ms, up to 600 × 5 s) or sample_deltas (two
+// reads interval_ms apart, up to 10 s): probeBudget adds the sampling window
+// the knobs ask for on top of this floor, clamped to the daemon's own knob
+// bounds so a wild query cannot pick an unbounded timeout.
+const probeBudgetBase = 60 * time.Second
+
+func probeBudget(body map[string]any) time.Duration {
+	samples, _ := body["samples"].(int)
+	interval, _ := body["interval_ms"].(int)
+	samples = min(max(samples, 1), 600)
+	interval = min(max(interval, 0), 10000)
+	return probeBudgetBase + time.Duration(samples)*time.Duration(interval)*time.Millisecond
+}
+
 // proxy forwards body to POST /api/ctl/xemu/<tool> with the control token and
 // writes the daemon's status + JSON body unchanged (the daemon keeps the
 // league field names plus addr). 503 while the daemon is away, 502 when the
-// request itself fails.
+// request itself fails. The call runs on its own probe budget (probeBudget),
+// not the shared control timeout, so long samplings are not cut at 2 s.
 func proxy(e *core.RequestEvent, ctl *xcclient.Ctl, tool string, body map[string]any) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	status, out, err := ctl.Do(e.Request.Context(), http.MethodPost, "/api/ctl/xemu/"+tool, raw, true)
+	probe := *ctl // per-call copy: the shared Ctl keeps its 2 s control timeout
+	probe.Timeout = probeBudget(body)
+	status, out, err := probe.Do(e.Request.Context(), http.MethodPost, "/api/ctl/xemu/"+tool, raw, true)
 	if err != nil {
 		if scraperroutes.IsUpstreamDown(err) {
 			return scraperroutes.Unavailable(e)

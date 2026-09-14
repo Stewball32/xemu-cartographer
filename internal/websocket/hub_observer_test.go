@@ -332,3 +332,42 @@ func TestEvictRoomPrefix(t *testing.T) {
 		t.Fatalf("second EvictRoomPrefix evicted %d, want 0", got)
 	}
 }
+
+// TestEvictRoomPrefixRoomBoundary: a per-instance eviction ("host:box1")
+// matches the instance room and its :class children only — never the
+// "host:box10" sibling that shares the byte prefix.
+func TestEvictRoomPrefixRoomBoundary(t *testing.T) {
+	app, d := pbtest.NewApp(t)
+	_, token := pbtest.MintToken(t, app, d, "machine", []string{"room.join:*"})
+	f := newWSFixtureTicking(t, app, time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	connBox1, clientBox1 := f.dial(ctx, "token="+token)
+	connBox1Tick, clientBox1Tick := f.dial(ctx, "token="+token)
+	_, clientBox10 := f.dial(ctx, "token="+token)
+	_, clientBox10Tick := f.dial(ctx, "token="+token)
+	f.hub.addToRoom(clientBox1, "host:box1")
+	f.hub.addToRoom(clientBox1Tick, "host:box1:tick")
+	f.hub.addToRoom(clientBox10, "host:box10")
+	f.hub.addToRoom(clientBox10Tick, "host:box10:tick")
+
+	if got := f.hub.EvictRoomPrefix("host:box1", websocket.StatusServiceRestart, "upstream resync"); got != 2 {
+		t.Fatalf("EvictRoomPrefix(host:box1) evicted %d clients, want 2", got)
+	}
+	for _, conn := range []*websocket.Conn{connBox1, connBox1Tick} {
+		if _, _, err := conn.Read(ctx); websocket.CloseStatus(err) != websocket.StatusServiceRestart {
+			t.Fatalf("box1 client: %v, want a 1012 close", err)
+		}
+	}
+	waitFor(t, "hub to forget the box1 clients", func() bool {
+		return !connected(f.hub, clientBox1) && !connected(f.hub, clientBox1Tick)
+	})
+	if !connected(f.hub, clientBox10) || !connected(f.hub, clientBox10Tick) {
+		t.Fatal("host:box10 sibling was evicted by the host:box1 prefix")
+	}
+	// The whole family still goes with the hello-time "host:" prefix.
+	if got := f.hub.EvictRoomPrefix("host:", websocket.StatusServiceRestart, "upstream resync"); got != 2 {
+		t.Fatalf("EvictRoomPrefix(host:) evicted %d clients, want 2", got)
+	}
+}

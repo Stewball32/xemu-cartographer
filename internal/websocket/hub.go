@@ -742,8 +742,10 @@ func (h *Hub) rewalkRooms() {
 	}
 }
 
-// EvictRoomPrefix closes the socket of every client holding a room whose
-// name starts with prefix — the wire-mode consumer's "upstream resync"
+// EvictRoomPrefix closes the socket of every client holding a room that is
+// prefix itself or a ":"-separated descendant of it ("host:box1" matches
+// "host:box1" and "host:box1:tick", never "host:box10"; "host:" / "host"
+// match the whole family) — the wire-mode consumer's "upstream resync"
 // (1012 + reason, no error frame: wire.md has no resync code, and the
 // frontend reconnects on any close it did not see session_revoked before).
 // Each close runs on its own goroutine so a stalled peer cannot hold the
@@ -751,9 +753,10 @@ func (h *Hub) rewalkRooms() {
 // disconnect. Returns the number of clients evicted.
 func (h *Hub) EvictRoomPrefix(prefix string, status websocket.StatusCode, reason string) int {
 	victims := map[*Client]bool{}
+	bare := strings.TrimSuffix(prefix, ":")
 	h.mu.RLock()
 	for room, members := range h.rooms {
-		if !strings.HasPrefix(room, prefix) {
+		if room != bare && !strings.HasPrefix(room, bare+":") {
 			continue
 		}
 		for c := range members {
