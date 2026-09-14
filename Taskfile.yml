@@ -32,8 +32,9 @@ tasks:
     #                 our .air.toml has clean_on_exit=true and would wipe the
     #                 daemon's spool + control.json on every `task dev` exit.
     # Tokens (XC_SCRAPER_TOKEN / _CONTROL_TOKEN / _WEBHOOK_TOKEN) come from the
-    # root .env via `dotenv` — the same values the backend reads. Booting the
-    # binary needs GOEXPERIMENT=nodwarf5,nojsonv2 exported, like dev:backend.
+    # root .env via `dotenv` — the same values the backend reads. The daemon does
+    # NOT need GOEXPERIMENT=nodwarf5,nojsonv2 — that is a build-time requirement
+    # of the league binary (PocketBase) only; xc-scraper builds and boots either way.
     dir: '{{.XC_SCRAPER_DIR}}'
     vars:
       # Absolute sibling path (XC_SCRAPER_DIR may be relative): resolved from

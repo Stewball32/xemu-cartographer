@@ -54,9 +54,11 @@ Three tiers. Deployed tiers hold **artifacts + state only** (binary, `pb_data/`,
   + [`../xc-scraper/deploy/README.md`](../../xc-scraper/deploy/README.md)
   (`sed` the `<tier>` / `899X` / `<web port>` placeholders). It runs as root because
   the podman stack runs xemu as root (README "Memory access").
-- `task build` produces **both** `bin/server` and `bin/xc-scraper`; the install
-  script copies both into the tier dir. `bin/xc-scraper --version` prints the same
-  `git describe` string as the league's `BUILD-INFO`.
+- `task build` produces **both** `bin/server` and `bin/xc-scraper`. The install
+  script (`srv-pre.sh`) does **not** copy `bin/xc-scraper` yet — extending it is an
+  owner gate; until then copy the binary into the tier dir by hand and restart the
+  `xc-scraper-<tier>` unit (see "Deploying" below). `bin/xc-scraper --version`
+  prints the same `git describe` string as the league's `BUILD-INFO`.
 - The daemon's ports `8990-8992` are a reversible default (D-14) and are **not yet
   claimed** in `/srv/registry/PORTS.md` — owner action, together with the unit
   install and the `srv-pre.sh` sibling checkout (both outside this repo).
