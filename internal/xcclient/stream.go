@@ -51,7 +51,9 @@ func (c *Client) Run(ctx context.Context) error {
 			backoff = c.backoffMin
 		}
 		wait := jitter(backoff)
-		c.logf("xcclient: upstream %s: %v; reconnect in %s", c.base.Host, c.redact(err), wait.Round(time.Millisecond))
+		err = c.redact(err)
+		c.noteConnectError(err)
+		c.logf("xcclient: upstream %s: %v; reconnect in %s", c.base.Host, err, wait.Round(time.Millisecond))
 		select {
 		case <-ctx.Done():
 		case <-time.After(wait):
@@ -76,6 +78,14 @@ func jitter(d time.Duration) time.Duration {
 // connect runs one connection to completion: dial, read pump (with the
 // ping loop beside it), then the disconnect marker. The returned error is
 // why the connection ended.
+//
+// Shutdown (ctx done) is a close handshake, not a dropped socket: the
+// daemon is sent 1001 going away and the pump exits on its echoed close
+// frame, so a league restart leaves no "hub: read error: EOF" behind. The
+// pump therefore reads under its own context rather than ctx — cancelling
+// a coder/websocket read context closes the TCP connection outright — and
+// half-open sockets are the ping loop's job. Error paths (peer gone, ping
+// timeout, no echo within closeGrace) still end in CloseNow.
 func (c *Client) connect(ctx context.Context) error {
 	dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	conn, _, err := websocket.Dial(dialCtx, c.wsURL, &websocket.DialOptions{HTTPClient: c.http})
@@ -95,15 +105,30 @@ func (c *Client) connect(ctx context.Context) error {
 		c.pingLoop(connCtx, conn)
 	}()
 
+	readCtx, cancelRead := context.WithCancel(context.Background())
+	defer cancelRead()
+	readDone := make(chan struct{})
+	closeDone := make(chan struct{})
+	go func() {
+		defer close(closeDone)
+		select {
+		case <-readDone:
+		case <-ctx.Done():
+			c.closeGracefully(conn, readDone, cancelRead)
+		}
+	}()
+
 	var readErr error
 	for {
-		_, data, err := conn.Read(connCtx)
+		_, data, err := conn.Read(readCtx)
 		if err != nil {
 			readErr = err
 			break
 		}
 		c.push(data, gen)
 	}
+	close(readDone)
+	<-closeDone
 	cancelConn()
 	<-pingDone
 	_ = conn.CloseNow()
@@ -113,6 +138,24 @@ func (c *Client) connect(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 	return readErr
+}
+
+// closeGracefully sends the shutdown close frame (1001 going away) and
+// waits up to closeGrace for the read pump to see the daemon's echo; a
+// daemon that does not answer in time has its socket dropped (cancelRead),
+// which also unblocks the handshake.
+func (c *Client) closeGracefully(conn *websocket.Conn, readDone <-chan struct{}, cancelRead context.CancelFunc) {
+	handshake := make(chan struct{})
+	go func() {
+		defer close(handshake)
+		_ = conn.Close(websocket.StatusGoingAway, CloseReason)
+	}()
+	select {
+	case <-readDone:
+	case <-time.After(c.closeGrace):
+		cancelRead()
+	}
+	<-handshake
 }
 
 // pingLoop detects half-open sockets: a ping that fails or times out closes
@@ -181,6 +224,8 @@ func (c *Client) setConn(conn *websocket.Conn, gen uint64) {
 	if gen > 1 {
 		c.reconnects++
 	}
+	c.attempts = 0
+	c.lastErr = ""
 	c.mu.Unlock()
 }
 
@@ -296,13 +341,48 @@ func (c *Client) handle(ctx context.Context, raw []byte) {
 		c.handleScraper(ctx, raw, &env)
 		c.emit(Frame{Raw: raw, Msg: msg, Env: &env})
 	case wire.TypeError:
-		c.logf("xcclient: upstream error frame: %s", trimPayload(msg.Payload))
+		c.handleError(msg)
 	default:
 		c.emit(Frame{Raw: raw, Msg: msg})
 	}
 }
 
+// handleError logs an upstream error frame. A forbidden join is the way a
+// rejected feed token surfaces (the daemon admits the socket as anonymous
+// and refuses every host:*/xc:* room — a valid token has full access, so
+// forbidden never means anything else): it latches Status.AuthRejected and
+// logs once per episode, not once per join or reconnect.
+func (c *Client) handleError(msg wire.Message) {
+	var p struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(msg.Payload, &p)
+	if p.Code != "forbidden" {
+		c.logf("xcclient: upstream error frame: %s", trimPayload(msg.Payload))
+		return
+	}
+	if c.noteAuthRejected(msg.Room) {
+		c.logf("xcclient: upstream %s rejected the feed token (join %s: forbidden) — the daemon admitted this connection as anonymous and will stream nothing; check %s against the daemon's --token", c.base.Host, msg.Room, tokenState(c.cfg.Token))
+	}
+}
+
+// tokenState is the boot line's set|unset reading of the feed token, so
+// a log line can name the credential without ever printing it.
+func tokenState(token string) string {
+	if token == "" {
+		return "XC_SCRAPER_TOKEN=unset"
+	}
+	return "XC_SCRAPER_TOKEN=set"
+}
+
 func (c *Client) handleScraper(ctx context.Context, raw []byte, env *wire.Envelope) {
+	if env.Type != wire.ClassHello && c.noteAuthAccepted() {
+		// An anonymous socket gets hello and error frames only, so any
+		// other envelope (the summary join replay at the latest) is proof
+		// the daemon accepted the token again.
+		c.logf("xcclient: upstream %s accepted the feed token", c.base.Host)
+	}
 	switch env.Type {
 	case wire.ClassHello:
 		c.onHello(env)

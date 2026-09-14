@@ -127,6 +127,26 @@ func (l *logRecorder) has(sub string) bool {
 	return false
 }
 
+// snapshot copies the recorded lines.
+func (l *logRecorder) snapshot() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.lines...)
+}
+
+// count returns how many recorded lines contain sub.
+func (l *logRecorder) count(sub string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, s := range l.lines {
+		if strings.Contains(s, sub) {
+			n++
+		}
+	}
+	return n
+}
+
 // eviction records one HubPort.EvictRoomPrefix call.
 type eviction struct {
 	Prefix string

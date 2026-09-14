@@ -243,7 +243,7 @@ func TestUpstreamStatus(t *testing.T) {
 	if code != http.StatusOK || body["mode"] != ModeWire {
 		t.Fatalf("wire upstream: %d %v", code, body)
 	}
-	for _, k := range []string{"connected", "since", "reconnects", "last_frame_at", "seq_gaps", "shed", "stale"} {
+	for _, k := range []string{"connected", "since", "reconnects", "last_frame_at", "seq_gaps", "shed", "stale", "attempts", "last_error", "auth_rejected"} {
 		if _, ok := body[k]; !ok {
 			t.Errorf("wire upstream: missing %q in %v", k, body)
 		}

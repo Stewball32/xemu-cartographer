@@ -191,7 +191,9 @@ func TestStreamOnFrameErrorsAndHostRunner(t *testing.T) {
 	d.waitConnect()
 	d.waitRooms(wire.TypeJoinRoom, helloRooms()...)
 
-	errFrame, _ := json.Marshal(wire.Message{Type: wire.TypeError, Room: "host:nope", Payload: json.RawMessage(`{"code":"forbidden","message":"no"}`)})
+	// not_found is the generic path; forbidden is the feed-token latch
+	// (TestStreamForbiddenLatchesAuthRejected).
+	errFrame, _ := json.Marshal(wire.Message{Type: wire.TypeError, Room: "nope:x", Payload: json.RawMessage(`{"code":"not_found","message":"unknown room type"}`)})
 	hr, _ := json.Marshal(wire.Message{Type: "host_runner", Payload: json.RawMessage(`{"instance":"smoke1"}`)})
 	d.push(errFrame)
 	d.push(hr)

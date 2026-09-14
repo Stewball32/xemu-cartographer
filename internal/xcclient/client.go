@@ -43,6 +43,12 @@ const (
 	readLimit    = 64 << 20
 	// stableAfter is how long a connection must live before the backoff resets.
 	stableAfter = 10 * time.Second
+	// closeGrace bounds the shutdown close handshake: the daemon has this
+	// long to echo the 1001 close frame before the socket is dropped.
+	closeGrace = 2 * time.Second
+	// CloseReason is the close reason the daemon sees on an intentional
+	// shutdown (Wire.Close / Run's ctx); the status is 1001 going away.
+	CloseReason = "league shutdown"
 )
 
 // AlwaysClasses are joined for every instance on connect and never left
@@ -128,6 +134,12 @@ type Client struct {
 	stale       bool
 	gapLogAt    time.Time
 	fetchAt     time.Time
+	// attempts / lastErr / authRejected back Status (§12): failed dials
+	// since the stream was last up, the last (redacted) failure, and the
+	// feed-token rejection latch.
+	attempts     int
+	lastErr      string
+	authRejected bool
 
 	// tunables (tests)
 	staleAfter   time.Duration
@@ -136,6 +148,7 @@ type Client struct {
 	backoffMax   time.Duration
 	fetchTimeout time.Duration
 	fetchRetry   time.Duration
+	closeGrace   time.Duration
 }
 
 // New validates cfg and returns an idle client. URL must be http(s)://
@@ -160,6 +173,7 @@ func New(cfg Config) (*Client, error) {
 		backoffMax:   backoffMax,
 		fetchTimeout: fetchTimeout,
 		fetchRetry:   fetchRetry,
+		closeGrace:   closeGrace,
 	}
 	if c.http == nil {
 		c.http = http.DefaultClient

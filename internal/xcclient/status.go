@@ -28,6 +28,18 @@ type Status struct {
 	// Stale is set once a disconnect outlasted StaleAfter and the mirror
 	// was cleared (D-12); cleared by the next hello.
 	Stale bool `json:"stale"`
+	// Attempts counts failed dials since the stream was last up (0 while
+	// connected): the banner's "reconnecting (n attempts)".
+	Attempts int `json:"attempts"`
+	// LastError is why the last dial failed or the last connection ended
+	// (token redacted); "" once a connection is up again.
+	LastError string `json:"last_error"`
+	// AuthRejected is set when the daemon refused the feed token: the
+	// socket stays up but the daemon admitted it as anonymous (hello lists
+	// no instances, every host:* join answers forbidden — wire.md A.1), so
+	// Connected alone looks healthy while nothing flows. Sticky across
+	// reconnects; cleared by the first frame that proves a join succeeded.
+	AuthRejected bool `json:"auth_rejected"`
 }
 
 // Status returns a snapshot of the connection state and counters.
@@ -35,14 +47,56 @@ func (c *Client) Status() Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return Status{
-		Connected:   c.connected,
-		Since:       c.since,
-		Reconnects:  c.reconnects,
-		LastFrameAt: c.lastFrameAt,
-		SeqGaps:     c.seqGaps.Load(),
-		Shed:        c.shed.Load(),
-		Stale:       c.stale,
+		Connected:    c.connected,
+		Since:        c.since,
+		Reconnects:   c.reconnects,
+		LastFrameAt:  c.lastFrameAt,
+		SeqGaps:      c.seqGaps.Load(),
+		Shed:         c.shed.Load(),
+		Stale:        c.stale,
+		Attempts:     c.attempts,
+		LastError:    c.lastErr,
+		AuthRejected: c.authRejected,
 	}
+}
+
+// noteConnectError records why a dial failed or a connection ended (the
+// reconnect loop's error, already redacted) and counts the attempt.
+func (c *Client) noteConnectError(err error) {
+	c.mu.Lock()
+	c.attempts++
+	if err != nil {
+		c.lastErr = err.Error()
+	}
+	c.mu.Unlock()
+}
+
+// noteAuthRejected latches AuthRejected on a forbidden error frame and
+// reports whether this is the edge (false→true), so the caller logs once
+// per rejection episode rather than once per join or per reconnect.
+func (c *Client) noteAuthRejected(room string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastErr = "feed token rejected by the daemon (forbidden on " + room + ")"
+	if c.authRejected {
+		return false
+	}
+	c.authRejected = true
+	return true
+}
+
+// noteAuthAccepted clears AuthRejected once a frame proves the daemon
+// serves this connection (a join replay or live data on a host:* room);
+// reports whether a rejection episode just ended.
+func (c *Client) noteAuthAccepted() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.authRejected {
+		return false
+	}
+	c.authRejected = false
+	c.lastErr = ""
+	return true
 }
 
 func (c *Client) touch() {

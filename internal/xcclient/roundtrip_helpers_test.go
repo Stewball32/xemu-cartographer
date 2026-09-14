@@ -139,18 +139,26 @@ type upstream struct {
 
 func newUpstream(t *testing.T, rp *fixtureReplayer) *upstream {
 	t.Helper()
-	h := hub.New(hub.Config{Token: testToken, AllowedOrigins: []string{"127.0.0.1"}}, rp, hub.HelloHook(rp))
+	return newUpstreamOn(t, rp, "127.0.0.1:0", testToken)
+}
+
+// newUpstreamOn is newUpstream on a fixed listen address with its own feed
+// token, so a test can restart "the same daemon" (reconnect) or swap the
+// token it checks.
+func newUpstreamOn(t *testing.T, rp *fixtureReplayer, addr, token string) *upstream {
+	t.Helper()
+	h := hub.New(hub.Config{Token: token, AllowedOrigins: []string{"127.0.0.1"}}, rp, hub.HelloHook(rp))
 	mux := http.NewServeMux()
 	mux.Handle("/api/ws", h.Handler())
 	mux.HandleFunc("GET /api/instances", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+testToken {
+		if r.Header.Get("Authorization") != "Bearer "+token {
 			http.Error(w, `{"error":{"code":"unauthorized"}}`, http.StatusUnauthorized)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(rp.instancesJSON())
 	})
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
