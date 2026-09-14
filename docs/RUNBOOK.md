@@ -81,7 +81,7 @@ leaguescraper: mode=wire url=http://127.0.0.1:8990 token=set control=set
 | Line | Healthy | Act on |
 | --- | --- | --- |
 | `mode=in-process (XC_SCRAPER_URL unset)` | The embedded runner + discovery watcher, as before R1. | If you meant to run the daemon, `XC_SCRAPER_URL` is unset or blank in this unit's environment. |
-| `mode=wire url=… token=set control=set` | The league consumes the xc-scraper daemon at `url`; no runner, no league-side discovery. `token=unset` / `control=unset` only when the daemon really runs without `--token` / `--control-token`. | The daemon may still be down at this point — the client reconnects forever and the mirror is empty until it connects; nothing else to do. A boot **error** `leaguescraper: XC_SCRAPER_URL must be http(s)://host[:port]` means the value carries a `ws://` scheme or a path; `XC_SCRAPER_STALE_AFTER must be a positive duration` means a bad Go duration. |
+| `mode=wire url=… token=set control=set` | The league consumes the xc-scraper daemon at `url`; no runner, no league-side discovery. `token=unset` only when the daemon really runs without `--token`. | `control=unset` means the control plane is dead: the daemon always requires a control token (there is no open mode for `/api/ctl/*`), so every admin start/stop, config push and probe relay will answer `401` — set the same `XC_SCRAPER_CONTROL_TOKEN` on both sides and restart. The daemon may still be down at this point — the client reconnects forever and the mirror is empty until it connects; nothing else to do. A boot **error** `leaguescraper: XC_SCRAPER_URL must be http(s)://host[:port]` means the value carries a `ws://` scheme or a path; `XC_SCRAPER_STALE_AFTER must be a positive duration` means a bad Go duration. |
 
 ## Switch the scraper feed to the xc-scraper daemon (R1) — and roll it back
 
@@ -95,7 +95,7 @@ R1 is a per-process flag (DESIGN-STEP8 D-4): the same binary runs either the emb
 
 **Roll back** (order matters):
 
-1. **Stop the daemon unit first** — or at least restart it without `--game-webhook` — so it can no longer attach or post games.
+1. **Stop the daemon unit first** (`systemctl stop xc-scraper-<tier>`) so it can no longer attach or post games. Do NOT merely restart it without `--game-webhook` / with the webhook unset: the daemon spools every finished game it could not deliver under `<state-dir>/spool/` and replays the spool as soon as a webhook is configured again, so games from the rollback window would be persisted a second time on the next cut-over. If the daemon did run webhook-less during a rollback, delete the spool files for that window before cutting over again.
 2. Unset `XC_SCRAPER_URL` in the league unit's environment (the other `XC_SCRAPER_*` values may stay; `XC_SCRAPER_WEBHOOK_TOKEN` keeps the ingest key alive, which is harmless).
 3. Restart the league and read `leaguescraper: mode=in-process (XC_SCRAPER_URL unset)`; the discovery watcher re-attaches every socket in `CONTAINERS_SOCKET_DIR` within one poll.
 

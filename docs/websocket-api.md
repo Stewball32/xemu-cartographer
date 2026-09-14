@@ -14,9 +14,11 @@ and the golden fixtures into `sveltekit/src/lib/types/wire-fixtures/` by `task s
 ## League-side behaviour that is not part of the contract (step 8)
 
 The dialect above is frozen; what changed in step 8 is **how the league serves it**.
-Both of these hold in in-process and in wire mode (`XC_SCRAPER_URL` set — the league
-consumes the [xc-scraper daemon](../../xc-scraper/docs/wire.md) and rebroadcasts its
-frames byte-for-byte into the same `host:*` rooms):
+The first holds in both in-process and wire mode; the second is **wire mode only**
+(`XC_SCRAPER_URL` set — the league consumes the
+[xc-scraper daemon](../../xc-scraper/docs/wire.md) and rebroadcasts its frames
+byte-for-byte into the same `host:*` rooms; in-process there is no upstream and no
+`1012` close ever happens):
 
 - **`request_events` / `request_probe` are asynchronous.** The Hub dispatches them off
   its `Run` goroutine (`internal/websocket/handlers/request_events.go`, `async`), so a
@@ -25,10 +27,14 @@ frames byte-for-byte into the same `host:*` rooms):
   reply frame shape is unchanged; only its ordering relative to concurrent broadcasts
   is not guaranteed (it never was for a different room; now it also is not for the same
   connection).
-- **Close `1012` "upstream resync" — no error frame.** When the league's upstream stream
-  (re)connects to the daemon, an instance (re)appears, or an instance's `seq` regresses
-  (an epoch change: the daemon restarted or re-attached that xemu), every client holding
-  a `host:*` room for the affected instance(s) is closed with status `1012`
+- **Close `1012` "upstream resync" — no error frame (wire mode only).** When the
+  league's upstream stream (re)connects to the daemon, an instance (re)appears, or an
+  instance's `seq` regresses **and** its `started_at` moved (an epoch change: the daemon
+  restarted or re-attached that xemu — a lower `seq` with an unchanged `started_at` is
+  just a stale frame, dropped from the mirror and relayed without eviction, per wire.md
+  "About seq"), every client holding a `host:*` room for the affected instance(s) — the
+  instance room and its `:class` children, never a sibling sharing the name prefix — is
+  closed with status `1012`
   (`ServiceRestart`) and reason `upstream resync` (`Hub.EvictRoomPrefix`, called from
   `internal/xcclient`). There is **no** `error` frame first: wire.md has no resync code
   and the frozen dialect gains none. Clients must treat it as any other close —
