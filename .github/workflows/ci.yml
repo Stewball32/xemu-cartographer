@@ -18,10 +18,13 @@ env:
 # "Wire sync check") checks this repo out under ./xemu-cartographer and the
 # scraper repo under ./xc-scraper, then works from ./xemu-cartographer.
 #
-# NOTE: github.com/xemu-cartographer/xc-scraper does not exist on GitHub yet —
-# the owner has not pushed the sibling repo. Until then the second checkout
-# step fails and these jobs are red; nothing else needs to change once it lands.
-# For a private sibling repo, add a `token:` (PAT / GitHub App) to that checkout.
+# github.com/xemu-cartographer/xc-scraper is a PRIVATE repository, so the
+# default GITHUB_TOKEN (scoped to this repo) cannot read it: the sibling
+# checkout steps pass the XC_SCRAPER_CHECKOUT_TOKEN repository secret — a
+# fine-grained PAT (resource owner: the xemu-cartographer org, repository
+# access: only xc-scraper, permission Contents: read-only). Without the
+# secret those two steps fail and the frontend + backend jobs are red; the
+# `|| github.token` fallback only matters if the sibling is ever made public.
 
 jobs:
   frontend:
@@ -43,6 +46,7 @@ jobs:
           repository: xemu-cartographer/xc-scraper
           ref: main
           path: xc-scraper
+          token: ${{ secrets.XC_SCRAPER_CHECKOUT_TOKEN || github.token }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -102,6 +106,7 @@ jobs:
           repository: xemu-cartographer/xc-scraper
           ref: main
           path: xc-scraper
+          token: ${{ secrets.XC_SCRAPER_CHECKOUT_TOKEN || github.token }}
 
       - uses: actions/setup-go@v5
         with:

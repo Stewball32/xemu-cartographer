@@ -104,7 +104,12 @@ see `Containerfile`; `.containerignore` keeps `sveltekit/node_modules`, `pb_data
 aborts on the host's `node_modules`); `srv-pre.sh` lives in `/srv/registry`, outside this repo,
 and does NOT check the sibling out yet — until it does, a pre deploy from this
 branch fails at `go build` with "replacement directory ../xc-scraper does not
-exist"**), installs `bin/server` + `pb_public/` + `tools/game-maps/`
+exist". The sibling is the **private** org repository
+`github.com/xemu-cartographer/xc-scraper` (since 2026-09-15), so whatever the
+script uses to clone it — a deploy key or a fine-grained PAT with Contents:
+read-only on that one repo — must be provisioned on the host first; the
+flagship's CI uses the `XC_SCRAPER_CHECKOUT_TOKEN` Actions secret for the same
+purpose**), installs `bin/server` + `pb_public/` + `tools/game-maps/`
 into the tier, regenerates `run.sh`, writes `BUILD-INFO` with provenance
 verification, then (re)starts the `site-xemu-cartographer-pre` **user** unit
 (linger is on — survives reboots, no sudo) and polls `/api/health`. It never
