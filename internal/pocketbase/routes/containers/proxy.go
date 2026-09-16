@@ -32,6 +32,8 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -82,9 +84,9 @@ func registerKioskProxy() {
 
 func handleKioskProxy(e *core.RequestEvent) error {
 	name := e.Request.PathValue("name")
-	// M09: admins reach any container's kiosk; a non-admin reaches only the
-	// container their gamertag is currently rostered in.
-	if !authorizeKioskAccess(e, name) {
+	// kiosk.view on this container: a scoped principal, the box owner, a
+	// player rostered in it, or a device key bound to it (rule table).
+	if !authorizeKioskAccess(e, name, authz.ActionKioskView) {
 		return e.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 	}
 
@@ -124,7 +126,16 @@ func handleKioskProxy(e *core.RequestEvent) error {
 	}
 	prefix := "/api/admin/containers/" + url.PathEscape(name) + "/kiosk"
 
-	proxy := &httputil.ReverseProxy{
+	newKioskProxy(target, prefix).ServeHTTP(e.Response, e.Request)
+	return nil
+}
+
+// newKioskProxy builds the reverse proxy for one container's web UI: requests
+// under prefix are rewritten onto target with the prefix stripped, the
+// caller's credential removed (stripKioskCredential), and HTML responses
+// rebased under the prefix.
+func newKioskProxy(target *url.URL, prefix string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
 			req.URL.Host = target.Host
@@ -134,6 +145,7 @@ func handleKioskProxy(e *core.RequestEvent) error {
 				req.URL.Path = "/"
 			}
 			req.Host = target.Host
+			stripKioskCredential(req)
 		},
 		// The browser container's HTTP listener (s6-overlay → nginx) takes
 		// several seconds to come up after `podman start`. Without a retry,
@@ -154,9 +166,32 @@ func handleKioskProxy(e *core.RequestEvent) error {
 			return rewriteKioskHTML(resp, prefix+"/")
 		},
 	}
+}
 
-	proxy.ServeHTTP(e.Response, e.Request)
-	return nil
+// stripKioskCredential removes the caller's credential from the outbound
+// upstream request before the proxy forwards it: the ?token= query parameter,
+// the kiosk_token cookie (every other cookie is kept as sent) and the REST
+// carriers (Authorization / X-Api-Key). The kiosk container never needs the
+// credential — authorizeKioskAccess already admitted the request — and
+// forwarding it would hand a bearer credential to whatever the container
+// process serves.
+func stripKioskCredential(req *http.Request) {
+	if q := req.URL.Query(); q.Has("token") {
+		q.Del("token")
+		req.URL.RawQuery = q.Encode()
+	}
+	req.Header.Del("Authorization")
+	req.Header.Del("X-Api-Key")
+	cookies := req.Cookies()
+	if len(cookies) == 0 {
+		return
+	}
+	req.Header.Del("Cookie")
+	for _, c := range cookies {
+		if c.Name != kioskTokenCookie {
+			req.AddCookie(c)
+		}
+	}
 }
 
 // newDialWithRetry builds a DialContext that retries a TCP dial for up to

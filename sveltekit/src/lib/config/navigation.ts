@@ -2,6 +2,7 @@ import {
 	BookmarkXIcon,
 	BoxIcon,
 	DiscIcon,
+	KeyIcon,
 	MapIcon,
 	MemoryStickIcon,
 	PlayIcon,
@@ -72,6 +73,8 @@ export const mainGroups: NavGroup[] = [
 			{ label: 'Rosters', href: '/admin/rosters/', icon: UsersIcon },
 			{ label: 'Roles', href: '/admin/roles/', icon: ShieldIcon },
 			{ label: 'Reserved names', href: '/admin/reserved-names/', icon: BookmarkXIcon },
+			// authz: opaque-key management (machine / spectator / device keys).
+			{ label: 'Tokens', href: '/admin/tokens/', icon: KeyIcon },
 			// Routes outside the admin layout (RequireAuth + manage-overlays gate) so
 			// overlay_managers can use them directly. Studio is the OBS
 			// browser-source catalog (the LAN_OBS_Browser_Sources pack: POV overlay +

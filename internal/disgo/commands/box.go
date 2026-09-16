@@ -7,6 +7,8 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/disgo/authzmw"
 	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 )
@@ -22,8 +24,11 @@ import (
 //
 // Permissions: a USER command — no default_member_permissions (open); guild
 // admins can still tune per-command access in Server Settings → Integrations.
-// The only in-code authorization is DATA-scoping: every subcommand resolves the
-// invoking user's own container, never anyone else's.
+// In-code authorization is the authz `discord.box` decision on the caller's
+// discord principal (D-3): it passes only for a Discord account linked to a
+// cartographer user, which stays "not linked" until the _externalAuths link
+// lands (A.9). Beyond that the handlers are DATA-scoped: every subcommand
+// resolves the invoking user's own container, never anyone else's.
 //
 // READY now (read-only, use the wired Services): `status`, `link`.
 // STUBBED (need the podman provisioner/manager surfaced through Services —
@@ -84,7 +89,7 @@ func handleBox(data discord.SlashCommandInteractionData, e *handler.CommandEvent
 
 // handleBoxStatus — READY. Resolve the caller's live container and report it.
 func handleBoxStatus(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
-	container, res := resolveCallerContainer(e.User().ID.String())
+	container, res := resolveCallerContainer(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx))
 	return replyEmbedEphemeral(e, boxStatusEmbed(container, res))
 }
 
@@ -92,7 +97,7 @@ func handleBoxStatus(data discord.SlashCommandInteractionData, e *handler.Comman
 // /play page re-resolves the caller's gamertag server-side, so the link is the
 // same for everyone; it just needs the public base URL (PUBLIC_APP_URL).
 func handleBoxLink(data discord.SlashCommandInteractionData, e *handler.CommandEvent) error {
-	container, res := resolveCallerContainer(e.User().ID.String())
+	container, res := resolveCallerContainer(authzmw.Deps(e.Ctx), authzmw.From(e.Ctx))
 	base := os.Getenv("PUBLIC_APP_URL")
 	if base == "" {
 		return replyEphemeral(e, "The play link isn't configured (set PUBLIC_APP_URL). Ask an admin.")
@@ -137,12 +142,21 @@ const (
 // resolveCallerContainer maps the invoking Discord user → cartographer account →
 // gamertags → the live container whose roster contains one of those gamertags.
 // Mirrors the /api/play resolveCaller flow, fail-soft (any lookup miss → idle).
-func resolveCallerContainer(discordID string) (string, resolveResult) {
+//
+// p is the caller's discord principal and d the deps the mux middleware
+// stored for this interaction (authzmw). The authz `discord.box` gate runs
+// first: an unlinked caller (no UserID on the principal, A.9), a missing
+// middleware (Nobody) or missing deps all resolve to "not linked" before any
+// lookup happens.
+func resolveCallerContainer(d authz.Deps, p authz.Principal) (string, resolveResult) {
+	if !authz.Can(d, p, authz.ActionDiscordBox, authz.Global()) {
+		return "", resolveNotLinked
+	}
 	s := services()
 	if s == nil || s.PB == nil || s.App == nil || s.Scraper == nil {
 		return "", resolveUnavailable
 	}
-	user, err := s.PB.FindUserByDiscordID(discordID)
+	user, err := s.PB.FindUserByDiscordID(p.ID)
 	if err != nil || user == nil {
 		return "", resolveNotLinked
 	}

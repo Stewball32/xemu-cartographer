@@ -1,5 +1,6 @@
 import pb from '$lib/pocketbase';
 import { apiBaseURL } from '$lib/utils/api-base';
+import { hasScope as matchAnyScope } from '$lib/utils/scopes';
 import type { UsersResponse } from '$lib/types/pocketbase-types';
 
 const baseURL = apiBaseURL();
@@ -8,50 +9,95 @@ const baseURL = apiBaseURL();
 // user_roles). `isAdmin` is kept as a derived shorthand for FE backwards-
 // compat; new consumers should branch on `roles` so future M16-style gates
 // (`tournament_organizer`, `content_moderator`) work without another bump.
+//
+// authz (design §7.1 R-15 / §9): `scopes` is the union of the caller's role
+// scopes (canonical, sorted — the same list the server's authz.Can matches
+// against), `level` the max role level, `principal_kind` the resolver's kind
+// ("pb_user" for a users JWT, "superuser" for _superusers). Superusers report
+// scopes ["*"] and level 1000. Consumers that only need to *hide* UI should
+// prefer `auth.hasScope(want)` over role checks — it mirrors the server's
+// decision exactly, so a hidden button is one the server would reject anyway.
 interface MeResponse {
 	isAdmin: boolean;
 	isSuperuser: boolean;
 	roles: string[];
+	scopes: string[];
+	principal_kind: string;
+	level: number;
 }
+
+interface Identity {
+	roles: string[];
+	scopes: string[];
+	principalKind: string;
+	level: number;
+	isSuperuser: boolean;
+}
+
+const anonymous: Identity = {
+	roles: [],
+	scopes: [],
+	principalKind: '',
+	level: 0,
+	isSuperuser: false
+};
 
 function createAuthStore() {
 	let user = $state<UsersResponse | null>(pb.authStore.record as UsersResponse | null);
 	let token = $state(pb.authStore.token);
 	let roles = $state<string[]>([]);
+	let scopes = $state<string[]>([]);
+	let principalKind = $state('');
+	let level = $state(0);
 	let isSuperuser = $state(false);
 	const isAdmin = $derived(isSuperuser || roles.includes('admin'));
 	const isLoggedIn = $derived(token !== '' && user !== null);
 
 	let hydratePromise: Promise<void> | null = null;
 
-	async function fetchRoles(authToken: string): Promise<{ roles: string[]; isSuperuser: boolean }> {
+	function apply(id: Identity) {
+		roles = id.roles;
+		scopes = id.scopes;
+		principalKind = id.principalKind;
+		level = id.level;
+		isSuperuser = id.isSuperuser;
+	}
+
+	// fetchIdentity resolves /api/me into the store's identity slice. Any
+	// failure (network, 401 for a banned/deleted account, malformed body)
+	// collapses to the anonymous identity — no roles, no scopes — so a
+	// broken probe fails closed rather than leaving stale grants in place.
+	async function fetchIdentity(authToken: string): Promise<Identity> {
 		try {
 			const res = await fetch(`${baseURL}/api/me`, {
 				headers: { Authorization: authToken }
 			});
-			if (!res.ok) return { roles: [], isSuperuser: false };
+			if (!res.ok) return anonymous;
 			const data = (await res.json()) as MeResponse;
 			return {
 				roles: Array.isArray(data.roles) ? data.roles : [],
+				scopes: Array.isArray(data.scopes)
+					? data.scopes.filter((s): s is string => typeof s === 'string')
+					: [],
+				principalKind: typeof data.principal_kind === 'string' ? data.principal_kind : '',
+				level: typeof data.level === 'number' && Number.isFinite(data.level) ? data.level : 0,
 				isSuperuser: data.isSuperuser === true
 			};
 		} catch {
-			return { roles: [], isSuperuser: false };
+			return anonymous;
 		}
 	}
 
 	async function refreshRoles() {
 		const authToken = pb.authStore.token;
 		if (!authToken) {
-			roles = [];
-			isSuperuser = false;
+			apply(anonymous);
 			return;
 		}
-		const result = await fetchRoles(authToken);
+		const result = await fetchIdentity(authToken);
 		// Drop the result if the token rotated while we were in flight.
 		if (pb.authStore.token === authToken) {
-			roles = result.roles;
-			isSuperuser = result.isSuperuser;
+			apply(result);
 		}
 	}
 
@@ -80,13 +126,10 @@ function createAuthStore() {
 			}
 			const authToken = pb.authStore.token;
 			if (!authToken) {
-				roles = [];
-				isSuperuser = false;
+				apply(anonymous);
 				return;
 			}
-			const result = await fetchRoles(authToken);
-			roles = result.roles;
-			isSuperuser = result.isSuperuser;
+			apply(await fetchIdentity(authToken));
 		})();
 		return hydratePromise;
 	}
@@ -104,6 +147,15 @@ function createAuthStore() {
 		get roles() {
 			return roles;
 		},
+		get scopes() {
+			return scopes;
+		},
+		get principalKind() {
+			return principalKind;
+		},
+		get level() {
+			return level;
+		},
 		get isSuperuser() {
 			return isSuperuser;
 		},
@@ -112,6 +164,14 @@ function createAuthStore() {
 		},
 		hasRole(slug: string): boolean {
 			return roles.includes(slug);
+		},
+		/**
+		 * hasScope reports whether the caller's scopes grant `want`
+		 * ("<action>" or "<action>:<selector>") using the same matcher the
+		 * server runs. Anonymous callers hold no scopes and always get false.
+		 */
+		hasScope(want: string): boolean {
+			return matchAnyScope(scopes, want);
 		},
 		hydrate,
 		async register(email: string, password: string, passwordConfirm: string) {

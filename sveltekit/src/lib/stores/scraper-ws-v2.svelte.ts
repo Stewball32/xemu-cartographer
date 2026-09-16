@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { SvelteSet } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 import type {
 	AnyEvent,
@@ -40,12 +40,21 @@ import { wsBaseURL } from '$lib/utils/api-base';
 
 const reconnectDelays = [1000, 2000, 4000, 8000, 15000, 30000];
 const MAX_EVENTS_PER_INSTANCE = 100;
+// Per-room re-join backoff after the server refuses a join_room or evicts us
+// (`room_left`): 2s, 4s, 8s, … capped at REJOIN_MAX_MS. Reset once the room
+// delivers again or a fresh socket opens.
+const REJOIN_BASE_MS = 2000;
+const REJOIN_MAX_MS = 30000;
 
 /** Outer WS message wrapper. Server sets type="scraper" and stuffs the
  * inner v2 envelope into payload as raw JSON; SvelteKit's JSON.parse
- * already lifts it to an object. */
+ * already lifts it to an object. `room` is set on every scraper frame (the
+ * room it was broadcast to), on a refused join_room / leave_room `error`
+ * frame (the room as sent) and on `room_left`; other control frames omit
+ * it. */
 interface WSMessage {
 	type: string;
+	room?: string;
 	payload?: unknown;
 }
 
@@ -59,6 +68,28 @@ function buildConsoleURL(console: string): string {
 	return `${wsBaseURL()}/api/ws?console=${encodeURIComponent(console)}`;
 }
 
+/** Spectator-key connection (authz design §4.3): `token` is the opaque
+ * `<kid>.<secret>` minted by Studio (kind=spectator) and carries only the
+ * per-instance overlay.read_state + room.join:host:<inst>:<class> scopes it
+ * was minted with. `console` rides along so the same URL keeps working if the
+ * key is ever dropped and the anonymous door applies instead. */
+export function buildSpectatorURL(token: string, console?: string): string {
+	const url = `${wsBaseURL()}/api/ws?spectator=${encodeURIComponent(token)}`;
+	return console ? `${url}&console=${encodeURIComponent(console)}` : url;
+}
+
+/** Error codes the Hub / join_room handler send on an `error` frame
+ * (`{type:"error", room?, payload:{code, message}}`). `session_revoked` is
+ * followed by a 4401 close and means the credential is gone for good — the
+ * store must not reconnect with it. */
+const WS_ERROR_CODES = new Set([
+	'forbidden',
+	'session_revoked',
+	'unknown_type',
+	'not_found',
+	'bad_room'
+]);
+
 function createScraperWSV2() {
 	let ws: WebSocket | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -68,9 +99,22 @@ function createScraperWSV2() {
 	// Set for a tokenless console-overlay connection; wins over currentToken when
 	// building the socket URL (incl. on reconnect). Cleared on disconnect.
 	let currentConsole = '';
+	// Set for a spectator-key connection; wins over both of the above when
+	// building the socket URL (incl. on reconnect). Cleared on disconnect and
+	// when the server reports the key revoked (`session_revoked`).
+	let currentSpectator = '';
 
 	let connected = $state(false);
 	let lastError = $state<string | null>(null);
+	// Last `error` frame code from the server (forbidden / session_revoked /
+	// unknown_type / bad_room), null once a fresh socket opens. Overlays
+	// render this next to lastError so a key with the wrong scopes explains
+	// itself instead of silently showing nothing.
+	let lastErrorCode = $state<string | null>(null);
+	// Set once the server reports `session_revoked`: the credential is dead,
+	// so the auto-reconnect loop stops until connect*() is called again with
+	// a fresh one.
+	let revoked = $state(false);
 
 	// Per-class per-instance latest payload. The runner emits at most one
 	// envelope per (instance, class) per poll, and the join-replay path
@@ -171,7 +215,22 @@ function createScraperWSV2() {
 
 	// Per-connection set of rooms we've actually sent join_room for. Empty
 	// on reconnect; ensureSubscribed walks intendedRooms to re-establish.
+	// A room the server refuses (`error` naming it) or evicts us from
+	// (`room_left`) drops out again and goes through the re-join backoff
+	// below while it is still intended.
 	let liveJoins = new SvelteSet<string>();
+
+	// Re-join backoff state, per room: how many refusals in a row (drives the
+	// delay) and the pending retry timer. Cleared per room when the room
+	// delivers a scraper frame or is unsubscribed; wholesale on a new socket.
+	// (SvelteMap only to satisfy the reactivity lint; nothing reads these
+	// reactively.)
+	const rejoinAttempts = new SvelteMap<string, number>();
+	const rejoinTimers = new SvelteMap<string, ReturnType<typeof setTimeout>>();
+	// Room named by the last room-scoped error / room_left frame, so the
+	// message can be cleared once that room recovers or is dropped instead
+	// of lingering over a healthy overlay.
+	let lastErrorRoom = '';
 
 	function clearReconnect() {
 		if (reconnectTimer !== null) {
@@ -209,6 +268,62 @@ function createScraperWSV2() {
 		liveJoins.delete(room);
 	}
 
+	function cancelRejoin(room: string) {
+		const t = rejoinTimers.get(room);
+		if (t !== undefined) {
+			clearTimeout(t);
+			rejoinTimers.delete(room);
+		}
+		rejoinAttempts.delete(room);
+	}
+
+	function cancelAllRejoins() {
+		for (const t of rejoinTimers.values()) clearTimeout(t);
+		rejoinTimers.clear();
+		rejoinAttempts.clear();
+	}
+
+	/** Queue a re-join for a room we still want but are no longer in. One
+	 * timer per room; the delay doubles per consecutive refusal from
+	 * REJOIN_BASE_MS up to REJOIN_MAX_MS. The retry itself is just sendJoin —
+	 * if the socket is gone by then, the onopen replay covers the room. */
+	function scheduleRejoin(room: string) {
+		if (!intendedRooms.has(room) || rejoinTimers.has(room)) return;
+		const n = rejoinAttempts.get(room) ?? 0;
+		const delay = Math.min(REJOIN_BASE_MS * 2 ** n, REJOIN_MAX_MS);
+		rejoinAttempts.set(room, n + 1);
+		rejoinTimers.set(
+			room,
+			setTimeout(() => {
+				rejoinTimers.delete(room);
+				if (!intendedRooms.has(room)) return;
+				sendJoin(room);
+			}, delay)
+		);
+	}
+
+	/** The server told us we are not (or no longer) in `room`: forget the
+	 * live join and, while the app still wants it, keep asking. */
+	function markRoomLost(room: string) {
+		liveJoins.delete(room);
+		scheduleRejoin(room);
+	}
+
+	/** A scraper frame for `room` proves the join took: reset its backoff and
+	 * retire any room-scoped error that was about it. A retry timer already
+	 * queued is left to fire — its sendJoin is a no-op while the room is in
+	 * liveJoins, and a duplicate join_room is idempotent server-side. */
+	function markRoomDelivering(room: string) {
+		rejoinAttempts.delete(room);
+		if (lastErrorRoom === room) clearRoomError();
+	}
+
+	function clearRoomError() {
+		lastErrorRoom = '';
+		lastError = null;
+		lastErrorCode = null;
+	}
+
 	/** Subscribe to one (instance, class) room. Idempotent. Re-joined on
 	 * reconnect via the intendedRooms set. Pass class === undefined to
 	 * subscribe to host:summary (the multi-instance dashboard feed). */
@@ -224,14 +339,20 @@ function createScraperWSV2() {
 	}
 
 	function unsubscribe(instance: string, cls: EnvelopeTypeV2): void {
-		const room = roomForInstanceClass(instance, cls);
-		intendedRooms.delete(room);
-		sendLeave(room);
+		dropRoom(roomForInstanceClass(instance, cls));
 	}
 
 	function unsubscribeSummary(): void {
-		intendedRooms.delete(SUMMARY_ROOM);
-		sendLeave(SUMMARY_ROOM);
+		dropRoom(SUMMARY_ROOM);
+	}
+
+	/** Withdraw the intent for a room: no more re-join retries for it, and an
+	 * error that was about it is moot. */
+	function dropRoom(room: string) {
+		intendedRooms.delete(room);
+		cancelRejoin(room);
+		if (lastErrorRoom === room) clearRoomError();
+		sendLeave(room);
 	}
 
 	/** Bulk helper — subscribe to several classes for one instance in one
@@ -394,51 +515,124 @@ function createScraperWSV2() {
 		}
 	}
 
+	function socketURL(token: string): string {
+		if (currentSpectator) return buildSpectatorURL(currentSpectator, currentConsole || undefined);
+		if (currentConsole) return buildConsoleURL(currentConsole);
+		return buildURL(token);
+	}
+
+	/** Apply an `error` frame. Every code surfaces through lastError; a
+	 * `session_revoked` additionally kills the credential: the server closes
+	 * with 4401 right after, and reconnecting with the same key would just
+	 * loop on the same answer. A frame that names a room is a refused
+	 * join_room / leave_room for that room — typically `forbidden` from a
+	 * console-door socket whose box isn't live yet — so the room leaves
+	 * liveJoins and is retried with backoff while it is still intended.
+	 * (Retrying a permanent `not_found` / `bad_room` is bounded by the cap
+	 * and keeps the policy uniform.) */
+	function handleErrorFrame(
+		payload: { code?: string; message?: string } | undefined,
+		room: string
+	) {
+		const code = typeof payload?.code === 'string' ? payload.code : '';
+		const message = typeof payload?.message === 'string' ? payload.message : '';
+		lastErrorCode = code || null;
+		if (WS_ERROR_CODES.has(code)) {
+			lastError = message ? `${code}: ${message}` : code;
+		} else {
+			lastError = message || 'websocket error';
+		}
+		lastErrorRoom = room;
+		if (code === 'session_revoked') {
+			revoked = true;
+			manuallyClosed = true;
+			clearReconnect();
+			cancelAllRejoins();
+			currentSpectator = '';
+			currentToken = '';
+			return;
+		}
+		if (room) markRoomLost(room);
+	}
+
+	/** Apply a `room_left` frame: the server dropped us from `room` on its
+	 * own (the 60 s re-resolve tick found the principal may no longer join —
+	 * roster loss, console re-bind, key scope change). Same recovery as a
+	 * refused join: retry with backoff while the room is still intended. */
+	function handleRoomLeftFrame(payload: { reason?: string } | undefined, room: string) {
+		if (!room) return;
+		const reason = typeof payload?.reason === 'string' ? payload.reason : '';
+		lastErrorCode = reason || 'room_left';
+		lastError = reason ? `left ${room}: ${reason}` : `left ${room}`;
+		lastErrorRoom = room;
+		markRoomLost(room);
+	}
+
 	function open(token: string) {
 		if (!browser) return;
 		currentToken = token;
 		manuallyClosed = false;
+		let sock: WebSocket;
 		try {
-			ws = new WebSocket(currentConsole ? buildConsoleURL(currentConsole) : buildURL(token));
+			sock = new WebSocket(socketURL(token));
 		} catch (err) {
 			lastError = err instanceof Error ? err.message : String(err);
 			scheduleReconnect();
 			return;
 		}
+		ws = sock;
+		// Events from a socket that disconnect() already let go of (its close
+		// lands asynchronously, possibly after a fresh connect*()) must not
+		// touch the current one.
+		const stale = () => ws !== sock;
 
-		ws.onopen = () => {
+		sock.onopen = () => {
+			if (stale()) return;
 			connected = true;
 			attempt = 0;
 			lastError = null;
+			lastErrorCode = null;
+			lastErrorRoom = '';
 			liveJoins = new SvelteSet<string>();
+			// A fresh socket resets every room's re-join backoff.
+			cancelAllRejoins();
 			// Re-establish every intended room on the fresh socket. Order
 			// doesn't matter — the backend ignores duplicates and the
 			// join-replay path is per-room idempotent.
 			for (const room of intendedRooms) sendJoin(room);
 		};
 
-		ws.onmessage = (e) => {
+		sock.onmessage = (e) => {
+			if (stale()) return;
 			try {
 				const msg = JSON.parse(e.data) as WSMessage;
+				const room = typeof msg.room === 'string' ? msg.room : '';
 				if (msg.type === 'scraper' && msg.payload) {
+					if (room) markRoomDelivering(room);
 					handleEnvelope(msg.payload as EnvelopeV2);
 				} else if (msg.type === 'error') {
-					const errPayload = msg.payload as { code?: string; message?: string } | undefined;
-					lastError = errPayload?.message ?? 'websocket error';
+					handleErrorFrame(msg.payload as { code?: string; message?: string } | undefined, room);
+				} else if (msg.type === 'room_left') {
+					handleRoomLeftFrame(msg.payload as { reason?: string } | undefined, room);
 				}
 			} catch (err) {
 				lastError = err instanceof Error ? err.message : String(err);
 			}
 		};
 
-		ws.onerror = () => {
+		sock.onerror = () => {
+			if (stale()) return;
 			lastError = 'websocket error';
 		};
 
-		ws.onclose = () => {
+		sock.onclose = () => {
+			if (stale()) return;
 			connected = false;
 			ws = null;
 			liveJoins = new SvelteSet<string>();
+			// Pending re-joins would only find a dead socket; the next onopen
+			// replays intendedRooms with a clean backoff anyway.
+			cancelAllRejoins();
 			if (!manuallyClosed) scheduleReconnect();
 		};
 	}
@@ -446,6 +640,8 @@ function createScraperWSV2() {
 	function connect(token: string) {
 		if (ws) return;
 		currentConsole = '';
+		currentSpectator = '';
+		revoked = false;
 		open(token);
 	}
 
@@ -455,17 +651,35 @@ function createScraperWSV2() {
 	function connectConsole(console: string) {
 		if (ws) return;
 		currentConsole = console;
+		currentSpectator = '';
+		revoked = false;
+		open('');
+	}
+
+	/** Open a spectator-key socket (?spectator=<kid.secret>[&console=NAME]).
+	 * The key's scopes decide which host:<instance> rooms join_room admits;
+	 * `console` is optional context for the URL only. A `session_revoked`
+	 * error frame stops the reconnect loop for good — call again with a
+	 * freshly minted key. */
+	function connectSpectator(token: string, console?: string) {
+		if (ws) return;
+		currentConsole = console ?? '';
+		currentSpectator = token;
+		revoked = false;
 		open('');
 	}
 
 	function disconnect() {
 		manuallyClosed = true;
 		clearReconnect();
+		cancelAllRejoins();
 		currentConsole = '';
+		currentSpectator = '';
 		if (ws) {
 			ws.close();
 			ws = null;
 		}
+		liveJoins = new SvelteSet<string>();
 		connected = false;
 	}
 
@@ -475,6 +689,12 @@ function createScraperWSV2() {
 		},
 		get lastError() {
 			return lastError;
+		},
+		get lastErrorCode() {
+			return lastErrorCode;
+		},
+		get revoked() {
+			return revoked;
 		},
 		get hello() {
 			return hello;
@@ -580,6 +800,7 @@ function createScraperWSV2() {
 
 		connect,
 		connectConsole,
+		connectSpectator,
 		disconnect,
 		subscribe,
 		subscribeSummary,

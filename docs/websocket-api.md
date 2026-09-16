@@ -59,8 +59,27 @@ for overlays/visualizers and can be ignored.
 ## 1. Authentication
 
 The socket itself accepts anonymous connections, **but joining any `host:*` room requires a
-logged-in user**, and access is further narrowed (see [Access control](#access-control)). So
-in practice you need a token.
+credential**, and access is further narrowed (see [Access control](#access-control)). So in
+practice you need a token. There are three ways to present one, all as query parameters on
+the WebSocket URL (browsers can't set custom headers on a WebSocket handshake):
+
+| Query param | Carries | Who uses it |
+| --- | --- | --- |
+| `?token=<JWT>` | A PocketBase user JWT (see below). | Apps acting as a logged-in user — stats bots, dashboards, the site itself. |
+| `?token=<key>` | An opaque **machine** or **device** key (`mk_…`/`dv_…` kid + `.` + secret) minted from `/admin/tokens/`. | Automation with a scoped service key; a kiosk seat bound to one box. |
+| `?spectator=<key>` | An opaque **spectator** key (`sp_…`), pinned to one instance and a fixed list of classes. | OBS browser sources / overlays. Read-only: may only `join_room`, `leave_room`, `request_state`, `request_events`. |
+| `?console=<name>` | No secret — the Xbox **console name** of the instance to watch. | The legacy overlay door (see [The `?console=` window](#the-console-window)). Being phased out. |
+
+The server resolves exactly one of these at connect (`?token=` wins over `?spectator=`, which
+wins over `?console=`). A bad, expired, banned or revoked credential is logged and the
+connection proceeds **as nobody** — you can still connect and join `public`, but every
+`host:*` join answers `forbidden`. The credential is **re-checked every 60 s** for the life
+of the socket: a key that gets revoked (or a user that gets banned) is evicted with
+`{"type":"error","payload":{"code":"session_revoked",…}}` and close code **4401**; a role or
+roster change that merely narrows your access drops you from the rooms you can no longer
+enter — one `{"type":"room_left","room":"<room>","payload":{"reason":"forbidden"}}` per
+room, sent before the membership goes — and you stay connected. Re-join (with backoff) once
+you expect to be admitted again; see [Server-initiated `room_left`](#server-initiated-room_left).
 
 ### Getting a token
 
@@ -92,19 +111,88 @@ able to connect but get `forbidden` when you try to join host rooms).
 
 ### Access control
 
-When you send `join_room` for a host room, the server checks:
+Every `join_room` is one authorization decision — `room.join` on the parsed room, made by the
+server's authz rule table against the principal your credential resolved to:
 
 | Room | Who may join |
 | --- | --- |
-| `host:<name>:<class>` (a specific instance) | **Admins** (any instance) **or** a non-admin user whose **gamertag is in that instance's live roster** (re-checked per request). |
-| `host:summary` (cross-instance dashboard) | **Admins only.** |
+| `host:<name>:<class>` (one instance, one class) | A user holding the scope `room.join:host:<name>:<class>` (the **admin** role's `room.join:*` covers every instance), **or** a user whose **approved/allowed gamertag is in that instance's live roster** (or who owns the box — re-checked every 60 s), **or** a spectator / device key **bound to that instance** with the matching scope, **or** a machine key with the scope. The `?console=` door reaches only the classes the `anonymous` role lists. |
+| `host:<name>` (bare, one-time multi-class snapshot) | Users only — same roster / ownership / scope rule as above. |
+| `host:summary`, `host:all` (cross-instance dashboards) | Scope only: `room.join:host:summary` / `room.join:host:all` — the **admin** role, or a machine key minted with it. |
+| `admin` | Users holding `admin.admin` (the admin role). |
+| `public` | Everyone, including an unauthenticated socket. |
 
-**For a stats app that wants to watch every instance, use an admin account.** A
-non-admin/player token can only see the one instance they're currently playing in. If your
-join is rejected you'll get an `error` message with code `forbidden`.
+A pending or blocked gamertag does **not** count for the roster rule — only `approved` /
+`allowed` tags do.
 
-> Ask the operator (the person running this server) to either give your service account the
-> admin role, or tell you which non-admin scope you have. Roles are managed in PocketBase.
+**For a stats app that wants to watch every instance, ask for a machine key** scoped
+`room.join:host:*` + `scraper.events:*` (or use an account holding the admin role). A
+player's own token can only see the one instance they're currently playing in; a spectator
+key sees exactly the instance and classes it was minted for. If your join is rejected you'll
+get an `error` message — see [Error codes](#error-codes) for what each code means.
+
+> Ask the operator (the person running this server) to mint you a key from `/admin/tokens/`
+> with the scopes you need, or to grant your service account a role. Roles and keys are
+> managed in the server's Studio, not by the client.
+
+### The `?console=` window
+
+`?console=<name>` is the pre-token overlay door: no secret, just the Xbox console name of
+the instance to watch. It yields an **anonymous** principal bound to whichever live instance
+currently reports that console name, whose reach is precisely the scopes on the server's
+`anonymous` role — by default the four viewer-safe classes `game_filtered`, `tick`,
+`scenario`, `event_filtered` of the bound instance, and nothing else (never `host:<name>`,
+`host:all`, `host:summary`, the raw `game`/`event` classes, or
+`request_events`/`request_state`). Anonymous sockets may only send `join_room` and
+`leave_room`.
+
+The binding follows the console, not the socket: it is re-derived every 60 s **and** on
+every `join_room` / `leave_room` while the socket is unbound. So an overlay that connects
+before its instance has booted (or reported its console name) is admitted the moment it
+sends `join_room` after the console comes live — no reconnect needed; until then each join
+answers `error{forbidden}`. When the instance goes away (container restart), the 60 s
+re-check unbinds the socket and sends `room_left{reason:"forbidden"}` for each subscribed
+room; once the console is back, a plain `join_room` re-binds and succeeds. An overlay should
+therefore treat `forbidden` on a `?console=` join and `room_left` as "retry the join with
+backoff", not as a fatal error.
+
+The operator can close the door without a redeploy by emptying the `anonymous` role's
+scopes (the boot log then reads `authz: console door CLOSED`) — after which `?console=`
+still connects but can join nothing. **New integrations should use `?spectator=`**; treat
+`?console=` as a transition window that will be shut once every overlay URL carries a key.
+
+### Error codes
+
+Errors come back as `{"type":"error","room":"…","payload":{"code":"…","message":"…"}}` on
+the same socket (`session_revoked` is followed by the close frame). `room` is set **only**
+when the error answers a `join_room` / `leave_room`, and then echoes the room exactly as you
+sent it — so a client with several joins in flight can tell which one was refused; every
+other error omits it (`room` is absent, not empty):
+
+| `code` | When | What to do |
+| --- | --- | --- |
+| `forbidden` | Your principal may not join that room, or may not send that message type at all (spectators / devices may only join/leave/`request_state`/`request_events`; `?console=` sockets may only join/leave — so `request_probe` from any of them is `forbidden`). A user or machine key that *may* send `request_probe` but lacks `scraper.probe` for the instance gets **no reply at all** (the request is dropped, not errored). | Check the credential / scopes; a roster-based player token only covers the box they're in. |
+| `not_found` | The room's **type** is not registered (e.g. `foo:bar`). | Fix the room name. |
+| `bad_room` | The name has a `host:` prefix but doesn't parse: empty instance, unknown class, `host:all:tick`, whitespace, four segments. | Fix the room name — see [§4](#4-what-you-can-send) for the shapes. |
+| `unknown_type` | The message `type` has no handler. Answered for every principal kind (a bad type is never silently dropped). | Typo in `type`. |
+| `session_revoked` | Your credential no longer resolves on a 60 s re-check (key revoked or expired, user banned / deleted). Close code 4401 follows. | Obtain a fresh credential and reconnect. |
+
+### Server-initiated `room_left`
+
+The 60 s re-check also re-decides `room.join` for every room you hold. Each room you no
+longer pass is taken away and announced with
+
+```json
+{"type":"room_left","room":"host:smoke1:game","payload":{"reason":"forbidden"}}
+```
+
+— one frame per room, queued **before** the membership is dropped, so nothing else about
+that room follows it. The socket stays open and your other rooms are untouched. Causes: a
+role or key scope was stripped, your gamertag left the roster (past the grace window), the
+`?console=` instance went away. The only `reason` today is `forbidden`. Your client policy
+should be: mark the subscription lost and **re-join with backoff** (the join answers
+`error{forbidden}` with the same `room` until access returns, then succeeds and replays the
+snapshot as usual).
 
 ### Host / port
 
@@ -135,7 +223,8 @@ Every frame is JSON text. There are **two nested layers**:
 | `type` | Meaning |
 | --- | --- |
 | `scraper` | A data/control envelope. **99% of traffic.** Parse `payload` as the envelope below. |
-| `error`   | A problem with something you sent. `payload` is `{"code":"...","message":"..."}`. |
+| `error`   | A problem with something you sent. `payload` is `{"code":"...","message":"..."}`; `room` is set when the error answers a `join_room` / `leave_room` (the room as you sent it), omitted otherwise. |
+| `room_left` | The server took a room away from you (60 s access re-check). `room` names it; `payload` is `{"reason":"forbidden"}`. Re-join with backoff — see [Server-initiated `room_left`](#server-initiated-room_left). |
 
 `type` values you **send** to the server are different (`join_room`, etc.) — see
 [Client → server](#4-what-you-can-send).
@@ -244,7 +333,7 @@ Send these as JSON text frames. Only `type` (and sometimes `room`/`payload`) mat
 | `leave_room` | `room` | Unsubscribe. |
 | `request_state` | — | Re-send the current snapshot for **every** room you're currently in. Use after a network blip to re-sync without rejoining. |
 | `request_events` | `payload: {since_tick?, types?}` | Ask for the recent event backlog of the current match, for each instance you're subscribed to. Returns one **`events`** envelope per instance. |
-| `request_probe` | `room`/`payload` | Diagnostics only (raw memory-probe dump). Not needed for stats. |
+| `request_probe` | `payload: {instance?}` | Diagnostics only (raw memory-probe dump). Needs `scraper.probe` on the instance — an admin JWT or a machine key with `scraper.*` / `scraper.probe:<name>`. Spectator / device / `?console=` sockets get `forbidden` (not on their send list); a user or machine key without the scope gets **no reply** (dropped silently). With no `instance`, every `host:<name>` room you're in is probed. Not needed for stats. |
 
 Examples:
 
@@ -684,20 +773,21 @@ ws.onclose = () => {
 - **Origin policy.** If the server sets `WS_ALLOWED_ORIGINS`, your app's origin must be in the
   list (browser clients). In dev all origins are allowed. Ask the operator if a browser
   connection is rejected at the handshake.
-- **What you need from the operator:** the host/port, an account token with the right access
-  (admin for all instances, or which instance your player token covers), and the instance
-  name(s) — though `hello` will list the ones you can see.
+- **What you need from the operator:** the host/port, a credential with the right access (a
+  machine key scoped to every instance, an admin account, or a spectator key for one box —
+  see [§1](#1-authentication)), and the instance name(s) — though `hello` will list the ones
+  you can see (a bound spectator / device / console socket sees only its own instance).
 
 ---
 
 ## 9. Quick reference
 
-**Connect:** `ws(s)://<host>:<port>/api/ws?token=<pocketbase-jwt>`
+**Connect:** `ws(s)://<host>:<port>/api/ws?token=<pocketbase-jwt | machine/device key>` · overlays: `?spectator=<key>` (legacy: `?console=<xbox-console-name>`)
 
 **Rooms to join (per instance `N`):** `host:N:game`, `host:N:event`, `host:N:previous_game`
 (stats) · `host:N:tick`/`:objects`/`:debug` (overlays) · `host:summary` (admin dashboard).
 
-**Send:** `join_room` · `leave_room` · `request_state` · `request_events {since_tick?, types?}`.
+**Send:** `join_room` · `leave_room` · `request_state` · `request_events {since_tick?, types?}` · `request_probe` (admin). Errors: `forbidden` · `not_found` · `bad_room` · `unknown_type` · `session_revoked` (`error.room` echoes the room on join/leave refusals). Server-initiated: `room_left {room, payload:{reason:"forbidden"}}` — re-join with backoff.
 
 **Receive:** `{type:"scraper", room, payload:{ v, type, instance, seq, tick, ts, data }}` —
 switch on `payload.type`: `hello` · `game` · `game_filtered` · `event` · `event_filtered` ·

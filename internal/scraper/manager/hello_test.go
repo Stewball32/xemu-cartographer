@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket"
 )
@@ -162,7 +163,7 @@ func TestSendHelloOn(t *testing.T) {
 	m.SendHelloOn(func(data []byte) {
 		calls++
 		got = data
-	})
+	}, authz.Superuser("su"))
 
 	if calls != 1 {
 		t.Fatalf("SendHelloOn: send called %d times, want 1", calls)

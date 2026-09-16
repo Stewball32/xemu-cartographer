@@ -6,9 +6,10 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/notifications"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
-	"github.com/Stewball32/xemu-cartographer/internal/teamperms"
 )
 
 func init() {
@@ -57,12 +58,10 @@ func init() {
 					return apis.NewForbiddenError("only the invitee may decline this invite", nil)
 				}
 			case "requested":
-				ok, err := teamperms.IsOwnerOrManager(e.App, caller.Id, team.Id)
-				if err != nil {
-					return apis.NewInternalServerError("permission check failed", err)
-				}
-				if !ok {
-					return apis.NewForbiddenError("only an owner or manager may decline this request", nil)
+				// Owner/manager rejects — `team.decide` on the team (design
+				// §7.1 R-13); the invitee branch above stays hand-written.
+				if err := pb.Check(pb.Default(), e, authz.ActionTeamDecide, authz.Team(team.Id)); err != nil {
+					return apis.NewForbiddenError("only an owner or manager may decline this request", err)
 				}
 			default:
 				return apis.NewInternalServerError("unknown request direction", nil)

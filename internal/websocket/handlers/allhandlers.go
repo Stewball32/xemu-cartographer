@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/guards"
 )
 
 // Event is passed to handlers when a WebSocket message arrives.
@@ -13,16 +15,20 @@ import (
 type Event struct {
 	Services *guards.Services // Cross-system access for guards and resolvers.
 	App      core.App         // PocketBase app for DB queries in guards/handlers.
-	UserID   string           // Authenticated user ID, "" for anonymous.
-	User     *core.Record     // Full PocketBase user record, nil for anonymous.
-	// ConsoleName is a tokenless console-overlay connection's target console
-	// (from ?console=<name>); "" for normal connections. join_room admits such a
-	// client to the host:<instance> room currently rostering that console.
-	ConsoleName string
-	Type        string          // Message type that triggered this handler.
-	Room        string          // Target room (if applicable).
-	Target      string          // Target user ID (if applicable).
-	Payload     json.RawMessage // Opaque project-specific data.
+	// Authz is the authz.Deps every Can call in a handler decides against
+	// (the process-wide pb adapter in production, authztest.FakeDeps in
+	// tests). A nil Authz denies everything — authz.Can never panics on it.
+	Authz authz.Deps
+	// Principal is who the sending connection is, as resolved at connect
+	// (pb.ResolveWS) and refreshed on the re-resolve tick. It is the only
+	// identity a handler sees: kind, scopes, roles and the bound instance
+	// all live here, and access is asked as authz.Can(Authz, Principal, …).
+	Principal authz.Principal
+	UserID    string          // Principal.UserID; "" when not a users record.
+	Type      string          // Message type that triggered this handler.
+	Room      string          // Target room (if applicable).
+	Target    string          // Target user ID (if applicable).
+	Payload   json.RawMessage // Opaque project-specific data.
 
 	// Response capabilities (set by Hub before dispatch).
 	Broadcast  func(msg json.RawMessage)

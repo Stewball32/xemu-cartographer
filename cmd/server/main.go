@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/discovery"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
@@ -80,21 +82,6 @@ func main() {
 			return err
 		}
 
-		if err := seed.Run(app); err != nil {
-			return err
-		}
-
-		// Env-driven superuser bootstrap (all builds, incl. prod-style beta) —
-		// creates a superuser from SEED_SUPERUSER_EMAIL/PASSWORD if set and none
-		// with that email exists yet. No-op when unset.
-		if err := seed.EnsureEnvSuperuser(app); err != nil {
-			return err
-		}
-
-		// Register snapshot hooks AFTER seeding so the seeder's own writes don't
-		// overwrite the snapshot mid-run.
-		seed.RegisterContainerSnapshotHooks(app)
-
 		// Build the Services skeleton early so subsystems that need to broadcast
 		// (the scraper manager) can hold a stable pointer to it. Per-system
 		// fields (svc.WS, svc.Discord) are populated as those subsystems come up
@@ -139,6 +126,53 @@ func main() {
 		scrMgr = scrapermgr.New(svc)
 		svc.Scraper = scrMgr
 		scraperroutes.SetManager(scrMgr)
+
+		// Containers config is read here (pure env, no side effects) because the
+		// authz adapter below needs the provisioner's name prefix; the podman
+		// manager itself is built further down under the same config.
+		podmanCfg := podman.LoadFromEnv()
+
+		// Authorization adapter (DESIGN-STEP6 §7.4 B-1): ONE process-wide
+		// authz.Deps over the live app + scraper, published through
+		// authzpb.SetDefault so hooks, guards and route groups — which all read
+		// authzpb.Default() at request time — share it. Installed BEFORE the
+		// seeder runs (the hooks that fire during seeding decide through it; a
+		// nil default denies) and before any route is bound. The prefix closure
+		// is left nil when the provisioner is off so OwnedBox answers "" (no
+		// per-user box can exist), matching the play resolver's derivation.
+		var prefixFn func() string
+		if podmanCfg.Enabled {
+			prefixFn = func() string { return podmanCfg.NamePrefix }
+		}
+		authzDeps := authzpb.NewDeps(app, scrMgr, prefixFn)
+		authzpb.SetDefault(authzDeps)
+		svc.Authz = authzDeps
+		// Legacy LAN_SAVES_TOKEN (PD-12): imported as the in-memory "legacy-env"
+		// machine key carrying lan.saves.* + lan.sync.* so existing LAN stations
+		// keep working; the boot report below nags to rotate it.
+		authzpb.ImportLegacyEnv(authzDeps, os.Getenv)
+
+		if err := seed.Run(app); err != nil {
+			return err
+		}
+
+		// Env-driven superuser bootstrap (all builds, incl. prod-style beta) —
+		// creates a superuser from SEED_SUPERUSER_EMAIL/PASSWORD if set and none
+		// with that email exists yet. No-op when unset.
+		if err := seed.EnsureEnvSuperuser(app); err != nil {
+			return err
+		}
+
+		// Register snapshot hooks AFTER seeding so the seeder's own writes don't
+		// overwrite the snapshot mid-run.
+		seed.RegisterContainerSnapshotHooks(app)
+
+		// The dev seeder writes roles rows with app.Save (not authzpb.Grant), so
+		// drop the adapter's roles cache before the first decision reads it; then
+		// print the §8.2 boot report — after seeding so the admin count and the
+		// anonymous-scopes row reflect what this boot actually ends up with.
+		authzDeps.InvalidateRoles()
+		authzpb.LogStartup(authzpb.Inspect(app, authzDeps), log.Printf)
 
 		// Player-hosting (ADR-0003): the host-runner Registry owns the per-instance
 		// state-aware runners and fans their observable stream to the admin WS room.
@@ -205,9 +239,9 @@ func main() {
 		}
 
 		// Containers (optional): start podman manager + socket watcher when
-		// CONTAINERS_ENABLED=true. The route group registers itself as a
-		// no-op when Manager is nil, so a fresh checkout boots cleanly.
-		podmanCfg := podman.LoadFromEnv()
+		// CONTAINERS_ENABLED=true (podmanCfg was loaded above, ahead of the authz
+		// adapter). The route group registers itself as a no-op when Manager is
+		// nil, so a fresh checkout boots cleanly.
 		if podmanCfg.Enabled {
 			containersStore := resolvers.NewContainersStore(app)
 			mgr, err := podman.NewManager(podmanCfg, containersStore)
@@ -318,6 +352,7 @@ func main() {
 			}
 		}
 
+		se.Router.BindFunc(authzpb.RejectBannedAuth) // banned / soft-deleted JWT ⇒ guest on every route
 		routes.RegisterAll(se)
 
 		hub = ws.NewHub(app)

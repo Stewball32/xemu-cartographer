@@ -36,10 +36,14 @@ export function isAdmin(): boolean {
 }
 
 // canManageLibrary reports whether the caller may curate the shared gametype
-// library + game (XBE) uploads: an admin/superuser, or a holder of the
-// `organizer` role. Mirrors the backend `organizerOrAdmin` PB rule.
+// library + game (XBE) uploads. authz (design §9): the primary check is the
+// `library.manage` scope — the same want the server's authz.Can evaluates —
+// so a role whose scopes were edited away stops rendering the organizer nav
+// without a code change. The admin / `organizer` role fallback is kept for
+// sessions hydrated from a pre-authz /api/me payload (no `scopes` field);
+// the backend PB rules are the real gate either way.
 export function canManageLibrary(): boolean {
-	return auth.isAdmin || auth.hasRole('organizer');
+	return auth.hasScope('library.manage') || auth.isAdmin || auth.hasRole('organizer');
 }
 
 // requireOrganizer gates the /organizer route group: organizers OR admins pass,

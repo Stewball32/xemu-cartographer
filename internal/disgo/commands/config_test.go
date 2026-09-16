@@ -2,8 +2,15 @@ package commands
 
 import (
 	"sort"
+	"strconv"
 	"testing"
 
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/snowflake/v2"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/authztest"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
 )
 
@@ -104,4 +111,52 @@ func TestDiffTags(t *testing.T) {
 			t.Errorf("announcements should be a move from %s", other)
 		}
 	})
+}
+
+// TestConfigAllowedManageGuild pins the D-2 gate every /config handler runs
+// first: the caller's server-side member permissions must carry Manage
+// Server (or Administrator) for discord.config and discord.bind_channel; a
+// DM (nil guild), a request the mux middleware did not see (Nobody) and a
+// missing adapter all deny.
+func TestConfigAllowedManageGuild(t *testing.T) {
+	deps := &authztest.FakeDeps{}
+	gid := snowflake.ID(123456789)
+	member := func(perms discord.Permissions) authz.Principal {
+		return authz.Principal{
+			Kind: authz.KindDiscord,
+			ID:   "456",
+			Extra: map[string]string{
+				"guild_id":           gid.String(),
+				"member_permissions": strconv.FormatUint(uint64(perms), 10),
+			},
+		}
+	}
+
+	cases := []struct {
+		name string
+		deps authz.Deps
+		p    authz.Principal
+		gid  *snowflake.ID
+		want bool
+	}{
+		{"manage guild", deps, member(discord.PermissionManageGuild), &gid, true},
+		{"administrator", deps, member(discord.PermissionAdministrator), &gid, true},
+		{"manage guild among others", deps, member(discord.PermissionManageGuild | discord.PermissionSendMessages), &gid, true},
+		{"send messages only", deps, member(discord.PermissionSendMessages), &gid, false},
+		{"manage channels only", deps, member(discord.PermissionManageChannels), &gid, false},
+		{"no permissions", deps, member(0), &gid, false},
+		{"dm", deps, member(discord.PermissionManageGuild), nil, false},
+		{"no middleware", deps, authz.Nobody(), &gid, false},
+		{"no deps", nil, member(discord.PermissionManageGuild), &gid, false},
+		{"nil adapter", (*pb.PBDeps)(nil), member(discord.PermissionManageGuild), &gid, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for _, a := range []authz.Action{authz.ActionDiscordConfig, authz.ActionDiscordBindChannel} {
+				if got := configAllowed(c.deps, c.p, a, c.gid); got != c.want {
+					t.Errorf("%s: configAllowed = %v, want %v", a, got, c.want)
+				}
+			}
+		})
+	}
 }

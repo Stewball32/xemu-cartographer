@@ -1,14 +1,7 @@
 package handlers
 
 import (
-	"errors"
-	"strings"
-	"time"
-
-	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/roles"
-	"github.com/Stewball32/xemu-cartographer/internal/rostergrace"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 )
 
@@ -16,39 +9,33 @@ func init() {
 	register("join_room", handleJoinRoom)
 }
 
+// handleJoinRoom admits the sender to a room in three steps: the room type
+// must be registered (rooms.Resolve — "not_found"), the name must parse
+// (authz.ParseRoom — "bad_room"), and authz.Can(room.join) must admit the
+// principal ("forbidden"). That single Can call replaces the old guard walk,
+// host ladder and console door (DESIGN-STEP6 §4): rostered members reach
+// their bare host:<inst> room, the admin room needs admin.admin, the
+// aggregate feeds need a room.join scope, and the bound kinds (spectator /
+// device / the anonymous console door) reach only class rooms of the one
+// instance they are bound to, when a scope names that class.
 func handleJoinRoom(e *Event) {
 	if e.Room == "" {
 		return
 	}
 
-	rt, ok := rooms.Resolve(e.Room)
-	if !ok {
+	if _, ok := rooms.Resolve(e.Room); !ok {
 		e.SendError("not_found", "unknown room type")
 		return
 	}
 
-	// A tokenless console-overlay connection (?console=) carries no user JWT,
-	// so the host room's RequireAuth guard would reject it here — before
-	// authorizeHostRoom's console branch ever runs. Skip the generic guard list
-	// ONLY for a console connection joining a host room — authorizeHostRoom is
-	// then the sole authority (it validates the console is in that instance's
-	// live roster and bars the summary feed). Every other connection — and
-	// every non-host room — still runs CheckGuards unchanged.
-	consoleHostJoin := e.ConsoleName != "" && isHostRoom(e.Room)
-	if !consoleHostJoin {
-		if err := rt.CheckGuards(e.Services, e.User); err != nil {
-			e.SendError("forbidden", err.Error())
-			return
-		}
+	room, err := authz.ParseRoom(e.Room)
+	if err != nil {
+		e.SendError("bad_room", err.Error())
+		return
 	}
 
-	// M09 9c: narrow host:* access beyond the room type's RequireAuth guard.
-	// The cross-instance summary feed stays admin-only; a per-instance
-	// host:<name> room additionally admits a non-admin whose gamertag is in
-	// that container's live roster. Non-host rooms (admin:, public:) already
-	// passed their own guard list above and are untouched.
-	if err := authorizeHostRoom(e); err != nil {
-		e.SendError("forbidden", err.Error())
+	if !authz.Can(e.Authz, e.Principal, authz.ActionRoomJoin, authz.RoomRes(room)) {
+		e.SendError("forbidden", "not allowed to join this room")
 		return
 	}
 
@@ -56,116 +43,25 @@ func handleJoinRoom(e *Event) {
 
 	// Replay catch-up bytes for the joined room. Only host:* rooms have a
 	// scraper-driven replay path; other rooms (admin, public) join silently.
-	// rooms.Resolve already checked the type registry, but the "host:" prefix
-	// distinguishes between the per-instance and aggregate flavours that
-	// share the single host RoomType registration.
-	if e.Services == nil || e.Services.Scraper == nil {
+	// The parsed Room distinguishes the aggregate feeds from the per-instance
+	// flavours that share the single host RoomType registration.
+	if e.Services == nil || e.Services.Scraper == nil || !room.IsHost() {
 		return
 	}
 	switch {
-	case e.Room == rooms.HostAllRoom, e.Room == rooms.SummaryRoom:
+	case room.IsHostAggregate():
 		for _, msg := range e.Services.Scraper.JoinReplayForHostAll() {
 			e.SendRaw(msg)
 		}
-	case strings.HasPrefix(e.Room, rooms.HostRoomPrefix+":"):
-		// "host:<rest>" where rest is either "<inst>" (legacy all-classes
-		// replay) or "<inst>:<class>" (v2 per-class replay).
-		rest := e.Room[len(rooms.HostRoomPrefix)+1:]
-		parts := strings.SplitN(rest, ":", 2)
-		name := parts[0]
-		if len(parts) == 1 {
-			for _, msg := range e.Services.Scraper.JoinReplayForInstance(name) {
-				e.SendRaw(msg)
-			}
-		} else {
-			class := parts[1]
-			for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(name, class) {
-				e.SendRaw(msg)
-			}
+	case room.Class == "":
+		// Bare "host:<inst>": legacy all-classes replay.
+		for _, msg := range e.Services.Scraper.JoinReplayForInstance(room.Instance) {
+			e.SendRaw(msg)
+		}
+	default:
+		// "host:<inst>:<class>": v2 per-class replay.
+		for _, msg := range e.Services.Scraper.JoinReplayForInstanceClass(room.Instance, room.Class) {
+			e.SendRaw(msg)
 		}
 	}
-}
-
-// authorizeHostRoom applies the M09 9c access rules to host:* rooms. Returns
-// nil when the room isn't a host room (already guarded elsewhere) or the
-// caller is admitted, and an error describing the denial otherwise. Fails
-// closed: any missing dependency or lookup error denies access.
-func authorizeHostRoom(e *Event) error {
-	isSummary := e.Room == rooms.HostAllRoom || e.Room == rooms.SummaryRoom
-	isInstance := isHostRoom(e.Room) && !isSummary
-	if !isSummary && !isInstance {
-		return nil // not a host room — leave it to the room type's guards
-	}
-
-	svc := e.Services
-
-	// Tokenless console-overlay connection (?console=NAME): admit to the
-	// host:<instance> room whose LIVE roster currently includes that console
-	// (resolved via Membership() — the same identity view the M09 roster gate
-	// uses). Read-only (enforced in the Hub). Never the summary feed. This is
-	// the deliberately loosened, view-only overlay door. Migration is automatic:
-	// the same socket re-joins the new instance's room and this re-checks.
-	if e.ConsoleName != "" {
-		if isSummary {
-			return errors.New("console overlays cannot join the summary feed")
-		}
-		instance := hostRoomInstance(e.Room)
-		if svc == nil || svc.Scraper == nil || instance == "" {
-			return errors.New("console not in any live match")
-		}
-		want := scraperiface.SanitizeIdentity(e.ConsoleName)
-		if scraperiface.ContainerHasGamertag(svc.Scraper.Membership(), instance, []string{want}) {
-			return nil
-		}
-		return errors.New("console not in this match")
-	}
-
-	// Admins (superuser or admin role) always get in — any host room,
-	// regardless of roster membership.
-	if svc != nil && svc.App != nil && roles.IsAdminAuth(svc.App, e.User) {
-		return nil
-	}
-
-	// The cross-instance dashboard summary is admin-only.
-	if isSummary {
-		return errors.New("host summary is admin-only")
-	}
-
-	// Per-instance room: admit a roster member of that specific instance.
-	instance := hostRoomInstance(e.Room)
-	if instance == "" || svc == nil || svc.App == nil || svc.Scraper == nil || e.User == nil {
-		return errors.New("not in this match")
-	}
-	tags, err := gamertags.SanitizedForUser(svc.App, e.User.Id)
-	if err != nil || len(tags) == 0 {
-		return errors.New("not in this match")
-	}
-	// Grace window (M09): admits a roster member of this instance, and keeps
-	// them admitted for the rostergrace TTL after a transient roster drop.
-	if rostergrace.Default.Allow(svc.Scraper.Membership(), instance, tags, time.Now()) {
-		return nil
-	}
-	return errors.New("not in this match")
-}
-
-// isHostRoom reports whether room is any host:* room — a per-instance room
-// ("host:<inst>" / "host:<inst>:<class>") or an aggregate feed (host:all /
-// host:summary), all of which begin with the "host:" prefix. These are exactly
-// the rooms authorizeHostRoom is the authority for, which is why the join
-// handler skips the generic guard list for an overlay-token connection only
-// when the target is one of them.
-func isHostRoom(room string) bool {
-	return strings.HasPrefix(room, rooms.HostRoomPrefix+":")
-}
-
-// hostRoomInstance extracts the instance name from a "host:<instance>" or
-// "host:<instance>:<class>" room name. Returns "" when room has no instance
-// segment (e.g. the bare "host" type or a non-host room).
-func hostRoomInstance(room string) string {
-	prefix := rooms.HostRoomPrefix + ":"
-	if !strings.HasPrefix(room, prefix) {
-		return ""
-	}
-	rest := strings.TrimPrefix(room, prefix)
-	return strings.SplitN(rest, ":", 2)[0]
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/instancename"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
@@ -53,6 +54,9 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{"error": "game_iso must be a bare filename in the ISO library"})
 			}
 			container := Manager.NamePrefix() + slug
+			if err := requireManage(e, authz.Container(container)); err != nil {
+				return err
+			}
 			info, err := Manager.CreateWithOptions(container, podman.CreateOptions{GameISO: body.GameISO, DisplayName: display})
 			if err != nil {
 				return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
@@ -73,6 +77,9 @@ func init() {
 		// POST /api/admin/containers/{name}/start — start xemu + browser.
 		Group.POST("/{name}/start", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")
+			if err := requireManage(e, authz.Container(name)); err != nil {
+				return err
+			}
 			if err := Manager.Start(name); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
@@ -82,6 +89,9 @@ func init() {
 		// POST /api/admin/containers/{name}/stop — stop xemu + browser.
 		Group.POST("/{name}/stop", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")
+			if err := requireManage(e, authz.Container(name)); err != nil {
+				return err
+			}
 			if err := Manager.Stop(name); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
@@ -91,6 +101,9 @@ func init() {
 		// DELETE /api/admin/containers/{name} — remove the pair.
 		Group.DELETE("/{name}", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")
+			if err := requireManage(e, authz.Container(name)); err != nil {
+				return err
+			}
 			if err := Manager.Remove(name); err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}

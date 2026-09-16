@@ -8,6 +8,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/notifications"
 	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
 	"github.com/Stewball32/xemu-cartographer/internal/teamperms"
@@ -76,13 +78,13 @@ func init() {
 					return apis.NewForbiddenError("only the invitee may accept this invite", nil)
 				}
 			case "requested":
-				// Owner/manager approves. Caller must own/manage the team.
-				ok, err := teamperms.IsOwnerOrManager(e.App, caller.Id, team.Id)
-				if err != nil {
-					return apis.NewInternalServerError("permission check failed", err)
-				}
-				if !ok {
-					return apis.NewForbiddenError("only an owner or manager may approve this request", nil)
+				// Owner/manager approves — `team.decide` on the team (design
+				// §7.1 R-13): the team_authority predicate (active
+				// owner/manager row, or created_by with no owner row yet) or
+				// the admin `team.*` scope. The invitee branch above stays
+				// hand-written — it is subject identity, not authorization.
+				if err := pb.Check(pb.Default(), e, authz.ActionTeamDecide, authz.Team(team.Id)); err != nil {
+					return apis.NewForbiddenError("only an owner or manager may approve this request", err)
 				}
 			default:
 				return apis.NewInternalServerError("unknown request direction", nil)

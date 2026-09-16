@@ -7,6 +7,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
 	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
@@ -170,56 +172,75 @@ type updateBody struct {
 	OffsetSet   *string `json:"offset_set"`
 }
 
+// touchesPolicy reports whether the PATCH body sets a policy field — `role`
+// (play / server / shelved visibility) or `allow_on_xbox` (station-HDD
+// eligibility) — which the `iso.set_policy` action gates on top of the
+// group's `library.manage`.
+func (b updateBody) touchesPolicy() bool {
+	return b.Role != nil || b.AllowOnXbox != nil
+}
+
 // PATCH /api/admin/isos/{id} — partial metadata update.
 func registerUpdate() {
-	Group.PATCH("/{id}", func(e *core.RequestEvent) error {
-		rec, err := e.App.FindRecordById(collectionName, e.Request.PathValue("id"))
-		if err != nil {
-			return e.JSON(http.StatusNotFound, map[string]string{"error": "iso not found"})
+	Group.PATCH("/{id}", handleUpdate)
+}
+
+// handleUpdate is the PATCH body: 404 unknown id, 400 on a malformed body or
+// field, 403 when a policy field is set without `iso.set_policy` on this ISO
+// (checked before any rec.Set so a denied request mutates nothing), 409 when
+// the save fails, else 200 with the updated view.
+func handleUpdate(e *core.RequestEvent) error {
+	rec, err := e.App.FindRecordById(collectionName, e.Request.PathValue("id"))
+	if err != nil {
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "iso not found"})
+	}
+	var body updateBody
+	if err := e.BindBody(&body); err != nil {
+		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if body.touchesPolicy() {
+		if err := pb.Check(pb.Default(), e, authz.ActionISOSetPolicy, authz.ISO(rec.Id)); err != nil {
+			return err
 		}
-		var body updateBody
-		if err := e.BindBody(&body); err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if body.Name != nil {
+		name := strings.TrimSpace(*body.Name)
+		if name == "" {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
 		}
-		if body.Name != nil {
-			name := strings.TrimSpace(*body.Name)
-			if name == "" {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
-			}
-			rec.Set("name", name)
+		rec.Set("name", name)
+	}
+	if body.Description != nil {
+		rec.Set("description", *body.Description)
+	}
+	if body.Role != nil {
+		role := strings.TrimSpace(*body.Role)
+		if !validRoles[role] {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "role must be play, server, or shelved"})
 		}
-		if body.Description != nil {
-			rec.Set("description", *body.Description)
+		rec.Set("role", role)
+	}
+	if body.AllowOnXbox != nil {
+		rec.Set("allow_on_xbox", *body.AllowOnXbox)
+	}
+	if body.ServerISO != nil {
+		serverID, msg := resolveServerISO(e.App, *body.ServerISO, rec.Id)
+		if msg != "" {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
 		}
-		if body.Role != nil {
-			role := strings.TrimSpace(*body.Role)
-			if !validRoles[role] {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "role must be play, server, or shelved"})
-			}
-			rec.Set("role", role)
+		rec.Set("server_iso", serverID)
+	}
+	if body.OffsetSet != nil {
+		id := strings.TrimSpace(*body.OffsetSet)
+		if id != "" && !offsetSetExists(e.App, id) {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "unknown offset set: " + id})
 		}
-		if body.AllowOnXbox != nil {
-			rec.Set("allow_on_xbox", *body.AllowOnXbox)
-		}
-		if body.ServerISO != nil {
-			serverID, msg := resolveServerISO(e.App, *body.ServerISO, rec.Id)
-			if msg != "" {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": msg})
-			}
-			rec.Set("server_iso", serverID)
-		}
-		if body.OffsetSet != nil {
-			id := strings.TrimSpace(*body.OffsetSet)
-			if id != "" && !offsetSetExists(e.App, id) {
-				return e.JSON(http.StatusBadRequest, map[string]string{"error": "unknown offset set: " + id})
-			}
-			rec.Set("offset_set", id)
-		}
-		if err := e.App.Save(rec); err != nil {
-			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
-		}
-		return e.JSON(http.StatusOK, isoView(rec))
-	})
+		rec.Set("offset_set", id)
+	}
+	if err := e.App.Save(rec); err != nil {
+		return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+	}
+	return e.JSON(http.StatusOK, isoView(rec))
 }
 
 // DELETE /api/admin/isos/{id} — remove the catalog entry AND its managed disc +

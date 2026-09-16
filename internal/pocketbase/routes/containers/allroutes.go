@@ -7,6 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
@@ -57,7 +58,7 @@ func RegisterAll(se *core.ServeEvent) {
 	Router = se.Router
 	Group = se.Router.Group("/api/admin/containers")
 	Group.Bind(apis.RequireAuth())
-	Group.BindFunc(middleware.RequireAdmin())
+	Group.BindFunc(middleware.RequireAdmin(authz.ActionAdminContainers))
 
 	for _, fn := range registry {
 		fn()

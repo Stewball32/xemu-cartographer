@@ -13,7 +13,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { GamepadIcon, LinkIcon, SwordsIcon, TvIcon, UserIcon } from '@lucide/svelte';
+	import { GamepadIcon, InfoIcon, LinkIcon, SwordsIcon, TvIcon, UserIcon } from '@lucide/svelte';
 	import { ClientResponseError } from 'pocketbase';
 	import pb from '$lib/pocketbase';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -25,7 +25,7 @@
 	import H2Tab from '$lib/components/settings/H2Tab.svelte';
 	import StreamTab from '$lib/components/settings/StreamTab.svelte';
 	import AccountsTab from '$lib/components/settings/AccountsTab.svelte';
-	import { lanMeta } from '$lib/utils/lansaves';
+	import { LAN_AUTH_NOTICE, LanAuthError, lanMeta } from '$lib/utils/lansaves';
 	import { fetchIdentity, type MeGamertag } from '$lib/utils/identity';
 	import type { CEField } from '$lib/types/lansaves';
 	import type { CeProfileRecord, CeProfileSettings, H2ProfileRecord } from '$lib/types/gamertag';
@@ -65,6 +65,11 @@
 	let defaultTag = $state('');
 
 	let ceFields = $state<CEField[]>([]);
+	// Set when /api/lan/saves/meta refuses the caller (authz: the LAN routes
+	// need a machine key or a role carrying lan.*). The page still renders —
+	// the CE tab just has no schema-driven fields — with an inline notice
+	// instead of a "Load failed" toast.
+	let lanNotice = $state<string | null>(null);
 	let ceRecord = $state<CeProfileRecord | null>(null);
 	let ceSettings = $state<CeProfileSettings>({});
 	let ceBaseline = $state('{}');
@@ -98,17 +103,34 @@
 		defaultTag = id?.default_gamertag?.tag ?? '';
 	}
 
+	// The LAN schema is loaded on its own: a member without the lan.* scope
+	// gets 403 (LanAuthError), which must not take the rest of the page down.
+	async function loadLanSchema() {
+		try {
+			const meta = await lanMeta();
+			ceFields = meta.ce_profile_fields ?? [];
+			lanNotice = null;
+		} catch (err) {
+			ceFields = [];
+			if (err instanceof LanAuthError) {
+				lanNotice = LAN_AUTH_NOTICE;
+				return;
+			}
+			lanNotice = null;
+			toaster.error({ title: 'Schema load failed', description: describeAsyncError(err) });
+		}
+	}
+
 	async function load() {
 		const uid = auth.user?.id;
 		if (!uid) return;
 		try {
 			loading = true;
-			const [meta, user] = await Promise.all([
-				lanMeta(),
+			const [user] = await Promise.all([
 				pb.collection('users').getOne(uid),
-				reloadIdentity()
+				reloadIdentity(),
+				loadLanSchema()
 			]);
-			ceFields = meta.ce_profile_fields ?? [];
 			const u = user as unknown as Record<string, unknown>;
 			savedMotto = motto = String(u.motto ?? '');
 			savedNameplateId = nameplateId = String(u.nameplate ?? '');
@@ -250,6 +272,16 @@
 	{#if loading}
 		<p class="p-4 text-sm text-surface-500">Loading…</p>
 	{:else}
+		{#if lanNotice}
+			<div
+				class="flex items-start gap-2 card preset-tonal-warning px-3 py-2 text-sm"
+				role="status"
+				data-testid="lan-notice"
+			>
+				<InfoIcon class="mt-0.5 size-4 shrink-0" />
+				<span>{lanNotice}. The Halo: CE profile fields are hidden until then.</span>
+			</div>
+		{/if}
 		<GeneralTab active={tab === 'general'} {h2Appearance} />
 		<CETab
 			active={tab === 'ce'}

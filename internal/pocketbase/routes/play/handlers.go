@@ -6,6 +6,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/hostrunner"
 )
@@ -29,6 +31,16 @@ func requireHost(e *core.RequestEvent) bool {
 		return false
 	}
 	return true
+}
+
+// checkBox is the per-handler box.* check on the resolved container (R-10):
+// box.read for the polls, box.control for the intent POSTs, box.teardown for
+// teardown. resolveCaller already narrowed name to a box the caller owns, is
+// rostered in, or may control; this is the rule table's final word (a
+// scoped principal, the owner, or a rostered player). Returns the apis
+// 401/403 error to bubble, nil when allowed.
+func checkBox(e *core.RequestEvent, a authz.Action, name string) error {
+	return pb.Check(pb.Default(), e, a, authz.Container(name))
 }
 
 // currentResponse is the play tab's per-poll view of the caller's instance.
@@ -86,6 +98,9 @@ func registerCurrent() {
 		if !ok {
 			return e.JSON(http.StatusOK, currentResponse{Instance: ""})
 		}
+		if err := checkBox(e, authz.ActionBoxRead, name); err != nil {
+			return err
+		}
 		st := HostRunners.Status(name)
 		return e.JSON(http.StatusOK, currentResponse{Instance: name, Status: &st, Reap: reapViewFor(name)})
 	})
@@ -116,6 +131,9 @@ func registerOptions() {
 		}
 		resp := optionsResponse{Maps: []scraperiface.MapOption{}, Gametypes: []scraperiface.MapOption{}}
 		if name, ok := resolveCaller(e); ok {
+			if err := checkBox(e, authz.ActionBoxRead, name); err != nil {
+				return err
+			}
 			resp.Instance = name
 			list := liveMaps(name)
 			resp.Available = list.Available
@@ -155,6 +173,9 @@ func registerSelection() {
 		name, ok := resolveCaller(e)
 		if !ok {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "no active instance for your gamertag"})
+		}
+		if err := checkBox(e, authz.ActionBoxControl, name); err != nil {
+			return err
 		}
 		st := HostRunners.Status(name)
 		if !st.Present {
@@ -219,14 +240,14 @@ func liveMaps(name string) scraperiface.MapList {
 // POST /api/play/ready — the player says "go": arm+start, so the runner presses
 // start once the NATIVE preconditions pass (2+ boxes, 2+ teams). Returns status.
 func registerReady() {
-	Group.POST("/ready", playAction(func(name string) bool {
+	Group.POST("/ready", playAction(authz.ActionBoxControl, func(name string) bool {
 		return HostRunners.SetReady(name, true)
 	}))
 }
 
 // POST /api/play/unready — stay armed in the lobby (arm-only). Returns status.
 func registerUnready() {
-	Group.POST("/unready", playAction(func(name string) bool {
+	Group.POST("/unready", playAction(authz.ActionBoxControl, func(name string) bool {
 		return HostRunners.SetReady(name, false)
 	}))
 }
@@ -236,19 +257,21 @@ func registerUnready() {
 // player's pick. Does NOT change arbitration authority (admin-only) or stop the
 // container. Returns status.
 func registerTeardown() {
-	Group.POST("/teardown", playAction(func(name string) bool {
+	Group.POST("/teardown", playAction(authz.ActionBoxTeardown, func(name string) bool {
 		HostRunners.SetReady(name, false)
 		return HostRunners.ClearSelection(name)
 	}))
 }
 
-// playAction wires the resolve → authority-guard → apply → status shape shared by
-// the control POSTs. Player actions only touch player-intent (ready / selection),
-// NEVER arbitration authority — a player can't wrest control from an admin. If the
+// playAction wires the resolve → box.* check → authority-guard → apply → status
+// shape shared by the control POSTs; a is the verb checked on the resolved
+// container (box.control for ready / unready, box.teardown for teardown).
+// Player actions only touch player-intent (ready / selection), NEVER
+// arbitration authority — a player can't wrest control from an admin. If the
 // runner isn't runner-driven (an admin took over, or hosting is disabled), the
 // action is refused with 409 so admin control always wins. apply returns false
 // when no runner is attached (→ 404).
-func playAction(apply func(name string) bool) func(e *core.RequestEvent) error {
+func playAction(a authz.Action, apply func(name string) bool) func(e *core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		if !requireHost(e) {
 			return nil
@@ -256,6 +279,9 @@ func playAction(apply func(name string) bool) func(e *core.RequestEvent) error {
 		name, ok := resolveCaller(e)
 		if !ok {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "no active instance for your gamertag"})
+		}
+		if err := checkBox(e, a, name); err != nil {
+			return err
 		}
 		st := HostRunners.Status(name)
 		if !st.Present {

@@ -3,9 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"log"
-	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -31,8 +30,10 @@ type requestProbePayload struct {
 // ProbePayload (state_inputs + score_probe) freshly computed by the
 // runner's loop goroutine — these never broadcast unsolicited.
 //
-// Auth: free for any connected client; membership is the access gate
-// (host:<name> rooms RequireAuth at join_room time).
+// Auth: authz.Can(scraper.probe, Instance(name)) per instance — a
+// scraper.* scope (admin / machine keys); anything else is silently
+// dropped, the same shape as an unknown instance. Room membership alone
+// does not grant it: the probe exposes raw memory reads.
 func handleRequestProbe(e *Event) {
 	if e.Services == nil || e.Services.Scraper == nil {
 		return
@@ -46,6 +47,9 @@ func handleRequestProbe(e *Event) {
 	}
 
 	if req.Instance != "" {
+		if !authz.Can(e.Authz, e.Principal, authz.ActionScraperProbe, authz.Instance(req.Instance)) {
+			return
+		}
 		msgBytes, ok := e.Services.Scraper.ProbeReply(req.Instance)
 		if ok {
 			e.SendRaw(msgBytes)
@@ -55,25 +59,20 @@ func handleRequestProbe(e *Event) {
 
 	// Fallback: scan the sender's own room memberships when no explicit
 	// instance was supplied. Mirrors request_events' room-walk pattern,
-	// dedup'd by instance name.
+	// dedup'd by instance name, with the same per-instance check.
 	seenInstance := map[string]bool{}
 	if e.Rooms == nil {
 		return
 	}
 	for _, room := range e.Rooms() {
-		if room == rooms.HostAllRoom || room == rooms.SummaryRoom {
-			continue
-		}
-		if !strings.HasPrefix(room, rooms.HostRoomPrefix+":") {
-			continue
-		}
-		rest := strings.TrimPrefix(room, rooms.HostRoomPrefix+":")
-		parts := strings.SplitN(rest, ":", 2)
-		name := parts[0]
-		if seenInstance[name] {
+		name, ok := instanceOfRoom(room)
+		if !ok || seenInstance[name] {
 			continue
 		}
 		seenInstance[name] = true
+		if !authz.Can(e.Authz, e.Principal, authz.ActionScraperProbe, authz.Instance(name)) {
+			continue
+		}
 		msgBytes, ok := e.Services.Scraper.ProbeReply(name)
 		if !ok {
 			continue

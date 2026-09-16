@@ -26,7 +26,13 @@
 	import MasterDetail from '$lib/components/organizer/MasterDetail.svelte';
 	import FilterChips from '$lib/components/organizer/FilterChips.svelte';
 	import DraftBar from '$lib/components/organizer/DraftBar.svelte';
-	import { lanMeta, lanBuild, lanDownload } from '$lib/utils/lansaves';
+	import {
+		LAN_AUTH_NOTICE,
+		LanAuthError,
+		lanMeta,
+		lanBuild,
+		lanDownload
+	} from '$lib/utils/lansaves';
 	import type {
 		BuildRequest,
 		BuildResponse,
@@ -47,6 +53,11 @@
 	}
 
 	let meta = $state<LanMeta | null>(null);
+	// Set when /api/lan/saves/meta refuses the caller (authz: the LAN routes
+	// need a machine key or a role carrying lan.*). The library still lists
+	// and the editor falls back to its built-in engine list; the CE sections
+	// are just empty. Rendered inline rather than toasted.
+	let lanNotice = $state<string | null>(null);
 	let rows = $state<GametypeRecord[]>([]);
 	let loading = $state(true);
 	let busy = $state(false);
@@ -308,8 +319,15 @@
 		}
 		void load();
 		void lanMeta()
-			.then((m) => (meta = m))
-			.catch((e) => toaster.error({ title: 'Schema load failed', description: String(e) }));
+			.then((m) => {
+				meta = m;
+				lanNotice = null;
+			})
+			.catch((e) => {
+				meta = null;
+				lanNotice =
+					e instanceof LanAuthError ? LAN_AUTH_NOTICE : `Schema load failed: ${String(e)}`;
+			});
 	});
 </script>
 
@@ -598,6 +616,17 @@
 		title="Gametypes"
 		description="The shared variant library + editor. Every change is template-patched into a real, correctly-signed save — the preview shows exactly what lands on the HDD. A gametype is CE or H2 from creation; the editor tailors to it."
 	/>
+
+	{#if lanNotice}
+		<div
+			class="flex items-start gap-2 card preset-tonal-warning px-3 py-2 text-sm"
+			role="status"
+			data-testid="lan-notice"
+		>
+			<AlertTriangleIcon class="mt-0.5 size-4 shrink-0" />
+			<span>{lanNotice}. The CE editor sections and save preview are unavailable until then.</span>
+		</div>
+	{/if}
 
 	<MasterDetail
 		open={!!ed}

@@ -24,21 +24,48 @@ func TestResolveContainerGamertagMatch(t *testing.T) {
 	}
 }
 
-func TestResolveContainerAdminOverride(t *testing.T) {
-	// Admin with an override targets any container regardless of gamertag.
+// TestResolveContainerOverrideAllowed: a caller the rule table lets control
+// the override container (canOverride) targets it regardless of gamertag; with
+// no override the same caller still resolves by their own gamertag.
+func TestResolveContainerOverrideAllowed(t *testing.T) {
 	name, ok := resolveContainer(true, "pod2", "", nil, view())
 	if !ok || name != "pod2" {
-		t.Fatalf("admin override should resolve pod2, got %q ok=%v", name, ok)
+		t.Fatalf("allowed override should resolve pod2, got %q ok=%v", name, ok)
 	}
-	// A non-admin override is ignored → falls back to gamertag match.
-	name, ok = resolveContainer(false, "pod2", "", []string{"stew"}, view())
-	if !ok || name != "pod1" {
-		t.Fatalf("non-admin override must be ignored (match stew→pod1), got %q ok=%v", name, ok)
-	}
-	// Admin with no override still resolves by their own gamertag.
+	// canOverride with no override is moot — own gamertag still applies.
 	name, ok = resolveContainer(true, "", "", []string{"zed"}, view())
 	if !ok || name != "pod2" {
-		t.Fatalf("admin without override should match own gamertag zed→pod2, got %q ok=%v", name, ok)
+		t.Fatalf("no override should match own gamertag zed→pod2, got %q ok=%v", name, ok)
+	}
+	// An override the caller may control wins over a roster match elsewhere.
+	name, ok = resolveContainer(true, "pod2", "", []string{"stew"}, view())
+	if !ok || name != "pod2" {
+		t.Fatalf("allowed override must beat the roster match, got %q ok=%v", name, ok)
+	}
+}
+
+// TestResolveContainerOverrideDenied: a denied override (no box.control on it)
+// is ignored — never honoured — and resolution falls through to ownership /
+// the roster match, or idle when neither applies.
+func TestResolveContainerOverrideDenied(t *testing.T) {
+	name, ok := resolveContainer(false, "pod2", "", []string{"stew"}, view())
+	if !ok || name != "pod1" {
+		t.Fatalf("denied override must be ignored (match stew→pod1), got %q ok=%v", name, ok)
+	}
+	// Ownership still resolves under a denied override.
+	v := append(view(), scraperiface.ContainerMembership{Container: "play-uid123"})
+	name, ok = resolveContainer(false, "pod2", "play-uid123", nil, v)
+	if !ok || name != "play-uid123" {
+		t.Fatalf("denied override should fall through to the owned box, got %q ok=%v", name, ok)
+	}
+	// Nothing to fall through to: idle, never the override.
+	if name, ok := resolveContainer(false, "pod2", "", nil, view()); ok || name != "" {
+		t.Fatalf("denied override with no ownership/roster must be idle, got %q ok=%v", name, ok)
+	}
+	// An override the caller cannot control must not leak through even when it
+	// names a live container.
+	if name, ok := resolveContainer(false, "pod1", "", []string{"zed"}, view()); !ok || name != "pod2" {
+		t.Fatalf("denied override must not pick pod1; expected zed→pod2, got %q ok=%v", name, ok)
 	}
 }
 

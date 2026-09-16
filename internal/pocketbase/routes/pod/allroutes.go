@@ -1,6 +1,7 @@
 package pod
 
 import (
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -22,7 +23,7 @@ func register(fn func()) {
 func RegisterAll(se *core.ServeEvent) {
 	Group = se.Router.Group("/api/pod")
 	Group.Bind(apis.RequireAuth())
-	Group.BindFunc(middleware.RequireAdmin())
+	Group.BindFunc(middleware.RequireAdmin(authz.ActionAdminPod))
 
 	for _, fn := range registry {
 		fn()

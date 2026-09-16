@@ -18,7 +18,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
 )
 
 // Has returns true when userID holds an active user_roles row pointing at the
@@ -85,57 +86,20 @@ func Slugs(app core.App, userID string) ([]string, error) {
 // Grant creates a user_roles row pointing at the role with the given slug and
 // writes a matching ActionRoleGrant audit row. Idempotent: a duplicate grant
 // is a silent no-op (no audit row, no error). grantedBy may be nil — the M08
-// migration backfill (8b) and the default-role hook both pass nil so the row
-// records "system" provenance.
+// migration backfill (8b), the default-role hook and the dev seeder pass nil
+// so the row records "system" provenance (an authz.Internal actor, which
+// skips the level tiering).
+//
+// Thin wrapper over pb.Grant (design §6.4): a non-nil grantedBy is resolved
+// to its principal and tiered — the actor's max role level must reach the
+// target role's (authz.ErrLevelTooLow), an unknown slug is
+// authz.ErrUnknownRole. Superusers grant without a granted_by relation.
 func Grant(app core.App, userID, slug string, grantedBy *core.Record) error {
-	if userID == "" {
-		return fmt.Errorf("roles.Grant: userID is required")
-	}
-	if slug == "" {
-		return fmt.Errorf("roles.Grant: slug is required")
-	}
-
-	role, err := app.FindFirstRecordByData("roles", "slug", slug)
-	if err != nil || role == nil {
-		return fmt.Errorf("roles.Grant: lookup role slug=%q: %w", slug, err)
-	}
-
-	existing, err := app.FindFirstRecordByFilter(
-		"user_roles",
-		"user = {:userID} && role = {:roleID}",
-		dbx.Params{"userID": userID, "roleID": role.Id},
-	)
-	if err == nil && existing != nil {
-		return nil
-	}
-
-	user, err := app.FindRecordById("users", userID)
-	if err != nil {
-		return fmt.Errorf("roles.Grant: lookup user %s: %w", userID, err)
-	}
-
-	col, err := app.FindCollectionByNameOrId("user_roles")
-	if err != nil {
-		return fmt.Errorf("roles.Grant: lookup user_roles collection: %w", err)
-	}
-	row := core.NewRecord(col)
-	row.Set("user", userID)
-	row.Set("role", role.Id)
+	actor := authz.Internal("roles.Grant")
 	if grantedBy != nil {
-		row.Set("granted_by", grantedBy.Id)
+		actor = pb.PrincipalFromAuth(app, pb.Default(), grantedBy)
 	}
-	if err := app.Save(row); err != nil {
-		return fmt.Errorf("roles.Grant: save user_roles for (user=%s role=%s): %w", userID, slug, err)
-	}
-
-	byMigration := grantedBy == nil
-	if err := audit.Write(app, grantedBy, audit.ActionRoleGrant, user, audit.RoleGrantPayload{
-		RoleSlug:    slug,
-		ByMigration: byMigration,
-	}); err != nil {
-		return fmt.Errorf("roles.Grant: audit write: %w", err)
-	}
-	return nil
+	return pb.Grant(app, pb.Default(), actor, userID, slug, "")
 }
 
 // Revoke deletes the user_roles row at (userID, slug) and writes a matching
@@ -143,43 +107,16 @@ func Grant(app core.App, userID, slug string, grantedBy *core.Record) error {
 // by may be nil for cascade-driven revokes (e.g. the M8f soft-delete cascade
 // clearing every role from a tombstoned user); reason carries the admin's
 // justification when present.
+//
+// Thin wrapper over pb.Revoke (design §6.4): a non-nil by is tiered like
+// Grant and may not remove the last admin (authz.ErrLastAdmin); the nil /
+// internal path bypasses the last-admin invariant and logs a WARN instead.
 func Revoke(app core.App, userID, slug string, by *core.Record, reason string) error {
-	if userID == "" {
-		return fmt.Errorf("roles.Revoke: userID is required")
+	actor := authz.Internal("roles.Revoke")
+	if by != nil {
+		actor = pb.PrincipalFromAuth(app, pb.Default(), by)
 	}
-	if slug == "" {
-		return fmt.Errorf("roles.Revoke: slug is required")
-	}
-
-	role, err := app.FindFirstRecordByData("roles", "slug", slug)
-	if err != nil || role == nil {
-		return fmt.Errorf("roles.Revoke: lookup role slug=%q: %w", slug, err)
-	}
-
-	row, err := app.FindFirstRecordByFilter(
-		"user_roles",
-		"user = {:userID} && role = {:roleID}",
-		dbx.Params{"userID": userID, "roleID": role.Id},
-	)
-	if err != nil || row == nil {
-		return nil
-	}
-
-	if err := app.Delete(row); err != nil {
-		return fmt.Errorf("roles.Revoke: delete user_roles for (user=%s role=%s): %w", userID, slug, err)
-	}
-
-	user, err := app.FindRecordById("users", userID)
-	if err != nil {
-		return fmt.Errorf("roles.Revoke: lookup user %s: %w", userID, err)
-	}
-	if err := audit.Write(app, by, audit.ActionRoleRevoke, user, audit.RoleRevokePayload{
-		RoleSlug: slug,
-		Reason:   reason,
-	}); err != nil {
-		return fmt.Errorf("roles.Revoke: audit write: %w", err)
-	}
-	return nil
+	return pb.Revoke(app, pb.Default(), actor, userID, slug, reason)
 }
 
 // IsAdminAuth is the shorthand the M22-era hooks need: "is this request's
@@ -187,16 +124,10 @@ func Revoke(app core.App, userID, slug string, by *core.Record, reason string) e
 // false when auth is nil. Swallows lookup errors and returns false — the
 // caller is using this for a gating decision where a transient DB error
 // should fail closed.
+//
+// Deprecated: use pb.Check / pb.Get (or authz.Can with a resolved
+// principal) so the decision carries an action; this delegates to
+// pb.IsAdmin and stays only for the call sites the later slices migrate.
 func IsAdminAuth(app core.App, auth *core.Record) bool {
-	if auth == nil {
-		return false
-	}
-	if auth.IsSuperuser() {
-		return true
-	}
-	ok, err := Has(app, auth.Id, "admin")
-	if err != nil {
-		return false
-	}
-	return ok
+	return pb.IsAdmin(app, pb.Default(), auth)
 }

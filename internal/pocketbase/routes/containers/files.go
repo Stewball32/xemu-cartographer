@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/pocketbase/pocketbase/core"
+
+	"github.com/Stewball32/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -16,6 +18,9 @@ func init() {
 		// running X session.
 		Group.DELETE("/{name}/files", func(e *core.RequestEvent) error {
 			name := e.Request.PathValue("name")
+			if err := requireManage(e, authz.Container(name)); err != nil {
+				return err
+			}
 			if err := Manager.DeleteFiles(name); err != nil {
 				return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 			}
@@ -26,6 +31,9 @@ func init() {
 		// containers no longer tracked by the manager (orphans). Baseline
 		// HDDs whose basename starts with "_" are preserved.
 		Group.POST("/cleanup", func(e *core.RequestEvent) error {
+			if err := requireManage(e, authz.Global()); err != nil {
+				return err
+			}
 			deleted, err := Manager.CleanupOrphans()
 			if err != nil {
 				return e.JSON(http.StatusInternalServerError, map[string]any{
