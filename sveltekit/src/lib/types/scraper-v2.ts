@@ -1,8 +1,9 @@
-// V2 wire-protocol types — mirrors internal/scraper/types.go and the
-// per-class payload structs in internal/scraper/manager/ (xbox.go,
-// scenario.go, game.go, tick.go, objects.go, debug.go, summary.go,
-// previous_game.go, hello.go) plus event payloads in
-// internal/scraper/event_payloads.go.
+// V2 wire-protocol types — hand-maintained mirror of the Go structs in
+// wire/ (envelope.go, message.go, rooms.go, classes.go, phase.go and the
+// per-class payload files xbox.go, scenario.go, game.go, tick.go,
+// objects.go, debug.go, summary.go, previous_game.go, hello.go, events.go,
+// events_reply.go, probe.go, finished_game.go) plus the event payloads in
+// scraper/event_payloads.go. See wire/ts/README.md.
 //
 // Separate file from scraper.ts (the v1 types) so PR 19 ships without
 // touching the v1 surface. PR 20 swaps the WS store to v2; PR 21+ moves
@@ -259,7 +260,7 @@ export interface ScenarioTagDef {
 
 export type PhaseV2 = 'idle' | 'ready' | 'live';
 
-/** Host tick-rate health. Mirrors Go `internal/hosthealth.Health`.
+/** Host tick-rate health. Mirrors Go `hosthealth.Health`.
  *
  * `status` is the verdict to render on. 'stalled' means the engine tick has
  * STOPPED — a menu, a paused guest, or an idle runner — and is deliberately
@@ -308,7 +309,7 @@ export interface GamePayload {
 	/** Rolling observed-vs-expected engine tick rate for this host — "is the box
 	 * sustaining 30Hz?". `engine_tick` above is a raw counter, so a host running
 	 * at 24Hz is indistinguishable from one at 30Hz without dividing by wall
-	 * clock; this is that division, done server-side. See internal/hosthealth.
+	 * clock; this is that division, done server-side. See hosthealth.
 	 *
 	 * Optional: the current server always emits it, but it is purely diagnostic —
 	 * nothing rendered depends on it — so consumers must degrade gracefully
@@ -679,6 +680,88 @@ export interface PreviousGamePayload {
 	 * never broadcast (only a join-replay from a runner that panicked
 	 * mid-match can carry one). Absent on older servers. */
 	end_reason?: string;
+	/** The self-contained finished_game artifact (schema
+	 * "xc.finished_game/1") distilled from this same capture — same game_uid,
+	 * same end_reason. Absent (not null) when the server could not build one
+	 * (no game data captured) and on older servers; fall back to distilling
+	 * `game` + `events` yourself. */
+	finished_game?: FinishedGame;
+}
+
+// =============================================================================
+// finished_game artifact — STABLE-CORE record of one completed match
+// (mirrors wire/finished_game.go; upsert on game_uid)
+// =============================================================================
+
+/** Value of FinishedGame.schema. Moves only on a breaking change. */
+export const SCHEMA_FINISHED_GAME = 'xc.finished_game/1';
+
+export interface FinishedGame {
+	schema: string;
+	/** ULID/UUIDv7 minted once at capture, stable across replays — the
+	 * dedupe key. */
+	game_uid: string;
+	instance: string;
+	/** Registry gameKey ("haloce", "halo2", ...). Open set. */
+	game: string;
+	/** Local machine's name in the system-link roster; "" if unknown. */
+	host_machine_name: string;
+	map: string;
+	gametype: string;
+	/** "" if none. */
+	variant_name: string;
+	is_team_game: boolean;
+	score_limit: number;
+	/** RFC3339 or null — null today (known gap; do not require). */
+	started_at: string | null;
+	ended_at: string;
+	/** 'postgame' | 'left_match' | 'shutdown'. Open set. */
+	end_reason: string;
+	/** Final engine tick. */
+	duration_ticks: number;
+	/** Per-game constant so ticks -> seconds is self-contained. */
+	tick_rate_hz: number;
+	/** null for FFA or a tie. */
+	winner_team: number | null;
+	team_scores: GameTeamScore[];
+	/** Display string; no parse promise. */
+	score_summary: string;
+	players: FinishedGamePlayer[];
+	/** true if the companion previous_game event log overflowed the cap. */
+	events_truncated: boolean;
+	/** Emitting producer ("xc-scraper", a replay tool, ...). Open set;
+	 * omitted when unset. */
+	origin?: string;
+	/** Game-profile extension valve keyed by gameKey. */
+	ext?: Record<string, unknown>;
+}
+
+/** One roster row of a FinishedGame. `name` is the ENGINE player name;
+ * account / gamertag mapping is consumer-side. */
+export interface FinishedGamePlayer {
+	index: number;
+	name: string;
+	team: number;
+	score: number;
+	kills: number;
+	deaths: number;
+	assists: number;
+	suicides: number;
+	team_kills: number;
+	/** null when the engine did not expose them for this player. */
+	is_local: boolean | null;
+	machine_index: number | null;
+	controller_index: number | null;
+	// Halo-profile optionals — omitted for game profiles that do not track them.
+	ctf_score?: number;
+	best_kill_streak?: number;
+	multikill?: number;
+	acc_shots_fired?: number;
+	acc_melees?: number;
+	acc_damage_dealt?: number;
+	acc_damage_received?: number;
+	/** Reserved — null until implemented. */
+	time_alive_ms: number | null;
 }
 
 // =============================================================================

@@ -2,6 +2,10 @@ version: "3"
 dotenv: [".env"]
 
 vars:
+  # Sibling xc-scraper checkout (go.mod: replace github.com/xemu-cartographer/xc-scraper
+  # => ../xc-scraper). Used by sync-wire*, build:backend (fingerprint) and
+  # container:build (named build context). Override: XC_SCRAPER_DIR=/path task ...
+  XC_SCRAPER_DIR: '{{.XC_SCRAPER_DIR | default "../xc-scraper"}}'
   # Single source of truth: the git tag. See docs/decisions/0001-version-from-git-tag.md
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
@@ -12,8 +16,39 @@ vars:
 
 tasks:
   dev:
-    desc: Run Go backend (Air) and SvelteKit dev server in parallel
-    deps: [dev:backend, dev:frontend]
+    desc: Run the xc-scraper daemon (Air), Go backend (Air) and SvelteKit dev server in parallel
+    deps: [dev:scraper, dev:backend, dev:frontend]
+
+  dev:scraper:
+    desc: Run the xc-scraper daemon with hot reload (sibling checkout, port 8992; the backend consumes it when XC_SCRAPER_URL is set)
+    # Step 8 R1 (DESIGN-STEP8 §11, D-13): the daemon runs from the sibling
+    # checkout under its own Air config (../xc-scraper/.air.toml builds
+    # ./cmd/xc-scraper -> tmp/xc-scraper). Every daemon flag has an
+    # XC_SCRAPER_<UPPER_SNAKE> env twin, so the recipe is pure environment:
+    #   listen        127.0.0.1:8992 (D-14 dev port; XC_SCRAPER_URL in .env must match)
+    #   watch-dir     this repo's containers/xemu/qmp (what the podman stack bind-mounts)
+    #   game-webhook  the backend's ingest route on PUBLIC_PB_PORT
+    #   state-dir     ../xc-scraper/tmp/xc-scraper-state — NOT under this repo's tmp/:
+    #                 our .air.toml has clean_on_exit=true and would wipe the
+    #                 daemon's spool + control.json on every `task dev` exit.
+    # Tokens (XC_SCRAPER_TOKEN / _CONTROL_TOKEN / _WEBHOOK_TOKEN) come from the
+    # root .env via `dotenv` — the same values the backend reads. The daemon does
+    # NOT need GOEXPERIMENT=nodwarf5,nojsonv2 — that is a build-time requirement
+    # of the league binary (PocketBase) only; xc-scraper builds and boots either way.
+    dir: '{{.XC_SCRAPER_DIR}}'
+    vars:
+      # Absolute sibling path (XC_SCRAPER_DIR may be relative): resolved from
+      # this repo's root, where the default ../xc-scraper is anchored.
+      XC_SCRAPER_ABS:
+        sh: cd "{{.ROOT_DIR}}" && cd "{{.XC_SCRAPER_DIR}}" && pwd
+    env:
+      XC_SCRAPER_LISTEN: "127.0.0.1:8992"
+      XC_SCRAPER_WATCH_DIR: "{{.ROOT_DIR}}/containers/xemu/qmp"
+      XC_SCRAPER_GAME_WEBHOOK: 'http://127.0.0.1:{{.PUBLIC_PB_PORT | default "8090"}}/api/xc/finished_game'
+      XC_SCRAPER_STATE_DIR: "{{.XC_SCRAPER_ABS}}/tmp/xc-scraper-state"
+    cmds:
+      - cmd: 'test -f .air.toml || { echo "dev:scraper: {{.XC_SCRAPER_DIR}}/.air.toml not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: "air -c .air.toml"
 
   dev:backend:
     desc: Run Go backend with hot reload
@@ -21,6 +56,12 @@ tasks:
     # passed, which silently ignores PUBLIC_PB_PORT from .env. Pass the
     # flag explicitly so a non-8090 .env actually wins; mirrors the
     # dev:backend:lan recipe below.
+    #
+    # Hot reload also covers the sibling module: .air.toml's include_dir lists
+    # ../xc-scraper (go.mod `replace => ../xc-scraper`), so edits to the
+    # runner / readers / wire rebuild this binary. Air >= 1.65 watches
+    # out-of-root include_dir entries natively (a missing checkout is skipped);
+    # it does NOT follow a root-level symlink, so don't try that instead.
     cmds: ["air -c .air.toml -- --http=127.0.0.1:${PUBLIC_PB_PORT}"]
 
   dev:frontend:
@@ -31,8 +72,8 @@ tasks:
       - cmd: "pnpm dev"
 
   dev:lan:
-    desc: Run dev servers bound to all interfaces — reachable from other devices on the LAN
-    deps: [dev:backend:lan, dev:frontend:lan]
+    desc: Run dev servers bound to all interfaces — reachable from other devices on the LAN (the daemon stays on loopback)
+    deps: [dev:scraper, dev:backend:lan, dev:frontend:lan]
 
   dev:backend:lan:
     desc: Run Go backend with hot reload, bound to 0.0.0.0
@@ -49,6 +90,37 @@ tasks:
     desc: Generate TypeScript types from running PocketBase instance (requires task dev:backend)
     dir: sveltekit
     cmds: ["pnpm typegen"]
+
+  # --- wire contract (owned by the sibling xc-scraper module) -----------------
+  # The WebSocket contract lives in ../xc-scraper/wire (Go source of truth,
+  # docs/wire.md, TS mirror, golden fixtures). The flagship vendors two
+  # artifacts so the frontend builds without the sibling checkout:
+  #   wire/ts/scraper-v2.ts   -> sveltekit/src/lib/types/scraper-v2.ts
+  #   wire/testdata/*.json    -> sveltekit/src/lib/types/wire-fixtures/
+  # Re-run `task sync-wire` after every wire change; `task sync-wire:check`
+  # (also a CI step) fails when the vendored copies drift.
+  sync-wire:
+    desc: Vendor the wire TS types + golden fixtures from the sibling xc-scraper checkout (../xc-scraper/wire → sveltekit/src/lib/types/)
+    cmds:
+      - cmd: 'test -f "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire/testdata" || { echo "sync-wire: {{.XC_SCRAPER_DIR}}/wire/testdata not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      - cmd: 'cp "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts'
+      # Stale fixtures must go: the vendored dir mirrors testdata exactly —
+      # the WHOLE directory, not just *.json, because sync-wire:check / CI
+      # `diff -ru` the directories (an unvendored README would fail forever).
+      - cmd: 'rm -rf sveltekit/src/lib/types/wire-fixtures && mkdir -p sveltekit/src/lib/types/wire-fixtures'
+      - cmd: 'cp -R "{{.XC_SCRAPER_DIR}}"/wire/testdata/. sveltekit/src/lib/types/wire-fixtures/'
+      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts -> sveltekit/src/lib/types/scraper-v2.ts"'
+      - cmd: 'echo "sync-wire: vendored {{.XC_SCRAPER_DIR}}/wire/testdata/ -> sveltekit/src/lib/types/wire-fixtures/ ($(ls sveltekit/src/lib/types/wire-fixtures | wc -l) files)"'
+
+  sync-wire:check:
+    desc: Fail (with a diff) if the vendored wire TS types or fixtures differ from the sibling xc-scraper checkout
+    cmds:
+      - cmd: 'test -d "{{.XC_SCRAPER_DIR}}/wire" || { echo "sync-wire:check: {{.XC_SCRAPER_DIR}}/wire not found (set XC_SCRAPER_DIR)"; exit 1; }'
+      # Same commands as the CI "Wire sync check" step (.github/workflows/ci.yml).
+      - cmd: 'diff -u "{{.XC_SCRAPER_DIR}}/wire/ts/scraper-v2.ts" sveltekit/src/lib/types/scraper-v2.ts || { echo "sync-wire:check: sveltekit/src/lib/types/scraper-v2.ts is stale — run task sync-wire"; exit 1; }'
+      - cmd: 'diff -ru "{{.XC_SCRAPER_DIR}}/wire/testdata" sveltekit/src/lib/types/wire-fixtures || { echo "sync-wire:check: sveltekit/src/lib/types/wire-fixtures/ is stale — run task sync-wire"; exit 1; }'
+      - cmd: 'echo "sync-wire:check: vendored wire artifacts match {{.XC_SCRAPER_DIR}}/wire"'
 
   # --- migrations (schema source of truth — see docs/MIGRATIONS.md) -----------
   migrate:
@@ -80,10 +152,11 @@ tasks:
     cmds: ["./scripts/migrate-verify.sh {{.CLI_ARGS}}"]
 
   build:
-    desc: Build production binary with static frontend
+    desc: Build production binaries (bin/server + bin/xc-scraper) with static frontend
     cmds:
       - task: build:frontend
       - task: build:backend
+      - task: build:scraper
 
   build:frontend:
     desc: Build SvelteKit static output
@@ -100,8 +173,37 @@ tasks:
     desc: Build Go binary (version baked in via ldflags)
     cmds:
       - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version={{.VERSION}} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit={{.COMMIT}} -X github.com/Stewball32/xemu-cartographer/internal/version.Date={{.DATE}}" -o ./bin/server ./cmd/server
-    sources: ["cmd/**/*.go", "internal/**/*.go", "go.mod", "go.sum"]
+    # The sibling module is compiled into bin/server (go.mod replace), so it
+    # is part of the fingerprint — otherwise a sibling-only edit reports
+    # "up to date" and ships the previous binary.
+    sources:
+      [
+        "cmd/**/*.go",
+        "internal/**/*.go",
+        "migrations/**/*.go",
+        "go.mod",
+        "go.sum",
+        "{{.XC_SCRAPER_DIR}}/**/*.go",
+        "{{.XC_SCRAPER_DIR}}/go.mod",
+        "{{.XC_SCRAPER_DIR}}/go.sum",
+      ]
     generates: ["bin/server"]
+
+  build:scraper:
+    desc: Build the xc-scraper daemon from the sibling checkout into bin/xc-scraper (version baked in via ldflags)
+    # A first-class tier artifact next to bin/server (DESIGN-STEP8 §11): the
+    # tier's systemd unit (../xc-scraper/deploy/xc-scraper.service) runs it.
+    # main.version backs `bin/xc-scraper --version` and /api/health.version.
+    dir: '{{.XC_SCRAPER_DIR}}'
+    cmds:
+      - CGO_ENABLED=0 go build -ldflags="-s -w -X main.version={{.VERSION}}" -o {{.ROOT_DIR}}/bin/xc-scraper ./cmd/xc-scraper
+    sources:
+      [
+        "{{.XC_SCRAPER_DIR}}/**/*.go",
+        "{{.XC_SCRAPER_DIR}}/go.mod",
+        "{{.XC_SCRAPER_DIR}}/go.sum",
+      ]
+    generates: ["{{.ROOT_DIR}}/bin/xc-scraper"]
 
   test:
     desc: Run Go tests and frontend type-check
@@ -132,7 +234,11 @@ tasks:
   container:build:
     desc: Build container image with Podman (tags VERSION and latest)
     cmds:
-      - podman build --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg DATE={{.DATE}} -t xemu-cartographer:{{.VERSION}} -t xemu-cartographer:latest -f Containerfile .
+      # The backend stage needs the sibling xc-scraper checkout (go.mod replace =>
+      # ../xc-scraper); it is handed in as a named build context, not copied into
+      # this repo's context.
+      - test -f "{{.XC_SCRAPER_DIR}}/go.mod" || { echo "xc-scraper checkout not found at {{.XC_SCRAPER_DIR}} (set XC_SCRAPER_DIR)"; exit 1; }
+      - podman build --build-context xc-scraper="{{.XC_SCRAPER_DIR}}" --build-arg VERSION={{.VERSION}} --build-arg COMMIT={{.COMMIT}} --build-arg DATE={{.DATE}} -t xemu-cartographer:{{.VERSION}} -t xemu-cartographer:latest -f Containerfile .
 
   container:run:
     desc: Run container with Podman

@@ -156,6 +156,7 @@ var rules = map[Action]rule{
 	ActionScraperProbe:  {Resources: []ResourceKind{ResInstance}, Kinds: rowScopeUserMachine},
 	ActionScraperEvents: {Resources: []ResourceKind{ResInstance}, Kinds: map[Kind]kindRule{KindPBUser: cellRostered, KindMachine: cellS, KindSpectator: cellBound, KindDevice: cellBound}},
 	ActionScraperState:  {Resources: []ResourceKind{ResInstance}, Kinds: map[Kind]kindRule{KindPBUser: cellRostered, KindMachine: cellS, KindSpectator: cellBound, KindDevice: cellBound}},
+	ActionScraperIngest: {Resources: []ResourceKind{ResGlobal}, Kinds: rowScopeUserMachine},
 	// Overlay
 	ActionOverlayReadState:    {Resources: []ResourceKind{ResInstance}, Kinds: map[Kind]kindRule{KindPBUser: cellS, KindMachine: cellS, KindSpectator: cellBound, KindDevice: cellBound, KindAnonymous: cellBound}},
 	ActionOverlayListConsoles: {Resources: []ResourceKind{ResGlobal}, Kinds: rowScopeUserMachine},

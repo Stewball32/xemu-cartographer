@@ -174,8 +174,11 @@ function createAuthStore() {
 			return matchAnyScope(scopes, want);
 		},
 		hydrate,
-		async register(email: string, password: string, passwordConfirm: string) {
-			await pb.collection('users').create({ email, password, passwordConfirm });
+		// username is a required, immutable users field (min 2 / max 34; see
+		// migrations snapshot + hooks/users_username_immutable.go) — the create
+		// 400s with validation_required without it.
+		async register(username: string, email: string, password: string, passwordConfirm: string) {
+			await pb.collection('users').create({ username, email, password, passwordConfirm });
 			await pb.collection('users').authWithPassword(email, password);
 		},
 		async login(email: string, password: string) {

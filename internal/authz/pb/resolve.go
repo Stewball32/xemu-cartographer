@@ -112,6 +112,12 @@ func bearerToken(r *http.Request) string {
 // '.' in it is still valid. An opaque-looking value whose kid names no row
 // gets the same whole-value fallback: its "<prefix>." head may just be how
 // the env secret happens to start.
+//
+// The REST carriers (Authorization: Bearer, X-Api-Key) get a whole-value
+// match against the imported XC_SCRAPER_WEBHOOK_TOKEN row (step 8 §7.2):
+// the daemon presents that env value verbatim as a Bearer. A non-match
+// changes nothing — the value keeps today's outcome (Nobody, or the opaque
+// error) — so an expired JWT or a typo never turns into a bad-secret error.
 func resolveEvent(app core.App, d *PBDeps, e *core.RequestEvent, candidates []tokenCandidate) (authz.Principal, error) {
 	if e.Auth != nil {
 		return principalFromVerifiedAuth(app, d, e.Auth)
@@ -120,13 +126,21 @@ func resolveEvent(app core.App, d *PBDeps, e *core.RequestEvent, candidates []to
 		lan := c.src == srcLANHeader || c.src == srcQuery
 		if authz.LooksOpaque(c.value) {
 			p, err := resolveOpaque(app, d, c.value)
-			if lan && errors.Is(err, authz.ErrUnknownKid) && d.legacyRow() != nil {
-				return resolveLegacySecret(d, c.value)
+			if errors.Is(err, authz.ErrUnknownKid) {
+				if lan && d.legacyRow() != nil {
+					return resolveLegacySecret(d, c.value)
+				}
+				if wp, ok := resolveWebhookSecret(d, c.value); !lan && ok {
+					return wp, nil
+				}
 			}
 			return p, err
 		}
 		if lan {
 			return resolveLegacySecret(d, c.value)
+		}
+		if wp, ok := resolveWebhookSecret(d, c.value); ok {
+			return wp, nil
 		}
 	}
 	return authz.Nobody(), nil

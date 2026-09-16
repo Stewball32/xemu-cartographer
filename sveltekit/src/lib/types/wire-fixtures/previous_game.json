@@ -1,0 +1,362 @@
+{
+  "v": 2,
+  "type": "previous_game",
+  "instance": "smoke1",
+  "seq": 3,
+  "tick": 18342,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "ended_at": "2026-09-01T11:59:58Z",
+    "game": {
+      "phase": "ready",
+      "game_state": "postgame",
+      "started_at": "2026-09-01T11:42:10Z",
+      "last_read_at": "2026-09-01T12:00:00Z",
+      "engine_tick": 18342,
+      "game_elapsed_ticks": 1,
+      "iterations": 55026,
+      "host_health": {
+        "status": "ok",
+        "observed_hz": 29.97,
+        "expected_hz": 30,
+        "ratio": 0.999,
+        "window_seconds": 10,
+        "samples": 300,
+        "measured_at": "2026-09-01T12:00:00Z",
+        "confident": true
+      },
+      "config": {
+        "gametype": "Slayer",
+        "variant_name": "Team Slayer",
+        "is_team_game": true,
+        "score_limit": 50,
+        "time_limit_ticks": 0
+      },
+      "team_scores": [
+        {
+          "team": 0,
+          "score": 31
+        },
+        {
+          "team": 1,
+          "score": 27
+        }
+      ],
+      "players": [
+        {
+          "index": 0,
+          "name": "Player1",
+          "team": 0,
+          "armor_color": 2,
+          "score": 14,
+          "kills": 14,
+          "deaths": 9,
+          "assists": 3,
+          "ctf_score": 0,
+          "team_kills": 0,
+          "suicides": 1,
+          "kill_streak": 2,
+          "multikill": 0,
+          "shots_fired": 0,
+          "shots_hit": 0,
+          "is_local": true,
+          "local_index": 0,
+          "machine_index": 0,
+          "controller_index": 0,
+          "acc_shots_fired": 410,
+          "acc_grenade_throws": 7,
+          "acc_melees": 12,
+          "acc_damage_dealt": 2210.5,
+          "acc_damage_received": 1873,
+          "acc_camo_pickups": 1,
+          "acc_overshield_pickups": 2,
+          "best_kill_streak": 4
+        },
+        {
+          "index": 1,
+          "name": "Player2",
+          "team": 1,
+          "armor_color": 5,
+          "score": 11,
+          "kills": 11,
+          "deaths": 12,
+          "assists": 1,
+          "ctf_score": 0,
+          "team_kills": 0,
+          "suicides": 0,
+          "kill_streak": 0,
+          "multikill": 0,
+          "shots_fired": 0,
+          "shots_hit": 0,
+          "is_local": false,
+          "local_index": null,
+          "machine_index": 1,
+          "controller_index": 0,
+          "acc_shots_fired": 388,
+          "acc_grenade_throws": 0,
+          "acc_melees": 9,
+          "acc_damage_dealt": 1990.25,
+          "acc_damage_received": 2101,
+          "acc_camo_pickups": 0,
+          "acc_overshield_pickups": 0,
+          "best_kill_streak": 3
+        }
+      ],
+      "machines": [
+        {
+          "index": 0,
+          "name": "XBOX-A",
+          "is_local": true
+        },
+        {
+          "index": 1,
+          "name": "XBOX-B",
+          "is_local": false
+        }
+      ],
+      "network": {
+        "countdown": {
+          "active": false,
+          "paused": false,
+          "seconds_to_start": 0
+        },
+        "client": {
+          "machine_index": 0,
+          "average_ping": 12,
+          "packets_sent": 4096
+        }
+      }
+    },
+    "events": [
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18290,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18290,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "damage",
+          "kind": "hit",
+          "dealer": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "dealer_pos": {
+            "x": 20,
+            "y": -1.5,
+            "z": 1.25
+          },
+          "victim": {
+            "index": 1,
+            "name": "Player2",
+            "team": 1,
+            "armor_color": 5
+          },
+          "victim_pos": {
+            "x": 12.5,
+            "y": -3.25,
+            "z": 1.125
+          },
+          "amount": 0.25,
+          "weapon": "weapons\\pistol\\pistol"
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18300,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18300,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "death",
+          "victim": {
+            "index": 1,
+            "name": "Player2",
+            "team": 1,
+            "armor_color": 5
+          },
+          "victim_pos": {
+            "x": 12.5,
+            "y": -3.25,
+            "z": 1.125
+          },
+          "killer": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "killer_pos": {
+            "x": 20,
+            "y": -1.5,
+            "z": 1.25
+          },
+          "cause": "kill",
+          "weapon": "weapons\\pistol\\pistol",
+          "team_kill": false,
+          "respawn_in_ticks": 150
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18301,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18301,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "medal",
+          "kind": "kill_streak",
+          "player": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "count": 3
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18302,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18302,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "game_update",
+          "kind": "team_score",
+          "team": 0,
+          "score": 31
+        }
+      },
+      {
+        "v": 2,
+        "type": "event",
+        "instance": "smoke1",
+        "seq": 0,
+        "tick": 18310,
+        "ts": "2026-09-01T12:00:00Z",
+        "data": {
+          "seq": 0,
+          "tick": 18310,
+          "at": "2026-09-01T12:00:00Z",
+          "event_type": "player_update",
+          "kind": "item_picked_up",
+          "player": {
+            "index": 0,
+            "name": "Player1",
+            "team": 0,
+            "armor_color": 2
+          },
+          "pos": {
+            "x": 21,
+            "y": -2,
+            "z": 1.25
+          },
+          "item": {
+            "spawn_id": 0,
+            "tag": "weapons\\sniper rifle\\sniper rifle"
+          }
+        }
+      }
+    ],
+    "events_truncated": false,
+    "game_uid": "01J6Y2B5R8ZK3Q7W9XV0M4N2PA",
+    "end_reason": "postgame",
+    "finished_game": {
+      "schema": "xc.finished_game/1",
+      "game_uid": "01J6Y2B5R8ZK3Q7W9XV0M4N2PA",
+      "instance": "smoke1",
+      "game": "haloce",
+      "host_machine_name": "XBOX-A",
+      "map": "bloodgulch",
+      "gametype": "Slayer",
+      "variant_name": "Team Slayer",
+      "is_team_game": true,
+      "score_limit": 50,
+      "started_at": null,
+      "ended_at": "2026-09-01T11:59:58Z",
+      "end_reason": "postgame",
+      "duration_ticks": 18342,
+      "tick_rate_hz": 30,
+      "winner_team": 0,
+      "team_scores": [
+        {
+          "team": 0,
+          "score": 31
+        },
+        {
+          "team": 1,
+          "score": 27
+        }
+      ],
+      "score_summary": "31 — 27",
+      "players": [
+        {
+          "index": 0,
+          "name": "Player1",
+          "team": 0,
+          "score": 14,
+          "kills": 14,
+          "deaths": 9,
+          "assists": 3,
+          "suicides": 1,
+          "team_kills": 0,
+          "is_local": true,
+          "machine_index": 0,
+          "controller_index": 0,
+          "ctf_score": 0,
+          "best_kill_streak": 4,
+          "multikill": 2,
+          "acc_shots_fired": 410,
+          "acc_melees": 12,
+          "acc_damage_dealt": 2210.5,
+          "acc_damage_received": 1873,
+          "time_alive_ms": null
+        },
+        {
+          "index": 1,
+          "name": "Player2",
+          "team": 1,
+          "score": 11,
+          "kills": 11,
+          "deaths": 12,
+          "assists": 1,
+          "suicides": 0,
+          "team_kills": 0,
+          "is_local": false,
+          "machine_index": 1,
+          "controller_index": 0,
+          "time_alive_ms": null
+        }
+      ],
+      "events_truncated": false,
+      "origin": "xc-scraper",
+      "ext": {
+        "haloce": {
+          "acc_grenade_throws": [
+            7,
+            0
+          ]
+        }
+      }
+    }
+  }
+}

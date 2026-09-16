@@ -1,8 +1,11 @@
 package rooms
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // TestRoomForInstance covers the reserved-name chokepoint. Every code path
@@ -118,5 +121,34 @@ func TestRoomForInstanceClass(t *testing.T) {
 				t.Fatalf("RoomForInstanceClass(%q, %q): want %q, got %q", tt.instance, tt.class, tt.want, got)
 			}
 		})
+	}
+}
+
+// TestScraperClassesDerivedFromWire pins the package-level scraperClasses
+// set (and the exported ScraperClasses accessor) to the wire class registry:
+// the table is derived from wire.PerInstanceClasses, so every per-instance
+// class the wire contract names must be an accepted room class and nothing
+// else may be. Also pins the constants, since they are re-declarations.
+func TestScraperClassesDerivedFromWire(t *testing.T) {
+	if HostRoomPrefix != wire.HostRoomPrefix || HostAllRoom != wire.HostAllRoom || SummaryRoom != wire.SummaryRoom {
+		t.Fatalf("room constants drifted from wire: %q %q %q", HostRoomPrefix, HostAllRoom, SummaryRoom)
+	}
+	want := wire.PerInstanceClasses()
+	if len(scraperClasses) != len(want) {
+		t.Fatalf("scraperClasses has %d entries, wire.PerInstanceClasses has %d", len(scraperClasses), len(want))
+	}
+	for _, class := range want {
+		if !scraperClasses[class] {
+			t.Errorf("wire class %q missing from scraperClasses", class)
+		}
+		if _, err := RoomForInstanceClass("alpha", class); err != nil {
+			t.Errorf("RoomForInstanceClass(alpha, %q): %v", class, err)
+		}
+	}
+	if scraperClasses[wire.ClassSummary] {
+		t.Errorf("summary must not be a per-instance room class")
+	}
+	if got := ScraperClasses(); !slices.Equal(got, wire.ScraperClasses()) {
+		t.Errorf("ScraperClasses() = %v, want wire.ScraperClasses() %v", got, wire.ScraperClasses())
 	}
 }

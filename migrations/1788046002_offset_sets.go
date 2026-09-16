@@ -9,7 +9,7 @@ import (
 // JSON exports from the hunting rig land as records here — `set_id` is the
 // stable id discs bind (isos.offset_set), `file` holds the export byte-identical
 // for re-download, `version` bumps when the same set_id is re-imported. The
-// embedded baselines (internal/scraper/offsets/sets/) stay compiled in and are
+// embedded baselines (xc-scraper/offsets/sets/) stay compiled in and are
 // NOT mirrored here; the listing endpoint merges both worlds and the scraper's
 // resolver falls through to this collection for non-embedded ids.
 //

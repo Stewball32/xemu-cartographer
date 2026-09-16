@@ -12,8 +12,15 @@ package scraper
 // a full instanceCache snapshot for host:<name> joiners, and the
 // hostsCache list for host:all joiners.
 //
-// JoinReplayMessages (the legacy "all instances" variant) is retained for
-// the request_state handler until M5 stage 5d narrows it to a single room.
+// JoinReplayMessages (the legacy "all instances" variant) has no production
+// caller any more — join_room and request_state only use the ForHostAll /
+// ForInstance / ForInstanceClass variants. It is kept on the interface for
+// the pbtest fake and the adapter test until M5 stage 5d drops it.
+//
+// The manager's own methods return bare envelopes (runner.Reply); the
+// league adapter (internal/leaguescraper.WireAdapter) frames them as
+// wire.Messages addressed to the per-class room and satisfies this
+// interface.
 type JoinReplay interface {
 	JoinReplayMessages() [][]byte
 	JoinReplayForInstance(name string) [][]byte

@@ -1,0 +1,30 @@
+{
+  "v": 2,
+  "type": "event_filtered",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18300,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "seq": 0,
+    "tick": 18300,
+    "at": "2026-09-01T12:00:00Z",
+    "event_type": "death",
+    "victim": {
+      "index": 1,
+      "name": "Player2",
+      "team": 1,
+      "armor_color": 5
+    },
+    "killer": {
+      "index": 0,
+      "name": "Player1",
+      "team": 0,
+      "armor_color": 2
+    },
+    "cause": "kill",
+    "weapon": "weapons\\pistol\\pistol",
+    "team_kill": false,
+    "respawn_in_ticks": 150
+  }
+}

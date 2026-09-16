@@ -1,0 +1,136 @@
+{
+  "v": 2,
+  "type": "scenario",
+  "instance": "smoke1",
+  "seq": 2,
+  "tick": 18342,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "map": "bloodgulch",
+    "game_difficulty": 1,
+    "fog": {
+      "color": {
+        "r": 0.5,
+        "g": 0.55,
+        "b": 0.6
+      },
+      "max_density": 0.25,
+      "atmo_min_dist": 100,
+      "atmo_max_dist": 800
+    },
+    "memory_regions": {
+      "game_state": {
+        "base": 2147880960,
+        "size": 524288
+      },
+      "tag_cache": {
+        "base": 2151309312,
+        "size": 23068672
+      },
+      "texture_cache": {
+        "base": 2179006464,
+        "size": 16777216
+      },
+      "sound_cache": {
+        "base": 2195783680,
+        "size": 4194304
+      }
+    },
+    "object_types": [
+      {
+        "type_index": 0,
+        "name": "biped",
+        "datum_size": 1228
+      },
+      {
+        "type_index": 1,
+        "name": "vehicle",
+        "datum_size": 1472
+      },
+      {
+        "type_index": 2,
+        "name": "weapon",
+        "datum_size": 832
+      }
+    ],
+    "player_spawns": [
+      {
+        "index": 0,
+        "pos": {
+          "x": 40,
+          "y": -110,
+          "z": 1
+        },
+        "facing": 1.5708,
+        "team_index": 0,
+        "bsp_index": 0,
+        "gametypes": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "index": 1,
+        "pos": {
+          "x": 95,
+          "y": -160,
+          "z": 1
+        },
+        "facing": -1.5708,
+        "team_index": 1,
+        "bsp_index": 0,
+        "gametypes": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    ],
+    "power_item_spawns": [
+      {
+        "spawn_id": 0,
+        "tag": "weapons\\sniper rifle\\sniper rifle",
+        "interval_ticks": 900,
+        "gametype_mask": 0,
+        "pos": {
+          "x": 68,
+          "y": -135,
+          "z": 3
+        }
+      },
+      {
+        "spawn_id": 1,
+        "tag": "powerups\\active camouflage",
+        "interval_ticks": 1800,
+        "gametype_mask": 0,
+        "pos": {
+          "x": 55,
+          "y": -140,
+          "z": 1.5
+        }
+      }
+    ],
+    "tag_defs": {
+      "characters\\cyborg_mp\\cyborg_mp": {
+        "kind": "biped",
+        "tag_index": 12,
+        "flags": 512,
+        "autoaim_pill_radius": 0.35
+      },
+      "weapons\\pistol\\pistol": {
+        "kind": "weapon",
+        "zoom_levels": 1,
+        "zoom_min": 2,
+        "zoom_max": 2,
+        "autoaim_angle": 0.0349,
+        "autoaim_range": 20,
+        "magnetism_angle": 0.0698,
+        "magnetism_range": 15,
+        "deviation_angle": 0.0087
+      }
+    }
+  }
+}

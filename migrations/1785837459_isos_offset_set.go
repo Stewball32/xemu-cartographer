@@ -6,7 +6,7 @@ import (
 )
 
 // Offset versioning (Stewart's model): memory offsets live in version-level
-// config files (internal/scraper/offsets/sets/*.json), one baseline per game.
+// config files (xc-scraper/offsets/sets/*.json), one baseline per game.
 // This adds the SELECTION field: `offset_set` on `isos` names the offset-set id
 // a build's scraper should bind ("" = the detected game's baseline). Assigning
 // a build to an existing set is pure data (no redeploy); authoring a NEW set is

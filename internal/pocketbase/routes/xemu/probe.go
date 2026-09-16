@@ -7,8 +7,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // probeResponse is the diagnostic payload returned by GET /api/admin/xemu/probe.
@@ -36,6 +36,10 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": "sock query parameter is required",
 				})
+			}
+			// Wire mode: the daemon owns the socket (attached instances only).
+			if ctl := wireCtl(); ctl != nil {
+				return proxy(e, ctl, "probe", map[string]any{"addr": addrOf(sock)})
 			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{

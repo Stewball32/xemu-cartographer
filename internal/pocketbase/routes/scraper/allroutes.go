@@ -1,5 +1,5 @@
 // Package scraper exposes /api/admin/scraper/* endpoints for managing
-// running game-scraper instances via internal/scraper/manager.
+// running game-scraper instances via xc-scraper/runner.
 //
 // Mirrors the routes/containers/ pattern: a package-level Group + Manager,
 // SetManager() called from cmd/server/main.go before RegisterAll, and
@@ -22,8 +22,9 @@ var Group *router.RouterGroup[*core.RequestEvent]
 
 // Manager is the scraper manager used by all handlers.
 // Injected by SetManager from cmd/server/main.go before RegisterAll runs.
-// Typed against the Service interface (not the concrete *manager.Manager) so
-// this package has no compile-time dependency on internal/scraper/manager.
+// Typed against the Service interface (not the concrete *runner.Manager);
+// the package imports xc-scraper/runner only for the ErrAlreadyRunning /
+// ErrInvalidName sentinels (handlers.go), never for the manager type.
 var Manager scraperiface.Service
 
 var registry []func()

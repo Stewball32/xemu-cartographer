@@ -46,6 +46,44 @@ func TestEveryActionHasRule(t *testing.T) {
 	}
 }
 
+// TestScraperIngestRow pins the step-8 ingest row (§7.2): global resource,
+// scope-only for users and machine keys (the seeded admin `scraper.*`
+// and a minted `scraper.ingest` key), no spectator / device / anonymous
+// cell, and it sits in the `scraper.` family so the wildcard covers it.
+func TestScraperIngestRow(t *testing.T) {
+	rl, ok := rules[ActionScraperIngest]
+	if !ok {
+		t.Fatalf("scraper.ingest has no rule")
+	}
+	if len(rl.Resources) != 1 || rl.Resources[0] != ResGlobal {
+		t.Errorf("scraper.ingest resources = %v, want [global]", rl.Resources)
+	}
+	if len(rl.Kinds) != 2 || rl.Kinds[KindPBUser].Mode != modeScope || rl.Kinds[KindMachine].Mode != modeScope {
+		t.Errorf("scraper.ingest kinds = %v, want scope-only pb_user + machine", rl.Kinds)
+	}
+	if ActionScraperIngest.Family() != "scraper" || !ActionScraperIngest.Known() {
+		t.Errorf("scraper.ingest family/known = %q/%v", ActionScraperIngest.Family(), ActionScraperIngest.Known())
+	}
+	deps := stubDeps{}
+	for _, tc := range []struct {
+		name   string
+		p      Principal
+		want   bool
+		reason string
+	}{
+		{"machine/ingest", Principal{Kind: KindMachine, Scopes: CanonScopes([]string{"scraper.ingest"})}, true, "scope:scraper.ingest"},
+		{"machine/wildcard", Principal{Kind: KindMachine, Scopes: CanonScopes([]string{"scraper.*"})}, true, "scope:scraper.*"},
+		{"machine/other", Principal{Kind: KindMachine, Scopes: CanonScopes([]string{"scraper.state:*"})}, false, "no_scope"},
+		{"spectator/kind", Principal{Kind: KindSpectator, Scopes: CanonScopes([]string{"scraper.*"})}, false, "kind"},
+		{"anonymous", Nobody(), false, "kind"},
+	} {
+		d := CanWith(deps, tc.p, ActionScraperIngest, Global())
+		if d.Allow != tc.want || d.Reason != tc.reason {
+			t.Errorf("%s: allow=%v reason=%q, want %v/%q", tc.name, d.Allow, d.Reason, tc.want, tc.reason)
+		}
+	}
+}
+
 // checkCells validates one kind table: known kinds only, never
 // superuser/internal (allow-all lives in CanWith), a valid mode, and a
 // predicate exactly when the mode needs one.

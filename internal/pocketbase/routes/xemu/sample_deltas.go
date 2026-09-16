@@ -10,7 +10,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // sampleDeltasMatch is one offset whose u32 value changed between two reads.
@@ -50,6 +50,16 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": "sock query parameter is required",
 				})
+			}
+			// Wire mode: forwarded as POST /api/ctl/xemu/sample_deltas (hex
+			// bounds travel as strings; the daemon parses + clamps them).
+			if ctl := wireCtl(); ctl != nil {
+				body := map[string]any{"addr": addrOf(sock)}
+				strKnob(body, q, "start")
+				strKnob(body, q, "end")
+				intKnob(body, q, "interval_ms")
+				intKnob(body, q, "max")
+				return proxy(e, ctl, "sample_deltas", body)
 			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{

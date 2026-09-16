@@ -20,6 +20,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { scraperWSV2 } from '$lib/stores/scraper-ws-v2.svelte';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import UpstreamBanner from '$lib/components/ui/UpstreamBanner.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Dialog from '$lib/components/ui/Dialog.svelte';
 	import DataTable from '$lib/components/ui/DataTable.svelte';
@@ -196,7 +197,9 @@
 		try {
 			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/start`), {
 				loading: { title: 'Starting', description: name },
-				success: { title: 'Started', description: name },
+				// The scraper attaches asynchronously (wire mode answers 202): the
+				// tile keeps saying "attaching…" until the list phase changes.
+				success: { title: 'Started', description: `${name} · scraper attaching…` },
 				errorTitle: 'Start failed'
 			});
 		} catch {
@@ -560,6 +563,8 @@
 		{/snippet}
 	</PageHeader>
 
+	<UpstreamBanner />
+
 	{#if selectedCount > 0}
 		<div
 			class="sticky top-0 z-20 flex flex-wrap items-center gap-2 card border border-surface-300-700 preset-tonal px-3 py-2 shadow-md backdrop-blur"
@@ -774,7 +779,7 @@
 								<div
 									class="text-surface-500-400 flex flex-1 items-center justify-center py-6 text-sm italic"
 								>
-									Not running
+									{row.status === 'running' && !row.phase ? 'Attaching…' : 'Not running'}
 								</div>
 							{/if}
 

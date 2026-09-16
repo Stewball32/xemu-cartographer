@@ -14,6 +14,8 @@ package scraper
 // Returns (nil, false) if the named instance has no runner. Lives on the
 // scraper service so handlers (which can't import internal/websocket
 // directly without an import cycle) get pre-marshaled wire bytes back.
+// The manager returns the bare envelope (runner.Reply); the league
+// adapter (internal/leaguescraper.WireAdapter) adds the frame.
 type EventsReply interface {
 	EventsReply(instance string, sinceTick uint32, types []string) ([]byte, bool)
 }

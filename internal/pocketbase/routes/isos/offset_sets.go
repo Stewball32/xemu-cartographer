@@ -1,6 +1,6 @@
 // Offset-set library routes (organizer redesign, Offsets page). Sets come from
 // two worlds merged into one listing: EMBEDDED baselines compiled into the
-// binary (internal/scraper/offsets/sets/), and IMPORTED sets — offsetmap JSON
+// binary (xc-scraper/offsets/sets/), and IMPORTED sets — offsetmap JSON
 // exports from the hunting rig, uploaded here and stored byte-identical in the
 // offset_sets collection. Discs bind either kind by id (isos.offset_set); the
 // scraper resolves imported ids through offsets.SetDynamicSource (wired in
@@ -17,7 +17,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/offsets"
+	"github.com/xemu-cartographer/xc-scraper/offsets"
 )
 
 func init() {

@@ -15,7 +15,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	sc "github.com/Stewball32/xemu-cartographer/internal/scraper"
+	sc "github.com/xemu-cartographer/xc-scraper/scraper"
 )
 
 // fakeInspect implements scraperiface.Inspect for the resolver test.

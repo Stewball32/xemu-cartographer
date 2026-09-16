@@ -7,11 +7,12 @@ require (
 	github.com/disgoorg/disgo v0.19.3
 	github.com/disgoorg/omit v1.0.0
 	github.com/disgoorg/snowflake/v2 v2.0.3
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/pocketbase/dbx v1.12.0
 	github.com/pocketbase/pocketbase v0.36.7
 	golang.org/x/sys v0.42.0
 )
+
+require github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
@@ -36,6 +37,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/xemu-cartographer/xc-scraper v0.0.0
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/image v0.37.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
@@ -47,3 +49,5 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.46.2 // indirect
 )
+
+replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper

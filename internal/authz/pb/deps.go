@@ -51,6 +51,7 @@ type PBDeps struct {
 
 	mu       sync.RWMutex
 	legacy   *authz.TokenRow      // LAN_SAVES_TOKEN import (PD-12), nil when unset
+	webhook  *authz.TokenRow      // XC_SCRAPER_WEBHOOK_TOKEN import (step 8 §7.2), nil when unset
 	rolesAt  time.Time            // when roles was loaded
 	roles    map[string]roleEntry // slug → row
 	lastUsed map[string]time.Time // kid → last last_used_at write

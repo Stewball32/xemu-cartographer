@@ -25,6 +25,7 @@
 	import type { EnvelopeTypeV2 } from '$lib/types/scraper-v2';
 	import type { ContainerDetail, ContainerStatus } from '$lib/types/containers';
 	import PageHeader from '$lib/components/ui/PageHeader.svelte';
+	import UpstreamBanner from '$lib/components/ui/UpstreamBanner.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import StatTile from '$lib/components/debug/shared/StatTile.svelte';
 
@@ -128,7 +129,9 @@
 		try {
 			await toastPromise(adminPost(`containers/${encodeURIComponent(name)}/start`), {
 				loading: { title: 'Starting', description: name },
-				success: { title: 'Started', description: name },
+				// The scraper attaches asynchronously (wire mode answers 202): the
+				// phase tile reads "attaching…" until the list phase changes.
+				success: { title: 'Started', description: `${name} · scraper attaching…` },
 				errorTitle: 'Start failed'
 			});
 		} catch {
@@ -266,6 +269,8 @@
 		{/snippet}
 	</PageHeader>
 
+	<UpstreamBanner />
+
 	{#snippet wsIcon()}<WifiIcon class="size-3.5" />{/snippet}
 	{#snippet phaseIcon()}<ActivityIcon class="size-3.5" />{/snippet}
 	{#snippet xboxIcon()}<ServerIcon class="size-3.5" />{/snippet}
@@ -283,9 +288,9 @@
 		/>
 		<StatTile
 			label="scraper phase"
-			display={phase ?? '—'}
+			display={phase ?? (isRunning ? 'attaching…' : '—')}
 			statusKind={phaseTileKind}
-			title={isRunning ? `scraper running · phase ${phase ?? 'unknown'}` : 'scraper stopped'}
+			title={isRunning ? `scraper running · phase ${phase ?? 'attaching'}` : 'scraper stopped'}
 			icon={phaseIcon}
 		/>
 		<StatTile

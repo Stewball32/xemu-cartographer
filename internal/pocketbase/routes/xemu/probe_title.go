@@ -9,8 +9,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper"
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/scraper"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // titleProbeSample is one reading taken by the continuous title-ID probe.
@@ -56,6 +56,14 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": "sock query parameter is required",
 				})
+			}
+			// Wire mode: forwarded as POST /api/ctl/xemu/probe_title.
+			if ctl := wireCtl(); ctl != nil {
+				q := e.Request.URL.Query()
+				body := map[string]any{"addr": addrOf(sock)}
+				intKnob(body, q, "samples")
+				intKnob(body, q, "interval_ms")
+				return proxy(e, ctl, "probe_title", body)
 			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{

@@ -11,8 +11,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/xbox"
-	xemupkg "github.com/Stewball32/xemu-cartographer/internal/xemu"
+	"github.com/xemu-cartographer/xc-scraper/xbox"
+	xemupkg "github.com/xemu-cartographer/xc-scraper/xemu"
 )
 
 // scanMatch is one hit in a scan-string response.
@@ -65,6 +65,16 @@ func init() {
 				return e.JSON(http.StatusBadRequest, map[string]string{
 					"error": "sock and q query parameters are required",
 				})
+			}
+			// Wire mode: forwarded as POST /api/ctl/xemu/scan_string.
+			if ctl := wireCtl(); ctl != nil {
+				body := map[string]any{"addr": addrOf(sock), "q": needle}
+				strKnob(body, q, "start")
+				strKnob(body, q, "end")
+				strKnob(body, q, "encoding")
+				intKnob(body, q, "max")
+				intKnob(body, q, "context")
+				return proxy(e, ctl, "scan_string", body)
 			}
 			if _, err := os.Stat(sock); err != nil {
 				return e.JSON(http.StatusBadRequest, map[string]string{

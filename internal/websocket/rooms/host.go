@@ -1,86 +1,58 @@
 package rooms
 
-import (
-	"errors"
-	"fmt"
-	"sort"
-	"strings"
-	"unicode"
-)
+import "github.com/xemu-cartographer/xc-scraper/wire"
+
+// Room naming for scraper rooms is owned by the wire contract package
+// (xc-scraper/wire/rooms.go). Everything below is a re-declaration or a thin
+// wrapper so existing importers keep compiling; the rules and error strings
+// live in wire. This package keeps what is flagship-specific: the RoomType
+// registry, Resolve, and guard evaluation (registry.go).
 
 // HostRoomPrefix is the room-type prefix scraper-related rooms use. Per-instance
 // rooms are addressed as "host:<instance-name>"; the cross-instance aggregate
 // is addressed as HostAllRoom. Both resolve to this single RoomType because
 // rooms.Resolve strips at the first ":" — see registry.go.
-const HostRoomPrefix = "host"
+const HostRoomPrefix = wire.HostRoomPrefix
 
 // HostAllRoom is the v1 reserved aggregate-room name (legacy). v2 replaces
 // it with SummaryRoom; this constant stays during the rebuild window until
 // the aggregator switches over.
-const HostAllRoom = "host:all"
+const HostAllRoom = wire.HostAllRoom
 
 // SummaryRoom is the v2 cross-instance summary class room. The v2
-// aggregator broadcasts here (PR 10); v2 clients subscribe here for the
+// aggregator broadcasts here; v2 clients subscribe here for the
 // dashboard / host-list feed. No instance — the payload is multi-host.
 //
 // See atlas/new_json/04-ground-up-rebuild.md §2 (`summary` class), §4
 // (transport: classes are rooms).
-const SummaryRoom = "host:summary"
-
-// reservedInstanceNames is the set of suffixes RoomForInstance refuses
-// because they collide with reserved aggregate room names. Both "all"
-// (HostAllRoom legacy) and "summary" (SummaryRoom v2) are reserved so a
-// pod can't shadow either aggregate feed.
-var reservedInstanceNames = map[string]bool{
-	"all":     true,
-	"summary": true,
-}
+const SummaryRoom = wire.SummaryRoom
 
 // scraperClasses is the set of v2 per-instance scraper class names that
 // can appear as the third segment in a per-class room name
-// ("host:<instance>:<class>"). Mirrors the class table in
-// atlas/new_json/04-ground-up-rebuild.md §2.
+// ("host:<instance>:<class>"). DERIVED from the wire class registry
+// (wire.PerInstanceClasses — every announced class except "summary", which
+// has its own SummaryRoom); it is no longer a hand-maintained table.
 //
-// Excludes "summary" (cross-instance, has its own SummaryRoom), control
-// messages ("hello", "error"), and "events_reply" (request-reply, not
-// subscribed).
-var scraperClasses = map[string]bool{
-	"xbox":     true,
-	"scenario": true,
-	"game":     true,
-	// game_filtered is the viewer-facing variant of the game class: identical
-	// GamePayload shape, but with the neutral-host dummy + allowlisted dummy
-	// gamertags removed server-side (roster.FilterRoster) before broadcast. The
-	// raw `game` room stays unfiltered for the debug page; overlays subscribe to
-	// this one so dummy filtering stays server-side. See manager broadcastPoll.
-	"game_filtered": true,
-	"tick":          true,
-	"objects":       true,
-	"debug":         true,
-	"previous_game": true,
-	"event":         true,
-	// event_filtered is the viewer-facing variant of the event class. Unlike
-	// game_filtered it is not shape-identical to its raw sibling: it carries
-	// death events only, and its payload type drops victim_pos / killer_pos
-	// outright. Deaths involving a hidden dummy are dropped or de-attributed
-	// server-side. Overlays subscribe here for the KILLED BY plate; the raw
-	// `event` room (positions, every event type) stays for the debug page.
-	// See manager/event_filtered.go.
-	"event_filtered": true,
-}
+// game_filtered / event_filtered are the viewer-facing variants of game /
+// event: the raw rooms stay unfiltered for the debug page, overlays
+// subscribe to the filtered ones so dummy filtering stays server-side. See
+// manager broadcastPoll and manager/event_filtered.go.
+var scraperClasses = func() map[string]bool {
+	classes := wire.PerInstanceClasses()
+	set := make(map[string]bool, len(classes))
+	for _, class := range classes {
+		set[class] = true
+	}
+	return set
+}()
 
 // ScraperClasses returns the sorted per-instance class names
 // RoomForInstanceClass accepts. It exists so the manager's class registry
-// (internal/scraper/manager/classes.go) can be pinned against this table in
+// (xc-scraper/runner/classes.go) can be pinned against this table in
 // both directions from outside the package — the manager imports rooms, so
 // that check can only live in an external test.
 func ScraperClasses() []string {
-	out := make([]string, 0, len(scraperClasses))
-	for class := range scraperClasses {
-		out = append(out, class)
-	}
-	sort.Strings(out)
-	return out
+	return wire.ScraperClasses()
 }
 
 // RoomForInstance is the only sanctioned source of "host:<name>" room names —
@@ -92,10 +64,7 @@ func ScraperClasses() []string {
 // whitespace (instance names appear in log lines, .sock filenames, and JSON
 // payloads — keep them shell-safe).
 func RoomForInstance(name string) (string, error) {
-	if err := ValidateInstanceName(name); err != nil {
-		return "", err
-	}
-	return HostRoomPrefix + ":" + name, nil
+	return wire.RoomForInstance(name)
 }
 
 // RoomForInstanceClass returns the v2 per-(instance, class) room name
@@ -110,13 +79,7 @@ func RoomForInstance(name string) (string, error) {
 // See atlas/new_json/04-ground-up-rebuild.md §4 (transport: classes are
 // rooms).
 func RoomForInstanceClass(instance, class string) (string, error) {
-	if err := ValidateInstanceName(instance); err != nil {
-		return "", err
-	}
-	if !scraperClasses[class] {
-		return "", fmt.Errorf("rooms: %q is not a known scraper class", class)
-	}
-	return HostRoomPrefix + ":" + instance + ":" + class, nil
+	return wire.RoomForInstanceClass(instance, class)
 }
 
 // ValidateInstanceName enforces the input rules shared by RoomForInstance
@@ -124,21 +87,7 @@ func RoomForInstanceClass(instance, class string) (string, error) {
 // copy of these rules for the pure core) can be pinned against it from a
 // test — the two must never drift.
 func ValidateInstanceName(name string) error {
-	if name == "" {
-		return errors.New("rooms: instance name required")
-	}
-	if reservedInstanceNames[name] {
-		return fmt.Errorf("rooms: %q is reserved (collides with aggregate room)", name)
-	}
-	if strings.ContainsRune(name, ':') {
-		return fmt.Errorf("rooms: instance name %q must not contain ':'", name)
-	}
-	for _, r := range name {
-		if unicode.IsSpace(r) {
-			return fmt.Errorf("rooms: instance name %q must not contain whitespace", name)
-		}
-	}
-	return nil
+	return wire.ValidateInstanceName(name)
 }
 
 // Clients in any "host:*" room receive scraper broadcasts. Per-instance rooms

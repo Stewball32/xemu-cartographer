@@ -8,8 +8,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/scraper/manager"
 	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
+	"github.com/xemu-cartographer/xc-scraper/runner"
+	"github.com/xemu-cartographer/xc-scraper/wire"
 )
 
 // TestScraperClassRegistryMatchesRoomsTable pins the manager's class registry
@@ -21,7 +22,7 @@ import (
 // hello and the capture sinks didn't know about — so a one-way check is not
 // enough.
 func TestScraperClassRegistryMatchesRoomsTable(t *testing.T) {
-	m := manager.New(nil)
+	m := runner.New(runner.Options{})
 	defer m.Close()
 
 	var announced []string
@@ -41,5 +42,15 @@ func TestScraperClassRegistryMatchesRoomsTable(t *testing.T) {
 		if _, err := rooms.RoomForInstanceClass("alpha", class); err != nil {
 			t.Errorf("class %q: %v", class, err)
 		}
+	}
+
+	// Both surfaces are now derived from the wire registry — pin them to it
+	// too, so a class added to wire.AllClasses without the manager /
+	// rooms picking it up (or vice versa) is caught here.
+	if hello := m.BuildHelloPayload().Classes; !slices.Equal(hello, wire.AllClasses()) {
+		t.Fatalf("hello classes and wire.AllClasses have drifted:\n  hello = %v\n  wire  = %v", hello, wire.AllClasses())
+	}
+	if !slices.Equal(table, wire.ScraperClasses()) {
+		t.Fatalf("rooms table and wire.ScraperClasses have drifted:\n  rooms = %v\n  wire  = %v", table, wire.ScraperClasses())
 	}
 }

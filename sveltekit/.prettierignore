@@ -14,3 +14,9 @@ src/lib/types/pocketbase-types.ts
 # Test output
 /test-results/
 /playwright-report/
+
+# Vendored wire artifacts (byte-identical to ../xc-scraper/wire/*; task sync-wire).
+# Never formatted here: sync-wire:check / CI diff them byte-for-byte against the
+# sibling, and prettier would break that.
+src/lib/types/scraper-v2.ts
+src/lib/types/wire-fixtures/

@@ -1,0 +1,78 @@
+{
+  "schema": "xc.finished_game/1",
+  "game_uid": "01J6Y2B5R8ZK3Q7W9XV0M4N2PA",
+  "instance": "smoke1",
+  "game": "haloce",
+  "host_machine_name": "XBOX-A",
+  "map": "bloodgulch",
+  "gametype": "Slayer",
+  "variant_name": "Team Slayer",
+  "is_team_game": true,
+  "score_limit": 50,
+  "started_at": null,
+  "ended_at": "2026-09-01T11:59:58Z",
+  "end_reason": "postgame",
+  "duration_ticks": 18342,
+  "tick_rate_hz": 30,
+  "winner_team": 0,
+  "team_scores": [
+    {
+      "team": 0,
+      "score": 31
+    },
+    {
+      "team": 1,
+      "score": 27
+    }
+  ],
+  "score_summary": "31 — 27",
+  "players": [
+    {
+      "index": 0,
+      "name": "Player1",
+      "team": 0,
+      "score": 14,
+      "kills": 14,
+      "deaths": 9,
+      "assists": 3,
+      "suicides": 1,
+      "team_kills": 0,
+      "is_local": true,
+      "machine_index": 0,
+      "controller_index": 0,
+      "ctf_score": 0,
+      "best_kill_streak": 4,
+      "multikill": 2,
+      "acc_shots_fired": 410,
+      "acc_melees": 12,
+      "acc_damage_dealt": 2210.5,
+      "acc_damage_received": 1873,
+      "time_alive_ms": null
+    },
+    {
+      "index": 1,
+      "name": "Player2",
+      "team": 1,
+      "score": 11,
+      "kills": 11,
+      "deaths": 12,
+      "assists": 1,
+      "suicides": 0,
+      "team_kills": 0,
+      "is_local": false,
+      "machine_index": 1,
+      "controller_index": 0,
+      "time_alive_ms": null
+    }
+  ],
+  "events_truncated": false,
+  "origin": "xc-scraper",
+  "ext": {
+    "haloce": {
+      "acc_grenade_throws": [
+        7,
+        0
+      ]
+    }
+  }
+}

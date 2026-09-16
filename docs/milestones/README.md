@@ -36,6 +36,7 @@ One markdown per milestone. Copy [`_template.md`](_template.md) when starting a 
 | M29  | [Organizer route redesign (six-page library suite)](M29-organizer-redesign.md)              | In progress |
 | M30  | [Player settings redesign (unified tabbed page)](M30-settings-redesign.md)                  | In progress |
 | M31  | [xc-scraper pre-freeze hardening (extraction prep)](M31-xc-scraper-prefreeze-hardening.md)  | In progress |
+| M32  | [xc-scraper daemon + wire-only cut-over (step 8)](M32-xc-scraper-daemon.md)                 | In progress |
 
 ## Status values
 

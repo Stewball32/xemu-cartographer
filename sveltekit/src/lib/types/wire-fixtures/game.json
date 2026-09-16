@@ -1,0 +1,128 @@
+{
+  "v": 2,
+  "type": "game",
+  "instance": "smoke1",
+  "seq": 41,
+  "tick": 18342,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "phase": "live",
+    "game_state": "in_game",
+    "started_at": "2026-09-01T11:42:10Z",
+    "last_read_at": "2026-09-01T12:00:00Z",
+    "engine_tick": 18342,
+    "game_elapsed_ticks": 1,
+    "iterations": 55026,
+    "host_health": {
+      "status": "ok",
+      "observed_hz": 29.97,
+      "expected_hz": 30,
+      "ratio": 0.999,
+      "window_seconds": 10,
+      "samples": 300,
+      "measured_at": "2026-09-01T12:00:00Z",
+      "confident": true
+    },
+    "config": {
+      "gametype": "Slayer",
+      "variant_name": "Team Slayer",
+      "is_team_game": true,
+      "score_limit": 50,
+      "time_limit_ticks": 0
+    },
+    "team_scores": [
+      {
+        "team": 0,
+        "score": 31
+      },
+      {
+        "team": 1,
+        "score": 27
+      }
+    ],
+    "players": [
+      {
+        "index": 0,
+        "name": "Player1",
+        "team": 0,
+        "armor_color": 2,
+        "score": 14,
+        "kills": 14,
+        "deaths": 9,
+        "assists": 3,
+        "ctf_score": 0,
+        "team_kills": 0,
+        "suicides": 1,
+        "kill_streak": 2,
+        "multikill": 0,
+        "shots_fired": 0,
+        "shots_hit": 0,
+        "is_local": true,
+        "local_index": 0,
+        "machine_index": 0,
+        "controller_index": 0,
+        "acc_shots_fired": 410,
+        "acc_grenade_throws": 7,
+        "acc_melees": 12,
+        "acc_damage_dealt": 2210.5,
+        "acc_damage_received": 1873,
+        "acc_camo_pickups": 1,
+        "acc_overshield_pickups": 2,
+        "best_kill_streak": 4
+      },
+      {
+        "index": 1,
+        "name": "Player2",
+        "team": 1,
+        "armor_color": 5,
+        "score": 11,
+        "kills": 11,
+        "deaths": 12,
+        "assists": 1,
+        "ctf_score": 0,
+        "team_kills": 0,
+        "suicides": 0,
+        "kill_streak": 0,
+        "multikill": 0,
+        "shots_fired": 0,
+        "shots_hit": 0,
+        "is_local": false,
+        "local_index": null,
+        "machine_index": 1,
+        "controller_index": 0,
+        "acc_shots_fired": 388,
+        "acc_grenade_throws": 0,
+        "acc_melees": 9,
+        "acc_damage_dealt": 1990.25,
+        "acc_damage_received": 2101,
+        "acc_camo_pickups": 0,
+        "acc_overshield_pickups": 0,
+        "best_kill_streak": 3
+      }
+    ],
+    "machines": [
+      {
+        "index": 0,
+        "name": "XBOX-A",
+        "is_local": true
+      },
+      {
+        "index": 1,
+        "name": "XBOX-B",
+        "is_local": false
+      }
+    ],
+    "network": {
+      "countdown": {
+        "active": false,
+        "paused": false,
+        "seconds_to_start": 0
+      },
+      "client": {
+        "machine_index": 0,
+        "average_ping": 12,
+        "packets_sent": 4096
+      }
+    }
+  }
+}

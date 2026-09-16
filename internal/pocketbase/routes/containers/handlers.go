@@ -10,6 +10,7 @@ import (
 	"github.com/Stewball32/xemu-cartographer/internal/authz"
 	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/instancename"
+	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/Stewball32/xemu-cartographer/internal/podman"
 )
 
@@ -121,6 +122,12 @@ func init() {
 
 			var scraperState *scraperiface.InstanceState
 			if Services != nil && Services.Scraper != nil {
+				// Wire mode: the scraper half comes from the daemon mirror; while
+				// the daemon is away the whole detail answers 503 (§16) so the
+				// admin UI shows the outage instead of a silently absent scraper.
+				if scraperroutes.UpstreamDown(Services.Scraper) {
+					return scraperroutes.Unavailable(e)
+				}
 				if st, ok := Services.Scraper.InstanceState(name); ok {
 					scraperState = &st
 				}

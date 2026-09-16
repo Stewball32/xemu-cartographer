@@ -7,7 +7,14 @@ tmp_dir = "tmp"
   args_bin = ["serve"]
   delay = 1000
   include_ext = ["go"]
-  include_dir = ["cmd", "internal"]
+  # ../xc-scraper is the sibling module checkout (go.mod `replace => ../xc-scraper`):
+  # the runner, readers and wire contract live there, so a change there must
+  # rebuild this binary too. Air >= 1.65 accepts include_dir entries outside
+  # the root (watched as optional targets — a missing checkout is skipped, not
+  # fatal). NOTE: Air does NOT follow directory symlinks in its watch walk, so a
+  # root-level `xc-scraper -> ../xc-scraper` symlink would be silently ignored;
+  # the relative path is the supported way. Go tooling never sees it either way.
+  include_dir = ["cmd", "internal", "../xc-scraper"]
   exclude_dir = ["tmp", "sveltekit", "pb_data", "pb_public", "vendor"]
   exclude_regex = ["_test\\.go$"]
 

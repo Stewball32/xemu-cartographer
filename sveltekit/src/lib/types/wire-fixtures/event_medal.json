@@ -1,0 +1,22 @@
+{
+  "v": 2,
+  "type": "event",
+  "instance": "smoke1",
+  "seq": 0,
+  "tick": 18301,
+  "ts": "2026-09-01T12:00:00Z",
+  "data": {
+    "seq": 0,
+    "tick": 18301,
+    "at": "2026-09-01T12:00:00Z",
+    "event_type": "medal",
+    "kind": "kill_streak",
+    "player": {
+      "index": 0,
+      "name": "Player1",
+      "team": 0,
+      "armor_color": 2
+    },
+    "count": 3
+  }
+}

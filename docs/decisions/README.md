@@ -8,6 +8,7 @@ Architecture Decision Records — one markdown per decision. Copy [`_template.md
 | 0002 | [Unified `audit_log` collection](0002-unified-audit-log-collection.md) | Accepted | 2026-05-26 |
 | 0003 | [Programmatic xemu input channel](0003-programmatic-xemu-input-channel.md) | Accepted | 2026-07-10 |
 | 0004 | [ISO-boot provisioning](0004-iso-boot-provisioning.md)                 | Accepted | 2026-07-10 |
+| 0005 | [Wire-only scraper: the league consumes the xc-scraper daemon](0005-wire-only-scraper-cutover.md) | Accepted | 2026-09-07 |
 
 ## Status values
 
