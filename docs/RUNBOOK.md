@@ -25,7 +25,7 @@ The release workflow is a single sequence — `git tag` is the trigger, everythi
    # {"version":"vX.Y.Z","commit":"abc1234","date":"..."}
    ```
 
-6. **Deploy** per your environment (push the image to a registry, restart the service, etc.). A tier on wire mode also gets the new `bin/xc-scraper` + `sudo systemctl restart xc-scraper-<tier>` — on pre `srv-pre.sh` does both (the restart via `sudo -n`, or it prints the command when there is no sudoers rule; see [DEPLOYMENTS.md](DEPLOYMENTS.md) "Deploying pre"; unit template and install steps: `../xc-scraper/deploy/README.md`); order relative to the league restart does not matter — the daemon spools finished games and the league reconnects.
+6. **Deploy** per your environment (push the image to a registry, restart the service, etc.). A tier on wire mode also gets the new `bin/xc-scraper` + `sudo systemctl restart xc-scraper-<tier>` — on pre `srv-pre.sh` does both (the restart via `sudo -n`, or it prints the command when there is no sudoers rule); on prod `srv-prod-stage.sh <ref>` stages and `sudo srv-prod-cutover.sh` swaps + restarts both units (see [DEPLOYMENTS.md](DEPLOYMENTS.md) "Deploying pre" / "Deploying prod"; unit template and install steps: `../xc-scraper/deploy/README.md`); order relative to the league restart does not matter — the daemon spools finished games and the league reconnects.
 
 > If you tag without changing source, `task build` may skip the rebuild because Task's source-cache doesn't track the git tag. Workaround: `task clean && task build`, or touch any `.go` file.
 

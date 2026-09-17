@@ -59,9 +59,10 @@ Three tiers. Deployed tiers hold **artifacts + state only** (binary, `pb_data/`,
   `bin/xc-scraper` into the tier next to `bin/server` (see "Deploying" below);
   `bin/xc-scraper --version` prints the sibling's own `git describe` string, which
   `BUILD-INFO` records on its `sibling` line next to the league's.
-- The daemon's ports `8990-8992` are a reversible default (D-14) and are **not yet
-  claimed** in `/srv/registry/PORTS.md` — owner action. Pre runs on `8991`
-  (`xc-scraper-pre`, installed 2026-09-16); prod's unit is not installed yet.
+- The daemon's ports `8990-8992` are a reversible default (D-14), claimed in
+  `/srv/registry/PORTS.md` since 2026-09-17. Pre runs on `8991` (`xc-scraper-pre`,
+  installed 2026-09-16); prod's unit (`xc-scraper-prod`, `8990`) is installed by
+  the owner as part of the first prod cut-over (see "Deploying prod").
 - The daemon and the league share the tier's `.env` (`EnvironmentFile`): the daemon
   reads `XC_SCRAPER_TOKEN` / `XC_SCRAPER_CONTROL_TOKEN` / `XC_SCRAPER_WEBHOOK_TOKEN`
   (+ any `XC_SCRAPER_<FLAG>` twin), the league reads the same three plus
@@ -126,15 +127,62 @@ own restart and the league reconnects.
 **Pending migrations apply on boot**, so a healthy check also proves the
 migrations applied.
 
+## Deploying prod
+
+Prod is a root **system** unit (`site-xemu-cartographer-prod`: `User=root`,
+`EnvironmentFile=<tier>/.env`, `ExecStart=<tier>/server serve --http=0.0.0.0:8099`
+— the league binary sits at the tier root, `pb_data/` next to it, no `--dir`),
+so a deploy is two steps with a root gate between them:
+
+```sh
+/srv/registry/srv-prod-stage.sh [ref]        # 1. build <ref> (default main) → stage as *.new, nothing restarts
+/srv/registry/srv-prod-stage.sh info         #    installed vs staged
+sudo /srv/registry/srv-prod-cutover.sh       # 2. stop → snapshot pb_data → swap → start → health + boot lines
+sudo /srv/registry/srv-prod-cutover.sh rollback
+```
+
+`srv-prod-stage.sh` is `srv-pre.sh`'s build stage pointed at prod (same detached
+worktrees of the local `~/repos/xemu-cartographer` + `~/repos/xc-scraper`
+checkouts, same ldflags stamps and provenance checks, `SIBLING_REF=` override).
+It warns when pre is not on the ref being staged — prod gets what soaked on pre.
+It writes only inert files next to the live ones: `server.new`,
+`bin/xc-scraper.new`, `pb_public.new/`, `tools.new/`, `BUILD-INFO.new` (the
+daemon lives under `bin/` as in pre and the unit template; the league stays at
+the tier root because the prod unit says so). No sudo.
+
+`srv-prod-cutover.sh` (root) stops `xc-scraper-prod` if installed, stops the
+league, snapshots `pb_data/` → `pb_data.bak-<stamp>` (reflink, `/srv` is btrfs),
+renames each live artifact to `*.old-<stamp>` and the staged one into place,
+writes `BUILD-INFO` (with a `rollback` line naming the stamp), starts the league
+and polls `/api/health` (migrations apply before OnServe, so healthy ⇒ migrated),
+prints the `authz:` / `leaguescraper:` boot lines, then starts the daemon unit
+again. `rollback` reverses the renames (code only — see "Rollback" below) and
+leaves the daemon **stopped**, because a league that came back without
+`XC_SCRAPER_URL` would otherwise share the QMP directory with it.
+
+First prod cut-over to the new system (2026-09-17 plan; pre already runs it):
+the owner adds the league block to prod `.env` (`XC_SCRAPER_URL=http://127.0.0.1:8990`
++ the three tokens, `WS_ALLOWED_ORIGINS`), installs `xc-scraper-prod` from the
+template (`../xc-scraper/deploy/README.md`, `<tier>=/srv/http/xemu-cartographer/prod`,
+`8990`, `<web port>=8099`, **not** started), then runs the cut-over once — the
+script starts the league in wire mode first and the daemon after it, which is
+the R1 order. Rehearsed beforehand: the four migrations pending on prod
+(`1788211877_games_ingest_dedupe`, `1788300001_roles_scopes`,
+`1788300002_api_tokens`, `1788300003_user_roles_granted_by_optional`) were applied
+by the `34ca2a3` binary to a copy of prod's `pb_data` on 2026-09-17 — clean boot,
+`authz: roles ok`, `admins=6`, the partial unique index on `games.game_uid` present.
+
 ## Rollback
 
 ```sh
 /srv/registry/srv-pre.sh xemu-cartographer <last-good-ref>
+sudo /srv/registry/srv-prod-cutover.sh rollback      # prod: back to *.old-<stamp>
 ```
 
 ⚠️ Code rolls back; **migrations do not**. An applied migration stays applied —
 that's why they're proven on pre first. To undo a schema change, write a new
-forward migration.
+forward migration. (Prod's cut-over leaves `pb_data.bak-<stamp>`; restoring it
+by hand is the full revert and loses everything written since.)
 
 ## Backups
 
