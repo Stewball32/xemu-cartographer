@@ -110,6 +110,16 @@ const (
 	// init script (containers/xemu/init/02-patch-toml.sh) so xemu attaches the
 	// disc at boot. Keep the two in sync.
 	containerDVDPath = "/game.iso"
+
+	// containerUID / containerGID are the uid/gid both halves of a pair run
+	// as INSIDE their containers (xemu's PUID/PGID, the browser's
+	// USER_ID/GROUP_ID). Root, always: xemu's pcap netplay needs the
+	// NET_ADMIN/NET_RAW caps in its effective set, which Linux grants only
+	// to uid 0. Podman itself is rootful (directly as root, or via
+	// CONTAINERS_PODMAN_CMD=sudo -n podman), so this is independent of the
+	// uid the league process runs as.
+	containerUID = 0
+	containerGID = 0
 )
 
 // CreateOptions configures a new instance beyond its name.
@@ -213,10 +223,12 @@ func (m *Manager) createWithOptions(name string, opts CreateOptions) (*Container
 		}
 	}
 
-	// Ensure per-container config directories exist.
+	// Ensure per-container config directories exist — and the shared QMP
+	// socket dir, which is a bind-mount source: podman refuses to start
+	// with "statfs …/qmp: no such file or directory" on a fresh tier.
 	configDir := filepath.Join(m.cfg.ConfigsDir, name)
 	browserCfgDir := filepath.Join(m.cfg.BrowserDir, "config-"+name)
-	for _, d := range []string{configDir, browserCfgDir} {
+	for _, d := range []string{configDir, browserCfgDir, m.cfg.SocketDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", d, err)
 		}
@@ -392,11 +404,15 @@ func (m *Manager) createXemu(name string, ports Ports, configDir, dvdPath string
 		// netplay (binds raw sockets on the host's enp191s0). Linux only
 		// projects container caps into the effective set for root by default
 		// — a non-root PUID would see "Operation not permitted" on pcap.
+		// This is a constant, NOT the league's own uid: the league may run
+		// unprivileged and drive rootful podman through `sudo -n podman`
+		// (CONTAINERS_PODMAN_CMD), and the in-container uid must still be
+		// 0 (the pre tier hit exactly that with PUID=1000, 2026-09-16).
 		// Files written under bind mounts end up root-owned on the host;
 		// `Manager.DeleteFiles` and `Manager.CleanupOrphans` use sudo to
 		// remove them when the operator wants to wipe a container's state.
-		"-e", fmt.Sprintf("PUID=%d", os.Getuid()),
-		"-e", fmt.Sprintf("PGID=%d", os.Getgid()),
+		"-e", fmt.Sprintf("PUID=%d", containerUID),
+		"-e", fmt.Sprintf("PGID=%d", containerGID),
 		"-e", "TZ=America/Los_Angeles",
 		// Volumes
 		"-v", fmt.Sprintf("%s:/config", abs(configDir)),
@@ -466,9 +482,9 @@ func (m *Manager) createBrowser(name string, ports Ports, browserCfgDir string) 
 		"--restart", "unless-stopped",
 		// Environment
 		// USER_ID/GROUP_ID match xemu's PUID/PGID — both halves run as root
-		// inside their containers when the server is invoked under sudo.
-		"-e", fmt.Sprintf("USER_ID=%d", os.Getuid()),
-		"-e", fmt.Sprintf("GROUP_ID=%d", os.Getgid()),
+		// inside their containers regardless of the league's own uid.
+		"-e", fmt.Sprintf("USER_ID=%d", containerUID),
+		"-e", fmt.Sprintf("GROUP_ID=%d", containerGID),
 		"-e", fmt.Sprintf("WEB_LISTENING_PORT=%d", ports.BrowserWeb),
 		"-e", fmt.Sprintf("VNC_LISTENING_PORT=%d", ports.BrowserVNC),
 		"-e", "XVNC_SERVER_CUSTOM_PARAMS=-ac",

@@ -65,3 +65,14 @@ func TestSudoPrefixDoesNotHandCommandToPodman(t *testing.T) {
 		}
 	}
 }
+
+// TestContainerUIDIsRoot pins the in-container uid/gid to 0. xemu's pcap
+// netplay only works when the NET_ADMIN/NET_RAW caps land in the effective
+// set, which Linux does for root only; deriving the value from the league's
+// own uid (the pre-2026-09-16 behaviour, os.Getuid()) broke every tier whose
+// league runs unprivileged and reaches rootful podman through sudo.
+func TestContainerUIDIsRoot(t *testing.T) {
+	if containerUID != 0 || containerGID != 0 {
+		t.Fatalf("containerUID/GID = %d/%d, want 0/0 (xemu needs root for pcap caps)", containerUID, containerGID)
+	}
+}
