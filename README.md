@@ -131,7 +131,7 @@ vendored here by `task sync-wire`.
 ## Prerequisites
 
 - **Go 1.25+** — runs the backend; [go.dev/dl](https://go.dev/dl)
-- **The sibling `xc-scraper` checkout** — `go.mod` has `replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper`, so the backend does not build without `../xc-scraper` next to this repo (see Quick Start). Air hot-reloads on changes there too.
+- **The sibling `xc-scraper` checkout** — `go.mod` has `replace github.com/xemu-cartographer/xc-scraper => ../xc-scraper`, so the backend does not build without `../xc-scraper` next to this repo (see Quick Start). Air hot-reloads on changes there too. The `require` line pins the xc-scraper tag this league was cut against (`v0.1.0`, 2026-09-18); the `replace` wins while that repository is private, so keep the sibling on a commit at or after the pinned tag.
 - **pnpm** _(preferred)_ — package manager for the frontend; `npm install -g pnpm`. npm and yarn work but the project is developed with pnpm.
 - **Podman** _(optional)_ — for building and running containers; Docker works as a drop-in alternative.
 - **`qemu-img`** _(optional, only with containers)_ — the host needs `qemu-img` (`qemu-img`/`qemu-utils` package) so the provisioner can create each xemu instance's copy-on-write HDD overlay over the shared read-only root (`containers/xemu/shared/hdds/_default.qcow2`). See [CLAUDE.md → HDD overlays](CLAUDE.md).
