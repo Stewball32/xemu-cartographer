@@ -6,7 +6,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/games"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/games"
 )
 
 // TestRestampEvents (§7.2): a late in-window row inserted after the persist

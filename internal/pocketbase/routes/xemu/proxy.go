@@ -10,8 +10,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // Wire mode (DESIGN-STEP8 §6.2 / §9): the four probe tools moved into the

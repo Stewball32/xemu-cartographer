@@ -22,7 +22,7 @@ const (
 // botDocsURL is linked from the /help overview for things a person may need to
 // know that no command owns yet. When a command comes to own a concept, hang the
 // write-up off that command's /help entry instead of linking out.
-const botDocsURL = "https://github.com/Stewball32/xemu-cartographer#readme"
+const botDocsURL = "https://github.com/xemu-cartographer/xemu-cartographer#readme"
 
 // /help — a registry-generated, permission-aware command reference. Everything
 // is derived from the command registry (no hand-maintained lists, so it can't

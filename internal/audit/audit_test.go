@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/audit"
 )
 
 // ensureAuditLogCollection registers the audit_log collection on a fresh

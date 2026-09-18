@@ -5,8 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/diskspace"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // buildResponse is the preview/validate payload: the generated SaveSet

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/rating"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/rating"
 )
 
 func TestLeaderboard(t *testing.T) {

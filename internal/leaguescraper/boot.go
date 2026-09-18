@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // Mode is the R1 scraper-feed mode (DESIGN-STEP8 D-4): XC_SCRAPER_URL set ⇒

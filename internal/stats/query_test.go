@@ -6,7 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/stats"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/stats"
 )
 
 // ensureCollections registers minimal series / games / game_players collections

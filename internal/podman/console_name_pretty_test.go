@@ -3,7 +3,7 @@ package podman
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/consolename"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/consolename"
 )
 
 // TestConsoleNameFor: the console-nickname write uses the pretty DISPLAY name
@@ -15,7 +15,7 @@ func TestConsoleNameFor(t *testing.T) {
 		want      string
 	}{
 		{"beta-blood-gulch", "Blood Gulch", "Blood Gulch"}, // pretty wins
-		{"beta-play-abc123", "", "beta-play-abc123"},        // fallback to container
+		{"beta-play-abc123", "", "beta-play-abc123"},       // fallback to container
 		{"smoke", "Stew's Box", "Stew's Box"},
 	}
 	for _, c := range cases {

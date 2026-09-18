@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
 )
 
 func main() {

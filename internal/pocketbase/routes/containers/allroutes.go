@@ -7,10 +7,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/middleware"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
 )
 
 // Group is the router group for /api/admin/containers endpoints.

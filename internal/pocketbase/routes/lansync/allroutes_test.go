@@ -3,7 +3,7 @@ package lansync
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 // TestSyncVerbMap pins the group-relative path → LAN sync verb map the

@@ -6,7 +6,7 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 
-	"github.com/Stewball32/xemu-cartographer/internal/rating"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/rating"
 )
 
 // Leaderboard renders a per-game-type rating leaderboard (M18c/d). entries are

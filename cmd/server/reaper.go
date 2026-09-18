@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
-	"github.com/Stewball32/xemu-cartographer/internal/reaper"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/reaper"
 )
 
 // reaperSource picks the reaper's activity source for the feed's mode: the

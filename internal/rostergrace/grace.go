@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // DefaultTTL is the grace window — how long access survives after a gamertag

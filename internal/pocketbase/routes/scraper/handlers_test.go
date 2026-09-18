@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/runner"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // TestWireHelpersAreSourceAgnostic pins the mode detection: only a source

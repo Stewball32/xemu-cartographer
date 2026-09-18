@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	playroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/play"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // Compile-time proof that the Adapter is every route-level source /

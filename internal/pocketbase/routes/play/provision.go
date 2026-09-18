@@ -8,12 +8,12 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/gamertags"
-	"github.com/Stewball32/xemu-cartographer/internal/instancename"
-	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/gamertags"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/instancename"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/isoingest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 func init() {

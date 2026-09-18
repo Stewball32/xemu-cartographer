@@ -17,7 +17,7 @@ package instancename
 import (
 	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/consolename"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/consolename"
 )
 
 // MaxDisplay is the display-name cap in characters (the CE player buffer only

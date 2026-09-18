@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/diskspace"
 )
 
 // ExtractISO extracts the managed disc for recordID (<cfg.ISODir>/<id>.iso) into

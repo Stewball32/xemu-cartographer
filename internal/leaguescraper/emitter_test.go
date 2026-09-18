@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // fakeHub is a minimal wsiface.Service double: it records SendToRoomRaw

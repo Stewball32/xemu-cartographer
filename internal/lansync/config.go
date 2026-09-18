@@ -11,7 +11,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/diskspace"
 )
 
 // Config resolves the host paths + client-facing directory names the LAN-sync

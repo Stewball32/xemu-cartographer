@@ -11,9 +11,9 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // selectionDaemon stubs PUT /api/ctl/instances/{n}/host/selection with the

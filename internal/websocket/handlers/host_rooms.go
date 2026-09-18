@@ -1,6 +1,6 @@
 package handlers
 
-import "github.com/Stewball32/xemu-cartographer/internal/authz"
+import "github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 
 // instanceOfRoom returns the instance a per-instance host room addresses
 // ("host:<inst>" or "host:<inst>:<class>") and true, or "" and false for

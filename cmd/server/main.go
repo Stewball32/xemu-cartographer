@@ -13,22 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	authzpb "github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/migrateconf"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/oauth"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
-	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/seed"
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
-	"github.com/Stewball32/xemu-cartographer/internal/reaper"
-	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
@@ -37,15 +21,31 @@ import (
 	"github.com/xemu-cartographer/xc-scraper/offsets"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	scrapermgr "github.com/xemu-cartographer/xc-scraper/runner"
+	authzpb "github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/hooks"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/migrateconf"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/oauth"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/resolvers"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/containers"
+	playroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/play"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/seed"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/reaper"
+	ws "github.com/xemu-cartographer/xemu-cartographer/internal/websocket"
 
-	discordbot "github.com/Stewball32/xemu-cartographer/internal/disgo"
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/commands"
-	pb "github.com/Stewball32/xemu-cartographer/internal/pocketbase"
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
-	_ "github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
-	_ "github.com/Stewball32/xemu-cartographer/migrations"                  // self-registering DB migrations (schema source of truth)
-	_ "github.com/xemu-cartographer/xc-scraper/halo2"                       // self-registering Halo 2 GameReader (M20)
-	_ "github.com/xemu-cartographer/xc-scraper/haloce"                      // self-registering Halo: CE GameReader
+	_ "github.com/xemu-cartographer/xc-scraper/halo2"  // self-registering Halo 2 GameReader (M20)
+	_ "github.com/xemu-cartographer/xc-scraper/haloce" // self-registering Halo: CE GameReader
+	discordbot "github.com/xemu-cartographer/xemu-cartographer/internal/disgo"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/commands"
+	pb "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase"
+	_ "github.com/xemu-cartographer/xemu-cartographer/internal/websocket/handlers" // self-registering WS handlers
+	_ "github.com/xemu-cartographer/xemu-cartographer/internal/websocket/rooms"    // self-registering WS room types
+	_ "github.com/xemu-cartographer/xemu-cartographer/migrations"                  // self-registering DB migrations (schema source of truth)
 )
 
 func main() {

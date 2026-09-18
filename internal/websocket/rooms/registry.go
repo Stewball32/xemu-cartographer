@@ -3,7 +3,7 @@ package rooms
 import (
 	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // GuardFunc is an alias for guards.GuardFunc so room type files can

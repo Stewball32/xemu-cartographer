@@ -1,7 +1,7 @@
 package pbtest
 
 import (
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // FakeScraper is a canned scraperiface.Service. Infos feeds List / Inspect /

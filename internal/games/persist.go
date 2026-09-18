@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/series"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/series"
 )
 
 // PlayerStat is one player's per-game line for a finished contest.

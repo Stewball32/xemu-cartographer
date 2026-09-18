@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/rating"
-	"github.com/Stewball32/xemu-cartographer/internal/series"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/rating"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/series"
 )
 
 // stampGameEvents backfills the `game` relation onto an instance's unstamped

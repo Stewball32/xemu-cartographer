@@ -3,10 +3,10 @@ package leaguescraper
 import (
 	"log"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // WireAdapter is the league server's view of the scraper manager: it embeds

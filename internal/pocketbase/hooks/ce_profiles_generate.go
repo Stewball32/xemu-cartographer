@@ -4,7 +4,7 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/saveartifact"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/saveartifact"
 )
 
 func init() {

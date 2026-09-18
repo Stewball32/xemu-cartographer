@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // wireFixtureDir is the vendored copy of ../xc-scraper/wire/testdata.

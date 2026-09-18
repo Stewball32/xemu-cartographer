@@ -3,11 +3,11 @@ package guards
 import (
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	discordiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/discord"
-	pbiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/pocketbase"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	wsiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/websocket"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	discordiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/discord"
+	pbiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/pocketbase"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
+	wsiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/websocket"
 )
 
 // Services bundles all system access a guard or resolver may need.

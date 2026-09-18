@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/notifications"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/notifications"
 )
 
 // ensureNotificationsCollection registers the notifications collection on a

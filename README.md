@@ -146,7 +146,7 @@ vendored here by `task sync-wire`.
 1. **Clone:**
 
    ```bash
-   git clone https://github.com/Stewball32/xemu-cartographer.git
+   git clone https://github.com/xemu-cartographer/xemu-cartographer.git
    git clone https://github.com/xemu-cartographer/xc-scraper.git   # sibling module, must sit at ../xc-scraper
    cd xemu-cartographer
    ```

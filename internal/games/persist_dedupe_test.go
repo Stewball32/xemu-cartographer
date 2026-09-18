@@ -11,7 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/games"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/games"
 )
 
 func countRecords(t *testing.T, app core.App, collection string) int {

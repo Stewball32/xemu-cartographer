@@ -6,8 +6,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/components/embeds"
-	"github.com/Stewball32/xemu-cartographer/internal/stats"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/components/embeds"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/stats"
 )
 
 // /stats user:<gamertag> | team:<slug> (M17b). Resolution + embed building is

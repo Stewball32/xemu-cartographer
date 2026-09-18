@@ -1,9 +1,9 @@
 package commands
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // Command pairs a slash command definition with its handler.

@@ -7,11 +7,11 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
 	"github.com/xemu-cartographer/xc-scraper/offsets"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/isoingest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 func init() {

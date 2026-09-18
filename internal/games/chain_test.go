@@ -8,7 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/types"
 
-	"github.com/Stewball32/xemu-cartographer/internal/games"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/games"
 )
 
 // gameWindow matches sampleGame()'s StartedAt / EndedAt.

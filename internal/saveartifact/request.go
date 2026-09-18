@@ -1,6 +1,6 @@
 package saveartifact
 
-import "github.com/Stewball32/xemu-cartographer/internal/halosave"
+import "github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 
 // H2ProfileRequest builds the halosave request for a Halo 2 player profile from
 // a gamertag (the in-game name) and the appearance/controller byte map (keyed

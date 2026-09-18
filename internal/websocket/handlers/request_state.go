@@ -1,6 +1,6 @@
 package handlers
 
-import "github.com/Stewball32/xemu-cartographer/internal/authz"
+import "github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 
 func init() {
 	register("request_state", handleRequestState)

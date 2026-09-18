@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/middleware"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/middleware"
 )
 
 var registry []func(se *core.ServeEvent)
@@ -19,9 +19,11 @@ func register(fn func(se *core.ServeEvent)) {
 // RegisterAll wires all middleware, groups, and ungrouped routes.
 // Called from cmd/server/main.go inside the OnServe hook.
 func RegisterAll(se *core.ServeEvent) {
-	middleware.Init(se)                    // 1. global middleware
-	registerAllGroups(se)                  // 2. group packages (from allgroups.go)
-	for _, fn := range registry { fn(se) } // 3. ungrouped routes
+	middleware.Init(se)   // 1. global middleware
+	registerAllGroups(se) // 2. group packages (from allgroups.go)
+	for _, fn := range registry {
+		fn(se)
+	} // 3. ungrouped routes
 
 	// 4. SPA catch-all — MUST be registered last so more specific routes
 	//    above take priority. Serves pb_public/ with indexFallback=true

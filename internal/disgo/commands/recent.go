@@ -5,8 +5,8 @@ import (
 	"github.com/disgoorg/disgo/handler"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/components/embeds"
-	"github.com/Stewball32/xemu-cartographer/internal/stats"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/components/embeds"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/stats"
 )
 
 // /recent user:<gamertag> (M17b) — the player's most recent games.

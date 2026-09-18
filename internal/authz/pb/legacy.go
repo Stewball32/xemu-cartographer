@@ -3,7 +3,7 @@ package pb
 import (
 	"strings"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 // LegacyEnvVar is the pre-authz LAN secret (PD-12). While set, it is

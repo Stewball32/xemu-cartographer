@@ -8,9 +8,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/rooms"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/websocket/rooms"
 )
 
 // TestScraperClassRegistryMatchesRoomsTable pins the manager's class registry
