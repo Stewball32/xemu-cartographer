@@ -165,7 +165,7 @@ func SyncMaps(app core.App, cfg lansync.Config, isoID, treeDir string) {
 		for _, fn := range thumbable {
 			renderAndAttachThumb(app, tc, isoID, treeDir, fn)
 		}
-	})
+	}, &asyncWG)
 }
 
 // renderAndAttachThumb renders one map's top-down PNG and attaches it to the

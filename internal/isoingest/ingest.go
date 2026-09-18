@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -31,6 +32,11 @@ import (
 )
 
 const collectionName = "isos"
+
+// asyncWG counts the goroutines this package fires and forgets (extraction,
+// map thumbnails). Nothing in production waits on it; the tests join it so a
+// finished test cannot race its own cleanup (async_test.go).
+var asyncWG sync.WaitGroup
 
 // InboxFile is a pending disc image staged in the inbox.
 type InboxFile struct {
@@ -176,7 +182,7 @@ func ingestOne(app core.App, cfg lansync.Config, filename string) (*IngestedItem
 		if err := Extract(app, cfg, id); err != nil {
 			log.Printf("isoingest: extract %s: %v", id, err)
 		}
-	})
+	}, &asyncWG)
 
 	return &IngestedItem{
 		ID: rec.Id, Name: rec.GetString("name"), Filename: filename, Hash: hash, Immutable: immutable,
@@ -201,20 +207,32 @@ func Extract(app core.App, cfg lansync.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	rec.Set("extracted_path", treeDir)
-	rec.Set("extracted_ready", true)
-	rec.Set("extracted_at", types.NowDateTime())
-	rec.Set("footprint_bytes", footprint)
 	// Auto-extract the title id from the disc's boot XBE (the tree is already
 	// on disk — this is a header read, not another disc pass). Server-owned:
 	// always refreshed from the disc, never hand-entered. Best-effort — a tree
 	// with no parseable default.xbe just leaves the field as-is.
-	if titleID, terr := TitleIDFromTree(treeDir); terr == nil {
-		rec.Set("title_id", titleID)
-	} else {
+	titleID, terr := TitleIDFromTree(treeDir)
+	if terr != nil {
 		log.Printf("isoingest: title id for %s: %v", id, terr)
 	}
-	if err := app.Save(rec); err != nil {
+	// The extract pass above can run for minutes, and app.Save writes the WHOLE
+	// row — saving the record loaded before it would revert everything written
+	// meanwhile (an organizer's role / allow_on_xbox edit, a drift flag). Re-read
+	// on the write connection and set only the cache fields this pass produced.
+	if err := app.RunInTransaction(func(txApp core.App) error {
+		fresh, err := txApp.FindRecordById(collectionName, id)
+		if err != nil {
+			return err
+		}
+		fresh.Set("extracted_path", treeDir)
+		fresh.Set("extracted_ready", true)
+		fresh.Set("extracted_at", types.NowDateTime())
+		fresh.Set("footprint_bytes", footprint)
+		if terr == nil {
+			fresh.Set("title_id", titleID)
+		}
+		return txApp.Save(fresh)
+	}); err != nil {
 		return err
 	}
 	// Map list + async best-effort top-down thumbnails (the map-graphics

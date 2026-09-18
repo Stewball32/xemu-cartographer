@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
@@ -52,6 +53,7 @@ func testCatalog(t *testing.T) (core.App, lansync.Config) {
 	if err := cfg.EnsureDirs(); err != nil {
 		t.Fatalf("ensure dirs: %v", err)
 	}
+	joinAsync(t) // last: runs first at cleanup, before TempDir + app.Cleanup
 	return app, cfg
 }
 
@@ -130,6 +132,75 @@ func TestIngest_DedupeByHash(t *testing.T) {
 	if len(rows) != 1 {
 		t.Errorf("catalog should hold 1 row, has %d", len(rows))
 	}
+}
+
+// TestExtract_KeepsConcurrentEdits: a row edit that lands while extract-xiso is
+// running (minutes, on a real disc) must survive Extract's write-back. Extract
+// used to save the record it loaded BEFORE the extract pass — a whole-row
+// write that reverted any role / drift edit made meanwhile (the CI flake in
+// TestDrift_Detected was this bug, exposed by the stubbed instant extract).
+func TestExtract_KeepsConcurrentEdits(t *testing.T) {
+	app, cfg := testCatalog(t)
+	drop(t, cfg, "game.iso", []byte("disc-bytes"))
+	res, err := IngestInbox(app, cfg)
+	if err != nil || len(res.Ingested) != 1 {
+		t.Fatalf("ingest: %v %+v", err, res)
+	}
+	id := res.Ingested[0].ID
+	asyncWG.Wait() // the ingest-time extract (stubbed `true`) has written its cache fields
+
+	// A stub extract-xiso that reports it started and then blocks until
+	// released — the window an organizer edit or a drift flag can land in.
+	dir := t.TempDir()
+	started, release := filepath.Join(dir, "started"), filepath.Join(dir, "release")
+	stub := filepath.Join(dir, "extract-xiso")
+	script := "#!/bin/sh\ntouch " + started + "\nwhile [ ! -e " + release + " ]; do sleep 0.01; done\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	cfg.ExtractXISOCmd = stub
+	// Drop the tree so the ready+present short-circuit misses and Extract re-runs.
+	_ = os.RemoveAll(filepath.Join(cfg.ExtractDir, "isos", id))
+
+	done := make(chan error, 1)
+	go func() { done <- Extract(app, cfg, id) }()
+	waitForFile(t, started)
+
+	// Extract has loaded its row and is inside the extract pass: edit the row.
+	rec, _ := app.FindRecordById(collectionName, id)
+	rec.Set("role", "play")
+	rec.Set("drift_detected", true)
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("edit during extract: %v", err)
+	}
+
+	if err := os.WriteFile(release, nil, 0o644); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	reloaded, _ := app.FindRecordById(collectionName, id)
+	if reloaded.GetString("role") != "play" || !reloaded.GetBool("drift_detected") {
+		t.Errorf("edit made during extract was reverted; got role=%q drift=%v",
+			reloaded.GetString("role"), reloaded.GetBool("drift_detected"))
+	}
+	if !reloaded.GetBool("extracted_ready") || reloaded.GetString("extracted_path") == "" {
+		t.Errorf("extract cache fields not written; ready=%v path=%q",
+			reloaded.GetBool("extracted_ready"), reloaded.GetString("extracted_path"))
+	}
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", path)
 }
 
 // TestDrift_Detected: tampering with the managed bytes trips VerifyAndFlag,
