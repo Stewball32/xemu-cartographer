@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // wsEmitter is the league server's runner.Emitter: it frames each envelope

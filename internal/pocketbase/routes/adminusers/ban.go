@@ -6,9 +6,9 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/audit"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
 )
 
 func init() {

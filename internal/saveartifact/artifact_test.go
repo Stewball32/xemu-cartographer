@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // tarEntries reads a tar blob into a name->bytes map for assertions.

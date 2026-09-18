@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 func view(container string, ids ...string) []scraperiface.ContainerMembership {

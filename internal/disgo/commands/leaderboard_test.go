@@ -6,7 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/rating"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/rating"
 )
 
 func ensureRatings(t *testing.T, app core.App) {

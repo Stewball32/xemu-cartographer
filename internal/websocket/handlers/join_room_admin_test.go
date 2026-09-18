@@ -3,8 +3,8 @@ package handlers
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/authztest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/authztest"
 )
 
 // adminScopes is what the seeded admin role grants (DECISIONS.md): the

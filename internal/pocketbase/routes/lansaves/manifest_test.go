@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // TestBuildManifestShape checks the catalog advertises the two games and the

@@ -3,11 +3,11 @@ package handlers
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/authztest"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/authztest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // joinOutcome captures what handleJoinRoom did with an Event: the room it joined

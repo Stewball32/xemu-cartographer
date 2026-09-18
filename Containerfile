@@ -31,7 +31,7 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY migrations/ ./migrations/
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version=${VERSION} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit=${COMMIT} -X github.com/Stewball32/xemu-cartographer/internal/version.Date=${DATE}" -o /server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Version=${VERSION} -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Commit=${COMMIT} -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Date=${DATE}" -o /server ./cmd/server
 
 # Stage 3: Runtime
 FROM alpine:latest

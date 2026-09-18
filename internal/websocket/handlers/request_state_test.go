@@ -4,9 +4,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/authztest"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/authztest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // TestHandleRequestState_PerRoomCan: membership selects the rooms, then

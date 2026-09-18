@@ -8,7 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
-	"github.com/Stewball32/xemu-cartographer/internal/teamlog"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/teamlog"
 )
 
 func init() {

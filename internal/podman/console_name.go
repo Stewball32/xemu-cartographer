@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/consolename"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/consolename"
 )
 
 // Console-name (E:\UDATA\NICKNAME.XBN) format now lives in the shared leaf

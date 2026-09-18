@@ -5,8 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // Event is passed to handlers when a WebSocket message arrives.

@@ -1,22 +1,22 @@
 package routes
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/admin"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/adminusers"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/containers"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/isos"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/lansaves"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/lansync"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/pod"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/rosters"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/team_membership_requests"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/teams"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/tokens"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/xc"
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/xemu"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/admin"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/adminusers"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/containers"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/isos"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/lansaves"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/play"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/pod"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/rosters"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/team_membership_requests"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/teams"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/tokens"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/xc"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/xemu"
 )
 
 // registerAllGroups creates all route groups and their routes.

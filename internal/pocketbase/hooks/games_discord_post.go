@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/routine"
 
-	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/components/embeds"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/discordcfg"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/components/embeds"
 )
 
 func init() {

@@ -10,9 +10,9 @@ import (
 	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/authzmw"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/discordcfg"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/authzmw"
 )
 
 // /config — the shared admin surface for the guild→channel→hook routing table

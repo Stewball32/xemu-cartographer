@@ -6,8 +6,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/runner"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // Wire returns the daemon control client behind an injected source when the

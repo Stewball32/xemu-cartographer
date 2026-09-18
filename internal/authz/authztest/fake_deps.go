@@ -5,7 +5,7 @@ package authztest
 import (
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 // FakeDeps is a plain struct implementing authz.Deps from exported fields.

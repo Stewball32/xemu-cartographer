@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/discordcfg"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 func TestParseCategories(t *testing.T) {

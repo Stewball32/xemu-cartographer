@@ -3,8 +3,8 @@ package routes
 import (
 	"net/http"
 
-	"github.com/Stewball32/xemu-cartographer/internal/version"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/version"
 )
 
 func init() {

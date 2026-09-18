@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // upstreamHello remembers the protocol fields of the last hello the daemon

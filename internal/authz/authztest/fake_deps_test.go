@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 // TestFakeDepsImplementsDeps is the compile-time assertion plus a smoke check

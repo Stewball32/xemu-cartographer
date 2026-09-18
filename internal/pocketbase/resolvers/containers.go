@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
 )
 
 const containersCollection = "containers"

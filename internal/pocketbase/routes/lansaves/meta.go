@@ -5,7 +5,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // GET /api/lan/saves/meta — describes the generator's capabilities so the

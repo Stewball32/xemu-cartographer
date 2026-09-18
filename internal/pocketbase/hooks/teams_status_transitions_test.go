@@ -5,8 +5,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/audit"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
 )
 
 // teamsStatusApp is pbtest.NewApp plus the teams.status column the hook

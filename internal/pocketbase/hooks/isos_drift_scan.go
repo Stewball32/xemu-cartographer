@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/routine"
 
-	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/isoingest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 func init() {

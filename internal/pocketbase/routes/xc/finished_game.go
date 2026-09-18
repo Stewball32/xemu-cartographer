@@ -10,9 +10,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/games"
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/games"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
 )
 
 // MaxBody caps the finished_game body. A real artifact is a few KB (16

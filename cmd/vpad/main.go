@@ -40,7 +40,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/vpad"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/vpad"
 )
 
 func main() {

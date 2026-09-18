@@ -1,8 +1,8 @@
 package hooks
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/pocketbase/pocketbase"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 var registry []func(app *pocketbase.PocketBase)

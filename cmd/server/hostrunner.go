@@ -7,10 +7,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
-	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
+	ws "github.com/xemu-cartographer/xemu-cartographer/internal/websocket"
 )
 
 // newHostRunnerSink builds the EventSink that fans the host runner's observable

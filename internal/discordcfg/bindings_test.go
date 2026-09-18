@@ -6,7 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/discordcfg"
 )
 
 // newBindingsApp spins a bare test PB with just the canonical discord_routes

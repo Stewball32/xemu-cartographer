@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const thisPkg = "github.com/Stewball32/xemu-cartographer/internal/xcclient"
+const thisPkg = "github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 
 // TestXcclientIsPocketBaseFree pins DESIGN-STEP8 §8's layering: the upstream
 // client reaches the flagship hub only through HubPort, so its (non-test)
@@ -26,9 +26,9 @@ func TestXcclientIsPocketBaseFree(t *testing.T) {
 		switch {
 		case dep == "" || dep == thisPkg:
 		case strings.HasPrefix(dep, "github.com/pocketbase/"),
-			strings.HasPrefix(dep, "github.com/Stewball32/xemu-cartographer/internal/websocket"),
-			strings.HasPrefix(dep, "github.com/Stewball32/xemu-cartographer/internal/pocketbase"),
-			strings.HasPrefix(dep, "github.com/Stewball32/xemu-cartographer/internal/leaguescraper"):
+			strings.HasPrefix(dep, "github.com/xemu-cartographer/xemu-cartographer/internal/websocket"),
+			strings.HasPrefix(dep, "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase"),
+			strings.HasPrefix(dep, "github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"):
 			bad = append(bad, dep)
 		}
 	}

@@ -3,8 +3,8 @@ package hooks
 import (
 	"testing"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/audit"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
 )
 
 func TestGamertagsStatusTransitions_InternalActorAllowed(t *testing.T) {

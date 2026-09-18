@@ -10,9 +10,9 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/diskspace"
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/diskspace"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // GET /api/lan/sync/manifest?preset=<id|active>

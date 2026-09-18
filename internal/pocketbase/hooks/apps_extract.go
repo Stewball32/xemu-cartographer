@@ -11,7 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/routine"
 	"github.com/pocketbase/pocketbase/tools/types"
 
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 func init() {

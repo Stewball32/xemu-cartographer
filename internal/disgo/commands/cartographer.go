@@ -9,8 +9,8 @@ import (
 	"github.com/disgoorg/omit"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/discordcfg"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/discordcfg"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
 )
 
 // /cartographer — the ops + config command group (M17a config + the old-M8 ops

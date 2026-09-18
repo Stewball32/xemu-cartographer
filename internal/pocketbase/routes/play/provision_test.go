@@ -7,7 +7,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 // TestInstanceName covers the DECOUPLED naming decision for request-instance:

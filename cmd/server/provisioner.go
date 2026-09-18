@@ -1,8 +1,8 @@
 package main
 
 import (
-	playroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/play"
-	"github.com/Stewball32/xemu-cartographer/internal/podman"
+	playroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/play"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/podman"
 )
 
 // podmanProvisioner adapts *podman.Manager to playroutes.HostProvisioner, the

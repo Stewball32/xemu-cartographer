@@ -13,10 +13,10 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/audit"
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/audit"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
 )
 
 // userRole finds the user_roles row for (user, slug), nil when absent.

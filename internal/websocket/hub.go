@@ -12,10 +12,10 @@ import (
 	"github.com/coder/websocket"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/websocket/handlers"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/websocket/handlers"
 )
 
 // Hub manages all connected WebSocket clients and rooms.

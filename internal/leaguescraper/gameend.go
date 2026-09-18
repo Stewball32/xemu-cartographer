@@ -5,9 +5,9 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/games"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/games"
 )
 
 // GameEndHook returns the league server's runner.GameEnd: it adapts the

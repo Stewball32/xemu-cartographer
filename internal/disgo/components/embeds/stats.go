@@ -6,7 +6,7 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 
-	"github.com/Stewball32/xemu-cartographer/internal/stats"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/stats"
 )
 
 func boolPtr(b bool) *bool { return &b }

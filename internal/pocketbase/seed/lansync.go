@@ -15,10 +15,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
-	"github.com/Stewball32/xemu-cartographer/internal/isoingest"
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
-	hooks "github.com/Stewball32/xemu-cartographer/internal/pocketbase/hooks"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/isoingest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
+	hooks "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/hooks"
 )
 
 // lanTestPlayers are the checked-in players for the E2E LAN-sync scenario. Each

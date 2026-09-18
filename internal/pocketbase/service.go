@@ -1,8 +1,8 @@
 package pocketbase
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/resolvers"
 )
 
 // Service wraps core.App and implements pbiface.Service

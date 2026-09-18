@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 // WebhookEnvVar is the shared secret the xc-scraper daemon presents on

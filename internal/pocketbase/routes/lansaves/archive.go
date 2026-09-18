@@ -5,7 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
 )
 
 // archiveTar packs a SaveSet into a tar archive whose entries are laid out at

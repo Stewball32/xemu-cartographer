@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
-	ws "github.com/Stewball32/xemu-cartographer/internal/websocket"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
+	ws "github.com/xemu-cartographer/xemu-cartographer/internal/websocket"
 )
 
 // R1 dual-mode boot (DESIGN-STEP8 D-4, §11): XC_SCRAPER_URL set ⇒ wire mode

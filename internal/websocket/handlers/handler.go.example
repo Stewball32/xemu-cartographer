@@ -10,7 +10,7 @@ package handlers
 import (
 	"encoding/json"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
 )
 
 func init() {
@@ -67,7 +67,7 @@ func handleExample(e *Event) {
 	//   }
 	//
 	// Or use resolvers from any package:
-	//   import pbresolvers "github.com/Stewball32/xemu-cartographer/internal/pocketbase/resolvers"
+	//   import pbresolvers "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/resolvers"
 	//   user, err := pbresolvers.FindUserByDiscordID(e.App, discordID)
 
 	_ = json.Marshal // silence unused import

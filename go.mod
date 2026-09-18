@@ -1,4 +1,4 @@
-module github.com/Stewball32/xemu-cartographer
+module github.com/xemu-cartographer/xemu-cartographer
 
 go 1.25.0
 

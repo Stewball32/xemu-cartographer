@@ -6,13 +6,13 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
 	"github.com/xemu-cartographer/xc-scraper/roster"
 	sc "github.com/xemu-cartographer/xc-scraper/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
 )
 
 // Target an overlay purely by CONSOLE NAME (no instance / container id). Given

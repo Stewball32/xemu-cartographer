@@ -6,8 +6,8 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/disgo/components/embeds"
-	"github.com/Stewball32/xemu-cartographer/internal/rating"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/disgo/components/embeds"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/rating"
 )
 
 const leaderboardTopN = 10

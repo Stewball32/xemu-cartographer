@@ -12,7 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 	"github.com/pocketbase/pocketbase/tools/router"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
 )
 
 // TestResolveServerISO covers the optional server_iso validation: "" clears the

@@ -13,10 +13,10 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb/pbtest"
-	"github.com/Stewball32/xemu-cartographer/internal/leaguescraper"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb/pbtest"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/leaguescraper"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 const testControlToken = "ctl-secret"

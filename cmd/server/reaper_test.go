@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Stewball32/xemu-cartographer/internal/reaper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/reaper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 // storeGame caches one game frame for name in m (seq 1, now).

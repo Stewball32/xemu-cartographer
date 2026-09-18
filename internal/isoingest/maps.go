@@ -15,7 +15,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/routine"
 
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 // Map-list + map-thumbnail extraction for an ingested build.

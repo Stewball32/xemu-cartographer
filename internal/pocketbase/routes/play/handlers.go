@@ -7,12 +7,12 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/authz"
-	"github.com/Stewball32/xemu-cartographer/internal/authz/pb"
-	scraperiface "github.com/Stewball32/xemu-cartographer/internal/guards/interfaces/scraper"
-	scraperroutes "github.com/Stewball32/xemu-cartographer/internal/pocketbase/routes/scraper"
-	"github.com/Stewball32/xemu-cartographer/internal/xcclient"
 	"github.com/xemu-cartographer/xc-scraper/hostrunner"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/authz/pb"
+	scraperiface "github.com/xemu-cartographer/xemu-cartographer/internal/guards/interfaces/scraper"
+	scraperroutes "github.com/xemu-cartographer/xemu-cartographer/internal/pocketbase/routes/scraper"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/xcclient"
 )
 
 func init() {

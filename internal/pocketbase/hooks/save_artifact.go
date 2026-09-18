@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 
-	"github.com/Stewball32/xemu-cartographer/internal/halosave"
-	"github.com/Stewball32/xemu-cartographer/internal/saveartifact"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/halosave"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/saveartifact"
 )
 
 // attachBundle is the shared core of the generate-on-save hooks. It generates

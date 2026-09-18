@@ -172,7 +172,7 @@ tasks:
   build:backend:
     desc: Build Go binary (version baked in via ldflags)
     cmds:
-      - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/Stewball32/xemu-cartographer/internal/version.Version={{.VERSION}} -X github.com/Stewball32/xemu-cartographer/internal/version.Commit={{.COMMIT}} -X github.com/Stewball32/xemu-cartographer/internal/version.Date={{.DATE}}" -o ./bin/server ./cmd/server
+      - CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Version={{.VERSION}} -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Commit={{.COMMIT}} -X github.com/xemu-cartographer/xemu-cartographer/internal/version.Date={{.DATE}}" -o ./bin/server ./cmd/server
     # The sibling module is compiled into bin/server (go.mod replace), so it
     # is part of the fingerprint — otherwise a sibling-only edit reports
     # "up to date" and ships the previous binary.

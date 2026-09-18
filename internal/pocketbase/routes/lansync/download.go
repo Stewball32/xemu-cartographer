@@ -7,7 +7,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 
-	"github.com/Stewball32/xemu-cartographer/internal/lansync"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/lansync"
 )
 
 // Kiosk-scoped download endpoints (SPEC §4.4) — headless stations pull the

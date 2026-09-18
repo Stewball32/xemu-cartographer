@@ -1,9 +1,9 @@
 package leaguescraper
 
 import (
-	"github.com/Stewball32/xemu-cartographer/internal/guards"
 	"github.com/xemu-cartographer/xc-scraper/runner"
 	"github.com/xemu-cartographer/xc-scraper/wire"
+	"github.com/xemu-cartographer/xemu-cartographer/internal/guards"
 )
 
 // wsDemand is the league server's runner.Demand: (instance, class) is
