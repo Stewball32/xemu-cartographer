@@ -61,8 +61,9 @@ Three tiers. Deployed tiers hold **artifacts + state only** (binary, `pb_data/`,
   `BUILD-INFO` records on its `sibling` line next to the league's.
 - The daemon's ports `8990-8992` are a reversible default (D-14), claimed in
   `/srv/registry/PORTS.md` since 2026-09-17. Pre runs on `8991` (`xc-scraper-pre`,
-  installed 2026-09-16); prod's unit (`xc-scraper-prod`, `8990`) is installed by
-  the owner as part of the first prod cut-over (see "Deploying prod").
+  installed 2026-09-16); prod on `8990` (`xc-scraper-prod`, a root system unit
+  installed by the owner at the first prod cut-over, 2026-09-18 — see "Deploying
+  prod").
 - The daemon and the league share the tier's `.env` (`EnvironmentFile`): the daemon
   reads `XC_SCRAPER_TOKEN` / `XC_SCRAPER_CONTROL_TOKEN` / `XC_SCRAPER_WEBHOOK_TOKEN`
   (+ any `XC_SCRAPER_<FLAG>` twin), the league reads the same three plus
@@ -160,17 +161,26 @@ again. `rollback` reverses the renames (code only — see "Rollback" below) and
 leaves the daemon **stopped**, because a league that came back without
 `XC_SCRAPER_URL` would otherwise share the QMP directory with it.
 
-First prod cut-over to the new system (2026-09-17 plan; pre already runs it):
-the owner adds the league block to prod `.env` (`XC_SCRAPER_URL=http://127.0.0.1:8990`
-+ the three tokens, `WS_ALLOWED_ORIGINS`), installs `xc-scraper-prod` from the
-template (`../xc-scraper/deploy/README.md`, `<tier>=/srv/http/xemu-cartographer/prod`,
-`8990`, `<web port>=8099`, **not** started), then runs the cut-over once — the
-script starts the league in wire mode first and the daemon after it, which is
-the R1 order. Rehearsed beforehand: the four migrations pending on prod
-(`1788211877_games_ingest_dedupe`, `1788300001_roles_scopes`,
-`1788300002_api_tokens`, `1788300003_user_roles_granted_by_optional`) were applied
-by the `34ca2a3` binary to a copy of prod's `pb_data` on 2026-09-17 — clean boot,
-`authz: roles ok`, `admins=6`, the partial unique index on `games.game_uid` present.
+**First prod cut-over to the new system: 2026-09-18 08:30 PT, `0aa2f31` → `34ca2a3`
+(sibling `e03f82f`), stamp `20260918-0830`.** The owner added the league block to
+prod `.env` (`XC_SCRAPER_URL=http://127.0.0.1:8990` + the three tokens,
+`WS_ALLOWED_ORIGINS`, `XC_SCRAPER_HOSTRUNNER` / `XC_SCRAPER_HOST_DRIVE_MARKER`),
+installed `xc-scraper-prod` from the template (`../xc-scraper/deploy/README.md`,
+`<tier>=/srv/http/xemu-cartographer/prod`, `8990`, `<web port>=8099`, enabled,
+**not** started), then ran the cut-over once — the script starts the league in
+wire mode first and the daemon after it, which is the R1 order. Result: the four
+migrations pending on prod (`1788211877_games_ingest_dedupe`,
+`1788300001_roles_scopes`, `1788300002_api_tokens`,
+`1788300003_user_roles_granted_by_optional`) applied on boot, `authz: roles ok`,
+`admins=6`, `leaguescraper: mode=wire url=http://127.0.0.1:8990 token=set
+control=set`, league healthy in 4 s, daemon healthy 6 s later; a box that was
+running through the swap (`c-e-deez-nuts`, Halo CE) was re-attached by the daemon
+at boot (title recognised, lobby enumerated) and the league joined its rooms over
+the wire (`xcclient: connected … hello: 1 instance(s), 7 room(s) joined`). The
+three `xcclient: … connection refused` retries between league start and daemon
+start are expected. Rehearsed beforehand: the same four migrations were applied
+by the `34ca2a3` binary to a copy of prod's `pb_data` on 2026-09-17 — clean boot.
+Rollback point: `server.old-20260918-0830` etc. + `pb_data.bak-20260918-0830` (58M).
 
 ## Rollback
 
